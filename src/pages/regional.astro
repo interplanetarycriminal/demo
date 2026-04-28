@@ -1,0 +1,12 @@
+---
+import Base from '../layouts/Base.astro';
+import RegionalView from '../components/RegionalView.jsx';
+---
+<!-- client:only="preact" — Regional reads `?focus=…` from window.location on
+     first render; SSR with the default 'cde' then hot-switching to 'wi' during
+     hydration was causing the CDE tab's inline styles to bleed onto the WI
+     pattern cards. Client-only eliminates the mismatch without losing SEO
+     value (this is an internal dashboard, not a public landing page). -->
+<Base title="SEQ Regional · Catchment Health — Seqwater" eyebrow="Waterway Intelligence" subtitle="SEQ grid · Regional console" showQuickStrip={false}>
+  <RegionalView client:only="preact" />
+</Base>

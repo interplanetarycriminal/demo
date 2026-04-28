@@ -1,0 +1,208 @@
+/* ============================================================
+   SEQWATER INTELLIGENCE SYSTEM — FOUNDATIONS
+   Colors, type, spacing, elevation, motion
+   ============================================================ */
+
+/* Font: Open Sans is the closest humanist sans to the public-sector
+   feel of seqwater.com.au. Flagged as a substitute — ask user for
+   the licensed brand font if available. */
+@import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700;800&family=Source+Sans+3:wght@400;500;600;700;800&display=swap');
+
+:root {
+  /* -------- BRAND COLOR — sampled from seqwater logo ---------- */
+  --sw-blue-500:   #00A9E0;   /* primary water blue — the "seqwater blue" in the logo */
+  --sw-blue-600:   #0095C8;   /* hover / pressed for primary CTAs */
+  --sw-blue-400:   #2DBEEB;   /* lighter wash, for icons on dark */
+  --sw-blue-300:   #7FD6F0;   /* soft wash, chip backgrounds */
+  --sw-blue-100:   #D6F1FA;   /* tint — surface wash, selected rows */
+  --sw-blue-050:   #EEF8FD;   /* barely-there wash, zebra rows */
+
+  /* Supporting navy (structural: headings, nav, footers) */
+  --sw-navy-900:   #002C4D;   /* deepest — headings, footer base */
+  --sw-navy-800:   #003A5D;   /* primary body heading, buttons on light */
+  --sw-navy-700:   #0A4C73;
+  --sw-navy-600:   #1F6189;
+
+  /* Seqwater leaf green (from logo droplet accent) */
+  --sw-green-600:  #6BA43A;   /* "water for life" — growth, native, healthy */
+  --sw-green-500:  #7EB547;
+  --sw-green-100:  #E6F0D6;
+
+  /* -------- SEMANTIC STATUS -------- */
+  --status-good:         #3E9A3E;   /* green pill — "Good", "Stable", "Safe", "Optimal" */
+  --status-good-bg:      #E5F4E5;
+  --status-warn:         #E98320;   /* amber — "Monitor", "Caution" */
+  --status-warn-bg:      #FCEBDB;
+  --status-alert:        #E04A2F;   /* orange-red — "Action Needed", "Active Containment" */
+  --status-alert-bg:     #FBE1DA;
+  --status-emergency:    #C8102E;   /* true red — RESERVED for Emergency Contact + safety notices */
+  --status-info:         var(--sw-blue-500);
+  --status-info-bg:      var(--sw-blue-100);
+
+  /* -------- NEUTRAL SURFACE STACK -------- */
+  --surface-canvas:     #EEEBE4;   /* warm off-white / stone — page canvas, matches mockups */
+  --surface-page:       #F7F6F2;
+  --surface-raised:     #FFFFFF;   /* cards, modals */
+  --surface-sunk:       #F2F0EA;
+  --surface-nav:        #FFFFFF;
+  --surface-footer:     var(--sw-navy-900);
+
+  /* Neutrals — warm-leaning greys */
+  --neutral-950:  #0F1620;
+  --neutral-900:  #1B2530;
+  --neutral-800:  #2C3642;
+  --neutral-700:  #475260;
+  --neutral-600:  #667281;
+  --neutral-500:  #8A95A2;
+  --neutral-400:  #B4BCC6;
+  --neutral-300:  #D4D9DF;
+  --neutral-200:  #E5E8EC;
+  --neutral-100:  #EEF0F2;
+  --neutral-050:  #F6F7F8;
+
+  /* -------- SEMANTIC TOKENS -------- */
+  --fg-strong:   var(--sw-navy-900);   /* h1s */
+  --fg-default:  var(--sw-navy-800);   /* body */
+  --fg-muted:    var(--neutral-600);   /* secondary body, meta */
+  --fg-subtle:   var(--neutral-500);   /* hint text, captions */
+  --fg-on-brand: #FFFFFF;              /* on blue CTA */
+  --fg-link:     var(--sw-blue-600);
+
+  --bg-canvas:   var(--surface-canvas);
+  --bg-raised:   var(--surface-raised);
+  --bg-brand:    var(--sw-blue-500);
+  --bg-brand-strong: var(--sw-navy-800);
+
+  --border-subtle: var(--neutral-200);
+  --border-default: var(--neutral-300);
+  --border-strong:  var(--neutral-400);
+
+  /* -------- TYPE FAMILIES -------- */
+  --font-sans: 'Open Sans', 'Source Sans 3', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-display: 'Open Sans', 'Source Sans 3', -apple-system, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Roboto Mono', Menlo, Consolas, monospace;
+
+  /* -------- TYPE SCALE -------- */
+  --fs-display: 56px;   --lh-display: 1.08;   --tr-display: -0.02em;
+  --fs-h1:      40px;   --lh-h1:      1.15;   --tr-h1:      -0.015em;
+  --fs-h2:      30px;   --lh-h2:      1.2;    --tr-h2:      -0.01em;
+  --fs-h3:      22px;   --lh-h3:      1.3;    --tr-h3:      -0.005em;
+  --fs-h4:      18px;   --lh-h4:      1.35;
+  --fs-body-lg: 18px;   --lh-body-lg: 1.55;
+  --fs-body:    16px;   --lh-body:    1.55;
+  --fs-body-sm: 14px;   --lh-body-sm: 1.5;
+  --fs-caption: 12px;   --lh-caption: 1.4;
+  --fs-eyebrow: 12px;   --lh-eyebrow: 1.2;   --tr-eyebrow: 0.12em;  /* ALL CAPS tags — "WHAT WE'RE WORKING ON" */
+
+  /* -------- SPACING (4px base) -------- */
+  --s-1:  4px;
+  --s-2:  8px;
+  --s-3:  12px;
+  --s-4:  16px;
+  --s-5:  20px;
+  --s-6:  24px;
+  --s-7:  32px;
+  --s-8:  40px;
+  --s-9:  48px;
+  --s-10: 64px;
+  --s-11: 80px;
+  --s-12: 96px;
+
+  /* -------- RADII — rounded but not bubbly -------- */
+  --radius-sm:   4px;
+  --radius-md:   8px;    /* default card, input */
+  --radius-lg:   12px;   /* larger cards, modals */
+  --radius-xl:   16px;
+  --radius-2xl:  20px;   /* dashboard stat cards */
+  --radius-pill: 999px;  /* pills, status chips, CTA buttons */
+
+  /* -------- ELEVATION -------- */
+  --shadow-xs: 0 1px 2px rgba(0, 44, 77, 0.06);
+  --shadow-sm: 0 1px 3px rgba(0, 44, 77, 0.08), 0 1px 2px rgba(0, 44, 77, 0.04);
+  --shadow-md: 0 4px 10px rgba(0, 44, 77, 0.08), 0 2px 4px rgba(0, 44, 77, 0.04);
+  --shadow-lg: 0 12px 24px rgba(0, 44, 77, 0.10), 0 4px 8px rgba(0, 44, 77, 0.04);
+  --shadow-focus: 0 0 0 3px rgba(0, 169, 224, 0.35);
+
+  /* -------- MOTION -------- */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.45, 0, 0.25, 1);
+  --dur-fast: 120ms;
+  --dur-default: 200ms;
+  --dur-slow: 320ms;
+}
+
+/* ================= BASE ELEMENT STYLES ================= */
+
+html, body {
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  color: var(--fg-default);
+  background: var(--bg-canvas);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1, .h1 {
+  font-family: var(--font-display);
+  font-size: var(--fs-h1);
+  line-height: var(--lh-h1);
+  letter-spacing: var(--tr-h1);
+  color: var(--fg-strong);
+  font-weight: 700;
+  margin: 0;
+}
+h2, .h2 {
+  font-family: var(--font-display);
+  font-size: var(--fs-h2);
+  line-height: var(--lh-h2);
+  letter-spacing: var(--tr-h2);
+  color: var(--fg-strong);
+  font-weight: 700;
+  margin: 0;
+}
+h3, .h3 {
+  font-size: var(--fs-h3);
+  line-height: var(--lh-h3);
+  color: var(--fg-strong);
+  font-weight: 600;
+  margin: 0;
+}
+h4, .h4 {
+  font-size: var(--fs-h4);
+  line-height: var(--lh-h4);
+  color: var(--fg-strong);
+  font-weight: 600;
+  margin: 0;
+}
+p {
+  margin: 0 0 1em 0;
+  color: var(--fg-default);
+  text-wrap: pretty;
+}
+a {
+  color: var(--fg-link);
+  text-decoration: none;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+a:hover { color: var(--sw-navy-800); text-decoration: underline; }
+
+.eyebrow {
+  font-size: var(--fs-eyebrow);
+  line-height: var(--lh-eyebrow);
+  letter-spacing: var(--tr-eyebrow);
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--fg-muted);
+}
+
+.caption {
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--fg-muted);
+}
+
+code, pre, .mono {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}

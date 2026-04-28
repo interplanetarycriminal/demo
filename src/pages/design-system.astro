@@ -1,0 +1,137 @@
+---
+import Base from '../layouts/Base.astro';
+
+// Preview cards from the design system — grouped by concern.
+// Each card is a standalone 700px HTML file in /public/design-system-cards/
+// and is embedded via iframe so the card's own layout stays untouched.
+const sections: { title: string; blurb: string; cards: { src: string; label: string; h: number }[] }[] = [
+  {
+    title: 'Brand',
+    blurb: 'The voice, logo lockup, and imagery rules.',
+    cards: [
+      { src: '/design-system-cards/brand-logo.html',    label: 'Logo lockup',       h: 180 },
+      { src: '/design-system-cards/brand-voice.html',   label: 'Voice & tone',      h: 260 },
+      { src: '/design-system-cards/brand-imagery.html', label: 'Imagery',           h: 260 },
+    ],
+  },
+  {
+    title: 'Colour',
+    blurb: 'Three voices — water blue, structural navy, leaf green — on a warm-stone canvas.',
+    cards: [
+      { src: '/design-system-cards/colors-primary.html',    label: 'Primary · water blue', h: 180 },
+      { src: '/design-system-cards/colors-supporting.html', label: 'Supporting · navy + green', h: 320 },
+      { src: '/design-system-cards/colors-neutrals.html',   label: 'Surfaces + neutrals', h: 280 },
+      { src: '/design-system-cards/colors-semantic.html',   label: 'Semantic status',     h: 260 },
+    ],
+  },
+  {
+    title: 'Typography',
+    blurb: 'Open Sans humanist sans. Large confident H1s, generous body.',
+    cards: [
+      { src: '/design-system-cards/type-display.html',  label: 'Display',  h: 180 },
+      { src: '/design-system-cards/type-headings.html', label: 'Headings', h: 260 },
+      { src: '/design-system-cards/type-body.html',     label: 'Body',     h: 240 },
+    ],
+  },
+  {
+    title: 'Spacing · radii · elevation',
+    blurb: '4px base grid, rounded-but-not-bubbly radii, navy-tinted shadows.',
+    cards: [
+      { src: '/design-system-cards/spacing-scale.html',   label: 'Spacing scale', h: 210 },
+      { src: '/design-system-cards/spacing-radii.html',   label: 'Radii',         h: 180 },
+      { src: '/design-system-cards/spacing-shadows.html', label: 'Elevation',     h: 220 },
+    ],
+  },
+  {
+    title: 'Components',
+    blurb: 'The component vocabulary — every one carried into the ops dashboard.',
+    cards: [
+      { src: '/design-system-cards/comp-header.html',     label: 'Header',             h: 160 },
+      { src: '/design-system-cards/comp-quickstrip.html', label: 'Quick-access strip', h: 180 },
+      { src: '/design-system-cards/comp-damlevel.html',   label: 'Dam level gauge',    h: 200 },
+      { src: '/design-system-cards/comp-statcards.html',  label: 'Stat cards',         h: 220 },
+      { src: '/design-system-cards/comp-species.html',    label: 'Species tile',       h: 220 },
+      { src: '/design-system-cards/comp-sensorpin.html',  label: 'Sensor pin',         h: 200 },
+      { src: '/design-system-cards/comp-actions.html',    label: 'Actions list',       h: 260 },
+      { src: '/design-system-cards/comp-buttons.html',    label: 'Buttons',            h: 220 },
+      { src: '/design-system-cards/comp-inputs.html',     label: 'Form inputs',        h: 260 },
+    ],
+  },
+];
+---
+<Base
+  title="Design System — Seqwater Waterway Intelligence"
+  eyebrow="Waterway Intelligence"
+  subtitle="Design system · reference"
+  showQuickStrip={false}
+>
+  <div class="ds-page">
+    <header class="ds-header">
+      <div class="ds-eyebrow">Design System</div>
+      <h1 class="ds-title">Seqwater <span class="accent">Waterway Intelligence</span> reference</h1>
+      <p class="ds-blurb">
+        Tokens, type, components, and brand fundamentals — the visual language that shapes the
+        Today, Trends, and SEQ Regional surfaces. Cards are copied verbatim from the
+        design-system source, so the ops dashboard and this reference can never drift.
+      </p>
+      <div class="ds-meta">
+        <a class="ds-link" href="/brand/SeqwaterBrandIdentity.txt" target="_blank" rel="noopener">Brand identity narrative (.txt)</a>
+        <span class="dot">·</span>
+        <a class="ds-link" href="/colors_and_type.css" target="_blank" rel="noopener">colors_and_type.css (tokens)</a>
+      </div>
+    </header>
+
+    {sections.map(sec => (
+      <section class="ds-section" aria-labelledby={`ds-${sec.title.replace(/\W+/g,'-').toLowerCase()}`}>
+        <h2 id={`ds-${sec.title.replace(/\W+/g,'-').toLowerCase()}`} class="ds-section-title">{sec.title}</h2>
+        <p class="ds-section-blurb">{sec.blurb}</p>
+        <div class="ds-grid">
+          {sec.cards.map(card => (
+            <figure class="ds-card">
+              <figcaption class="ds-card-caption">{card.label}</figcaption>
+              <iframe src={card.src} loading="lazy" title={card.label} style={`height:${card.h}px`}></iframe>
+            </figure>
+          ))}
+        </div>
+      </section>
+    ))}
+  </div>
+</Base>
+
+<style>
+  .ds-page { max-width: 1320px; margin: 0 auto; padding: 32px 40px 48px; }
+  .ds-header { padding-bottom: 20px; border-bottom: 1px solid #E5E8EC; margin-bottom: 24px; }
+  .ds-eyebrow {
+    font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+    font-weight: 700; color: #667281;
+  }
+  .ds-title {
+    font-size: 40px; font-weight: 700; color: #002C4D;
+    letter-spacing: -0.015em; line-height: 1.15; margin: 6px 0 0;
+  }
+  .ds-title .accent { color: #00A9E0; }
+  .ds-blurb { font-size: 16px; color: #475260; line-height: 1.55; max-width: 720px; margin: 12px 0 0; }
+  .ds-meta { display: flex; gap: 8px; margin-top: 12px; font-size: 13px; color: #667281; align-items: center; }
+  .ds-link { color: #0095C8; font-weight: 600; text-decoration: none; }
+  .ds-link:hover { text-decoration: underline; }
+  .ds-meta .dot { opacity: 0.5; }
+
+  .ds-section { margin-top: 36px; }
+  .ds-section-title { font-size: 22px; color: #002C4D; font-weight: 700; margin: 0; }
+  .ds-section-blurb { font-size: 14px; color: #667281; margin: 4px 0 16px; }
+  .ds-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 16px; }
+  .ds-card {
+    margin: 0; background: #fff; border-radius: 16px;
+    box-shadow: 0 1px 3px rgba(0, 44, 77, 0.08);
+    overflow: hidden; display: flex; flex-direction: column;
+  }
+  .ds-card-caption {
+    font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+    font-weight: 700; color: #667281;
+    padding: 12px 14px 0;
+  }
+  .ds-card iframe {
+    width: 100%; border: 0; display: block;
+    transform-origin: 0 0;
+  }
+</style>

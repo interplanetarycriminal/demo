@@ -1,0 +1,232 @@
+---
+// Self-hosted Open Sans via @fontsource — eliminates the third-party
+// Google Fonts beacon (privacy-flag for an AU government client) and
+// avoids the FOUT on first paint. Ordered before tokens.css so the
+// font-family rule picks up the loaded faces immediately.
+import '@fontsource/open-sans/400.css';
+import '@fontsource/open-sans/500.css';
+import '@fontsource/open-sans/600.css';
+import '@fontsource/open-sans/700.css';
+import '@fontsource/open-sans/800.css';
+import '../styles/tokens.css';
+import QuickAccessStrip from '../components/QuickAccessStrip.astro';
+
+interface Props {
+  title?: string;
+  eyebrow?: string;
+  subtitle?: string;
+  showQuickStrip?: boolean;
+  damLevel?: { name: string; percent: number };
+}
+
+const {
+  title = 'Fish Monitoring · Hinze Pond — Seqwater',
+  eyebrow = 'Fish Monitoring',
+  subtitle = 'Hinze Pond · Operator console',
+  showQuickStrip = false,
+  damLevel = { name: 'Hinze Dam', percent: 85.2 },
+} = Astro.props;
+const path = Astro.url.pathname.replace(/\/$/, '') || '/';
+
+const tabs = [
+  { href: '/today',    label: 'Today'        },
+  { href: '/trends',   label: 'Trends'       },
+  { href: '/regional', label: 'SEQ Regional' },
+];
+const isActive = (href: string) => path === href || (href === '/today' && path === '/');
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+  </head>
+  <body>
+    <div class="utility-bar">
+      <div class="utility-links">
+        <a href="#">About Us</a>
+        <a href="#">News</a>
+        <a href="#">Careers</a>
+        <a href="#">Contact</a>
+        <a href="/customer" class:list={["utility-customer", path === '/customer' && 'utility-customer-active']}>Customer</a>
+      </div>
+      <div class="utility-right">
+        <span class="dam-level" aria-label={`${damLevel.name} current volume ${damLevel.percent} percent`}>
+          <span class="dam-level-name">{damLevel.name}</span>
+          <span class="dam-level-value">{damLevel.percent}%</span>
+        </span>
+        <span
+          class="signed-in"
+          id="signed-in-trigger"
+          role="button"
+          tabindex="0"
+          aria-label="R. Atkinson, Ranger — simulate live count update"
+        >R. Atkinson · Ranger</span>
+        <button class="emergency-btn" type="button">Emergency Contact</button>
+      </div>
+    </div>
+
+    <header class="primary-nav">
+      <div class="brand">
+        <img src="/assets/seqwater-logo.webp" alt="seqwater" height="32" />
+        <div class="brand-text">
+          <div class="brand-eyebrow">{eyebrow}</div>
+          <div class="brand-subtitle">{subtitle}</div>
+        </div>
+      </div>
+      <nav class="tabs" aria-label="Primary">
+        {tabs.map(t => (
+          <a href={t.href} class:list={["tab", isActive(t.href) && 'tab-active']}>{t.label}</a>
+        ))}
+      </nav>
+      <div class="nav-right">
+        <button class="search-btn" type="button" aria-label="Search">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.3-4.3"></path></svg>
+          <span>Search</span>
+        </button>
+        <div class="avatar" aria-hidden="true">RA</div>
+      </div>
+    </header>
+
+    {showQuickStrip && <QuickAccessStrip />}
+
+    <main>
+      <slot />
+    </main>
+
+    <footer class="site-footer">
+      <div class="footer-inner">
+        <div class="footer-brand">
+          <img src="/assets/seqwater-logo.webp" alt="seqwater" height="32" />
+          <div class="footer-caption">Fish Monitoring · Hinze Pond</div>
+        </div>
+        <div class="footer-meta">© 2026 Seqwater · Water for Life</div>
+      </div>
+      <div class="acknowledgement">
+        Seqwater acknowledges the Traditional Owners and their custodianship of the lands of South East Queensland.
+        We pay our respects to their Ancestors and their descendants, who continue cultural and spiritual connections to Country.
+      </div>
+    </footer>
+
+    {/* Discrete demo trigger — clicking the "R. Atkinson · Ranger" label
+        in the utility bar dispatches a window-level event that TodayView
+        listens for and uses to fire the live-count simulation. The label
+        otherwise looks like normal signed-in user info; nothing visible
+        flags it as interactive beyond a subtle pointer cursor on hover. */}
+    <script is:inline>
+      (() => {
+        const el = document.getElementById('signed-in-trigger');
+        if (!el) return;
+        const fire = () => window.dispatchEvent(new CustomEvent('seq:simulate-demo'));
+        el.addEventListener('click', fire);
+        el.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fire(); }
+        });
+      })();
+    </script>
+
+    <style is:global>
+      body {
+        margin: 0;
+        background: #F7F8F9;
+      }
+      * { box-sizing: border-box; }
+      a { color: inherit; }
+
+      .utility-bar {
+        background: #002C4D; color: #fff; padding: 5px 20px;
+        display: flex; justify-content: space-between; align-items: center;
+        font-size: 11px;
+      }
+      .utility-links { display: flex; gap: 16px; align-items: center; }
+      .utility-links a { color: #fff; opacity: 0.85; text-decoration: none; }
+      .utility-links a:hover { opacity: 1; text-decoration: underline; }
+      /* "Customer" — public-facing view. Styled as a lozenge so the link
+         reads as a distinct destination, not just another utility shortcut. */
+      .utility-customer {
+        background: rgba(0, 169, 224, 0.22);
+        border: 1px solid rgba(127, 214, 240, 0.45);
+        border-radius: 999px;
+        padding: 2px 10px;
+        font-weight: 700;
+        opacity: 1;
+      }
+      .utility-customer:hover { background: rgba(0, 169, 224, 0.32); text-decoration: none; }
+      .utility-customer-active {
+        background: #00A9E0; border-color: #00A9E0; color: #002C4D;
+      }
+      .utility-right { display: flex; gap: 12px; align-items: center; }
+      .dam-level {
+        display: inline-flex; align-items: baseline; gap: 5px;
+        padding: 2px 9px; border-radius: 999px;
+        background: rgba(0, 169, 224, 0.14);
+        border: 1px solid rgba(127, 214, 240, 0.35);
+      }
+      .dam-level-name { color: #7FD6F0; opacity: 0.9; font-weight: 600; font-size: 11px; }
+      .dam-level-value { color: #fff; font-weight: 700; font-size: 11px; }
+      .signed-in { opacity: 0.75; font-size: 11px; cursor: pointer; }
+      .signed-in:focus-visible { outline: 1px solid rgba(127, 214, 240, 0.6); outline-offset: 2px; border-radius: 3px; }
+      .emergency-btn {
+        background: #C8102E; color: #fff; border: none; border-radius: 999px;
+        padding: 3px 10px; font-weight: 700; font-size: 9px; letter-spacing: 0.08em;
+        font-family: inherit; text-transform: uppercase; cursor: pointer;
+      }
+
+      .primary-nav {
+        background: #fff; padding: 10px 20px;
+        display: flex; justify-content: space-between; align-items: center;
+        border-bottom: 1px solid #E5E8EC;
+      }
+      .brand { display: flex; align-items: center; gap: 14px; }
+      .brand img { height: 32px; display: block; }
+      .brand-text { border-left: 1px solid #D4D9DF; padding-left: 12px; }
+      .brand-eyebrow {
+        font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+        font-weight: 700; color: #667281; line-height: 1.3;
+      }
+      .brand-subtitle { font-size: 12px; font-weight: 700; color: #002C4D; margin-top: 1px; }
+
+      .tabs { display: flex; gap: 3px; }
+      .tab {
+        background: transparent; color: #003A5D;
+        border: none; border-radius: 999px; padding: 6px 14px;
+        font-weight: 600; font-size: 12px; font-family: inherit;
+        cursor: pointer; text-decoration: none;
+        transition: all 120ms var(--ease-out);
+      }
+      .tab:hover { background: #F6F7F8; }
+      .tab-active { background: #D6F1FA; color: #0A4C73; }
+
+      .nav-right { display: flex; gap: 8px; align-items: center; }
+      .search-btn {
+        display: inline-flex; align-items: center; gap: 5px;
+        background: transparent; border: 1px solid #D4D9DF; border-radius: 999px;
+        padding: 4px 10px; font-size: 11px; color: #475260; cursor: pointer;
+        font-family: inherit;
+      }
+      .search-btn:hover { background: #F6F7F8; }
+      .avatar {
+        width: 28px; height: 28px; border-radius: 999px; background: #003A5D;
+        color: #fff; display: flex; align-items: center; justify-content: center;
+        font-size: 11px; font-weight: 700;
+      }
+
+      main { min-height: calc(100vh - 200px); }
+
+      .site-footer { background: #002C4D; color: #fff; padding: 18px 20px 16px; margin-top: 28px; }
+      .footer-inner {
+        display: flex; justify-content: space-between; align-items: center;
+        flex-wrap: wrap; gap: 12px;
+      }
+      .footer-brand { display: flex; align-items: center; gap: 12px; }
+      .footer-brand img { height: 24px; filter: brightness(0) invert(1); opacity: 0.9; }
+      .footer-caption { font-size: 11px; opacity: 0.7; }
+      .footer-meta { font-size: 10px; opacity: 0.6; }
+      .acknowledgement {
+        margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1);
+        font-size: 10px; opacity: 0.7; line-height: 1.6; max-width: 900px;
+      }
+    </style>
+  </body>
+</html>

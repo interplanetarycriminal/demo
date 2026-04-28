@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__Claude_Preview__preview_start",
+      "mcp__Claude_in_Chrome__tabs_context_mcp",
+      "mcp__Claude_in_Chrome__navigate",
+      "mcp__Claude_in_Chrome__computer",
+      "mcp__Claude_in_Chrome__javascript_tool",
+      "mcp__Claude_in_Chrome__resize_window",
+      "mcp__Claude_in_Chrome__read_console_messages",
+      "mcp__Claude_in_Chrome__read_network_requests",
+      "mcp__Claude_in_Chrome__find",
+      "Bash(npm install *)",
+      "Bash(mkdir -p \"C:/Users/avanadeadm/Desktop/SEQPocs/FISHPoC/public/assets/wildlife\")",
+      "Bash(curl -s -o river-red-gum.jpg \"https://upload.wikimedia.org/wikipedia/commons/thumb/f/f8/700_yr_red_river_gum02.jpg/600px-700_yr_red_river_gum02.jpg\")",
+      "Bash(curl -s -o weeping-bottlebrush.jpg \"https://upload.wikimedia.org/wikipedia/commons/thumb/8/86/Melaleuca_viminalis.jpg/600px-Melaleuca_viminalis.jpg\")",
+      "Bash(curl -s -o river-she-oak.jpg \"https://upload.wikimedia.org/wikipedia/commons/thumb/0/05/Casuarina_cunninghamiana_tree.jpg/600px-Casuarina_cunninghamiana_tree.jpg\")",
+      "Bash(curl -s -o water-ribbons.jpg \"https://upload.wikimedia.org/wikipedia/commons/thumb/9/9b/Water_ribbons_%282%29.jpg/600px-Water_ribbons_%282%29.jpg\")",
+      "Bash(curl -s -A \"Mozilla/5.0 SEQWaterCustomerDemo/1.0\" -L -o platypus.jpg \"https://upload.wikimedia.org/wikipedia/commons/thumb/b/b7/Platypus.jpg/600px-Platypus.jpg\")",
+      "Bash(curl -s -A \"Mozilla/5.0 SEQWaterCustomerDemo/1.0\" -o platypus.jpg \"https://upload.wikimedia.org/wikipedia/commons/thumb/f/f4/Wild_Platypus_4.jpg/330px-Wild_Platypus_4.jpg\")",
+      "Bash(curl -s -A \"Mozilla/5.0 SEQWaterCustomerDemo/1.0\" -o platypus.jpg \"https://upload.wikimedia.org/wikipedia/commons/thumb/1/1a/Duck-billed_platypus_%28Ornithorhynchus_anatinus%29_Scottsdale.jpg/600px-Duck-billed_platypus_%28Ornithorhynchus_anatinus%29_Scottsdale.jpg\")",
+      "Bash(curl -s -A \"Mozilla/5.0 SEQWaterCustomerDemo/1.0\" -o platypus.jpg 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/1a/Duck-billed_platypus_\\(Ornithorhynchus_anatinus\\)_Scottsdale.jpg/600px-Duck-billed_platypus_\\(Ornithorhynchus_anatinus\\)_Scottsdale.jpg')",
+      "Bash(curl -v -A \"Mozilla/5.0 SEQWaterCustomerDemo/1.0\" -o platypus.jpg 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/1a/Duck-billed_platypus_%28Ornithorhynchus_anatinus%29_Scottsdale.jpg/600px-Duck-billed_platypus_%28Ornithorhynchus_anatinus%29_Scottsdale.jpg')",
+      "Bash(curl -s -A \"Mozilla/5.0 SEQWaterCustomerDemo/1.0\" -o platypus.jpg \"https://upload.wikimedia.org/wikipedia/commons/thumb/a/a1/Ornithorhynchus_anatinus_-_Broken_River%2C_Eungella_National_Park.jpg/600px-Ornithorhynchus_anatinus_-_Broken_River%2C_Eungella_National_Park.jpg\")",
+      "Bash(curl -s -A \"Mozilla/5.0 SEQWaterCustomerDemo/1.0\" -o platypus.jpg \"https://upload.wikimedia.org/wikipedia/commons/f/f2/Platypus.jpg\")",
+      "Bash(curl -s -A \"Mozilla/5.0 SEQWaterCustomerDemo/1.0\" -o hinze-dam.jpg \"https://www.seqwater.com.au/sites/default/files/2019-07/1k12.JPG\")"
+    ]
+  }
+}

@@ -1,0 +1,15 @@
+---
+import Base from '../layouts/Base.astro';
+import CustomerView from '../components/CustomerView.jsx';
+---
+<!-- Customer/community-facing view. The operator console's data is
+     republished here under the SEQ Digital Plan's right-to-information
+     and Customer outcomes principles, in language and imagery aligned
+     to seqwater.com.au. -->
+<Base
+  title="Hinze Dam · Seqwater"
+  eyebrow="For the community"
+  subtitle="Your water · Your wildlife"
+  showQuickStrip={false}>
+  <CustomerView client:load />
+</Base>
