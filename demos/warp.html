@@ -1,0 +1,87 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hyperspace Warp</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#000}
+  canvas{display:block;position:fixed;inset:0}
+  #ui{position:fixed;top:12px;left:12px;z-index:10;font:12px/1.6 ui-monospace,Menlo,monospace;
+      color:#9df;background:rgba(0,10,20,.45);padding:10px 14px;border:1px solid rgba(120,200,255,.25);
+      border-radius:10px;backdrop-filter:blur(6px)}
+  #ui b{color:#fff;letter-spacing:.12em}
+  #ui a{color:#7df;text-decoration:none}
+  #ui a:hover{text-decoration:underline}
+</style>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div id="ui"><b>HYPERSPACE WARP</b><br>hold = engage warp · move = steer<br><a href="index.html">← gallery</a></div>
+<canvas id="c"></canvas>
+<script>
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+let W,H,DPR;
+function resize(){DPR=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;
+  cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);}
+addEventListener('resize',resize);resize();
+
+const N=900,stars=[];
+function spawn(s,init){
+  s.x=(Math.random()*2-1)*W;    // world coords centered on 0
+  s.y=(Math.random()*2-1)*H;
+  s.z=init?Math.random()*W:W;   // depth
+  s.pz=s.z;
+  s.hue=Math.random()<.72?200+Math.random()*40:290+Math.random()*30; // cyan majority, magenta accents
+  return s;
+}
+for(let i=0;i<N;i++)stars.push(spawn({},true));
+
+let speed=6,target=6,mx=0,my=0,down=false,shake=0;
+addEventListener('pointermove',e=>{mx=(e.clientX/W-.5)*2;my=(e.clientY/H-.5)*2;});
+addEventListener('pointerdown',e=>{down=true;e.preventDefault();});
+addEventListener('pointerup',()=>down=false);
+addEventListener('pointercancel',()=>down=false);
+
+function frame(){
+  target=down?46:6;
+  speed+=(target-speed)*.045;
+  const warp=(speed-6)/40;                       // 0..1 how deep in warp
+  shake=warp*2.2;
+
+  // motion-blur fade
+  ctx.fillStyle=`rgba(0,2,8,${.32-.18*warp})`;
+  ctx.fillRect(0,0,W,H);
+
+  const cx=W/2+mx*80*(1+warp)+(Math.random()-.5)*shake,
+        cy=H/2+my*80*(1+warp)+(Math.random()-.5)*shake,
+        f=W*.5;                                   // focal length
+  ctx.globalCompositeOperation='lighter';
+  for(const s of stars){
+    s.pz=s.z; s.z-=speed;
+    if(s.z<1){spawn(s,false);s.pz=s.z;}
+    const k=f/s.z, pk=f/s.pz;
+    const x=cx+s.x*k,  y=cy+s.y*k,
+          px=cx+s.x*pk,py=cy+s.y*pk;
+    if(x<-50||x>W+50||y<-50||y>H+50)continue;
+    const t=1-s.z/W;                              // 0 far, 1 near
+    const w=t*2.4+.4, l=60+35*warp;
+    ctx.strokeStyle=`hsla(${s.hue},100%,${55+t*35}%,${.15+t*.85})`;
+    ctx.lineWidth=w;
+    ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(px,py);ctx.lineTo(x,y);ctx.stroke();
+    if(t>.75){                                    // hot core glow for near stars
+      ctx.fillStyle=`hsla(${s.hue},100%,90%,${(t-.75)*2})`;
+      ctx.beginPath();ctx.arc(x,y,w*.9,0,7);ctx.fill();
+    }
+  }
+  ctx.globalCompositeOperation='source-over';
+
+  // core glow when warping
+  if(warp>.02){
+    const g=ctx.createRadialGradient(cx,cy,0,cx,cy,120+220*warp);
+    g.addColorStop(0,`rgba(180,230,255,${.45*warp})`);
+    g.addColorStop(.4,`rgba(90,160,255,${.16*warp})`);
+    g.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  }
+  requestAnimationFrame(frame);
+}
+ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);
+frame();
+</script>
