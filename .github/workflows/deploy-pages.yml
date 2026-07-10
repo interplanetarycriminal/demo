@@ -3,7 +3,7 @@ name: Deploy demos to GitHub Pages
 on:
   push:
     branches:
-      - claude/visual-demos-sprint-2gtsok
+      - main
   workflow_dispatch:
 
 permissions:
@@ -28,9 +28,6 @@ jobs:
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
-        with:
-          # Enable Pages (Actions build type) automatically on first run.
-          enablement: true
 
       - name: Upload demos as Pages artifact
         uses: actions/upload-pages-artifact@v3
