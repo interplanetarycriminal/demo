@@ -1,5 +1,7 @@
 # ⚡ Visual Demo Sprint
 
+### ▶ Live gallery: **https://interplanetarycriminal.github.io/demo/**
+
 25 interactive, ultra-visual web demos built in a single 15-minute burst by 8 Claude agents working in parallel.
 
 ## Run it
