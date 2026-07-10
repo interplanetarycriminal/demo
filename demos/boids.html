@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Boids</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#04060f}
+#c{position:fixed;inset:0;display:block;touch-action:none}
+#ui{position:fixed;top:10px;left:10px;z-index:10;font:11px/1.6 ui-monospace,Menlo,Consolas,monospace;color:rgba(190,215,255,.85);background:rgba(4,8,20,.5);padding:8px 12px;border:1px solid rgba(120,160,255,.18);border-radius:6px;pointer-events:none;text-shadow:0 0 8px rgba(90,140,255,.4)}
+#ui h1{font-size:13px;margin:0 0 2px;font-weight:700;letter-spacing:.14em}
+#ui a{color:#9db8ff;pointer-events:auto;text-decoration:none}
+#ui a:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui"><h1>BOIDS</h1>mouse attracts &middot; hold button / Space repels &middot; +/&minus; flock size<br>boids: <span id="count">0</span> &middot; <a href="index.html">&larr; gallery</a></div>
+<script>
+(function(){
+'use strict';
+var canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+var countEl=document.getElementById('count');
+var W=0,H=0;
+var boids=[];
+var mouse={x:0,y:0,on:false,down:false};
+var spaceDown=false;
+
+// precomputed neon palette (hue by heading)
+var GLOW=[],CORE=[];
+for(var h=0;h<360;h+=3){
+  GLOW.push('hsla('+h+',100%,60%,0.14)');
+  CORE.push('hsl('+h+',100%,66%)');
+}
+
+function resize(){
+  var dpr=Math.min(2,window.devicePixelRatio||1);
+  W=window.innerWidth;H=window.innerHeight;
+  canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);
+  canvas.style.width=W+'px';canvas.style.height=H+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.fillStyle='#04060f';ctx.fillRect(0,0,W,H);
+}
+window.addEventListener('resize',resize);
+resize();
+
+function spawn(n){
+  for(var i=0;i<n;i++){
+    var a=Math.random()*Math.PI*2;
+    boids.push({x:Math.random()*W,y:Math.random()*H,
+      vx:Math.cos(a)*140,vy:Math.sin(a)*140});
+  }
+  countEl.textContent=boids.length;
+}
+function cull(n){
+  boids.length=Math.max(25,boids.length-n);
+  countEl.textContent=boids.length;
+}
+spawn(300);
+
+canvas.addEventListener('pointermove',function(e){mouse.x=e.clientX;mouse.y=e.clientY;mouse.on=true;});
+canvas.addEventListener('pointerdown',function(e){mouse.x=e.clientX;mouse.y=e.clientY;mouse.on=true;mouse.down=true;});
+window.addEventListener('pointerup',function(){mouse.down=false;});
+canvas.addEventListener('pointerleave',function(){mouse.on=false;mouse.down=false;});
+window.addEventListener('keydown',function(e){
+  if(e.code==='Space'){spaceDown=true;e.preventDefault();}
+  else if(e.key==='+'||e.key==='=')spawn(25);
+  else if(e.key==='-'||e.key==='_')cull(25);
+});
+window.addEventListener('keyup',function(e){if(e.code==='Space')spaceDown=false;});
+window.addEventListener('blur',function(){spaceDown=false;mouse.down=false;});
+
+var PER2=60*60,SEP2=25*25;
+var MAXSP=200,MINSP=70;
+var W_COH=3.5,W_ALI=2.6,W_SEP=4200;
+
+function tri(x,y,ca,sa,len,wid){
+  var nx=x+ca*len,ny=y+sa*len;
+  var bx=x-ca*len*0.55,by=y-sa*len*0.55;
+  ctx.beginPath();
+  ctx.moveTo(nx,ny);
+  ctx.lineTo(bx-sa*wid,by+ca*wid);
+  ctx.lineTo(bx+sa*wid,by-ca*wid);
+  ctx.closePath();
+  ctx.fill();
+}
+
+var last=performance.now();
+function frame(now){
+  var dt=Math.min(0.04,(now-last)/1000)||0.016;
+  last=now;
+  var n=boids.length,i,j;
+  for(i=0;i<n;i++){
+    var b=boids[i];
+    var cx=0,cy=0,avx=0,avy=0,cnt=0,sx=0,sy=0;
+    for(j=0;j<n;j++){
+      if(j===i)continue;
+      var o=boids[j],dx=o.x-b.x,dy=o.y-b.y;
+      var d2=dx*dx+dy*dy;
+      if(d2<PER2){
+        cnt++;cx+=o.x;cy+=o.y;avx+=o.vx;avy+=o.vy;
+        if(d2<SEP2&&d2>0.01){var inv=1/d2;sx-=dx*inv;sy-=dy*inv;}
+      }
+    }
+    var ax=0,ay=0;
+    if(cnt>0){
+      var ic=1/cnt;
+      ax+=(cx*ic-b.x)*W_COH;
+      ay+=(cy*ic-b.y)*W_COH;
+      ax+=(avx*ic-b.vx)*W_ALI;
+      ay+=(avy*ic-b.vy)*W_ALI;
+    }
+    ax+=sx*W_SEP;ay+=sy*W_SEP;
+    if(mouse.on){
+      var mdx=mouse.x-b.x,mdy=mouse.y-b.y;
+      var md=Math.sqrt(mdx*mdx+mdy*mdy)||1;
+      if(mouse.down||spaceDown){
+        if(md<280){var f=(1-md/280)*3000;ax-=mdx/md*f;ay-=mdy/md*f;}
+      }else{
+        var f2=Math.min(1,md/400)*240;
+        ax+=mdx/md*f2;ay+=mdy/md*f2;
+      }
+    }
+    b.vx+=ax*dt;b.vy+=ay*dt;
+    var sp=Math.sqrt(b.vx*b.vx+b.vy*b.vy)||0.001;
+    if(sp>MAXSP){b.vx*=MAXSP/sp;b.vy*=MAXSP/sp;}
+    else if(sp<MINSP){b.vx*=MINSP/sp;b.vy*=MINSP/sp;}
+    b.x+=b.vx*dt;b.y+=b.vy*dt;
+    if(b.x<-20)b.x=W+20;else if(b.x>W+20)b.x=-20;
+    if(b.y<-20)b.y=H+20;else if(b.y>H+20)b.y=-20;
+  }
+  // translucent clear -> motion trails
+  ctx.globalCompositeOperation='source-over';
+  ctx.fillStyle='rgba(4,6,15,0.16)';
+  ctx.fillRect(0,0,W,H);
+  ctx.globalCompositeOperation='lighter';
+  for(i=0;i<n;i++){
+    var d=boids[i];
+    var a=Math.atan2(d.vy,d.vx);
+    var hi=((a+Math.PI)/(Math.PI*2)*120)|0;
+    if(hi>119)hi=119;
+    var ca=Math.cos(a),sa=Math.sin(a);
+    ctx.fillStyle=GLOW[hi];
+    tri(d.x,d.y,ca,sa,16,9);   // soft halo triangle
+    ctx.fillStyle=CORE[hi];
+    tri(d.x,d.y,ca,sa,8,4);    // bright core triangle
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

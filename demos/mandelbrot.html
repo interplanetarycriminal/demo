@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mandelbrot — WebGL Explorer</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;overflow:hidden;background:#000}
+canvas{position:fixed;inset:0;display:block;cursor:crosshair}
+canvas.drag{cursor:grabbing}
+.hud{position:fixed;top:16px;left:16px;z-index:20;color:rgba(190,230,255,.78);font:12px/1.7 ui-monospace,Menlo,Consolas,monospace;background:rgba(4,8,16,.55);border:1px solid rgba(160,100,255,.28);padding:10px 14px;border-radius:10px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);pointer-events:none}
+.hud h1{font-size:13px;font-weight:700;letter-spacing:.22em;color:#c99cff;text-shadow:0 0 10px rgba(160,100,255,.8)}
+.hud .hint{opacity:.75}
+.hud .stat{color:#7df3ff}
+.hud a{color:#ff6fe0;text-decoration:none;pointer-events:auto}
+.hud a:hover{text-shadow:0 0 8px rgba(255,64,208,.9)}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div class="hud">
+  <h1>MANDELBROT // WEBGL</h1>
+  <div class="hint">wheel zoom · drag pan · dbl-click reset · J julia</div>
+  <div class="stat"><span id="zl">zoom ×1.0</span> · <span id="ml">mandelbrot</span></div>
+  <a href="index.html">← gallery</a>
+</div>
+<script id="fs" type="x-shader/x-fragment">
+precision highp float;
+uniform vec2 u_res;
+uniform vec2 u_center;
+uniform float u_scale;
+uniform float u_time;
+uniform float u_iter;
+uniform float u_mode;
+uniform vec2 u_jc;
+void main(){
+  vec2 p=(gl_FragCoord.xy-0.5*u_res)*u_scale;
+  vec2 z,c;
+  if(u_mode<0.5){c=u_center+p;z=vec2(0.0);}
+  else{z=u_center+p;c=u_jc;}
+  float n=-1.0;
+  for(int i=0;i<600;i++){
+    if(float(i)>=u_iter)break;
+    z=vec2(z.x*z.x-z.y*z.y,2.0*z.x*z.y)+c;
+    if(dot(z,z)>64.0){n=float(i);break;}
+  }
+  vec3 col=vec3(0.0);
+  if(n>=0.0){
+    float sn=n+4.0-log2(max(1.0,log2(dot(z,z))*0.5));
+    float t=sn*0.016+u_time*0.03;
+    col=0.5+0.5*cos(6.28318*(t+vec3(0.263,0.416,0.557)));
+    col*=pow(clamp(sn*0.06,0.0,1.0),0.7);
+  }
+  gl_FragColor=vec4(col,1.0);
+}
+</script>
+<script>
+"use strict";
+var canvas=document.getElementById('c');
+var gl=canvas.getContext('webgl',{antialias:false});
+if(!gl)throw new Error('WebGL unavailable');
+var zl=document.getElementById('zl'),ml=document.getElementById('ml');
+
+function sh(type,src){
+  var s=gl.createShader(type);
+  gl.shaderSource(s,src);gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error('shader: '+gl.getShaderInfoLog(s));
+  return s;
+}
+var prog=gl.createProgram();
+gl.attachShader(prog,sh(gl.VERTEX_SHADER,'attribute vec2 a;void main(){gl_Position=vec4(a,0.,1.);}'));
+gl.attachShader(prog,sh(gl.FRAGMENT_SHADER,document.getElementById('fs').textContent));
+gl.linkProgram(prog);
+if(!gl.getProgramParameter(prog,gl.LINK_STATUS))throw new Error('link: '+gl.getProgramInfoLog(prog));
+gl.useProgram(prog);
+var vb=gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER,vb);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW);
+var aloc=gl.getAttribLocation(prog,'a');
+gl.enableVertexAttribArray(aloc);
+gl.vertexAttribPointer(aloc,2,gl.FLOAT,false,0,0);
+var U={};
+['u_res','u_center','u_scale','u_time','u_iter','u_mode','u_jc'].forEach(function(nm){U[nm]=gl.getUniformLocation(prog,nm);});
+
+// state
+var cx=-0.6,cy=0,zoom=1,mode=0;
+var jcx=-0.4,jcy=0.6;
+var mouseX=innerWidth/2,mouseY=innerHeight/2;
+var dpr=1,CW=0,CH=0;
+var MAXZ=1e5,MINZ=0.35;
+
+function scale(){return 2.7/(CH*zoom);}
+function resize(){
+  dpr=Math.min(2,window.devicePixelRatio||1);
+  CW=Math.max(2,Math.floor(innerWidth*dpr));
+  CH=Math.max(2,Math.floor(innerHeight*dpr));
+  canvas.width=CW;canvas.height=CH;
+  canvas.style.width=innerWidth+'px';canvas.style.height=innerHeight+'px';
+  gl.viewport(0,0,CW,CH);
+}
+addEventListener('resize',resize);
+resize();
+
+addEventListener('wheel',function(e){
+  e.preventDefault();
+  var mx=e.clientX*dpr,my=CH-e.clientY*dpr;
+  var s0=scale();
+  var wx=cx+(mx-CW/2)*s0,wy=cy+(my-CH/2)*s0;
+  var k=Math.exp(-e.deltaY*0.0016);
+  zoom=Math.min(MAXZ,Math.max(MINZ,zoom*k));
+  var s1=scale();
+  cx=wx-(mx-CW/2)*s1;
+  cy=wy-(my-CH/2)*s1;
+},{passive:false});
+
+var drag=false,lx=0,ly=0;
+canvas.addEventListener('pointerdown',function(e){
+  drag=true;lx=e.clientX;ly=e.clientY;
+  canvas.classList.add('drag');
+  if(canvas.setPointerCapture)canvas.setPointerCapture(e.pointerId);
+});
+addEventListener('pointermove',function(e){
+  mouseX=e.clientX;mouseY=e.clientY;
+  if(!drag)return;
+  var dx=e.clientX-lx,dy=e.clientY-ly;
+  lx=e.clientX;ly=e.clientY;
+  var s=scale();
+  cx-=dx*dpr*s;
+  cy+=dy*dpr*s;
+});
+addEventListener('pointerup',function(){drag=false;canvas.classList.remove('drag');});
+addEventListener('pointercancel',function(){drag=false;canvas.classList.remove('drag');});
+canvas.addEventListener('dblclick',function(){
+  zoom=1;cx=mode?0:-0.6;cy=0;
+});
+addEventListener('keydown',function(e){
+  if(e.repeat)return;
+  if(e.key==='j'||e.key==='J'){
+    mode=1-mode;
+    zoom=1;cx=mode?0:-0.6;cy=0;
+  }
+});
+
+function frame(t){
+  var jtx=(mouseX/innerWidth-0.5)*3.0;
+  var jty=(0.5-mouseY/innerHeight)*2.4;
+  if(mode){jcx+=(jtx-jcx)*0.06;jcy+=(jty-jcy)*0.06;}
+  var it=Math.max(80,Math.min(560,Math.floor(90+40*Math.log2(Math.max(1,zoom)))));
+  gl.uniform2f(U.u_res,CW,CH);
+  gl.uniform2f(U.u_center,cx,cy);
+  gl.uniform1f(U.u_scale,scale());
+  gl.uniform1f(U.u_time,t*0.001);
+  gl.uniform1f(U.u_iter,it);
+  gl.uniform1f(U.u_mode,mode);
+  gl.uniform2f(U.u_jc,jcx,jcy);
+  gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+  zl.textContent='zoom ×'+(zoom<1000?zoom.toFixed(1):zoom.toExponential(2));
+  ml.textContent=mode?('julia c='+jcx.toFixed(3)+(jcy<0?'':'+')+jcy.toFixed(3)+'i'):'mandelbrot';
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

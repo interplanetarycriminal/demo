@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>neon game of life</title>
+<style>
+html,body{margin:0;padding:0;height:100%;background:#05070f;overflow:hidden}
+canvas{position:fixed;inset:0;display:block;touch-action:none;cursor:crosshair}
+#ui{position:fixed;top:12px;left:12px;z-index:10;font:12px/1.7 ui-monospace,Menlo,Consolas,monospace;
+color:rgba(200,220,255,.75);background:rgba(5,8,18,.55);padding:10px 14px;
+border:1px solid rgba(120,160,255,.18);border-radius:8px;backdrop-filter:blur(4px);pointer-events:none}
+#ui a{color:#7fd4ff;pointer-events:auto;text-decoration:none}
+#ui a:hover{text-decoration:underline}
+#ui .t{color:#fff;font-weight:700;letter-spacing:.1em}
+#hud{color:#8ff7ff}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div id="ui">
+  <div class="t">NEON GAME OF LIFE</div>
+  <div>drag: paint &middot; space: pause &middot; r: random &middot; c: clear &middot; [ ]: speed</div>
+  <div id="hud">gen 0 &middot; pop 0</div>
+  <a href="index.html">&larr; gallery</a>
+</div>
+<canvas id="c"></canvas>
+<script>
+var COLS=200, ROWS=120, SIZE=COLS*ROWS;
+var grid=new Uint8Array(SIZE), next=new Uint8Array(SIZE);
+var age=new Uint16Array(SIZE), fade=new Float32Array(SIZE);
+
+var canvas=document.getElementById('c'), ctx=canvas.getContext('2d');
+var off=document.createElement('canvas'); off.width=COLS; off.height=ROWS;
+var octx=off.getContext('2d');
+var img=octx.createImageData(COLS,ROWS);
+var hud=document.getElementById('hud');
+
+var DPR=Math.min(window.devicePixelRatio||1,2), W=0, H=0;
+function resize(){
+  W=innerWidth; H=innerHeight;
+  canvas.width=Math.floor(W*DPR); canvas.height=Math.floor(H*DPR);
+  canvas.style.width=W+'px'; canvas.style.height=H+'px';
+}
+addEventListener('resize',resize); resize();
+
+/* age -> neon colour LUT: white-hot -> cyan -> purple -> deep blue */
+var LUT=new Uint8Array(256*3);
+(function(){
+  var stops=[[0,255,255,255],[6,0,240,255],[18,185,70,255],[45,60,55,225],[255,16,24,105]];
+  for(var s=0;s<stops.length-1;s++){
+    var a=stops[s], b=stops[s+1];
+    for(var i=a[0];i<=b[0];i++){
+      var t=(i-a[0])/(b[0]-a[0]);
+      LUT[i*3]  =(a[1]+(b[1]-a[1])*t)|0;
+      LUT[i*3+1]=(a[2]+(b[2]-a[2])*t)|0;
+      LUT[i*3+2]=(a[3]+(b[3]-a[3])*t)|0;
+    }
+  }
+})();
+
+var running=true, gen=0, pop=0;
+var speeds=[2,4,8,15,30,60], spdIdx=3;
+
+var GLIDER=[[1,0],[2,1],[0,2],[1,2],[2,2]];
+function addGlider(gx,gy,fx,fy){
+  for(var k=0;k<GLIDER.length;k++){
+    var x=fx?2-GLIDER[k][0]:GLIDER[k][0];
+    var y=fy?2-GLIDER[k][1]:GLIDER[k][1];
+    var i=((gy+y)%ROWS)*COLS+((gx+x)%COLS);
+    grid[i]=1; age[i]=0;
+  }
+}
+function randomize(){
+  gen=0;
+  for(var i=0;i<SIZE;i++){ grid[i]=Math.random()<0.16?1:0; age[i]=0; fade[i]=0; }
+  for(var g=0;g<6;g++)
+    addGlider((2+Math.random()*(COLS-6))|0,(2+Math.random()*(ROWS-6))|0,Math.random()<0.5,Math.random()<0.5);
+}
+function clearAll(){
+  gen=0;
+  grid.fill(0); age.fill(0); fade.fill(0);
+}
+
+function step(){
+  gen++;
+  for(var y=0;y<ROWS;y++){
+    var ym=(y===0?ROWS-1:y-1)*COLS, yp=(y===ROWS-1?0:y+1)*COLS, yc=y*COLS;
+    for(var x=0;x<COLS;x++){
+      var xm=(x===0?COLS-1:x-1), xp=(x===COLS-1?0:x+1);
+      var n=grid[ym+xm]+grid[ym+x]+grid[ym+xp]+grid[yc+xm]+grid[yc+xp]+grid[yp+xm]+grid[yp+x]+grid[yp+xp];
+      var i=yc+x, alive=grid[i];
+      var nx=alive?((n===2||n===3)?1:0):(n===3?1:0);
+      next[i]=nx;
+      if(nx){
+        age[i]=alive?(age[i]<60000?age[i]+1:age[i]):0;
+        fade[i]=0;
+      }else{
+        if(alive) fade[i]=1; else fade[i]*=0.86;
+        age[i]=0;
+      }
+    }
+  }
+  var tmp=grid; grid=next; next=tmp;
+}
+
+function render(){
+  var d=img.data; pop=0;
+  for(var i=0;i<SIZE;i++){
+    var o=i*4;
+    if(grid[i]){
+      pop++;
+      var a=age[i]>255?255:age[i], j=a*3;
+      d[o]=LUT[j]; d[o+1]=LUT[j+1]; d[o+2]=LUT[j+2];
+    }else{
+      var f=fade[i];
+      if(f>0.02){ d[o]=(80*f)|0; d[o+1]=(28*f)|0; d[o+2]=(180*f)|0; }
+      else{ d[o]=5; d[o+1]=7; d[o+2]=15; }
+    }
+    d[o+3]=255;
+  }
+  octx.putImageData(img,0,0);
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.imageSmoothingEnabled=false;
+  ctx.drawImage(off,0,0,W,H);
+}
+
+/* ---------- painting ---------- */
+var painting=false, lastCell=null;
+function cellOf(e){
+  return {
+    x:Math.max(0,Math.min(COLS-1,Math.floor(e.clientX/W*COLS))),
+    y:Math.max(0,Math.min(ROWS-1,Math.floor(e.clientY/H*ROWS)))
+  };
+}
+function paintCell(cx,cy){
+  var pts=[[0,0],[1,0],[-1,0],[0,1],[0,-1]];
+  for(var k=0;k<pts.length;k++){
+    var x=(cx+pts[k][0]+COLS)%COLS, y=(cy+pts[k][1]+ROWS)%ROWS;
+    var i=y*COLS+x;
+    grid[i]=1; age[i]=0; fade[i]=0;
+  }
+}
+function paintLine(a,b){
+  var dx=b.x-a.x, dy=b.y-a.y;
+  var steps=Math.max(Math.abs(dx),Math.abs(dy),1);
+  for(var i=0;i<=steps;i++)
+    paintCell(Math.round(a.x+dx*i/steps),Math.round(a.y+dy*i/steps));
+}
+canvas.addEventListener('pointerdown',function(e){
+  painting=true; lastCell=cellOf(e); paintCell(lastCell.x,lastCell.y);
+  try{ canvas.setPointerCapture(e.pointerId); }catch(err){}
+});
+addEventListener('pointermove',function(e){
+  if(!painting) return;
+  var c=cellOf(e); paintLine(lastCell,c); lastCell=c;
+});
+addEventListener('pointerup',function(){ painting=false; lastCell=null; });
+
+/* ---------- keys ---------- */
+addEventListener('keydown',function(e){
+  if(e.code==='Space'){ e.preventDefault(); running=!running; }
+  else if(e.key==='r'||e.key==='R') randomize();
+  else if(e.key==='c'||e.key==='C') clearAll();
+  else if(e.key==='[') spdIdx=Math.max(0,spdIdx-1);
+  else if(e.key===']') spdIdx=Math.min(speeds.length-1,spdIdx+1);
+});
+
+/* ---------- main loop ---------- */
+var last=0, acc=0;
+function loop(ts){
+  requestAnimationFrame(loop);
+  if(!last) last=ts;
+  var dt=ts-last; last=ts;
+  if(running){
+    acc+=Math.min(dt,250);
+    var stepMs=1000/speeds[spdIdx], guard=0;
+    while(acc>=stepMs && guard<8){ acc-=stepMs; step(); guard++; }
+    if(guard===8) acc=0;
+  }
+  render();
+  hud.textContent='gen '+gen+' · pop '+pop+' · '+speeds[spdIdx]+' gps'+(running?'':' · PAUSED');
+}
+randomize();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

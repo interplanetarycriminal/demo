@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Living Network</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:radial-gradient(1000px 700px at 50% 40%,#0b0f1e 0%,#05060c 70%,#03040a 100%)}
+svg{display:block}
+.ui{position:fixed;top:14px;left:14px;z-index:100;font:12px/1.7 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:rgba(222,230,255,.75);background:rgba(6,8,16,.55);border:1px solid rgba(130,160,255,.18);padding:10px 14px;border-radius:10px;backdrop-filter:blur(8px);pointer-events:none}
+.ui b{color:#7df9ff;font-weight:600;letter-spacing:.1em}
+.ui a{color:#ff5c9d;pointer-events:auto;text-decoration:none}
+.ui a:hover{text-decoration:underline}
+.ui .dim{opacity:.72}
+circle{cursor:grab}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div class="ui">
+<b>LIVING NETWORK</b> &middot; d3-force<br>
+<span class="dim">drag nodes &middot; hover: neighbors &middot; double-click space: add node</span><br>
+<a href="index.html">&larr; gallery</a>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/d3@7.8.5/dist/d3.min.js"></script>
+<script>
+(function(){
+var COLORS=['#ff2d78','#00e5ff','#a3ff12','#ffb300','#b967ff','#00ffa3'];
+var W=innerWidth,H=innerHeight;
+
+var svg=d3.select(document.body).append('svg').attr('width',W).attr('height',H);
+var defs=svg.append('defs');
+var fl=defs.append('filter').attr('id','glow')
+  .attr('x','-60%').attr('y','-60%').attr('width','220%').attr('height','220%');
+fl.append('feGaussianBlur').attr('stdDeviation',3.2).attr('result','blur');
+var fm=fl.append('feMerge');
+fm.append('feMergeNode').attr('in','blur');
+fm.append('feMergeNode').attr('in','SourceGraphic');
+var linkG=svg.append('g'),nodeG=svg.append('g');
+
+/* ---------- data: 130 nodes in 6 communities + bridges ---------- */
+var nodes=[],links=[],idc=0,lgid=0;
+var PER=[22,23,21,22,20,22];
+for(var c=0;c<6;c++){
+  var ang=c/6*Math.PI*2,
+      cx=W/2+Math.cos(ang)*Math.min(W,H)*0.28,
+      cy=H/2+Math.sin(ang)*Math.min(W,H)*0.28;
+  for(var i=0;i<PER[c];i++)
+    nodes.push({id:idc++,c:c,x:cx+(Math.random()-0.5)*120,y:cy+(Math.random()-0.5)*120});
+}
+function mkLink(s,t,bridge){links.push({source:s,target:t,bridge:bridge,gid:lgid++});}
+d3.group(nodes,function(d){return d.c;}).forEach(function(arr){
+  for(var i=1;i<arr.length;i++){
+    var k=1+((Math.random()*2)|0),used={};
+    for(var j=0;j<k;j++){
+      var t=arr[(Math.random()*i)|0];
+      if(!used[t.id]){used[t.id]=1;mkLink(arr[i].id,t.id,false);}
+    }
+  }
+});
+function pick(){return nodes[(Math.random()*nodes.length)|0];}
+for(var b=0;b<14;b++){
+  var a=pick(),z=pick(),tries=0;
+  while(z.c===a.c&&tries++<20)z=pick();
+  if(z.c!==a.c)mkLink(a.id,z.id,true);
+}
+var degree={};
+links.forEach(function(l){degree[l.source]=(degree[l.source]||0)+1;degree[l.target]=(degree[l.target]||0)+1;});
+nodes.forEach(function(n){n.deg=degree[n.id]||1;});
+function r(d){return 2.5+Math.sqrt(d.deg)*2.2;}
+
+/* ---------- simulation (never freezes: baseline alphaTarget + jitter) ---------- */
+function jitter(){
+  for(var i=0;i<nodes.length;i++){
+    nodes[i].vx+=(Math.random()-0.5)*0.12;
+    nodes[i].vy+=(Math.random()-0.5)*0.12;
+  }
+}
+var sim=d3.forceSimulation(nodes)
+  .force('link',d3.forceLink(links).id(function(d){return d.id;})
+    .distance(function(l){return l.bridge?150:38;})
+    .strength(function(l){return l.bridge?0.12:0.55;}))
+  .force('charge',d3.forceManyBody().strength(-42))
+  .force('collide',d3.forceCollide(function(d){return r(d)+2.5;}))
+  .force('center',d3.forceCenter(W/2,H/2))
+  .force('jitter',jitter)
+  .alphaTarget(0.02)
+  .on('tick',ticked);
+
+/* adjacency (after forceLink resolved ids to objects) */
+var adj=new Map();
+nodes.forEach(function(n){adj.set(n.id,new Set());});
+links.forEach(function(l){adj.get(l.source.id).add(l.target.id);adj.get(l.target.id).add(l.source.id);});
+
+/* ---------- interactions ---------- */
+var drag=d3.drag()
+  .on('start',function(e,d){if(!e.active)sim.alphaTarget(0.3).restart();d.fx=d.x;d.fy=d.y;})
+  .on('drag',function(e,d){d.fx=e.x;d.fy=e.y;})
+  .on('end',function(e,d){if(!e.active)sim.alphaTarget(0.02);d.fx=null;d.fy=null;});
+
+var focus=null;
+function applyFocus(){
+  if(!focus){nodeSel.attr('opacity',0.92);linkSel.attr('stroke-opacity',0.35);return;}
+  var nb=adj.get(focus.id);
+  nodeSel.attr('opacity',function(n){return n===focus||nb.has(n.id)?1:0.07;});
+  linkSel.attr('stroke-opacity',function(l){return l.source===focus||l.target===focus?0.85:0.03;});
+}
+
+/* ---------- render / data join ---------- */
+var linkSel=linkG.selectAll('line'),nodeSel=nodeG.selectAll('circle'),gradSel=defs.selectAll('linearGradient');
+function update(){
+  gradSel=defs.selectAll('linearGradient').data(links,function(l){return l.gid;})
+    .join(function(enter){
+      var g=enter.append('linearGradient')
+        .attr('id',function(l){return 'lg'+l.gid;})
+        .attr('gradientUnits','userSpaceOnUse');
+      g.append('stop').attr('offset','0%').attr('stop-color',function(l){return COLORS[l.source.c];});
+      g.append('stop').attr('offset','100%').attr('stop-color',function(l){return COLORS[l.target.c];});
+      return g;
+    });
+  linkSel=linkG.selectAll('line').data(links,function(l){return l.gid;}).join('line')
+    .attr('stroke',function(l){return 'url(#lg'+l.gid+')';})
+    .attr('stroke-opacity',0.35)
+    .attr('stroke-width',function(l){return l.bridge?1:1.3;});
+  nodeSel=nodeG.selectAll('circle').data(nodes,function(d){return d.id;}).join('circle')
+    .attr('r',r)
+    .attr('fill',function(d){return COLORS[d.c];})
+    .attr('filter','url(#glow)')
+    .attr('stroke','rgba(255,255,255,.35)').attr('stroke-width',0.6)
+    .attr('opacity',0.92)
+    .call(drag)
+    .on('mouseover',function(e,d){focus=d;applyFocus();})
+    .on('mouseout',function(){focus=null;applyFocus();});
+}
+update();
+
+function ticked(){
+  linkSel.attr('x1',function(l){return l.source.x;}).attr('y1',function(l){return l.source.y;})
+         .attr('x2',function(l){return l.target.x;}).attr('y2',function(l){return l.target.y;});
+  gradSel.attr('x1',function(l){return l.source.x;}).attr('y1',function(l){return l.source.y;})
+         .attr('x2',function(l){return l.target.x;}).attr('y2',function(l){return l.target.y;});
+  nodeSel.attr('cx',function(d){return d.x;}).attr('cy',function(d){return d.y;});
+}
+
+/* ---------- double-click empty space: add node linked to 3 nearest ---------- */
+svg.on('dblclick',function(e){
+  if(e.target.tagName==='circle')return;
+  var p=d3.pointer(e),x=p[0],y=p[1];
+  var near=nodes.slice().sort(function(a,b){
+    return ((a.x-x)*(a.x-x)+(a.y-y)*(a.y-y))-((b.x-x)*(b.x-x)+(b.y-y)*(b.y-y));
+  }).slice(0,3);
+  var n={id:idc++,c:near[0].c,x:x,y:y,deg:3};
+  nodes.push(n);
+  adj.set(n.id,new Set());
+  near.forEach(function(t){
+    links.push({source:n,target:t,bridge:t.c!==n.c,gid:lgid++});
+    adj.get(n.id).add(t.id);adj.get(t.id).add(n.id);
+    t.deg++;
+  });
+  sim.nodes(nodes);
+  sim.force('link').links(links);
+  update();
+  sim.alpha(0.6).restart();
+});
+
+/* ---------- resize ---------- */
+addEventListener('resize',function(){
+  W=innerWidth;H=innerHeight;
+  svg.attr('width',W).attr('height',H);
+  sim.force('center',d3.forceCenter(W/2,H/2));
+  sim.alpha(0.3).restart();
+});
+})();
+</script>
+</body>
+</html>

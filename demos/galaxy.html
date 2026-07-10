@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>spiral galaxy</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#000}
+  canvas{position:fixed;top:0;left:0;display:block;touch-action:none}
+  #ui{position:fixed;top:10px;left:12px;z-index:10;font:11px/1.7 ui-monospace,Menlo,Consolas,monospace;
+      color:rgba(170,190,255,.8);pointer-events:none;text-shadow:0 1px 4px #000,0 0 12px rgba(20,20,120,.7);user-select:none}
+  #ui .t{font-size:13px;font-weight:bold;color:#9db4ff;letter-spacing:.12em}
+  #ui a{color:rgba(120,230,255,.9);pointer-events:auto;text-decoration:none}
+  #ui a:hover{color:#7df9ff;text-shadow:0 0 8px #7df9ff}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div class="t">SPIRAL GALAXY &mdash; 80,000 pts</div>
+  <div>drag orbit &middot; wheel zoom &middot; slow spin</div>
+  <div><a href="index.html">&larr; gallery</a></div>
+</div>
+<script>
+'use strict';
+var canvas = document.getElementById('c');
+var gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+if(!gl) throw new Error('WebGL unavailable');
+
+var VS = [
+'attribute vec3 aPos;',
+'attribute vec3 aCol;',
+'attribute float aSize;',
+'uniform mat4 uMVP;',
+'uniform float uScale;',
+'varying vec3 vCol;',
+'void main(){',
+'  vec4 cp = uMVP*vec4(aPos, 1.0);',
+'  gl_Position = cp;',
+'  float s = aSize*uScale/max(cp.w, 0.05);',
+'  gl_PointSize = clamp(s, 1.0, 64.0);',
+'  vCol = aCol*min(s, 1.0);',
+'}'
+].join('\n');
+
+var FS = [
+'precision mediump float;',
+'varying vec3 vCol;',
+'void main(){',
+'  vec2 d = gl_PointCoord*2.0 - 1.0;',
+'  float r2 = dot(d, d);',
+'  if(r2 > 1.0) discard;',
+'  float a = exp(-r2*5.0)*(1.0 - r2);',
+'  gl_FragColor = vec4(vCol*a, 1.0);',
+'}'
+].join('\n');
+
+function compile(type, src){
+  var s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error('shader: ' + gl.getShaderInfoLog(s));
+  return s;
+}
+function link(vsSrc, fsSrc){
+  var p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, vsSrc));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fsSrc));
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error('link: ' + gl.getProgramInfoLog(p));
+  return p;
+}
+var prog = link(VS, FS);
+gl.useProgram(prog);
+
+// ---- generate galaxy on CPU (once) ----
+var N = 80000;
+var pos = new Float32Array(N*3);
+var col = new Float32Array(N*3);
+var siz = new Float32Array(N);
+function g(){ return (Math.random() + Math.random() + Math.random() - 1.5)*0.6667; }
+function L(a, b, t){ return a + (b - a)*t; }
+var ARMS = 3, TAU = Math.PI*2;
+for(var i = 0; i < N; i++){
+  var x, y, z, isArm = false, isHalo = false;
+  var u = Math.random();
+  if(u < 0.68){
+    isArm = true;
+    var r = 0.12 + 0.88*Math.pow(Math.random(), 0.65);
+    var ang = (i % ARMS)*(TAU/ARMS) + r*5.2 + g()*(0.28 - 0.12*r);
+    var rr = r + g()*0.04;
+    x = rr*Math.cos(ang);
+    z = rr*Math.sin(ang);
+    y = g()*0.035*(1.6 - r);
+  } else if(u < 0.86){
+    x = g()*0.16; y = g()*0.11; z = g()*0.16;
+  } else {
+    isHalo = true;
+    var d0 = 0.05 + Math.pow(Math.random(), 1.6)*1.45;
+    var th = Math.random()*TAU;
+    var ph = Math.acos(2*Math.random() - 1);
+    x = d0*Math.sin(ph)*Math.cos(th);
+    y = d0*Math.cos(ph)*0.7;
+    z = d0*Math.sin(ph)*Math.sin(th);
+  }
+  var rad = Math.sqrt(x*x + y*y + z*z);
+  var t2 = Math.min(rad/1.15, 1);
+  var cr, cg, cb, k;
+  if(t2 < 0.45){
+    k = t2/0.45;
+    cr = L(1.00, 0.85, k); cg = L(0.88, 0.40, k); cb = L(0.60, 0.95, k);
+  } else {
+    k = (t2 - 0.45)/0.55;
+    cr = L(0.85, 0.30, k); cg = L(0.40, 0.75, k); cb = L(0.95, 1.00, k);
+  }
+  var bright = 0.32 + 0.35*Math.random()*Math.random() + Math.exp(-rad*3.5)*0.45;
+  var s = 0.006 + 0.007*Math.random()*Math.random() + Math.exp(-rad*3.0)*0.005;
+  if(isArm && Math.random() < 0.03){
+    cr = 0.75; cg = 0.88; cb = 1.0;
+    bright += 0.5; s += 0.008;
+  }
+  if(isHalo){
+    bright *= 0.4;
+    cr = 0.5*cr + 0.25; cg = 0.5*cg + 0.15; cb = 0.5*cb + 0.45;
+    s *= 0.8;
+  }
+  var j = 0.85 + 0.3*Math.random();
+  pos[i*3] = x; pos[i*3+1] = y; pos[i*3+2] = z;
+  col[i*3] = cr*bright*j; col[i*3+1] = cg*bright*j; col[i*3+2] = cb*bright*j;
+  siz[i] = s;
+}
+
+function attrib(name, data, size){
+  var b = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, b);
+  gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+  var loc = gl.getAttribLocation(prog, name);
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
+}
+attrib('aPos', pos, 3);
+attrib('aCol', col, 3);
+attrib('aSize', siz, 1);
+
+var U = {
+  uMVP: gl.getUniformLocation(prog, 'uMVP'),
+  uScale: gl.getUniformLocation(prog, 'uScale')
+};
+
+// ---- tiny mat4 (column-major) ----
+function ident(){ var m = new Float32Array(16); m[0] = m[5] = m[10] = m[15] = 1; return m; }
+function mul(a, b){
+  var o = new Float32Array(16);
+  for(var c = 0; c < 4; c++) for(var r = 0; r < 4; r++){
+    var s = 0;
+    for(var k = 0; k < 4; k++) s += a[k*4 + r]*b[c*4 + k];
+    o[c*4 + r] = s;
+  }
+  return o;
+}
+function persp(fovy, asp, n, f){
+  var t = 1/Math.tan(fovy/2), m = new Float32Array(16);
+  m[0] = t/asp; m[5] = t;
+  m[10] = (f + n)/(n - f); m[11] = -1;
+  m[14] = 2*f*n/(n - f);
+  return m;
+}
+function rotX(a){ var c = Math.cos(a), s = Math.sin(a), m = ident(); m[5] = c; m[6] = s; m[9] = -s; m[10] = c; return m; }
+function rotY(a){ var c = Math.cos(a), s = Math.sin(a), m = ident(); m[0] = c; m[2] = -s; m[8] = s; m[10] = c; return m; }
+function transZ(z){ var m = ident(); m[14] = z; return m; }
+
+var FOCAL = 1/Math.tan(50*Math.PI/360);
+var P = ident();
+function resize(){
+  var dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.max(1, Math.floor(innerWidth*dpr));
+  canvas.height = Math.max(1, Math.floor(innerHeight*dpr));
+  canvas.style.width = innerWidth + 'px';
+  canvas.style.height = innerHeight + 'px';
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  P = persp(50*Math.PI/180, canvas.width/canvas.height, 0.05, 50);
+}
+window.addEventListener('resize', resize);
+resize();
+
+gl.disable(gl.DEPTH_TEST);
+gl.enable(gl.BLEND);
+gl.blendFunc(gl.ONE, gl.ONE);
+gl.clearColor(0.005, 0.007, 0.018, 1);
+
+var yawUser = 0.0, pitch = 0.5, dist = 2.7;
+var dragging = false, lx = 0, ly = 0;
+canvas.addEventListener('pointerdown', function(e){
+  dragging = true; lx = e.clientX; ly = e.clientY;
+  if(canvas.setPointerCapture) canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener('pointermove', function(e){
+  if(!dragging) return;
+  yawUser += (e.clientX - lx)*0.005;
+  pitch += (e.clientY - ly)*0.005;
+  pitch = Math.max(-1.55, Math.min(1.55, pitch));
+  lx = e.clientX; ly = e.clientY;
+});
+window.addEventListener('pointerup', function(){ dragging = false; });
+canvas.addEventListener('wheel', function(e){
+  e.preventDefault();
+  dist = Math.max(0.9, Math.min(7.0, dist*Math.exp(e.deltaY*0.0013)));
+}, {passive:false});
+
+function frame(now){
+  var t = now*0.001;
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  var mvp = mul(P, mul(transZ(-dist), mul(rotX(pitch), rotY(yawUser + t*0.06))));
+  gl.uniformMatrix4fv(U.uMVP, false, mvp);
+  gl.uniform1f(U.uScale, canvas.height*0.5*FOCAL);
+  gl.drawArrays(gl.POINTS, 0, N);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

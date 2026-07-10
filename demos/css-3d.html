@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CSS 3D — Glass Carousel</title>
+<style>
+@property --a{syntax:'<angle>';inherits:false;initial-value:0deg}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;overflow:hidden}
+body{background:#04050c;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;user-select:none;-webkit-user-select:none;cursor:grab;touch-action:none}
+body.dragging{cursor:grabbing}
+.bgfill{position:fixed;inset:0;background:radial-gradient(120vmax 120vmax at 50% 120%,#0a0f26 0%,#04050c 60%)}
+.orb{position:fixed;border-radius:50%;filter:blur(70px);pointer-events:none}
+.o1{width:75vmax;height:75vmax;left:-30vmax;top:-30vmax;background:radial-gradient(circle,rgba(0,229,255,.32),transparent 68%);animation:d1 27s ease-in-out infinite alternate}
+.o2{width:65vmax;height:65vmax;right:-28vmax;top:-18vmax;background:radial-gradient(circle,rgba(255,0,204,.24),transparent 68%);animation:d2 33s ease-in-out infinite alternate}
+.o3{width:70vmax;height:70vmax;left:10vmax;bottom:-35vmax;background:radial-gradient(circle,rgba(112,0,255,.28),transparent 68%);animation:d3 24s ease-in-out infinite alternate}
+.o4{width:40vmax;height:40vmax;right:5vmax;bottom:-10vmax;background:radial-gradient(circle,rgba(0,255,170,.15),transparent 68%);animation:d1 38s ease-in-out infinite alternate-reverse}
+@keyframes d1{from{transform:translate3d(0,0,0) scale(1)}to{transform:translate3d(14vmax,9vmax,0) scale(1.18)}}
+@keyframes d2{from{transform:translate3d(0,0,0) scale(1.1)}to{transform:translate3d(-12vmax,12vmax,0) scale(.92)}}
+@keyframes d3{from{transform:translate3d(0,0,0) scale(.95)}to{transform:translate3d(10vmax,-10vmax,0) scale(1.22)}}
+.grain{position:fixed;inset:0;pointer-events:none;opacity:.14;mix-blend-mode:overlay;background:repeating-conic-gradient(#000 0.0001%,#fff 0.0002%,#000 0.0004%)}
+.hud{position:fixed;top:16px;left:16px;z-index:20;color:rgba(190,230,255,.78);font:12px/1.7 ui-monospace,Menlo,Consolas,monospace;background:rgba(8,12,24,.5);border:1px solid rgba(120,200,255,.18);padding:10px 14px;border-radius:10px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.hud h1{font-size:13px;font-weight:700;letter-spacing:.22em;color:#9ef2ff;text-shadow:0 0 10px rgba(0,229,255,.6)}
+.hud .hint{opacity:.75}
+.hud a{color:#7fd4ff;text-decoration:none}
+.hud a:hover{text-shadow:0 0 8px rgba(0,229,255,.9)}
+.scene{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;perspective:1200px;z-index:5}
+.stage{transform-style:preserve-3d;transform:rotateX(-8deg) rotateY(0deg)}
+.ring{position:relative;width:0;height:0;transform-style:preserve-3d;animation:spin 42s linear infinite}
+@keyframes spin{from{transform:rotateY(0deg)}to{transform:rotateY(360deg)}}
+.card{position:absolute;width:190px;height:264px;left:-95px;top:-132px;transform-style:preserve-3d;transform:rotateY(calc(var(--i)*45deg)) translateZ(310px)}
+.cin{position:absolute;inset:0;transform-style:preserve-3d;transition:transform .8s cubic-bezier(.35,.9,.3,1)}
+.card:hover .cin{transform:rotateY(180deg)}
+.face{position:absolute;inset:0;border-radius:18px;backface-visibility:hidden;-webkit-backface-visibility:hidden;overflow:hidden;border:1px solid rgba(255,255,255,.08);background:linear-gradient(160deg,rgba(255,255,255,.10),rgba(255,255,255,.02) 42%,rgba(0,0,0,.18));backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);box-shadow:inset 0 0 36px hsla(var(--h),100%,65%,.15),inset 0 0 4px rgba(255,255,255,.22),0 18px 50px rgba(0,0,0,.5);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#e8f6ff}
+.face.back{transform:rotateY(180deg)}
+.face::before{content:'';position:absolute;inset:0;border-radius:18px;padding:1.6px;background:conic-gradient(from var(--a),hsla(var(--h),100%,60%,0) 0%,hsla(var(--h),100%,68%,.95) 10%,hsla(calc(var(--h) + 60),100%,72%,.9) 20%,hsla(var(--h),100%,60%,0) 38%,hsla(var(--h),100%,60%,0) 55%,hsla(calc(var(--h) + 30),100%,70%,.55) 70%,hsla(var(--h),100%,60%,0) 88%);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);mask-composite:exclude;animation:rotA 4s linear infinite;pointer-events:none}
+@keyframes rotA{to{--a:360deg}}
+.num{font-size:40px;font-weight:800;letter-spacing:.05em;background:linear-gradient(180deg,hsl(var(--h),100%,82%),hsl(calc(var(--h) + 50),100%,58%));-webkit-background-clip:text;background-clip:text;color:transparent}
+.name{font-size:15px;letter-spacing:.42em;padding-left:.42em;color:#eaf7ff;text-shadow:0 0 12px hsla(var(--h),100%,70%,.9)}
+.tag{font-size:10px;letter-spacing:.2em;color:rgba(200,230,255,.55);text-transform:uppercase}
+.emoji{font-size:56px;line-height:1;filter:drop-shadow(0 0 14px hsla(var(--h),100%,65%,.9))}
+.stat{font-size:26px;font-weight:700;color:hsl(var(--h),100%,75%);text-shadow:0 0 16px hsla(var(--h),100%,60%,.9)}
+.lab{font-size:10px;letter-spacing:.3em;padding-left:.3em;color:rgba(210,235,255,.6);text-transform:uppercase}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div class="bgfill"></div>
+<div class="orb o1"></div>
+<div class="orb o2"></div>
+<div class="orb o3"></div>
+<div class="orb o4"></div>
+<div class="scene">
+  <div class="stage" id="stage">
+    <div class="ring" id="ring">
+      <div class="card" style="--i:0;--h:185"><div class="cin">
+        <div class="face front"><div class="num">01</div><div class="name">AURORA</div><div class="tag">glass unit</div></div>
+        <div class="face back"><div class="emoji">🌌</div><div class="stat">98.4%</div><div class="lab">luminance</div></div>
+      </div></div>
+      <div class="card" style="--i:1;--h:210"><div class="cin">
+        <div class="face front"><div class="num">02</div><div class="name">NEBULA</div><div class="tag">glass unit</div></div>
+        <div class="face back"><div class="emoji">🪐</div><div class="stat">4.2ly</div><div class="lab">drift radius</div></div>
+      </div></div>
+      <div class="card" style="--i:2;--h:265"><div class="cin">
+        <div class="face front"><div class="num">03</div><div class="name">VORTEX</div><div class="tag">glass unit</div></div>
+        <div class="face back"><div class="emoji">🌀</div><div class="stat">1.21GW</div><div class="lab">flux load</div></div>
+      </div></div>
+      <div class="card" style="--i:3;--h:300"><div class="cin">
+        <div class="face front"><div class="num">04</div><div class="name">PRISM</div><div class="tag">glass unit</div></div>
+        <div class="face back"><div class="emoji">🔮</div><div class="stat">707nm</div><div class="lab">spectra peak</div></div>
+      </div></div>
+      <div class="card" style="--i:4;--h:330"><div class="cin">
+        <div class="face front"><div class="num">05</div><div class="name">PULSE</div><div class="tag">glass unit</div></div>
+        <div class="face back"><div class="emoji">⚡</div><div class="stat">144Hz</div><div class="lab">refresh</div></div>
+      </div></div>
+      <div class="card" style="--i:5;--h:355"><div class="cin">
+        <div class="face front"><div class="num">06</div><div class="name">EMBER</div><div class="tag">glass unit</div></div>
+        <div class="face back"><div class="emoji">🔥</div><div class="stat">1600K</div><div class="lab">glow temp</div></div>
+      </div></div>
+      <div class="card" style="--i:6;--h:140"><div class="cin">
+        <div class="face front"><div class="num">07</div><div class="name">TIDE</div><div class="tag">glass unit</div></div>
+        <div class="face back"><div class="emoji">🌊</div><div class="stat">12.8m/s</div><div class="lab">current</div></div>
+      </div></div>
+      <div class="card" style="--i:7;--h:95"><div class="cin">
+        <div class="face front"><div class="num">08</div><div class="name">CIPHER</div><div class="tag">glass unit</div></div>
+        <div class="face back"><div class="emoji">🧬</div><div class="stat">2^64</div><div class="lab">keyspace</div></div>
+      </div></div>
+    </div>
+  </div>
+</div>
+<div class="grain"></div>
+<div class="hud">
+  <h1>CSS 3D — GLASS CAROUSEL</h1>
+  <div class="hint">drag to spin · hover a card to flip · pure CSS 3D</div>
+  <a href="index.html">← gallery</a>
+</div>
+<script>
+(function(){
+  var stage=document.getElementById('stage');
+  var ring=document.getElementById('ring');
+  var rot=0,down=false,lx=0,vel=0;
+  function apply(){stage.style.transform='rotateX(-8deg) rotateY('+rot+'deg)';}
+  function isHud(t){return t&&t.closest&&t.closest('.hud');}
+  addEventListener('pointerdown',function(e){
+    if(isHud(e.target))return;
+    down=true;lx=e.clientX;vel=0;
+    ring.style.animationPlayState='paused';
+    document.body.classList.add('dragging');
+  });
+  addEventListener('pointermove',function(e){
+    if(!down)return;
+    var dx=e.clientX-lx;lx=e.clientX;
+    rot+=dx*0.35;vel=dx*0.35;
+    apply();
+  });
+  function release(){
+    if(!down)return;
+    down=false;
+    document.body.classList.remove('dragging');
+    ring.style.animationPlayState='running';
+    (function glide(){
+      if(down)return;
+      vel*=0.94;
+      if(Math.abs(vel)>0.05){rot+=vel;apply();requestAnimationFrame(glide);}
+    })();
+  }
+  addEventListener('pointerup',release);
+  addEventListener('pointercancel',release);
+  addEventListener('blur',release);
+  apply();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,123 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>⚡ Visual Demo Sprint</title>
+<style>
+  :root{--bg:#05060f;--ink:#e8ecff;--dim:#8b93b8}
+  *{box-sizing:border-box}
+  html,body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);
+    font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+  /* ---- animated aurora background ---- */
+  .orb{position:fixed;border-radius:50%;filter:blur(90px);opacity:.5;z-index:0;pointer-events:none}
+  .o1{width:55vw;height:55vw;background:#3b2bee;top:-20vw;left:-15vw;animation:d1 26s ease-in-out infinite alternate}
+  .o2{width:45vw;height:45vw;background:#c515b4;bottom:-18vw;right:-12vw;animation:d2 31s ease-in-out infinite alternate}
+  .o3{width:35vw;height:35vw;background:#0891b2;top:30vh;left:55vw;animation:d3 22s ease-in-out infinite alternate}
+  @keyframes d1{to{transform:translate(14vw,10vh) scale(1.2)}}
+  @keyframes d2{to{transform:translate(-12vw,-8vh) scale(1.15)}}
+  @keyframes d3{to{transform:translate(-18vw,12vh) scale(.85)}}
+  main{position:relative;z-index:1;max-width:1180px;margin:0 auto;padding:56px 24px 90px}
+  h1{margin:0;font-size:clamp(2.4rem,6vw,4.4rem);letter-spacing:-.02em;line-height:1.05;
+     background:linear-gradient(92deg,#7dd3fc,#c084fc 45%,#f472b6 80%);
+     -webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{color:var(--dim);margin:14px 0 30px;max-width:60ch}
+  .sub b{color:#cdd6ff}
+  /* ---- filter chips ---- */
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:28px}
+  .chip{cursor:pointer;border:1px solid rgba(140,160,255,.25);background:rgba(20,25,55,.5);
+    color:var(--dim);padding:6px 14px;border-radius:999px;font-size:.85rem;transition:.2s}
+  .chip:hover{color:#fff;border-color:rgba(160,180,255,.6)}
+  .chip.on{color:#fff;background:linear-gradient(92deg,#4338ca,#9333ea);border-color:transparent}
+  /* ---- cards ---- */
+  .grid{display:grid;gap:18px;grid-template-columns:repeat(auto-fill,minmax(255px,1fr))}
+  .card{position:relative;display:block;text-decoration:none;color:inherit;overflow:hidden;
+    border-radius:16px;padding:18px;min-height:158px;
+    background:rgba(15,19,42,.62);border:1px solid rgba(130,150,255,.16);
+    backdrop-filter:blur(10px);transform:translateY(14px);opacity:0;
+    transition:transform .5s cubic-bezier(.2,.8,.2,1),opacity .5s,border-color .25s,box-shadow .25s}
+  .card.in{transform:none;opacity:1}
+  .card:hover{border-color:rgba(160,190,255,.55);box-shadow:0 12px 44px -8px rgba(90,80,255,.45);
+    transform:translateY(-4px) scale(1.015)}
+  .card .em{font-size:1.9rem}
+  .card h3{margin:8px 0 4px;font-size:1.06rem}
+  .card p{margin:0;color:var(--dim);font-size:.86rem}
+  .tag{position:absolute;top:14px;right:14px;font:600 .68rem/1 ui-monospace,monospace;
+    color:#a5f3fc;background:rgba(8,145,178,.18);border:1px solid rgba(165,243,252,.25);
+    padding:4px 8px;border-radius:6px;letter-spacing:.06em}
+  .card iframe{position:absolute;inset:0;width:100%;height:100%;border:0;opacity:0;
+    transition:opacity .35s;pointer-events:none;background:#000}
+  .card.preview iframe{opacity:1}
+  .card .hint{position:absolute;left:0;right:0;bottom:0;padding:6px 10px;font:11px monospace;
+    color:#9df;background:rgba(0,0,10,.65);opacity:0;transition:.3s;text-align:center}
+  .card.preview .hint{opacity:1}
+  .hidden{display:none}
+  footer{margin-top:60px;color:var(--dim);font-size:.85rem}
+  footer code{color:#a5f3fc}
+</style>
+<div class="orb o1"></div><div class="orb o2"></div><div class="orb o3"></div>
+<main>
+  <h1>VISUAL DEMO SPRINT</h1>
+  <p class="sub"><b id="count"></b> interactive demos — raymarched fractals, GPU chemistry, particle galaxies,
+     physics, audio synthesis &amp; more. Built in one 15-minute burst. <b>Hover a card for a live preview</b>,
+     click to launch fullscreen.</p>
+  <div class="chips" id="chips"></div>
+  <div class="grid" id="grid"></div>
+  <footer>Serve locally for best results: <code>python3 -m http.server</code> → <code>localhost:8000/demos/</code>.
+    Demos tagged Three.js / GSAP / D3 / Matter / p5 load their library from jsDelivr; everything else is 100% self-contained.</footer>
+</main>
+<script>
+const DEMOS=[
+ {f:'raymarch-fractal.html', e:'🌀', t:'Fractal Raymarcher',  g:'WebGL',    d:'A 3D fractal carved by a fragment shader — drag to orbit inside it.'},
+ {f:'galaxy.html',           e:'🌌', t:'Particle Galaxy',      g:'WebGL',    d:'80,000 additive-blended stars in a spiral you can spin and dive through.'},
+ {f:'plasma.html',           e:'🔥', t:'Neon Plasma',          g:'WebGL',    d:'Layered fbm noise plasma; your cursor warps the field, click swaps palettes.'},
+ {f:'reaction-diffusion.html',e:'🧪',t:'Reaction–Diffusion',   g:'WebGL',    d:'Gray-Scott chemistry running on the GPU — paint life with your mouse.'},
+ {f:'metaballs.html',        e:'🫧', t:'Liquid Metaballs',     g:'WebGL',    d:'Iridescent gooey blobs that chase your cursor. Click to scatter.'},
+ {f:'kaleidoscope.html',     e:'🔮', t:'Kaleidoscope',         g:'WebGL',    d:'Infinite mirror-fold symmetry — mouse bends segments, zoom and twist.'},
+ {f:'mandelbrot.html',       e:'🔭', t:'Fractal Explorer',     g:'WebGL',    d:'Deep-zoom Mandelbrot with animated palettes; J morphs it into Julia sets.'},
+ {f:'three-bloom.html',      e:'💠', t:'Chrome & Bloom',       g:'Three.js', d:'Metallic torus knot under orbiting lights with cinematic bloom.'},
+ {f:'three-morph.html',      e:'🧬', t:'Morphing Particles',   g:'Three.js', d:'30k points flowing between sphere, knot and helix. Click to morph.'},
+ {f:'three-terrain.html',    e:'🏔️', t:'Synthwave Terrain',    g:'Three.js', d:'Endless neon wireframe flyover with fog and a burning horizon.'},
+ {f:'warp.html',             e:'🚀', t:'Hyperspace Warp',      g:'Canvas',   d:'Hold to punch the throttle — star streaks, steering, screen shake.'},
+ {f:'gravity.html',          e:'🪐', t:'Gravity Sandbox',      g:'Canvas',   d:'Slingshot glowing planets into orbit around a hungry sun.'},
+ {f:'aurora.html',           e:'🌠', t:'Aurora Borealis',      g:'Canvas',   d:'Curtains of northern lights you can stir; click for a solar flare.'},
+ {f:'lightning.html',        e:'⚡', t:'Fractal Lightning',    g:'Canvas',   d:'Midpoint-displacement storm — click to call down a strike.'},
+ {f:'matrix-rain.html',      e:'🟢', t:'Matrix Rain',          g:'Canvas',   d:'Glyph streams with glowing heads; your cursor parts the rain.'},
+ {f:'boids.html',            e:'🐦', t:'Boids Flocking',       g:'Canvas',   d:'300 boids with emergent swarm behavior chasing your cursor.'},
+ {f:'text-particles.html',   e:'✨', t:'Particle Typography',  g:'Canvas',   d:'Thousands of particles spell words — blow them apart, type your own.'},
+ {f:'game-of-life.html',     e:'🦠', t:'Game of Life',         g:'Canvas',   d:'Conway’s cellular automaton, age-colored neon. Drag to paint cells.'},
+ {f:'raycaster.html',        e:'🕹️', t:'Retro Raycaster',      g:'Canvas',   d:'Walk a Wolfenstein-style neon maze rendered one ray at a time. WASD.'},
+ {f:'physics.html',          e:'🧲', t:'Physics Playground',   g:'Matter.js',d:'Grab, fling and detonate neon rigid bodies. G flips gravity.'},
+ {f:'gsap-scroll.html',      e:'🎬', t:'Cinematic Scroll',     g:'GSAP',     d:'Pinned scenes, horizontal galleries and staggered reveals as you scroll.'},
+ {f:'d3-graph.html',         e:'🕸️', t:'Living Network',       g:'D3',       d:'A breathing force-directed graph — drag nodes, hover to trace neighbors.'},
+ {f:'p5-flowfield.html',     e:'🎨', t:'Flow Field',           g:'p5.js',    d:'3,000 particles painting glowing rivers through Perlin noise.'},
+ {f:'audio-viz.html',        e:'🎧', t:'Generative Synth',     g:'WebAudio', d:'A self-playing pentatonic arpeggio driving a radial spectrum. Sound on!'},
+ {f:'css-3d.html',           e:'🃏', t:'CSS 3D Carousel',      g:'CSS',      d:'Glass cards orbiting in pure CSS 3D — drag to spin, hover to flip.'},
+];
+const grid=document.getElementById('grid');
+DEMOS.forEach((x,i)=>{
+  const a=document.createElement('a');
+  a.className='card';a.href=x.f;a.dataset.g=x.g;
+  a.innerHTML=`<span class="tag">${x.g}</span><span class="em">${x.e}</span>
+    <h3>${x.t}</h3><p>${x.d}</p><span class="hint">click to launch ↗</span>`;
+  grid.appendChild(a);
+  setTimeout(()=>a.classList.add('in'),80+i*45);
+  let t;
+  a.addEventListener('mouseenter',()=>{
+    t=setTimeout(()=>{
+      if(a.querySelector('iframe'))return void a.classList.add('preview');
+      const fr=document.createElement('iframe');
+      fr.loading='lazy';fr.src=x.f;fr.setAttribute('scrolling','no');
+      a.appendChild(fr);a.classList.add('preview');
+    },350);
+  });
+  a.addEventListener('mouseleave',()=>{clearTimeout(t);a.classList.remove('preview');
+    const fr=a.querySelector('iframe');if(fr)setTimeout(()=>fr.remove(),400);});
+});
+document.getElementById('count').textContent=DEMOS.length+' ultra-visual';
+const groups=['All',...new Set(DEMOS.map(x=>x.g))],chips=document.getElementById('chips');
+groups.forEach((g,i)=>{
+  const c=document.createElement('button');c.className='chip'+(i?'':' on');c.textContent=g;
+  c.onclick=()=>{document.querySelectorAll('.chip').forEach(x=>x.classList.remove('on'));
+    c.classList.add('on');
+    document.querySelectorAll('.card').forEach(k=>k.classList.toggle('hidden',g!=='All'&&k.dataset.g!==g));};
+  chips.appendChild(c);
+});
+</script>

@@ -1,0 +1,93 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fractal Lightning</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#020208}
+  canvas{display:block;position:fixed;inset:0;cursor:crosshair}
+  #ui{position:fixed;top:12px;left:12px;z-index:10;font:12px/1.6 ui-monospace,Menlo,monospace;
+      color:#cdf;background:rgba(5,5,25,.45);padding:10px 14px;border:1px solid rgba(150,170,255,.25);
+      border-radius:10px;backdrop-filter:blur(6px)}
+  #ui b{color:#fff;letter-spacing:.12em}
+  #ui a{color:#9bf;text-decoration:none}
+  #ui a:hover{text-decoration:underline}
+</style>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div id="ui"><b>FRACTAL LIGHTNING</b><br>click = call down a strike (storm rolls on its own)<br><a href="index.html">← gallery</a></div>
+<canvas id="c"></canvas>
+<script>
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+let W,H,DPR;
+function resize(){DPR=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;
+  cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.fillStyle='#020208';ctx.fillRect(0,0,W,H);}
+addEventListener('resize',resize);resize();
+
+const bolts=[];let flash=0;
+function bolt(x0,y0,x1,y1,gen,amp){
+  // midpoint displacement
+  let pts=[{x:x0,y:y0},{x:x1,y:y1}];
+  for(let g=0;g<gen;g++){
+    const next=[];
+    for(let i=0;i<pts.length-1;i++){
+      const a=pts[i],b=pts[i+1];
+      const mx=(a.x+b.x)/2,my=(a.y+b.y)/2;
+      const dx=b.x-a.x,dy=b.y-a.y,len=Math.hypot(dx,dy)||1;
+      const off=(Math.random()-.5)*amp*len/ (1<<g) * .01 * amp;
+      next.push(a,{x:mx-dy/len*off,y:my+dx/len*off});
+    }
+    next.push(pts[pts.length-1]);pts=next;
+  }
+  return pts;
+}
+function strike(tx,ty){
+  const sx=tx+(Math.random()-.5)*W*.3;
+  const main={pts:bolt(sx,-10,tx,ty,7,90),life:1,w:3,hue:225+Math.random()*40};
+  bolts.push(main);
+  // branches off random points of the main bolt
+  const n=2+Math.random()*3|0;
+  for(let i=0;i<n;i++){
+    const p=main.pts[(Math.random()*main.pts.length*.7+main.pts.length*.15)|0];
+    const ang=Math.PI/2+(Math.random()-.5)*2.2, len=60+Math.random()*160;
+    bolts.push({pts:bolt(p.x,p.y,p.x+Math.cos(ang)*len,p.y+Math.sin(ang)*len,5,120),
+      life:.7,w:1.2,hue:265+Math.random()*40});
+  }
+  flash=Math.min(1,flash+.9);
+}
+cv.addEventListener('pointerdown',e=>strike(e.clientX,e.clientY));
+let next=800;
+
+let last=performance.now();
+function frame(now){
+  const dt=now-last;last=now;
+  next-=dt;
+  if(next<0){strike(Math.random()*W,H*.45+Math.random()*H*.5);next=600+Math.random()*2200;}
+  // fade
+  ctx.fillStyle='rgba(2,2,10,.22)';ctx.fillRect(0,0,W,H);
+  // sky flash
+  if(flash>.01){
+    const g=ctx.createLinearGradient(0,0,0,H);
+    g.addColorStop(0,`rgba(120,140,255,${flash*.28})`);
+    g.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+    flash*=.82;
+  }
+  ctx.globalCompositeOperation='lighter';
+  ctx.lineJoin='round';ctx.lineCap='round';
+  for(let i=bolts.length-1;i>=0;i--){
+    const b=bolts[i];b.life-=dt/450;
+    if(b.life<=0){bolts.splice(i,1);continue;}
+    const a=Math.max(0,b.life);
+    for(const[w,al,li]of[[b.w*7,a*.10,60],[b.w*2.6,a*.35,72],[b.w,a,96]]){
+      ctx.strokeStyle=`hsla(${b.hue},100%,${li}%,${al})`;
+      ctx.lineWidth=w;
+      ctx.beginPath();
+      ctx.moveTo(b.pts[0].x,b.pts[0].y);
+      for(const p of b.pts)ctx.lineTo(p.x,p.y);
+      ctx.stroke();
+    }
+  }
+  ctx.globalCompositeOperation='source-over';
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
