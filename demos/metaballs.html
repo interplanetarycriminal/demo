@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Metaballs</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#000}
+  canvas{position:fixed;top:0;left:0;width:100vw;height:100vh;display:block;cursor:crosshair;touch-action:none;user-select:none}
+  #ui{position:fixed;top:12px;left:12px;z-index:10;
+      font:11px/1.7 ui-monospace,Menlo,Consolas,monospace;
+      color:rgba(255,185,240,.9);background:rgba(14,0,16,.55);
+      border:1px solid rgba(255,0,190,.22);border-radius:8px;
+      padding:8px 12px;pointer-events:none;
+      text-shadow:0 0 8px rgba(255,0,190,.45)}
+  #ui b{font-size:13px;letter-spacing:.14em}
+  #ui a{color:#ff8ae0;pointer-events:auto;text-decoration:none}
+  #ui a:hover{text-decoration:underline}
+  #ui .dim{color:rgba(235,175,220,.62)}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <b>METABALLS</b><br>
+  <span class="dim">move: one ball follows &middot; click: scatter orbits</span><br>
+  <a href="index.html">&larr; gallery</a>
+</div>
+<script>
+(function(){
+'use strict';
+var canvas=document.getElementById('c');
+var gl=canvas.getContext('webgl',{antialias:false,depth:false,stencil:false,alpha:false});
+if(!gl)throw new Error('WebGL not supported');
+
+var PRE='#ifdef GL_FRAGMENT_PRECISION_HIGH\nprecision highp float;\n#else\nprecision mediump float;\n#endif\n';
+var VS='attribute vec2 aPos;void main(){gl_Position=vec4(aPos,0.0,1.0);}';
+
+function compile(type,src){
+  var s=gl.createShader(type);
+  gl.shaderSource(s,src);gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error('shader: '+gl.getShaderInfoLog(s));
+  return s;
+}
+function program(fsSrc){
+  var p=gl.createProgram();
+  gl.attachShader(p,compile(gl.VERTEX_SHADER,VS));
+  gl.attachShader(p,compile(gl.FRAGMENT_SHADER,PRE+fsSrc));
+  gl.bindAttribLocation(p,0,'aPos');
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw new Error('link: '+gl.getProgramInfoLog(p));
+  return p;
+}
+
+gl.bindBuffer(gl.ARRAY_BUFFER,gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+
+var FS=[
+'uniform vec2 uRes;',
+'uniform float uTime;',
+'uniform vec3 uB[12];',
+'float field(vec2 p){',
+'  float f=0.0;',
+'  for(int i=0;i<12;i++){',
+'    vec2 d=p-uB[i].xy;',
+'    f+=uB[i].z*uB[i].z/(dot(d,d)+1e-4);',
+'  }',
+'  return f;',
+'}',
+'vec3 pal(float t){return 0.5+0.5*cos(6.28318*(vec3(1.0,0.72,0.45)*t+vec3(0.00,0.18,0.42)));}',
+'vec3 shade(float f,float bg){',
+'  vec3 col=vec3(0.014,0.010,0.040)*bg;',
+'  float body=smoothstep(0.92,1.10,f);',
+'  float ring=smoothstep(0.80,1.00,f)*(1.0-smoothstep(1.00,1.45,f));',
+'  float core=smoothstep(2.30,3.60,f);',
+'  vec3 irid=pal(f*0.33+uTime*0.05);',
+'  col=mix(col,irid*0.80,body);',
+'  col+=ring*pal(uTime*0.09+0.55)*1.15;',
+'  col+=core*vec3(1.0,0.98,0.92);',
+'  col+=(0.05/(abs(f-1.0)+0.10))*irid*0.30;',
+'  return col;',
+'}',
+'void main(){',
+'  vec2 p=(2.0*gl_FragCoord.xy-uRes)/uRes.y;',
+'  float bg=1.0-0.35*length(p);',
+'  vec2 ca=p*0.014;',
+'  float f0=field(p);',
+'  float f1=field(p-ca);',
+'  float f2=field(p+ca);',
+'  vec3 col=vec3(shade(f1,bg).r,shade(f0,bg).g,shade(f2,bg).b);',
+'  col*=1.0-0.55*smoothstep(0.55,1.65,length(p));',
+'  gl_FragColor=vec4(col,1.0);',
+'}'].join('\n');
+
+var P=program(FS);
+gl.useProgram(P);
+var uRes=gl.getUniformLocation(P,'uRes');
+var uTime=gl.getUniformLocation(P,'uTime');
+var uB=gl.getUniformLocation(P,'uB[0]');
+
+/* ---- CPU-side orbital animation ---- */
+var NB=12;
+var balls=[],flat=new Float32Array(NB*3);
+var mouse={x:0,y:0},aspect=1,DPR=1;
+function rnd(a,b){return a+Math.random()*(b-a);}
+function scatter(b){
+  b.cx=rnd(-0.65,0.65)*aspect;b.cy=rnd(-0.55,0.55);
+  b.ax=rnd(0.18,0.75);b.ay=rnd(0.18,0.75);
+  b.s1=rnd(0.25,1.0)*(Math.random()<0.5?-1:1);
+  b.s2=rnd(0.25,1.0)*(Math.random()<0.5?-1:1);
+  b.p1=rnd(0,6.283);b.p2=rnd(0,6.283);
+  b.r=rnd(0.10,0.23);
+}
+for(var i=0;i<NB;i++){
+  var b={x:rnd(-0.5,0.5),y:rnd(-0.5,0.5)};
+  scatter(b);
+  balls.push(b);
+}
+balls[0].r=0.20;
+
+canvas.addEventListener('pointermove',function(e){
+  mouse.x=(2*e.clientX*DPR-canvas.width)/canvas.height;
+  mouse.y=(canvas.height-2*e.clientY*DPR)/canvas.height;
+});
+canvas.addEventListener('pointerdown',function(){
+  for(var i=1;i<NB;i++)scatter(balls[i]);
+});
+
+function resize(){
+  DPR=Math.min(window.devicePixelRatio||1,2);
+  canvas.width=Math.max(1,Math.round(window.innerWidth*DPR));
+  canvas.height=Math.max(1,Math.round(window.innerHeight*DPR));
+  aspect=canvas.width/canvas.height;
+}
+window.addEventListener('resize',resize);
+resize();
+
+function frame(now){
+  requestAnimationFrame(frame);
+  var t=now*0.001;
+  for(var i=0;i<NB;i++){
+    var b=balls[i],tx,ty;
+    if(i===0){tx=mouse.x;ty=mouse.y;}
+    else{
+      tx=b.cx+Math.cos(t*b.s1+b.p1)*b.ax;
+      ty=b.cy+Math.sin(t*b.s2+b.p2)*b.ay;
+    }
+    var e=(i===0)?0.10:0.06;
+    b.x+=(tx-b.x)*e;
+    b.y+=(ty-b.y)*e;
+    flat[i*3]=b.x;flat[i*3+1]=b.y;flat[i*3+2]=b.r;
+  }
+  gl.viewport(0,0,canvas.width,canvas.height);
+  gl.uniform2f(uRes,canvas.width,canvas.height);
+  gl.uniform1f(uTime,t);
+  gl.uniform3fv(uB,flat);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+}
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

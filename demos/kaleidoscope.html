@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Kaleidoscope</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#000}
+  canvas{position:fixed;top:0;left:0;width:100vw;height:100vh;display:block;cursor:crosshair;touch-action:none;user-select:none}
+  #ui{position:fixed;top:12px;left:12px;z-index:10;
+      font:11px/1.7 ui-monospace,Menlo,Consolas,monospace;
+      color:rgba(215,190,255,.9);background:rgba(8,0,18,.55);
+      border:1px solid rgba(160,80,255,.25);border-radius:8px;
+      padding:8px 12px;pointer-events:none;
+      text-shadow:0 0 8px rgba(160,80,255,.5)}
+  #ui b{font-size:13px;letter-spacing:.14em}
+  #ui a{color:#b98aff;pointer-events:auto;text-decoration:none}
+  #ui a:hover{text-decoration:underline}
+  #ui .dim{color:rgba(195,175,235,.62)}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <b>KALEIDOSCOPE</b><br>
+  <span class="dim">mouse X: segments &middot; mouse Y: zoom+twist &middot; click: new palette</span><br>
+  <a href="index.html">&larr; gallery</a>
+</div>
+<script>
+(function(){
+'use strict';
+var canvas=document.getElementById('c');
+var gl=canvas.getContext('webgl',{antialias:false,depth:false,stencil:false,alpha:false});
+if(!gl)throw new Error('WebGL not supported');
+
+var PRE='#ifdef GL_FRAGMENT_PRECISION_HIGH\nprecision highp float;\n#else\nprecision mediump float;\n#endif\n';
+var VS='attribute vec2 aPos;void main(){gl_Position=vec4(aPos,0.0,1.0);}';
+
+function compile(type,src){
+  var s=gl.createShader(type);
+  gl.shaderSource(s,src);gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error('shader: '+gl.getShaderInfoLog(s));
+  return s;
+}
+function program(fsSrc){
+  var p=gl.createProgram();
+  gl.attachShader(p,compile(gl.VERTEX_SHADER,VS));
+  gl.attachShader(p,compile(gl.FRAGMENT_SHADER,PRE+fsSrc));
+  gl.bindAttribLocation(p,0,'aPos');
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw new Error('link: '+gl.getProgramInfoLog(p));
+  return p;
+}
+
+gl.bindBuffer(gl.ARRAY_BUFFER,gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+
+var FS=[
+'uniform vec2 uRes;',
+'uniform float uTime;',
+'uniform float uSegs;',
+'uniform float uZoom;',
+'uniform float uTwist;',
+'uniform vec3 uPhase;',
+'uniform vec2 uSeed;',
+'float h21(vec2 p){p=fract(p*vec2(234.34,435.345));p+=dot(p,p+34.23);return fract(p.x*p.y);}',
+'float vnoise(vec2 p){',
+'  vec2 i=floor(p),f=fract(p);',
+'  f=f*f*(3.0-2.0*f);',
+'  float a=h21(i),b=h21(i+vec2(1.0,0.0)),c=h21(i+vec2(0.0,1.0)),d=h21(i+vec2(1.0,1.0));',
+'  return mix(mix(a,b,f.x),mix(c,d,f.x),f.y);',
+'}',
+'float fbm(vec2 p){',
+'  float v=0.0,a=0.5;',
+'  for(int i=0;i<4;i++){v+=a*vnoise(p);p=p*2.07+vec2(1.7,9.2);a*=0.5;}',
+'  return v;',
+'}',
+'float pattern(vec2 q){',
+'  float t=uTime;',
+'  float n=fbm(q*2.3+uSeed+vec2(t*0.16,-t*0.11));',
+'  float r=length(q);',
+'  float rings=0.5+0.5*sin(r*13.0-t*1.5+n*4.0);',
+'  float v=n*0.9+rings*0.45;',
+'  for(int i=0;i<3;i++){',
+'    float fi=float(i);',
+'    float an=t*(0.30+fi*0.14)+fi*2.094+uSeed.x;',
+'    vec2 bp=vec2(cos(an),sin(an))*(0.34+0.20*sin(t*0.45+fi*1.9));',
+'    vec2 d=q-bp;',
+'    v+=0.16/(dot(d,d)*24.0+0.30);',
+'  }',
+'  return v;',
+'}',
+'vec3 pal(float t){return 0.5+0.5*cos(6.28318*(vec3(0.95,0.62,0.38)*t+vec3(0.00,0.25,0.55)+uPhase));}',
+'void main(){',
+'  vec2 p=(2.0*gl_FragCoord.xy-uRes)/uRes.y;',
+'  float r=length(p);',
+'  float a=atan(p.y,p.x)+uTime*0.08;',
+'  float seg=6.28318/uSegs;',
+'  a=mod(a,seg);',
+'  a=abs(a-0.5*seg);',
+'  a+=uTwist*r;',
+'  vec2 q=vec2(cos(a),sin(a))*r*uZoom;',
+'  vec3 col=vec3(0.0);',
+'  float wsum=0.0;',
+'  for(int i=0;i<4;i++){',
+'    float fi=float(i);',
+'    float v=pattern(q*(1.0-fi*0.045));',
+'    float w=1.0/(1.0+fi*1.6);',
+'    vec3 c=pal(v*0.65+r*0.18+uTime*0.045);',
+'    c*=smoothstep(0.10,1.05,v);',
+'    col+=c*w;wsum+=w;',
+'  }',
+'  col/=wsum;',
+'  col+=col*col*0.7;',
+'  col*=1.0-0.55*smoothstep(0.65,1.55,r);',
+'  gl_FragColor=vec4(col,1.0);',
+'}'].join('\n');
+
+var P=program(FS);
+gl.useProgram(P);
+var uRes=gl.getUniformLocation(P,'uRes');
+var uTime=gl.getUniformLocation(P,'uTime');
+var uSegs=gl.getUniformLocation(P,'uSegs');
+var uZoom=gl.getUniformLocation(P,'uZoom');
+var uTwist=gl.getUniformLocation(P,'uTwist');
+var uPhase=gl.getUniformLocation(P,'uPhase');
+var uSeed=gl.getUniformLocation(P,'uSeed');
+
+/* ---- state: smoothed controls ---- */
+var segs=10,zoom=1.2,twist=0;
+var phase=[0.0,0.12,0.24],seed=[3.7,8.2];
+var mx=0.35,my=0.45;
+
+canvas.addEventListener('pointermove',function(e){
+  mx=e.clientX/window.innerWidth;
+  my=e.clientY/window.innerHeight;
+});
+canvas.addEventListener('pointerdown',function(){
+  phase=[Math.random(),Math.random(),Math.random()];
+  seed=[Math.random()*20,Math.random()*20];
+});
+
+function resize(){
+  var d=Math.min(window.devicePixelRatio||1,2);
+  canvas.width=Math.max(1,Math.round(window.innerWidth*d));
+  canvas.height=Math.max(1,Math.round(window.innerHeight*d));
+}
+window.addEventListener('resize',resize);
+resize();
+
+function frame(now){
+  requestAnimationFrame(frame);
+  var t=now*0.001;
+  var segT=Math.max(4,Math.min(24,4+mx*20+Math.sin(t*0.21)*1.6));
+  segs+=(segT-segs)*0.04;
+  var zoomT=2.3-my*1.7;
+  zoom+=(zoomT-zoom)*0.05;
+  var twT=(my-0.5)*2.2;
+  twist+=(twT-twist)*0.05;
+  gl.viewport(0,0,canvas.width,canvas.height);
+  gl.uniform2f(uRes,canvas.width,canvas.height);
+  gl.uniform1f(uTime,t);
+  gl.uniform1f(uSegs,segs);
+  gl.uniform1f(uZoom,zoom);
+  gl.uniform1f(uTwist,twist);
+  gl.uniform3f(uPhase,phase[0],phase[1],phase[2]);
+  gl.uniform2f(uSeed,seed[0],seed[1]);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+}
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

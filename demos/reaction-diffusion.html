@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Reaction–Diffusion — Gray-Scott</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#000}
+  canvas{position:fixed;top:0;left:0;width:100vw;height:100vh;display:block;cursor:crosshair;touch-action:none;user-select:none}
+  #ui{position:fixed;top:12px;left:12px;z-index:10;
+      font:11px/1.7 ui-monospace,Menlo,Consolas,monospace;
+      color:rgba(170,255,240,.9);background:rgba(0,10,14,.55);
+      border:1px solid rgba(0,255,214,.18);border-radius:8px;
+      padding:8px 12px;pointer-events:none;
+      text-shadow:0 0 8px rgba(0,255,200,.45)}
+  #ui b{font-size:13px;letter-spacing:.14em}
+  #ui a{color:#79e8ff;pointer-events:auto;text-decoration:none}
+  #ui a:hover{text-decoration:underline}
+  #ui .dim{color:rgba(150,225,215,.62)}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <b>REACTION &middot; DIFFUSION</b><br>
+  <span class="dim">drag: paint &middot; 1-4: preset [<span id="pn">coral</span>] &middot; R: reseed</span><br>
+  <a href="index.html">&larr; gallery</a>
+</div>
+<script>
+(function(){
+'use strict';
+var canvas=document.getElementById('c');
+var gl=canvas.getContext('webgl',{antialias:false,depth:false,stencil:false,alpha:false});
+if(!gl)throw new Error('WebGL not supported');
+
+var PRE='#ifdef GL_FRAGMENT_PRECISION_HIGH\nprecision highp float;\n#else\nprecision mediump float;\n#endif\n';
+var VS='attribute vec2 aPos;void main(){gl_Position=vec4(aPos,0.0,1.0);}';
+
+function compile(type,src){
+  var s=gl.createShader(type);
+  gl.shaderSource(s,src);gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error('shader: '+gl.getShaderInfoLog(s));
+  return s;
+}
+function program(fsSrc){
+  var p=gl.createProgram();
+  gl.attachShader(p,compile(gl.VERTEX_SHADER,VS));
+  gl.attachShader(p,compile(gl.FRAGMENT_SHADER,PRE+fsSrc));
+  gl.bindAttribLocation(p,0,'aPos');
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw new Error('link: '+gl.getProgramInfoLog(p));
+  return p;
+}
+
+gl.bindBuffer(gl.ARRAY_BUFFER,gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+
+/* ---- pick texture format: float -> half float -> byte fallback ---- */
+var SIM=512;
+var extF=gl.getExtension('OES_texture_float');
+var extH=gl.getExtension('OES_texture_half_float');
+var extFL=gl.getExtension('OES_texture_float_linear');
+var extHL=gl.getExtension('OES_texture_half_float_linear');
+function renderable(type){
+  var t=gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D,t);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,4,4,0,gl.RGBA,type,null);
+  var f=gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER,f);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0);
+  var ok=gl.checkFramebufferStatus(gl.FRAMEBUFFER)===gl.FRAMEBUFFER_COMPLETE;
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  gl.deleteFramebuffer(f);gl.deleteTexture(t);
+  return ok;
+}
+var texType=gl.UNSIGNED_BYTE,linear=true;
+if(extF&&renderable(gl.FLOAT)){texType=gl.FLOAT;linear=!!extFL;}
+else if(extH&&renderable(extH.HALF_FLOAT_OES)){texType=extH.HALF_FLOAT_OES;linear=!!extHL;}
+
+function makeTarget(){
+  var t=gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D,t);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,linear?gl.LINEAR:gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,linear?gl.LINEAR:gl.NEAREST);
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,SIM,SIM,0,gl.RGBA,texType,null);
+  var f=gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER,f);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  return {tex:t,fbo:f};
+}
+var src=makeTarget(),dst=makeTarget();
+
+/* ---- shaders ---- */
+var SIM_FS=[
+'uniform sampler2D uT;',
+'uniform float uPx;',
+'uniform float uF;',
+'uniform float uK;',
+'uniform vec3 uBrush;',
+'void main(){',
+'  vec2 uv=gl_FragCoord.xy*uPx;',
+'  vec2 c=texture2D(uT,uv).rg;',
+'  vec2 l=0.2*(texture2D(uT,uv+vec2(uPx,0.0)).rg+texture2D(uT,uv-vec2(uPx,0.0)).rg',
+'        +texture2D(uT,uv+vec2(0.0,uPx)).rg+texture2D(uT,uv-vec2(0.0,uPx)).rg)',
+'    +0.05*(texture2D(uT,uv+vec2(uPx,uPx)).rg+texture2D(uT,uv+vec2(-uPx,uPx)).rg',
+'        +texture2D(uT,uv+vec2(uPx,-uPx)).rg+texture2D(uT,uv+vec2(-uPx,-uPx)).rg)',
+'    -c;',
+'  float rx=c.r*c.g*c.g;',
+'  float du=1.0*l.x-rx+uF*(1.0-c.r);',
+'  float dv=0.5*l.y+rx-(uF+uK)*c.g;',
+'  vec2 n=clamp(c+vec2(du,dv),0.0,1.0);',
+'  if(uBrush.z>0.0){',
+'    float m=smoothstep(uBrush.z,uBrush.z*0.3,distance(uv,uBrush.xy));',
+'    n.g=mix(n.g,0.9,m);',
+'    n.r=mix(n.r,0.3,m*0.5);',
+'  }',
+'  gl_FragColor=vec4(n,0.0,1.0);',
+'}'].join('\n');
+
+var SEED_FS=[
+'uniform float uPx;',
+'uniform float uSeed;',
+'float h(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7))+uSeed*17.0)*43758.5453);}',
+'void main(){',
+'  vec2 uv=gl_FragCoord.xy*uPx;',
+'  float v=smoothstep(0.055,0.028,distance(uv,vec2(0.5)))*0.9;',
+'  vec2 cell=floor(uv*22.0);',
+'  if(h(cell)>0.93){',
+'    vec2 cp=(cell+vec2(h(cell+3.1),h(cell+7.7)))/22.0;',
+'    v+=smoothstep(0.014,0.004,distance(uv,cp))*0.85;',
+'  }',
+'  v=clamp(v,0.0,1.0);',
+'  gl_FragColor=vec4(1.0-0.5*v,v,0.0,1.0);',
+'}'].join('\n');
+
+var VIEW_FS=[
+'uniform sampler2D uT;',
+'uniform vec2 uRes;',
+'uniform float uPx;',
+'void main(){',
+'  vec2 uv=gl_FragCoord.xy/uRes;',
+'  float v=texture2D(uT,uv).g;',
+'  float gx=texture2D(uT,uv+vec2(uPx,0.0)).g-texture2D(uT,uv-vec2(uPx,0.0)).g;',
+'  float gy=texture2D(uT,uv+vec2(0.0,uPx)).g-texture2D(uT,uv-vec2(0.0,uPx)).g;',
+'  vec3 N=normalize(vec3(-gx*9.0,-gy*9.0,1.0));',
+'  vec3 L=normalize(vec3(0.45,0.65,0.8));',
+'  float dif=max(dot(N,L),0.0);',
+'  float spe=pow(max(dot(N,normalize(L+vec3(0.0,0.0,1.0))),0.0),48.0);',
+'  vec3 col=vec3(0.008,0.010,0.028);',
+'  col=mix(col,vec3(0.10,0.00,0.34),smoothstep(0.02,0.11,v));',
+'  col=mix(col,vec3(0.00,0.35,0.95),smoothstep(0.09,0.19,v));',
+'  col=mix(col,vec3(0.00,1.00,0.85),smoothstep(0.17,0.29,v));',
+'  col=mix(col,vec3(0.85,0.35,1.00),smoothstep(0.27,0.38,v));',
+'  col=mix(col,vec3(1.00,0.97,1.00),smoothstep(0.36,0.50,v));',
+'  float mask=smoothstep(0.03,0.14,v);',
+'  col*=0.35+0.85*dif;',
+'  col+=spe*mask*vec3(0.55,0.95,1.0);',
+'  vec2 q=uv-0.5;',
+'  col*=1.0-0.75*dot(q,q);',
+'  gl_FragColor=vec4(col,1.0);',
+'}'].join('\n');
+
+var simP=program(SIM_FS),seedP=program(SEED_FS),viewP=program(VIEW_FS);
+var U={
+  simPx:gl.getUniformLocation(simP,'uPx'),
+  simF:gl.getUniformLocation(simP,'uF'),
+  simK:gl.getUniformLocation(simP,'uK'),
+  simBrush:gl.getUniformLocation(simP,'uBrush'),
+  simT:gl.getUniformLocation(simP,'uT'),
+  seedPx:gl.getUniformLocation(seedP,'uPx'),
+  seedS:gl.getUniformLocation(seedP,'uSeed'),
+  viewRes:gl.getUniformLocation(viewP,'uRes'),
+  viewPx:gl.getUniformLocation(viewP,'uPx'),
+  viewT:gl.getUniformLocation(viewP,'uT')
+};
+
+/* ---- state ---- */
+var presets={'1':['coral',0.0545,0.0620],'2':['mitosis',0.0367,0.0649],'3':['worms',0.0780,0.0610],'4':['waves',0.0140,0.0450]};
+var F=0.0545,K=0.0620;
+var brush={x:0.5,y:0.5},painting=false;
+
+function reseed(){
+  gl.useProgram(seedP);
+  gl.uniform1f(U.seedPx,1/SIM);
+  gl.uniform1f(U.seedS,Math.random()*100+1.0);
+  gl.viewport(0,0,SIM,SIM);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,src.fbo);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+}
+
+function toUV(e){
+  brush.x=e.clientX/window.innerWidth;
+  brush.y=1-e.clientY/window.innerHeight;
+}
+canvas.addEventListener('pointerdown',function(e){painting=true;toUV(e);try{canvas.setPointerCapture(e.pointerId);}catch(x){}e.preventDefault();});
+canvas.addEventListener('pointermove',function(e){if(painting)toUV(e);});
+window.addEventListener('pointerup',function(){painting=false;});
+window.addEventListener('keydown',function(e){
+  var p=presets[e.key];
+  if(p){F=p[1];K=p[2];document.getElementById('pn').textContent=p[0];}
+  else if(e.key==='r'||e.key==='R')reseed();
+});
+
+function resize(){
+  var d=Math.min(window.devicePixelRatio||1,1);
+  canvas.width=Math.max(1,Math.round(window.innerWidth*d));
+  canvas.height=Math.max(1,Math.round(window.innerHeight*d));
+}
+window.addEventListener('resize',resize);
+resize();
+reseed();
+
+function frame(){
+  requestAnimationFrame(frame);
+  gl.useProgram(simP);
+  gl.uniform1f(U.simPx,1/SIM);
+  gl.uniform1f(U.simF,F);
+  gl.uniform1f(U.simK,K);
+  gl.uniform1i(U.simT,0);
+  gl.uniform3f(U.simBrush,brush.x,brush.y,painting?0.035:0.0);
+  gl.viewport(0,0,SIM,SIM);
+  gl.activeTexture(gl.TEXTURE0);
+  for(var i=0;i<10;i++){
+    gl.bindFramebuffer(gl.FRAMEBUFFER,dst.fbo);
+    gl.bindTexture(gl.TEXTURE_2D,src.tex);
+    gl.drawArrays(gl.TRIANGLES,0,3);
+    var tmp=src;src=dst;dst=tmp;
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  gl.viewport(0,0,canvas.width,canvas.height);
+  gl.useProgram(viewP);
+  gl.uniform2f(U.viewRes,canvas.width,canvas.height);
+  gl.uniform1f(U.viewPx,1/SIM);
+  gl.uniform1i(U.viewT,0);
+  gl.bindTexture(gl.TEXTURE_2D,src.tex);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+}
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
