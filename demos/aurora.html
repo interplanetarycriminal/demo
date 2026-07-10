@@ -1,0 +1,85 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Aurora Borealis</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#010208}
+  canvas{display:block;position:fixed;inset:0}
+  #ui{position:fixed;top:12px;left:12px;z-index:10;font:12px/1.6 ui-monospace,Menlo,monospace;
+      color:#9fd;background:rgba(0,15,12,.45);padding:10px 14px;border:1px solid rgba(120,255,200,.22);
+      border-radius:10px;backdrop-filter:blur(6px)}
+  #ui b{color:#fff;letter-spacing:.12em}
+  #ui a{color:#7fd;text-decoration:none}
+  #ui a:hover{text-decoration:underline}
+</style>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div id="ui"><b>AURORA BOREALIS</b><br>move mouse = stir the sky · click = solar flare<br><a href="index.html">← gallery</a></div>
+<canvas id="c"></canvas>
+<script>
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+let W,H,DPR,stars=[];
+function resize(){DPR=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;
+  cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);
+  stars=Array.from({length:220},()=>({x:Math.random()*W,y:Math.random()*H*.85,
+    r:Math.random()*1.3+.3,tw:Math.random()*6.28,sp:.5+Math.random()*2}));}
+addEventListener('resize',resize);resize();
+
+// cheap layered value noise
+function n1(x){const i=Math.floor(x),f=x-i,u=f*f*(3-2*f);
+  const h=t=>{const s=Math.sin(t*127.1)*43758.5453;return s-Math.floor(s)};
+  return h(i)*(1-u)+h(i+1)*u;}
+function fbm(x,t){return n1(x*.8+t)*.55+n1(x*2.1-t*.7)*.3+n1(x*4.7+t*1.3)*.15;}
+
+let mx=.5,my=.5,flare=0;
+addEventListener('pointermove',e=>{mx=e.clientX/W;my=e.clientY/H;});
+addEventListener('pointerdown',()=>flare=1);
+
+const RIBBONS=[
+  {hue:150,base:.30,amp:.16,sp:.10,w:.34},
+  {hue:170,base:.40,amp:.20,sp:.14,w:.30},
+  {hue:200,base:.34,amp:.13,sp:.07,w:.26},
+  {hue:285,base:.48,amp:.22,sp:.11,w:.22},
+];
+let t0=performance.now();
+function frame(now){
+  const t=(now-t0)/1000;
+  flare*=.96;
+  ctx.clearRect(0,0,W,H);
+  // night sky gradient
+  const sky=ctx.createLinearGradient(0,0,0,H);
+  sky.addColorStop(0,'#010208');sky.addColorStop(.65,'#03102a');sky.addColorStop(1,'#071d33');
+  ctx.fillStyle=sky;ctx.fillRect(0,0,W,H);
+  // stars
+  for(const s of stars){
+    const a=.35+.65*Math.abs(Math.sin(s.tw+now*.001*s.sp));
+    ctx.fillStyle=`rgba(255,255,255,${a*.8})`;
+    ctx.fillRect(s.x,s.y,s.r,s.r);
+  }
+  // aurora ribbons: vertical light shafts along a noise curve
+  ctx.globalCompositeOperation='lighter';
+  const step=Math.max(3,W/280);
+  for(const R of RIBBONS){
+    const stir=(mx-.5)*1.6, lift=(my-.5)*.22;
+    for(let x=0;x<=W;x+=step){
+      const u=x/W;
+      const y=H*(R.base+lift)+ (fbm(u*3+stir, t*R.sp)-.5)*H*R.amp*2;
+      const len=H*R.w*(0.55+fbm(u*5-stir,t*R.sp*1.7)*.9)*(1+flare*.9);
+      const g=ctx.createLinearGradient(0,y-len,0,y+len*.25);
+      const l=52+flare*30;
+      g.addColorStop(0,`hsla(${R.hue},100%,${l}%,0)`);
+      g.addColorStop(.55,`hsla(${R.hue},100%,${l}%,${.10+flare*.10})`);
+      g.addColorStop(.9,`hsla(${R.hue+25},100%,${l+15}%,${.26+flare*.18})`);
+      g.addColorStop(1,`hsla(${R.hue+25},100%,90%,0)`);
+      ctx.fillStyle=g;
+      ctx.fillRect(x,y-len,step+1,len+len*.25);
+    }
+  }
+  ctx.globalCompositeOperation='source-over';
+  // ground silhouette
+  ctx.fillStyle='#010104';
+  ctx.beginPath();ctx.moveTo(0,H);
+  for(let x=0;x<=W;x+=8)ctx.lineTo(x,H-18-fbm(x/W*6,0)*46);
+  ctx.lineTo(W,H);ctx.closePath();ctx.fill();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>

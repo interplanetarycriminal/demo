@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>p5 flow field</title>
+<style>
+html,body{margin:0;padding:0;height:100%;background:#04040a;overflow:hidden}
+canvas{display:block}
+#ui{position:fixed;top:12px;left:12px;z-index:10;font:12px/1.7 ui-monospace,Menlo,Consolas,monospace;
+color:rgba(200,220,255,.75);background:rgba(5,8,18,.55);padding:10px 14px;
+border:1px solid rgba(120,160,255,.18);border-radius:8px;backdrop-filter:blur(4px);pointer-events:none}
+#ui a{color:#7fd4ff;pointer-events:auto;text-decoration:none}
+#ui a:hover{text-decoration:underline}
+#ui .t{color:#fff;font-weight:700;letter-spacing:.1em}
+#ui .p{color:#ffd27f}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div id="ui">
+  <div class="t">P5 FLOW FIELD</div>
+  <div>move: attract &middot; hold: repel &middot; click: reseed</div>
+  <div>palette: <span class="p" id="pal">&mdash;</span></div>
+  <a href="index.html">&larr; gallery</a>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/p5@1.9.4/lib/p5.min.js"></script>
+<script>
+var PALETTES=[
+  {name:'Neon Sunset',   bg:[10,4,16], cols:['#ff2a6d','#ff6b35','#ffd23f','#f72585','#ff9e00']},
+  {name:'Cyber Ice',     bg:[3,8,18],  cols:['#00f5ff','#4cc9f0','#7df9ff','#b8f3ff','#3a86ff']},
+  {name:'Ultraviolet',   bg:[7,3,15],  cols:['#7b2ff7','#b537f2','#f72585','#9d4edd','#c77dff']},
+  {name:'Toxic Jungle',  bg:[3,10,6],  cols:['#39ff14','#ccff33','#00ffa3','#9ef01a','#38b000']},
+  {name:'Vaporwave',     bg:[11,5,19], cols:['#ff71ce','#01cdfe','#05ffa1','#b967ff','#fffb96']}
+];
+var N=3000, SC=0.0016, MR=280;      // particle count, noise scale, mouse radius
+var parts=[], zoff=0, pal=null, palIdx=-1, palRGB=[], pressT=0;
+
+function hexRGB(h){h=h.replace('#','');return [parseInt(h.substr(0,2),16),parseInt(h.substr(2,2),16),parseInt(h.substr(4,2),16)];}
+
+function pickPal(){
+  var i; do{ i=Math.floor(Math.random()*PALETTES.length); }while(i===palIdx);
+  palIdx=i; pal=PALETTES[i];
+  palRGB=pal.cols.map(hexRGB);
+  document.getElementById('pal').textContent=pal.name;
+}
+
+function newPart(p){
+  p=p||{};
+  p.x=random(width); p.y=random(height); p.px=p.x; p.py=p.y;
+  var c=palRGB[Math.floor(Math.random()*palRGB.length)];
+  p.r=c[0]; p.g=c[1]; p.b=c[2];
+  p.life=random(120,700);
+  return p;
+}
+
+function reseed(){
+  pickPal();
+  noiseSeed(Math.floor(Math.random()*1e9));
+  zoff=random(1000);
+  parts=[];
+  for(var i=0;i<N;i++) parts.push(newPart());
+  blendMode(BLEND);
+  background(pal.bg[0],pal.bg[1],pal.bg[2]);
+}
+
+function setup(){
+  createCanvas(windowWidth,windowHeight);
+  pixelDensity(Math.min(window.devicePixelRatio||1,2));
+  strokeWeight(1.1);
+  reseed();
+}
+
+function draw(){
+  // fade pass
+  blendMode(BLEND);
+  noStroke();
+  fill(pal.bg[0],pal.bg[1],pal.bg[2],18);
+  rect(0,0,width,height);
+  // glow pass
+  blendMode(ADD);
+  zoff+=0.0022;
+  var mx=mouseX, my=mouseY;
+  var useMouse = mx>0 && mx<width && my>0 && my<height;
+  var repel = mouseIsPressed ? -1 : 1;
+  for(var i=0;i<parts.length;i++){
+    var p=parts[i];
+    p.px=p.x; p.py=p.y;
+    var a=noise(p.x*SC,p.y*SC,zoff)*TWO_PI*2.7;
+    var vx=Math.cos(a)*1.6, vy=Math.sin(a)*1.6;
+    if(useMouse){
+      var dx=mx-p.x, dy=my-p.y, d2=dx*dx+dy*dy;
+      if(d2<MR*MR && d2>4){
+        var d=Math.sqrt(d2), f=(1-d/MR)*2.3*repel;
+        vx+=dx/d*f; vy+=dy/d*f;
+      }
+    }
+    p.x+=vx; p.y+=vy;
+    if(--p.life<0 || p.x<-8 || p.x>width+8 || p.y<-8 || p.y>height+8){
+      newPart(p);
+      continue;
+    }
+    stroke(p.r,p.g,p.b,26);
+    line(p.px,p.py,p.x,p.y);
+  }
+}
+
+function mousePressed(){ pressT=millis(); }
+function mouseReleased(){ if(millis()-pressT<230) reseed(); }
+function touchEnded(){ if(millis()-pressT<230) reseed(); }
+
+function windowResized(){
+  resizeCanvas(windowWidth,windowHeight);
+  blendMode(BLEND);
+  background(pal.bg[0],pal.bg[1],pal.bg[2]);
+}
+</script>
+</body>
+</html>

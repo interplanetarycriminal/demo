@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Neon Physics</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:radial-gradient(1200px 800px at 50% 20%,#101426 0%,#07080f 60%,#04050a 100%)}
+canvas{display:block}
+.ui{position:fixed;top:14px;left:14px;z-index:100;font:12px/1.7 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:rgba(222,230,255,.75);background:rgba(6,8,16,.55);border:1px solid rgba(130,160,255,.18);padding:10px 14px;border-radius:10px;backdrop-filter:blur(8px);pointer-events:none}
+.ui b{color:#7df9ff;font-weight:600;letter-spacing:.1em}
+.ui a{color:#ff5c9d;pointer-events:auto;text-decoration:none}
+.ui a:hover{text-decoration:underline}
+.ui .dim{opacity:.72}
+#gdir{color:#a3ff12}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div class="ui">
+<b>NEON PHYSICS</b> &middot; matter.js<br>
+<span class="dim">drag to grab &amp; fling &middot; click empty space: burst &middot; G: gravity <span id="gdir">&darr;</span></span><br>
+<a href="index.html">&larr; gallery</a>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/matter-js@0.19.0/build/matter.min.js"></script>
+<script>
+(function(){
+var Engine=Matter.Engine,Render=Matter.Render,Runner=Matter.Runner,Bodies=Matter.Bodies,
+    Body=Matter.Body,Composite=Matter.Composite,Mouse=Matter.Mouse,
+    MouseConstraint=Matter.MouseConstraint,Events=Matter.Events,Query=Matter.Query;
+
+var engine=Engine.create();
+var world=engine.world;
+engine.gravity.x=0;engine.gravity.y=1;
+
+var render=Render.create({
+  element:document.body,
+  engine:engine,
+  options:{width:innerWidth,height:innerHeight,wireframes:false,background:'transparent'}
+});
+Render.run(render);
+var runner=Runner.create();
+Runner.run(runner,engine);
+
+var PALETTE=['#ff2d78','#00e5ff','#a3ff12','#ffb300','#b967ff','#00ffa3','#ff6d3d'];
+function rgba(hex,a){
+  var n=parseInt(hex.slice(1),16);
+  return 'rgba('+(n>>16&255)+','+(n>>8&255)+','+(n&255)+','+a+')';
+}
+
+/* ---------- static walls + ramps (rebuilt on resize) ---------- */
+var statics=[];
+function ramp(x,y,len,angle,color){
+  return Bodies.rectangle(x,y,len,14,{isStatic:true,angle:angle,chamfer:{radius:7},
+    render:{fillStyle:rgba(color,.16),strokeStyle:color,lineWidth:2}});
+}
+function buildStatics(){
+  statics.forEach(function(b){Composite.remove(world,b);});
+  var w=innerWidth,h=innerHeight,T=80;
+  var wallOpt={isStatic:true,render:{fillStyle:'rgba(20,26,48,.9)',strokeStyle:'rgba(90,130,255,.35)',lineWidth:1}};
+  statics=[
+    Bodies.rectangle(w/2,h+T/2-8,w+400,T,wallOpt),
+    Bodies.rectangle(-T/2+8,h/2,T,h*3,wallOpt),
+    Bodies.rectangle(w+T/2-8,h/2,T,h*3,wallOpt),
+    Bodies.rectangle(w/2,-T/2+4,w+400,T,wallOpt),
+    ramp(w*0.28,h*0.42,w*0.34,0.38,'#00e5ff'),
+    ramp(w*0.72,h*0.68,w*0.34,-0.38,'#ff2d78')
+  ];
+  Composite.add(world,statics);
+}
+buildStatics();
+
+/* ---------- body factory ---------- */
+function spawnBody(x,y){
+  var c=PALETTE[(Math.random()*PALETTE.length)|0];
+  var opt={restitution:0.55+Math.random()*0.35,friction:0.05,frictionAir:0.002,
+    render:{fillStyle:rgba(c,.28),strokeStyle:c,lineWidth:2}};
+  var s=10+Math.random()*16,t=Math.random(),b;
+  if(t<0.4) b=Bodies.circle(x,y,s*0.7,opt);
+  else if(t<0.7) b=Bodies.polygon(x,y,3+((Math.random()*4)|0),s*0.85,opt);
+  else{
+    opt.chamfer={radius:3};
+    b=Bodies.rectangle(x,y,s*1.6,s*(0.6+Math.random()*0.9),opt);
+  }
+  Body.setAngle(b,Math.random()*Math.PI*2);
+  Body.setAngularVelocity(b,(Math.random()-0.5)*0.2);
+  return b;
+}
+
+var MAX=210;
+function trim(){
+  var dyn=Composite.allBodies(world).filter(function(b){return !b.isStatic;});
+  for(var i=0;i<dyn.length-MAX;i++)Composite.remove(world,dyn[i]);
+}
+
+/* initial scatter + steady rain */
+for(var i=0;i<50;i++){
+  Composite.add(world,spawnBody(60+Math.random()*(innerWidth-120),40+Math.random()*(innerHeight*0.5)));
+}
+setInterval(function(){
+  var b=spawnBody(50+Math.random()*(innerWidth-100),30+Math.random()*50);
+  Body.setVelocity(b,{x:(Math.random()-0.5)*3,y:2+Math.random()*4});
+  Composite.add(world,b);
+  trim();
+},420);
+
+/* ---------- mouse: grab, fling, burst ---------- */
+var mouse=Mouse.create(render.canvas);
+var mc=MouseConstraint.create(engine,{mouse:mouse,constraint:{stiffness:0.15,render:{visible:false}}});
+Composite.add(world,mc);
+render.mouse=mouse;
+
+function burst(x,y){
+  for(var i=0;i<8;i++){
+    var a=i/8*Math.PI*2+Math.random()*0.4;
+    var b=spawnBody(x+Math.cos(a)*6,y+Math.sin(a)*6);
+    Body.setVelocity(b,{x:Math.cos(a)*(7+Math.random()*5),y:Math.sin(a)*(7+Math.random()*5)});
+    Composite.add(world,b);
+  }
+  trim();
+}
+Events.on(mc,'mousedown',function(e){
+  var p=e.mouse.position;
+  if(Query.point(Composite.allBodies(world),p).length===0)burst(p.x,p.y);
+});
+
+/* ---------- G cycles gravity direction ---------- */
+var DIRS=[[0,1,'↓'],[-1,0,'←'],[0,-1,'↑'],[1,0,'→']];
+var gi=0;
+addEventListener('keydown',function(e){
+  if(e.key==='g'||e.key==='G'){
+    gi=(gi+1)%DIRS.length;
+    engine.gravity.x=DIRS[gi][0];
+    engine.gravity.y=DIRS[gi][1];
+    document.getElementById('gdir').textContent=DIRS[gi][2];
+  }
+});
+
+/* ---------- resize ---------- */
+addEventListener('resize',function(){
+  render.options.width=innerWidth;render.options.height=innerHeight;
+  render.canvas.width=innerWidth;render.canvas.height=innerHeight;
+  render.bounds.max.x=innerWidth;render.bounds.max.y=innerHeight;
+  buildStatics();
+});
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Text Particles</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#020309}
+#c{position:fixed;inset:0;display:block;touch-action:none}
+#ui{position:fixed;top:10px;left:10px;z-index:10;font:11px/1.6 ui-monospace,Menlo,Consolas,monospace;color:rgba(230,200,255,.85);background:rgba(10,4,20,.5);padding:8px 12px;border:1px solid rgba(200,120,255,.2);border-radius:6px;pointer-events:none;text-shadow:0 0 8px rgba(200,100,255,.4)}
+#ui h1{font-size:13px;margin:0 0 2px;font-weight:700;letter-spacing:.14em}
+#ui a{color:#d9a6ff;pointer-events:auto;text-decoration:none}
+#ui a:hover{text-decoration:underline}
+#w{pointer-events:auto;background:rgba(30,10,50,.6);border:1px solid rgba(200,120,255,.35);border-radius:4px;color:#f0dcff;font:11px ui-monospace,Menlo,Consolas,monospace;padding:2px 6px;width:110px;outline:none;margin-top:2px}
+#w:focus{border-color:rgba(230,170,255,.8)}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui"><h1>TEXT PARTICLES</h1>mouse blows &middot; click = explode &amp; next word<br><a href="index.html">&larr; gallery</a> &middot; <input id="w" maxlength="14" placeholder="word + enter" autocomplete="off" spellcheck="false"></div>
+<script>
+(function(){
+'use strict';
+var canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+var input=document.getElementById('w');
+var W=0,H=0;
+var N=2500,parts=[];
+var words=['HELLO','STAY','CURIOUS','WOW'],wi=0;
+var current=words[0];
+var mouse={x:-9999,y:-9999,on:false};
+var hueShift=0;
+
+// precomputed hue palette (5 deg buckets)
+var PAL=[];
+for(var h=0;h<360;h+=5)PAL.push('hsla('+h+',100%,62%,0.8)');
+
+for(var i=0;i<N;i++){
+  parts.push({x:Math.random()*innerWidth,y:Math.random()*innerHeight,
+    vx:0,vy:0,tx:innerWidth/2,ty:innerHeight/2,t:Math.random()});
+}
+
+function setWord(word){
+  current=word;
+  var off=document.createElement('canvas');
+  var octx=off.getContext('2d');
+  var base=100;
+  octx.font='bold '+base+'px ui-monospace,Menlo,Consolas,monospace';
+  var w100=octx.measureText(word).width||1;
+  var fs=Math.min((W*0.85)/w100*base,H*0.5);
+  fs=Math.max(30,Math.min(fs,500));
+  var ow=Math.ceil(w100*fs/base)+40,oh=Math.ceil(fs*1.4);
+  off.width=ow;off.height=oh;
+  octx.fillStyle='#fff';
+  octx.font='bold '+fs+'px ui-monospace,Menlo,Consolas,monospace';
+  octx.textAlign='center';octx.textBaseline='middle';
+  octx.fillText(word,ow/2,oh/2);
+  var data;
+  try{data=octx.getImageData(0,0,ow,oh).data;}catch(err){return;}
+  var pts=[],step=2;
+  for(;;){
+    pts.length=0;
+    for(var y=0;y<oh;y+=step){
+      var row=y*ow;
+      for(var x=0;x<ow;x+=step){
+        if(data[(row+x)*4+3]>128)pts.push({x:x,y:y});
+      }
+    }
+    if(pts.length<=9000||step>=8)break;
+    step++;
+  }
+  if(pts.length===0)return;
+  // shuffle so modulo assignment covers the whole word uniformly
+  for(var s=pts.length-1;s>0;s--){
+    var j=(Math.random()*(s+1))|0;
+    var tmp=pts[s];pts[s]=pts[j];pts[j]=tmp;
+  }
+  var ox=(W-ow)/2,oy=(H-oh)/2;
+  for(var k=0;k<N;k++){
+    var pt=pts[k%pts.length],p=parts[k];
+    p.tx=ox+pt.x;p.ty=oy+pt.y;
+    p.t=pt.x/ow; // 0..1 across the text -> hue gradient
+  }
+}
+
+function explode(cx,cy){
+  for(var k=0;k<N;k++){
+    var p=parts[k];
+    var dx=p.x-cx,dy=p.y-cy;
+    var d=Math.sqrt(dx*dx+dy*dy)||1;
+    var s=250+Math.random()*750;
+    p.vx+=dx/d*s+(Math.random()*2-1)*140;
+    p.vy+=dy/d*s+(Math.random()*2-1)*140;
+  }
+}
+
+function resize(){
+  var dpr=Math.min(2,window.devicePixelRatio||1);
+  W=window.innerWidth;H=window.innerHeight;
+  canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);
+  canvas.style.width=W+'px';canvas.style.height=H+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.fillStyle='#020309';ctx.fillRect(0,0,W,H);
+  setWord(current);
+}
+window.addEventListener('resize',resize);
+resize();
+
+window.addEventListener('pointermove',function(e){mouse.x=e.clientX;mouse.y=e.clientY;mouse.on=true;});
+document.documentElement.addEventListener('pointerleave',function(){mouse.on=false;mouse.x=-9999;});
+canvas.addEventListener('pointerdown',function(e){
+  explode(e.clientX,e.clientY);
+  wi=(wi+1)%words.length;
+  setWord(words[wi]);
+});
+input.addEventListener('keydown',function(e){
+  e.stopPropagation();
+  if(e.key==='Enter'){
+    var v=input.value.trim();
+    if(v){
+      explode(W/2,H/2);
+      setWord(v.toUpperCase());
+      input.value='';
+      input.blur();
+    }
+  }
+});
+
+var K=42,DAMP=5.6,MR=110,MF=5200;
+var last=performance.now();
+function frame(now){
+  var dt=Math.min(0.033,(now-last)/1000)||0.016;
+  last=now;
+  ctx.globalCompositeOperation='source-over';
+  ctx.fillStyle='rgba(2,3,9,0.32)';
+  ctx.fillRect(0,0,W,H);
+  ctx.globalCompositeOperation='lighter';
+  hueShift=(hueShift+14*dt)%360;
+  var mOn=mouse.on,mx=mouse.x,my=mouse.y,mr2=MR*MR;
+  for(var k=0;k<N;k++){
+    var p=parts[k];
+    // spring toward target with damping
+    var ax=(p.tx-p.x)*K-p.vx*DAMP;
+    var ay=(p.ty-p.y)*K-p.vy*DAMP;
+    if(mOn){
+      var dx=p.x-mx,dy=p.y-my;
+      var d2=dx*dx+dy*dy;
+      if(d2<mr2){
+        var d=Math.sqrt(d2)||1;
+        var f=(1-d/MR)*MF;
+        ax+=dx/d*f;ay+=dy/d*f;
+      }
+    }
+    p.vx+=ax*dt;p.vy+=ay*dt;
+    p.x+=p.vx*dt;p.y+=p.vy*dt;
+    var hue=(hueShift+p.t*260)%360;
+    ctx.fillStyle=PAL[(hue/5)|0];
+    ctx.fillRect(p.x-1.1,p.y-1.1,2.2,2.2);
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

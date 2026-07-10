@@ -1,6 +1,6 @@
 # ⚡ Visual Demo Sprint
 
-23 interactive, ultra-visual web demos built in a single 15-minute burst by 8 Claude agents working in parallel.
+25 interactive, ultra-visual web demos built in a single 15-minute burst by 8 Claude agents working in parallel.
 
 ## Run it
 
@@ -27,6 +27,8 @@ python3 -m http.server 8000
 | `three-terrain.html` | Three.js | Endless synthwave wireframe terrain |
 | `warp.html` | Canvas 2D | Hyperspace starfield, hold to warp |
 | `gravity.html` | Canvas 2D | N-body slingshot orbit sandbox |
+| `aurora.html` | Canvas 2D | Stirrable northern lights with solar flares |
+| `lightning.html` | Canvas 2D | Fractal storm, click-to-strike |
 | `matrix-rain.html` | Canvas 2D | Digital rain with cursor repulsion |
 | `boids.html` | Canvas 2D | Emergent flocking, mouse attract/repel |
 | `text-particles.html` | Canvas 2D | Particles form words, type your own |
