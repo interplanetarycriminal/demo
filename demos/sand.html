@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Falling Sand</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#05060a;cursor:crosshair}
+  #c{display:block;width:100vw;height:100vh}
+  #ui{position:fixed;top:10px;left:10px;z-index:10;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;
+      color:#cfe;background:rgba(6,10,18,.55);border:1px solid rgba(120,200,255,.25);
+      padding:8px 10px;border-radius:6px;backdrop-filter:blur(3px);pointer-events:none;max-width:60vw}
+  #ui b{color:#7ef0ff;letter-spacing:1px}
+  #ui a{color:#ff7ad9;pointer-events:auto;text-decoration:none}
+  #ui a:hover{text-decoration:underline}
+  #ui .row{margin-top:4px;opacity:.85}
+  #mat{color:#fff}
+  .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:-1px;box-shadow:0 0 6px currentColor}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div><b>FALLING&nbsp;SAND</b></div>
+  <div class="row">drag&nbsp;paint &middot; 1-5&nbsp;material &middot; [&nbsp;]&nbsp;brush &middot; C&nbsp;clear &middot; E&nbsp;erase</div>
+  <div class="row">material: <span id="mat">SAND</span> &nbsp; brush: <span id="brush">6</span></div>
+  <div class="row"><a href="index.html">&larr; gallery</a></div>
+</div>
+<script>
+(function(){
+const cv=document.getElementById('c'), ctx=cv.getContext('2d');
+let cssW,cssH,dpr,gw,gh,cell,grid,life,noise,off,offctx,offimg,buf32,frame=0;
+const EMPTY=0,SAND=1,WATER=2,WALL=3,PLANT=4,FIRE=5;
+const NAME={0:'ERASE',1:'SAND',2:'WATER',3:'WALL',4:'PLANT',5:'FIRE'};
+let mat=SAND, brush=6;
+const mouse={x:0,y:0,down:false,has:false};
+
+function resize(){
+  dpr=Math.min(2,window.devicePixelRatio||1);
+  cssW=window.innerWidth; cssH=window.innerHeight;
+  cv.width=Math.round(cssW*dpr); cv.height=Math.round(cssH*dpr);
+  cv.style.width=cssW+'px'; cv.style.height=cssH+'px';
+  gw=250; cell=cssW/gw; gh=Math.max(2,Math.round(cssH/cell));
+  const ng=new Uint8Array(gw*gh), nl=new Uint8Array(gw*gh), nn=new Uint8Array(gw*gh);
+  if(grid){ // preserve overlap
+    const ogh=grid.length/gw|0;
+    for(let y=0;y<Math.min(gh,ogh);y++)for(let x=0;x<gw;x++){ng[y*gw+x]=grid[y*gw+x];nl[y*gw+x]=life[y*gw+x];}
+  }
+  for(let i=0;i<nn.length;i++) nn[i]=Math.random()*28|0;
+  grid=ng; life=nl; noise=nn;
+  off=document.createElement('canvas'); off.width=gw; off.height=gh;
+  offctx=off.getContext('2d'); offimg=offctx.createImageData(gw,gh);
+  buf32=new Uint32Array(offimg.data.buffer);
+  ctx.imageSmoothingEnabled=false;
+}
+function idx(x,y){ if(x<0||x>=gw||y<0||y>=gh) return -1; return y*gw+x; }
+function swap(a,b){ const t=grid[a];grid[a]=grid[b];grid[b]=t; const l=life[a];life[a]=life[b];life[b]=l; }
+
+function paint(){
+  if(!mouse.has) return;
+  const gx=Math.floor(mouse.x/cssW*gw), gy=Math.floor(mouse.y/cssH*gh), b2=brush*brush;
+  for(let dy=-brush;dy<=brush;dy++)for(let dx=-brush;dx<=brush;dx++){
+    if(dx*dx+dy*dy>b2) continue;
+    const i=idx(gx+dx,gy+dy); if(i<0) continue;
+    if(mat===EMPTY){ grid[i]=EMPTY; life[i]=0; }
+    else if(mat===SAND||mat===WATER){ if(Math.random()<0.78){ grid[i]=mat; life[i]=0; } }
+    else { grid[i]=mat; life[i]= mat===FIRE ? (60+(Math.random()*40|0)) : 0; }
+  }
+}
+
+function step(){
+  // --- movement pass (sand + water) bottom-up ---
+  for(let y=gh-1;y>=0;y--){
+    const ltr=(y&1)===0;
+    for(let ix=0;ix<gw;ix++){
+      const x=ltr?ix:gw-1-ix, i=y*gw+x, m=grid[i];
+      if(m===SAND){
+        const b=idx(x,y+1);
+        if(b>=0 && (grid[b]===EMPTY||grid[b]===WATER)){ swap(i,b); continue; }
+        const dl=idx(x-1,y+1), dr=idx(x+1,y+1), first=Math.random()<0.5;
+        const okL=dl>=0&&(grid[dl]===EMPTY||grid[dl]===WATER), okR=dr>=0&&(grid[dr]===EMPTY||grid[dr]===WATER);
+        if(first){ if(okL) swap(i,dl); else if(okR) swap(i,dr); }
+        else { if(okR) swap(i,dr); else if(okL) swap(i,dl); }
+      } else if(m===WATER){
+        const b=idx(x,y+1);
+        if(b>=0 && grid[b]===EMPTY){ swap(i,b); continue; }
+        const dl=idx(x-1,y+1), dr=idx(x+1,y+1);
+        if(dl>=0&&grid[dl]===EMPTY){ swap(i,dl); continue; }
+        if(dr>=0&&grid[dr]===EMPTY){ swap(i,dr); continue; }
+        const l=idx(x-1,y), r=idx(x+1,y), first=Math.random()<0.5;
+        if(first){ if(l>=0&&grid[l]===EMPTY) swap(i,l); else if(r>=0&&grid[r]===EMPTY) swap(i,r); }
+        else { if(r>=0&&grid[r]===EMPTY) swap(i,r); else if(l>=0&&grid[l]===EMPTY) swap(i,l); }
+      }
+    }
+  }
+  // --- reaction pass (fire spread + plant growth) ---
+  const ignite=[];
+  for(let y=0;y<gh;y++)for(let x=0;x<gw;x++){
+    const i=y*gw+x, m=grid[i];
+    if(m===FIRE){
+      const up=idx(x,y-1),dn=idx(x,y+1),lf=idx(x-1,y),rt=idx(x+1,y);
+      let wet=false;
+      if(up>=0&&grid[up]===PLANT) ignite.push(up);
+      if(dn>=0&&grid[dn]===PLANT) ignite.push(dn);
+      if(lf>=0&&grid[lf]===PLANT) ignite.push(lf);
+      if(rt>=0&&grid[rt]===PLANT) ignite.push(rt);
+      if((up>=0&&grid[up]===WATER)||(dn>=0&&grid[dn]===WATER)||(lf>=0&&grid[lf]===WATER)||(rt>=0&&grid[rt]===WATER)) wet=true;
+      life[i]-=wet?12:1;
+      if(life[i]<=0){ grid[i]=EMPTY; life[i]=0; continue; }
+      if(up>=0&&grid[up]===EMPTY&&Math.random()<0.35){ grid[up]=FIRE; life[up]=life[i]; grid[i]=EMPTY; life[i]=0; }
+    } else if(m===PLANT){
+      const nb=[idx(x,y-1),idx(x,y+1),idx(x-1,y),idx(x+1,y)];
+      let water=-1;
+      for(let k=0;k<4;k++){ if(nb[k]>=0&&grid[nb[k]]===WATER){ water=nb[k]; break; } }
+      if(water>=0 && Math.random()<0.09){
+        const cand=[idx(x,y-1),idx(x-1,y-1),idx(x+1,y-1),idx(x-1,y),idx(x+1,y)];
+        for(let k=0;k<cand.length;k++){ if(cand[k]>=0&&grid[cand[k]]===EMPTY){ grid[cand[k]]=PLANT; break; } }
+        if(Math.random()<0.5){ grid[water]=EMPTY; life[water]=0; } // drink
+      }
+    }
+  }
+  for(let k=0;k<ignite.length;k++){ const j=ignite[k]; if(grid[j]===PLANT){ grid[j]=FIRE; life[j]=45+(Math.random()*35|0); } }
+}
+
+function render(){
+  frame++;
+  for(let i=0;i<grid.length;i++){
+    const m=grid[i], n=noise[i]; let r,g,b;
+    if(m===EMPTY){ r=8;g=7;b=13; }
+    else if(m===SAND){ r=255;g=196+((n%20)-10);b=70+((n%16)); }
+    else if(m===WATER){ r=40+(n%18);g=190;b=250; }
+    else if(m===WALL){ r=104+(n%18);g=104+(n%18);b=150+(n%14); }
+    else if(m===PLANT){ r=48+(n%20);g=255;b=118+((n%22)); }
+    else { // FIRE
+      const t=Math.max(0,Math.min(1,life[i]/90)), fl=(Math.sin(frame*0.6+i*0.13)*0.5+0.5);
+      r=255; g=(70+t*150+fl*30)|0; b=(24+fl*30)|0;
+    }
+    buf32[i]=(255<<24)|((b&255)<<16)|((g&255)<<8)|(r&255);
+  }
+  offctx.putImageData(offimg,0,0);
+  ctx.drawImage(off,0,0,gw,gh,0,0,cv.width,cv.height);
+}
+
+function loop(){ if(mouse.down) paint(); step(); render(); requestAnimationFrame(loop); }
+
+// input
+addEventListener('resize',resize);
+cv.addEventListener('mousedown',e=>{mouse.down=true;mouse.has=true;mouse.x=e.clientX;mouse.y=e.clientY;});
+addEventListener('mouseup',()=>mouse.down=false);
+addEventListener('mousemove',e=>{mouse.x=e.clientX;mouse.y=e.clientY;mouse.has=true;});
+cv.addEventListener('touchstart',e=>{e.preventDefault();mouse.down=true;mouse.has=true;const t=e.touches[0];mouse.x=t.clientX;mouse.y=t.clientY;},{passive:false});
+cv.addEventListener('touchmove',e=>{e.preventDefault();const t=e.touches[0];mouse.x=t.clientX;mouse.y=t.clientY;},{passive:false});
+addEventListener('touchend',()=>mouse.down=false);
+function ui(){ document.getElementById('mat').textContent=NAME[mat]; document.getElementById('brush').textContent=brush; }
+addEventListener('keydown',e=>{
+  const k=e.key.toLowerCase();
+  if(k>='1'&&k<='5'){ mat=+k; }
+  else if(k==='e') mat=EMPTY;
+  else if(k==='['){ brush=Math.max(1,brush-1); }
+  else if(k===']'){ brush=Math.min(40,brush+1); }
+  else if(k==='c'){ grid.fill(0); life.fill(0); }
+  ui();
+});
+resize(); ui(); requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
