@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mode 7 Horizon</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#04010a}
+  #c{display:block;width:100vw;height:100vh}
+  #ui{position:fixed;top:10px;left:10px;z-index:10;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;
+      color:#ffd7f4;background:rgba(12,4,24,.5);border:1px solid rgba(255,120,220,.3);
+      padding:8px 10px;border-radius:6px;backdrop-filter:blur(3px);pointer-events:none}
+  #ui b{color:#ff5ad2;letter-spacing:1px}
+  #ui a{color:#67f7ff;pointer-events:auto;text-decoration:none}
+  #ui a:hover{text-decoration:underline}
+  #ui .row{margin-top:4px;opacity:.9}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div><b>MODE&nbsp;7&nbsp;HORIZON</b></div>
+  <div class="row">&larr;/&rarr; steer &middot; &uarr;/&darr; speed &middot; A/Z altitude</div>
+  <div class="row">spd <span id="spd">0</span> &middot; alt <span id="alt">1.0</span></div>
+  <div class="row"><a href="index.html">&larr; gallery</a></div>
+</div>
+<script>
+(function(){
+const cv=document.getElementById('c'), ctx=cv.getContext('2d');
+let cssW,cssH,dpr,horizonY,bw,bh,gnd,gctx,gimg,g32,stars=[];
+
+function resize(){
+  dpr=Math.min(2,window.devicePixelRatio||1);
+  cssW=window.innerWidth; cssH=window.innerHeight;
+  cv.width=Math.round(cssW*dpr); cv.height=Math.round(cssH*dpr);
+  cv.style.width=cssW+'px'; cv.style.height=cssH+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  horizonY=Math.round(cssH*0.46);
+  bw=Math.max(120,Math.min(480,Math.round(cssW/3)));
+  bh=Math.max(80,Math.min(300,Math.round((cssH-horizonY)/3)));
+  gnd=document.createElement('canvas'); gnd.width=bw; gnd.height=bh;
+  gctx=gnd.getContext('2d'); gimg=gctx.createImageData(bw,bh);
+  g32=new Uint32Array(gimg.data.buffer);
+  stars=[];
+  const nStars=Math.round(cssW*cssH/9000);
+  for(let i=0;i<nStars;i++) stars.push({x:Math.random()*cssW,y:Math.random()*horizonY*0.96,p:Math.random()*6.28,s:Math.random()*1.4+0.3});
+}
+
+// camera
+let angle=0, camX=0, camZ=0, camH=1.0, speed=0.18;
+const keys={};
+addEventListener('keydown',e=>{ keys[e.key]=true; if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].indexOf(e.key)>=0) e.preventDefault(); });
+addEventListener('keyup',e=>{ keys[e.key]=false; });
+addEventListener('resize',resize);
+
+const T=2.0, THR=0.045;         // tile size, line thickness (world frac)
+const focal=1.0;
+// palette
+const baseR=12,baseG=2,baseB=26;
+const fogR=54,fogG=10,fogB=64;
+
+function drawGround(){
+  const dirX=Math.cos(angle), dirY=Math.sin(angle);
+  const fov=1.15;
+  const planeX=-dirY*fov, planeY=dirX*fov;
+  for(let r=0;r<bh;r++){
+    const screenP=(r+1)/bh;                 // 0..1 down the ground
+    const rowDist=(camH*focal)/(screenP*screenP*bh*0.06); // recede fast near horizon
+    const lx=camX+rowDist*(dirX-planeX), ly=camZ+rowDist*(dirY-planeY);
+    const rx=camX+rowDist*(dirX+planeX), ry=camZ+rowDist*(dirY+planeY);
+    const stepX=(rx-lx)/bw, stepY=(ry-ly)/bw;
+    let wx=lx, wy=ly;
+    const fog=1-r/(bh-1);                    // 1 at horizon -> 0 near
+    const fogA=fog*fog*0.92;
+    const inv=1-fogA;
+    const rowOff=r*bw;
+    for(let x=0;x<bw;x++){
+      const gx=wx/T, gz=wy/T;
+      const fx=gx-Math.floor(gx), fz=gz-Math.floor(gz);
+      const dLine=Math.min(fx<0.5?fx:1-fx, fz<0.5?fz:1-fz);
+      let cr,cg,cb;
+      if(dLine<THR){
+        // glowing grid line: X-lines magenta, Z-lines cyan
+        if((fx<0.5?fx:1-fx) < (fz<0.5?fz:1-fz)){ cr=255;cg=40;cb=200; } else { cr=40;cg=235;cb=255; }
+      } else {
+        const cell=((Math.floor(gx)+Math.floor(gz))&1);
+        if(cell){ cr=baseR+10;cg=baseG+4;cb=baseB+18; } else { cr=baseR;cg=baseG;cb=baseB; }
+      }
+      // fog toward horizon glow
+      cr=(cr*inv+fogR*fogA)|0; cg=(cg*inv+fogG*fogA)|0; cb=(cb*inv+fogB*fogA)|0;
+      g32[rowOff+x]=(255<<24)|((cb&255)<<16)|((cg&255)<<8)|(cr&255);
+      wx+=stepX; wy+=stepY;
+    }
+  }
+  gctx.putImageData(gimg,0,0);
+}
+
+function drawSky(t){
+  // gradient
+  const g=ctx.createLinearGradient(0,0,0,horizonY);
+  g.addColorStop(0,'#06001c'); g.addColorStop(0.55,'#210247'); g.addColorStop(0.86,'#5a0f6e'); g.addColorStop(1,'#a51f7e');
+  ctx.fillStyle=g; ctx.fillRect(0,0,cssW,horizonY);
+  // stars
+  for(let i=0;i<stars.length;i++){ const s=stars[i], a=0.35+0.55*(Math.sin(t*2+s.p)*0.5+0.5);
+    ctx.fillStyle='rgba(255,255,255,'+a.toFixed(2)+')'; ctx.fillRect(s.x,s.y,s.s,s.s); }
+  // sun
+  const R=Math.min(cssW,cssH)*0.17, cx=cssW*0.5, cy=horizonY-R*0.16;
+  ctx.save(); ctx.beginPath(); ctx.arc(cx,cy,R,0,6.2832); ctx.clip();
+  const sg=ctx.createLinearGradient(0,cy-R,0,cy+R);
+  sg.addColorStop(0,'#fff27a'); sg.addColorStop(0.5,'#ff9d43'); sg.addColorStop(1,'#ff2f7e');
+  ctx.fillStyle=sg; ctx.fillRect(cx-R,cy-R,2*R,2*R);
+  // scanline gaps in lower half
+  ctx.fillStyle='#12002a';
+  for(let i=0;i<9;i++){ const yy=cy+ (i*i)*(R*0.028); const hh=2+i*0.9; if(yy>cy) ctx.fillRect(cx-R,yy,2*R,hh); }
+  ctx.restore();
+  // horizon glow band
+  const hg=ctx.createLinearGradient(0,horizonY-24,0,horizonY+8);
+  hg.addColorStop(0,'rgba(255,45,140,0)'); hg.addColorStop(1,'rgba(255,80,190,0.55)');
+  ctx.fillStyle=hg; ctx.fillRect(0,horizonY-24,cssW,32);
+}
+
+let last=performance.now();
+function loop(now){
+  const dt=Math.min(50,now-last)/16.67; last=now;
+  if(keys['ArrowLeft']) angle-=0.028*dt;
+  if(keys['ArrowRight']) angle+=0.028*dt;
+  if(keys['ArrowUp']) speed+=0.012*dt;
+  if(keys['ArrowDown']) speed-=0.012*dt;
+  if(keys['a']||keys['A']) camH=Math.min(3.2,camH+0.03*dt);
+  if(keys['z']||keys['Z']) camH=Math.max(0.35,camH-0.03*dt);
+  speed*=0.995; if(speed<-0.2) speed=-0.2; if(speed>1.6) speed=1.6;
+  const dirX=Math.cos(angle), dirY=Math.sin(angle);
+  camX+=dirX*speed*dt; camZ+=dirY*speed*dt;
+
+  const t=now*0.001;
+  ctx.clearRect(0,0,cssW,cssH);
+  drawSky(t);
+  drawGround();
+  ctx.imageSmoothingEnabled=true;
+  ctx.drawImage(gnd,0,0,bw,bh,0,horizonY,cssW,cssH-horizonY);
+
+  document.getElementById('spd').textContent=speed.toFixed(2);
+  document.getElementById('alt').textContent=camH.toFixed(1);
+  requestAnimationFrame(loop);
+}
+resize(); requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

@@ -2,7 +2,9 @@
 
 ### ▶ Live gallery: **https://interplanetarycriminal.github.io/demo/**
 
-25 interactive, ultra-visual web demos built in a single 15-minute burst by 8 Claude agents working in parallel.
+49 interactive, ultra-visual web demos — raymarched fractals, GPU sims, particle galaxies,
+playable neon games, strange attractors and more — built across two rapid sprints by fleets
+of Claude agents working in parallel.
 
 ## Run it
 
