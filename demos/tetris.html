@@ -1,0 +1,187 @@
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<style>
+  html,body{margin:0;height:100%;background:#05060d;overflow:hidden;font-family:monospace}
+  canvas{display:block}
+  #ui{position:fixed;top:10px;left:10px;color:#9ff;background:rgba(0,10,20,.35);
+    padding:8px 10px;border-radius:6px;font:12px/1.5 monospace;z-index:10;
+    text-shadow:0 0 6px #0ff;pointer-events:none}
+  #ui a{color:#6cf;pointer-events:auto;text-decoration:none}
+  #ui a:hover{text-decoration:underline}
+</style>
+<div id="ui">
+  <div style="font-size:15px;color:#0ff;letter-spacing:2px">◆ NEON TETRIS</div>
+  <div>← → move · ↑ rotate · ↓ soft · Space hard drop</div>
+  <div>R restart · <a href="index.html">← gallery</a></div>
+</div>
+<canvas id="c"></canvas>
+<script>
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+let W,H,DPR;
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  W=window.innerWidth;H=window.innerHeight;
+  cv.width=W*DPR;cv.height=H*DPR;cv.style.width=W+'px';cv.style.height=H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize',resize);resize();
+
+const COLS=10,ROWS=20;
+const COLORS=['#00e5ff','#ffd400','#c04bff','#00ff88','#ff3b6b','#3b7bff','#ff8a00'];
+// tetromino shapes as rotation-agnostic matrices
+const SHAPES=[
+  [[1,1,1,1]],                    // I
+  [[1,1],[1,1]],                  // O
+  [[0,1,0],[1,1,1]],              // T
+  [[0,1,1],[1,1,0]],              // S
+  [[1,1,0],[0,1,1]],              // Z
+  [[1,0,0],[1,1,1]],              // J
+  [[0,0,1],[1,1,1]]               // L
+];
+let grid,cur,nextIdx,px,py,rot,score,level,lines,dropT,dropInt,over,flash,parts;
+
+function newGrid(){return Array.from({length:ROWS},()=>Array(COLS).fill(0));}
+function rotate(m){const r=m[0].length,c=m.length;let o=[];for(let i=0;i<r;i++){o.push([]);for(let j=c-1;j>=0;j--)o[i].push(m[j][i]);}return o;}
+function shape(idx,r){let m=SHAPES[idx].map(a=>a.slice());for(let i=0;i<r;i++)m=rotate(m);return m;}
+function spawn(){
+  cur=nextIdx;nextIdx=Math.floor(Math.random()*7);rot=0;
+  const m=shape(cur,rot);px=((COLS-m[0].length)/2)|0;py=-m.length;
+  if(collide(px,py+ (py<0?0:0),rot)){}
+}
+function collide(nx,ny,nr){
+  const m=shape(cur,nr);
+  for(let y=0;y<m.length;y++)for(let x=0;x<m[y].length;x++){
+    if(!m[y][x])continue;
+    const gx=nx+x,gy=ny+y;
+    if(gx<0||gx>=COLS||gy>=ROWS)return true;
+    if(gy>=0&&grid[gy][gx])return true;
+  }
+  return false;
+}
+function merge(){
+  const m=shape(cur,rot);
+  for(let y=0;y<m.length;y++)for(let x=0;x<m[y].length;x++){
+    if(m[y][x]){const gy=py+y,gx=px+x;if(gy<0){over=true;return;}grid[gy][gx]=cur+1;}
+  }
+}
+function clearLines(){
+  let cleared=[];
+  for(let y=ROWS-1;y>=0;y--)if(grid[y].every(v=>v)){cleared.push(y);}
+  if(cleared.length){
+    flash=12;
+    cleared.forEach(y=>{for(let x=0;x<COLS;x++)burst(x,y,COLORS[grid[y][x]-1]);});
+    // remove
+    cleared.sort((a,b)=>a-b);
+    for(const y of cleared)grid.splice(y,1);
+    for(let i=0;i<cleared.length;i++)grid.unshift(Array(COLS).fill(0));
+    lines+=cleared.length;
+    score+=[0,100,300,500,800][cleared.length]*level;
+    level=1+Math.floor(lines/10);
+    dropInt=Math.max(80,600-(level-1)*45);
+  }
+}
+function burst(cx,cy,col){
+  const g=geo();
+  for(let i=0;i<8;i++)parts.push({
+    x:g.ox+cx*g.cell+g.cell/2,y:g.oy+cy*g.cell+g.cell/2,
+    vx:(Math.random()-.5)*5,vy:(Math.random()-.5)*5,life:1,col});
+}
+function drop(){
+  if(!collide(px,py+1,rot)){py++;}
+  else{merge();if(over)return;clearLines();spawn();}
+}
+function hard(){while(!collide(px,py+1,rot)){py++;score+=2;}drop();}
+function reset(){
+  grid=newGrid();score=0;level=1;lines=0;dropInt=600;dropT=0;over=false;flash=0;parts=[];
+  nextIdx=Math.floor(Math.random()*7);spawn();
+}
+reset();
+
+document.addEventListener('keydown',e=>{
+  if(over){if(e.key==='r'||e.key==='R'||e.key==='Enter')reset();return;}
+  if(e.key==='ArrowLeft'){if(!collide(px-1,py,rot))px--;}
+  else if(e.key==='ArrowRight'){if(!collide(px+1,py,rot))px++;}
+  else if(e.key==='ArrowDown'){drop();dropT=0;}
+  else if(e.key==='ArrowUp'){const nr=(rot+1)%4;if(!collide(px,py,nr))rot=nr;else if(!collide(px-1,py,nr)){px--;rot=nr;}else if(!collide(px+1,py,nr)){px++;rot=nr;}}
+  else if(e.key===' '){e.preventDefault();hard();dropT=0;}
+  else if(e.key==='r'||e.key==='R')reset();
+});
+
+function geo(){
+  const cell=Math.floor(Math.min((H-40)/ROWS,(W-260)/COLS));
+  const gw=cell*COLS,gh=cell*ROWS;
+  return {cell,ox:Math.floor((W-gw)/2-40),oy:Math.floor((H-gh)/2),gw,gh};
+}
+function block(x,y,cell,col,a=1){
+  ctx.globalAlpha=a;
+  ctx.shadowColor=col;ctx.shadowBlur=15;
+  ctx.fillStyle=col;
+  ctx.fillRect(x+1,y+1,cell-2,cell-2);
+  ctx.shadowBlur=0;
+  ctx.globalAlpha=a*.35;ctx.fillStyle='#fff';
+  ctx.fillRect(x+3,y+3,cell-6,4);
+  ctx.globalAlpha=1;
+}
+
+function loop(dt){
+  if(!over){
+    dropT+=dt;
+    if(dropT>dropInt){dropT=0;drop();}
+  }
+  if(flash>0)flash--;
+  const g=geo();
+  ctx.clearRect(0,0,W,H);
+  // background well
+  ctx.fillStyle='rgba(8,10,22,.9)';ctx.fillRect(g.ox,g.oy,g.gw,g.gh);
+  // grid lines
+  ctx.strokeStyle='rgba(60,90,140,.18)';ctx.lineWidth=1;
+  for(let x=0;x<=COLS;x++){ctx.beginPath();ctx.moveTo(g.ox+x*g.cell,g.oy);ctx.lineTo(g.ox+x*g.cell,g.oy+g.gh);ctx.stroke();}
+  for(let y=0;y<=ROWS;y++){ctx.beginPath();ctx.moveTo(g.ox,g.oy+y*g.cell);ctx.lineTo(g.ox+g.gw,g.oy+y*g.cell);ctx.stroke();}
+  // frame
+  ctx.strokeStyle='#0ff';ctx.shadowColor='#0ff';ctx.shadowBlur=12;ctx.lineWidth=2;
+  ctx.strokeRect(g.ox,g.oy,g.gw,g.gh);ctx.shadowBlur=0;
+  // settled blocks
+  for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++)if(grid[y][x])block(g.ox+x*g.cell,g.oy+y*g.cell,g.cell,COLORS[grid[y][x]-1]);
+  // flash overlay on full lines
+  if(flash>0){ctx.globalAlpha=flash/12*.5;ctx.fillStyle='#fff';
+    for(let y=0;y<ROWS;y++)if(grid[y].every(v=>v))ctx.fillRect(g.ox,g.oy+y*g.cell,g.gw,g.cell);ctx.globalAlpha=1;}
+  // current piece + ghost
+  if(!over){
+    const m=shape(cur,rot);
+    let gy=py;while(!collide(px,gy+1,rot))gy++;
+    for(let y=0;y<m.length;y++)for(let x=0;x<m[y].length;x++)if(m[y][x]){
+      if(gy+y>=0)block(g.ox+(px+x)*g.cell,g.oy+(gy+y)*g.cell,g.cell,COLORS[cur],.18);
+    }
+    for(let y=0;y<m.length;y++)for(let x=0;x<m[y].length;x++)if(m[y][x]&&py+y>=0)
+      block(g.ox+(px+x)*g.cell,g.oy+(py+y)*g.cell,g.cell,COLORS[cur]);
+  }
+  // side panel: next + stats
+  const panelX=g.ox+g.gw+24,pcell=Math.min(24,g.cell*.8);
+  ctx.fillStyle='#9ff';ctx.font='13px monospace';ctx.textAlign='left';
+  ctx.fillText('NEXT',panelX,g.oy+16);
+  const nm=SHAPES[nextIdx];
+  for(let y=0;y<nm.length;y++)for(let x=0;x<nm[y].length;x++)if(nm[y][x])
+    block(panelX+x*pcell,g.oy+26+y*pcell,pcell,COLORS[nextIdx]);
+  ctx.fillStyle='#0ff';ctx.font='14px monospace';
+  const sy=g.oy+26+4*pcell+30;
+  ctx.fillText('SCORE',panelX,sy);ctx.fillStyle='#fff';ctx.font='20px monospace';ctx.fillText(score,panelX,sy+24);
+  ctx.fillStyle='#0ff';ctx.font='14px monospace';ctx.fillText('LEVEL',panelX,sy+58);ctx.fillStyle='#fff';ctx.font='20px monospace';ctx.fillText(level,panelX,sy+82);
+  ctx.fillStyle='#0ff';ctx.font='14px monospace';ctx.fillText('LINES',panelX,sy+116);ctx.fillStyle='#fff';ctx.font='20px monospace';ctx.fillText(lines,panelX,sy+140);
+  // particles
+  for(let i=parts.length-1;i>=0;i--){const p=parts[i];p.x+=p.vx;p.y+=p.vy;p.vy+=.15;p.life-=.03;
+    if(p.life<=0){parts.splice(i,1);continue;}
+    ctx.globalAlpha=p.life;ctx.fillStyle=p.col;ctx.shadowColor=p.col;ctx.shadowBlur=10;
+    ctx.fillRect(p.x-2,p.y-2,4,4);ctx.globalAlpha=1;ctx.shadowBlur=0;}
+  // game over
+  if(over){
+    ctx.fillStyle='rgba(0,0,10,.72)';ctx.fillRect(0,0,W,H);
+    ctx.textAlign='center';ctx.fillStyle='#ff3b6b';ctx.shadowColor='#ff3b6b';ctx.shadowBlur=20;
+    ctx.font='bold 46px monospace';ctx.fillText('GAME OVER',W/2,H/2-20);ctx.shadowBlur=0;
+    ctx.fillStyle='#9ff';ctx.font='18px monospace';ctx.fillText('Score '+score+' · Lines '+lines,W/2,H/2+18);
+    ctx.fillStyle='#0ff';ctx.fillText('Press R or Enter to restart',W/2,H/2+50);
+    ctx.textAlign='left';
+  }
+}
+let last=performance.now();
+function frame(t){const dt=t-last;last=t;loop(dt);requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+</script>

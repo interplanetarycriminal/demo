@@ -1,0 +1,86 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fireworks</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#01010a}
+  canvas{display:block;position:fixed;inset:0;cursor:crosshair}
+  #ui{position:fixed;top:12px;left:12px;z-index:10;font:12px/1.6 ui-monospace,Menlo,monospace;
+      color:#fd9;background:rgba(15,6,20,.45);padding:10px 14px;border:1px solid rgba(255,180,120,.25);
+      border-radius:10px;backdrop-filter:blur(6px)}
+  #ui b{color:#fff;letter-spacing:.12em}
+  #ui a{color:#fb7;text-decoration:none}#ui a:hover{text-decoration:underline}
+</style>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div id="ui"><b>FIREWORKS</b><br>click = launch a shell · auto-show runs itself<br><a href="index.html">← gallery</a></div>
+<canvas id="c"></canvas>
+<script>
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+let W,H,DPR;
+function resize(){DPR=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;
+  cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.fillStyle='#01010a';ctx.fillRect(0,0,W,H);}
+addEventListener('resize',resize);resize();
+
+const G=0.05, shells=[], sparks=[];
+function rand(a,b){return a+Math.random()*(b-a);}
+function launch(tx,ty){
+  const x=tx==null?rand(W*.2,W*.8):tx;
+  const targetY=ty==null?rand(H*.12,H*.45):ty;
+  const vy=-Math.sqrt(2*G*(H-targetY));           // just enough to reach apex ~targetY
+  shells.push({x,y:H,vx:rand(-.6,.6),vy,hue:rand(0,360),trail:[]});
+}
+function burst(x,y,hue){
+  const type=Math.random();
+  const n=90+Math.random()*80|0;
+  const base=rand(3,5);
+  for(let i=0;i<n;i++){
+    let a,sp;
+    if(type<.33){ a=(i/n)*Math.PI*2; sp=base*(0.6+Math.random()*0.5);}      // ring
+    else if(type<.66){ a=Math.random()*Math.PI*2; sp=base*Math.random();}   // filled
+    else { a=(i/n)*Math.PI*2; sp=base*(0.9+0.3*Math.sin(a*6));}             // flower
+    const h=(hue + (type<.66?rand(-18,18):i/n*60))%360;
+    sparks.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,
+      life:1,decay:rand(.008,.018),hue:h,g:rand(.02,.05)});
+  }
+  // white flash
+  sparks.push({x,y,vx:0,vy:0,life:1,decay:.06,hue:0,sat:0,g:0,flash:true});
+}
+cv.addEventListener('pointerdown',e=>launch(e.clientX,e.clientY));
+let t=0;
+function frame(){
+  t++;
+  if(t%45===0) launch();                          // ambient auto-launches
+  ctx.fillStyle='rgba(1,1,10,.22)';ctx.fillRect(0,0,W,H);
+  ctx.globalCompositeOperation='lighter';
+
+  for(let i=shells.length-1;i>=0;i--){
+    const s=shells[i];
+    s.vy+=G; s.x+=s.vx; s.y+=s.vy;
+    s.trail.push(s.x,s.y); if(s.trail.length>12)s.trail.splice(0,2);
+    ctx.strokeStyle=`hsl(${s.hue},100%,80%)`;ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(s.trail[0],s.trail[1]);
+    for(let k=2;k<s.trail.length;k+=2)ctx.lineTo(s.trail[k],s.trail[k+1]);
+    ctx.stroke();
+    ctx.fillStyle=`hsl(${s.hue},100%,90%)`;ctx.beginPath();ctx.arc(s.x,s.y,2.2,0,7);ctx.fill();
+    if(s.vy>=-0.4){ burst(s.x,s.y,s.hue); shells.splice(i,1); }   // detonate near apex
+  }
+
+  for(let i=sparks.length-1;i>=0;i--){
+    const p=sparks[i];
+    p.vy+=p.g; p.vx*=0.985; p.vy*=0.985; p.x+=p.vx; p.y+=p.vy; p.life-=p.decay;
+    if(p.life<=0){sparks.splice(i,1);continue;}
+    if(p.flash){
+      const r=140*(1-p.life);
+      const g=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,r+1);
+      g.addColorStop(0,`rgba(255,255,255,${p.life*.5})`);g.addColorStop(1,'rgba(255,255,255,0)');
+      ctx.fillStyle=g;ctx.beginPath();ctx.arc(p.x,p.y,r+1,0,7);ctx.fill();continue;
+    }
+    const l=50+p.life*40;
+    ctx.fillStyle=`hsla(${p.hue},${p.sat==null?100:p.sat}%,${l}%,${p.life})`;
+    ctx.beginPath();ctx.arc(p.x,p.y,1.8,0,7);ctx.fill();
+  }
+  ctx.globalCompositeOperation='source-over';
+  requestAnimationFrame(frame);
+}
+launch();frame();
+</script>
