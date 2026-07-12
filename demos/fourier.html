@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fourier Epicycles</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#05060a;}
+  canvas{display:block;position:fixed;inset:0;}
+  #ui{position:fixed;top:12px;left:12px;z-index:10;
+      font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#9fe;
+      background:rgba(8,12,20,0.42);border:1px solid rgba(120,200,255,0.18);
+      border-radius:8px;padding:10px 12px;max-width:260px;}
+  #ui h1{margin:0 0 4px;font-size:12px;letter-spacing:2px;color:#7fdfff;text-transform:uppercase;}
+  #ui p{margin:2px 0;opacity:0.82;}
+  #ui a{color:#8ff;text-decoration:none;border-bottom:1px dotted #8ff;}
+  #ui .k{color:#ffd27f;}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div id="ui">
+  <h1>Fourier Epicycles</h1>
+  <p>60 rotating vectors from a DFT trace the curve.</p>
+  <p><span class="k">click</span> &rarr; next shape &middot; now: <span id="shape">heart</span></p>
+  <p><a href="index.html">&larr; gallery</a></p>
+</div>
+<canvas id="c"></canvas>
+<script>
+var canvas=document.getElementById('c'), ctx=canvas.getContext('2d');
+var W=0,H=0,DPR=1;
+function resize(){
+  DPR=Math.min(window.devicePixelRatio||1,2);
+  W=window.innerWidth; H=window.innerHeight;
+  canvas.width=Math.floor(W*DPR); canvas.height=Math.floor(H*DPR);
+  canvas.style.width=W+'px'; canvas.style.height=H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize',resize); resize();
+
+var N=256, CIRCLES=60;
+
+function heart(){
+  var pts=[];
+  for(var i=0;i<N;i++){
+    var t=i/N*Math.PI*2;
+    var x=16*Math.pow(Math.sin(t),3);
+    var y=13*Math.cos(t)-5*Math.cos(2*t)-2*Math.cos(3*t)-Math.cos(4*t);
+    pts.push({x:x/17,y:-y/17});
+  }
+  return pts;
+}
+function rose(){
+  var pts=[], k=4;
+  for(var i=0;i<N;i++){
+    var t=i/N*Math.PI*2, r=Math.cos(k*t)*0.5+0.55;
+    pts.push({x:Math.cos(t)*r,y:Math.sin(t)*r});
+  }
+  return pts;
+}
+function star(){
+  var verts=[], spikes=5;
+  for(var i=0;i<spikes*2;i++){
+    var r=(i%2===0)?1:0.42;
+    var a=i/(spikes*2)*Math.PI*2-Math.PI/2;
+    verts.push({x:Math.cos(a)*r,y:Math.sin(a)*r});
+  }
+  return resample(verts);
+}
+function resample(verts){
+  var seg=[], total=0, i;
+  for(i=0;i<verts.length;i++){
+    var a=verts[i], b=verts[(i+1)%verts.length];
+    var d=Math.hypot(b.x-a.x,b.y-a.y); seg.push(d); total+=d;
+  }
+  var pts=[];
+  for(i=0;i<N;i++){
+    var dist=i/N*total, idx=0;
+    while(dist>seg[idx]){ dist-=seg[idx]; idx++; }
+    var p=verts[idx], q=verts[(idx+1)%verts.length];
+    var f=seg[idx]===0?0:dist/seg[idx];
+    pts.push({x:p.x+(q.x-p.x)*f,y:p.y+(q.y-p.y)*f});
+  }
+  return pts;
+}
+
+function dft(points){
+  var X=[], k, n;
+  for(k=0;k<N;k++){
+    var re=0, im=0;
+    for(n=0;n<N;n++){
+      var phi=2*Math.PI*k*n/N;
+      re+=points[n].x*Math.cos(phi)+points[n].y*Math.sin(phi);
+      im+=-points[n].x*Math.sin(phi)+points[n].y*Math.cos(phi);
+    }
+    re/=N; im/=N;
+    X.push({freq:k,amp:Math.hypot(re,im),phase:Math.atan2(im,re)});
+  }
+  X.sort(function(a,b){return b.amp-a.amp;});
+  return X;
+}
+
+var shapes=[{name:'heart',gen:heart},{name:'star',gen:star},{name:'rose',gen:rose}];
+var shapeIndex=0, epi=[], time=0, trail=[];
+function loadShape(i){
+  epi=dft(shapes[i].gen()).slice(0,CIRCLES);
+  document.getElementById('shape').textContent=shapes[i].name;
+  trail.length=0; time=0;
+}
+loadShape(0);
+canvas.addEventListener('click',function(){
+  shapeIndex=(shapeIndex+1)%shapes.length; loadShape(shapeIndex);
+});
+
+function frame(){
+  ctx.fillStyle='rgba(5,6,10,0.28)';
+  ctx.fillRect(0,0,W,H);
+  var cx=W/2, cy=H/2, scale=Math.min(W,H)*0.34;
+  var x=cx, y=cy, i;
+  ctx.lineWidth=1;
+  for(i=0;i<epi.length;i++){
+    var c=epi[i], px=x, py=y, r=c.amp*scale, ang=c.freq*time+c.phase;
+    x+=r*Math.cos(ang); y+=r*Math.sin(ang);
+    ctx.strokeStyle='rgba(120,180,255,0.13)';
+    ctx.beginPath(); ctx.arc(px,py,r,0,Math.PI*2); ctx.stroke();
+    ctx.strokeStyle='rgba(180,220,255,0.30)';
+    ctx.beginPath(); ctx.moveTo(px,py); ctx.lineTo(x,y); ctx.stroke();
+  }
+  trail.unshift({x:x,y:y});
+  if(trail.length>N) trail.pop();
+
+  ctx.globalCompositeOperation='lighter';
+  ctx.lineWidth=2.4; ctx.lineJoin='round';
+  ctx.beginPath();
+  for(i=0;i<trail.length;i++){
+    var t=trail[i];
+    if(i===0) ctx.moveTo(t.x,t.y); else ctx.lineTo(t.x,t.y);
+  }
+  ctx.strokeStyle='rgba(0,240,200,0.5)';
+  ctx.shadowBlur=14; ctx.shadowColor='rgba(0,255,200,0.85)';
+  ctx.stroke();
+  ctx.shadowBlur=0;
+  ctx.globalCompositeOperation='source-over';
+
+  ctx.fillStyle='#c6fff2';
+  ctx.beginPath(); ctx.arc(x,y,2.6,0,Math.PI*2); ctx.fill();
+
+  time+=Math.PI*2/N;
+  if(time>Math.PI*2) time-=Math.PI*2;
+  requestAnimationFrame(frame);
+}
+frame();
+</script>
+</body>
+</html>
