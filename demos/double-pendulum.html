@@ -1,0 +1,112 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Double Pendulum Chaos</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#000;}
+  #c{display:block;position:fixed;inset:0;cursor:pointer;}
+  #ui{position:fixed;top:10px;left:12px;z-index:10;color:#fbf;font:12px/1.55 monospace;
+      background:rgba(0,0,0,0.38);padding:8px 11px;border:1px solid rgba(255,140,220,0.18);
+      border-radius:7px;pointer-events:none;text-shadow:0 0 6px rgba(255,120,220,0.4);}
+  #ui a{color:#f9c;pointer-events:auto;text-decoration:none;}
+  #ui a:hover{color:#fff;}
+  #ui b{color:#fff;font-weight:normal;letter-spacing:2px;}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <b>DOUBLE PENDULUM CHAOS</b><br>
+  click: reseed &nbsp;·&nbsp; space: pause<br>
+  <a href="index.html">← gallery</a>
+</div>
+<script>
+const canvas=document.getElementById('c');
+const ctx=canvas.getContext('2d');
+let W=0,H=0,DPR=1;
+function resize(){
+  DPR=Math.min(window.devicePixelRatio||1,2);
+  W=window.innerWidth;H=window.innerHeight;
+  canvas.width=Math.floor(W*DPR);canvas.height=Math.floor(H*DPR);
+  canvas.style.width=W+'px';canvas.style.height=H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.fillStyle='#04040a';ctx.fillRect(0,0,W,H);
+}
+window.addEventListener('resize',resize);
+resize();
+
+const N=150;
+const g=9.81,m1=1,m2=1,L1=1,L2=1;
+const dt=0.0045,SUB=8;
+const a1=new Float64Array(N),a2=new Float64Array(N);
+const w1=new Float64Array(N),w2=new Float64Array(N);
+let paused=false;
+
+function seed(){
+  const base1=1.0+Math.random()*1.6;
+  const base2=1.0+Math.random()*1.6;
+  for(let i=0;i<N;i++){
+    a1[i]=base1+(i-N/2)*0.0009;
+    a2[i]=base2+(i-N/2)*0.0009;
+    w1[i]=0;w2[i]=0;
+  }
+  ctx.globalCompositeOperation='source-over';
+  ctx.fillStyle='#04040a';ctx.fillRect(0,0,W,H);
+}
+seed();
+
+function stepOne(i){
+  let A1=a1[i],A2=a2[i],W1=w1[i],W2=w2[i];
+  for(let s=0;s<SUB;s++){
+    const del=A1-A2;
+    const denom=(2*m1+m2-m2*Math.cos(2*A1-2*A2));
+    const a1dd=(-g*(2*m1+m2)*Math.sin(A1)-m2*g*Math.sin(A1-2*A2)
+      -2*Math.sin(del)*m2*(W2*W2*L2+W1*W1*L1*Math.cos(del)))/(L1*denom);
+    const a2dd=(2*Math.sin(del)*(W1*W1*L1*(m1+m2)+g*(m1+m2)*Math.cos(A1)
+      +W2*W2*L2*m2*Math.cos(del)))/(L2*denom);
+    W1+=a1dd*dt;W2+=a2dd*dt;
+    A1+=W1*dt;A2+=W2*dt;
+  }
+  a1[i]=A1;a2[i]=A2;w1[i]=W1;w2[i]=W2;
+}
+
+function loop(){
+  const ox=W/2,oy=H*0.36;
+  const scale=Math.min(W,H)*0.19;
+  // fade for trails
+  ctx.globalCompositeOperation='source-over';
+  ctx.fillStyle='rgba(4,4,10,0.055)';
+  ctx.fillRect(0,0,W,H);
+  ctx.globalCompositeOperation='lighter';
+  for(let i=0;i<N;i++){
+    if(!paused)stepOne(i);
+    const x1=ox+scale*Math.sin(a1[i]),y1=oy+scale*Math.cos(a1[i]);
+    const x2=x1+scale*Math.sin(a2[i]),y2=y1+scale*Math.cos(a2[i]);
+    const hue=Math.floor(i/N*360);
+    // faint rods -> chaos fan
+    ctx.strokeStyle='hsla('+hue+',90%,60%,0.045)';
+    ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(ox,oy);ctx.lineTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+    // bright tip -> rainbow trail
+    ctx.fillStyle='hsla('+hue+',100%,65%,0.9)';
+    ctx.beginPath();ctx.arc(x2,y2,1.7,0,6.2832);ctx.fill();
+  }
+  // pivot
+  ctx.globalCompositeOperation='source-over';
+  ctx.fillStyle='rgba(255,255,255,0.7)';
+  ctx.beginPath();ctx.arc(ox,oy,3,0,6.2832);ctx.fill();
+  requestAnimationFrame(loop);
+}
+loop();
+
+canvas.addEventListener('mousedown',()=>seed());
+window.addEventListener('keydown',e=>{
+  if(e.code==='Space'){e.preventDefault();paused=!paused;}
+});
+canvas.addEventListener('touchstart',e=>{seed();e.preventDefault();},{passive:false});
+</script>
+</body>
+</html>

@@ -1,0 +1,197 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Verlet Cloth</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#000;}
+  #c{display:block;position:fixed;inset:0;cursor:crosshair;}
+  #ui{position:fixed;top:10px;left:12px;z-index:10;color:#9cf;font:12px/1.55 monospace;
+      background:rgba(0,0,0,0.38);padding:8px 11px;border:1px solid rgba(120,180,255,0.18);
+      border-radius:7px;pointer-events:none;text-shadow:0 0 6px rgba(80,160,255,0.4);}
+  #ui a{color:#6cf;pointer-events:auto;text-decoration:none;}
+  #ui a:hover{color:#bff;}
+  #ui b{color:#fff;font-weight:normal;letter-spacing:2px;}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <b>VERLET CLOTH</b><br>
+  drag: grab &amp; swing &nbsp;·&nbsp; right-drag: tear &nbsp;·&nbsp; R: reset<br>
+  <a href="index.html">← gallery</a>
+</div>
+<script>
+const canvas=document.getElementById('c');
+const ctx=canvas.getContext('2d');
+let W=0,H=0,DPR=1;
+function resize(){
+  DPR=Math.min(window.devicePixelRatio||1,2);
+  W=window.innerWidth;H=window.innerHeight;
+  canvas.width=Math.floor(W*DPR);canvas.height=Math.floor(H*DPR);
+  canvas.style.width=W+'px';canvas.style.height=H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize',resize);
+resize();
+
+const COLS=40,ROWS=28;
+const dt=1/60,GRAV=980,DAMP=0.99,ITER=4;
+let points=[],sticks=[];
+
+function build(){
+  points=[];sticks=[];
+  const spacing=Math.min((W*0.72)/(COLS-1),(H*0.62)/(ROWS-1));
+  const startX=(W-(COLS-1)*spacing)/2;
+  const startY=H*0.11;
+  for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++){
+    const px=startX+x*spacing,py=startY+y*spacing;
+    points.push({x:px,y:py,ox:px,oy:py,pinned:(y===0&&(x%4===0||x===COLS-1)),held:false});
+  }
+  for(let y=0;y<ROWS;y++)for(let x=0;x<COLS;x++){
+    const i=y*COLS+x;
+    if(x<COLS-1)sticks.push({a:i,b:i+1,rest:spacing,dead:false});
+    if(y<ROWS-1)sticks.push({a:i,b:i+COLS,rest:spacing,dead:false});
+  }
+}
+build();
+
+const mouse={x:0,y:0,px:0,py:0,down:false,tear:false};
+let held=null;
+let t=0;
+
+function integrate(){
+  const wind=(Math.sin(t*0.6)+0.5*Math.sin(t*1.7+1))*40+Math.sin(t*0.23)*20;
+  for(let i=0;i<points.length;i++){
+    const p=points[i];
+    if(p.pinned||p.held)continue;
+    const vx=(p.x-p.ox)*DAMP,vy=(p.y-p.oy)*DAMP;
+    p.ox=p.x;p.oy=p.y;
+    p.x+=vx+wind*dt*dt;
+    p.y+=vy+GRAV*dt*dt;
+  }
+}
+function constrain(){
+  for(let k=0;k<ITER;k++){
+    for(let s=0;s<sticks.length;s++){
+      const st=sticks[s];if(st.dead)continue;
+      const p0=points[st.a],p1=points[st.b];
+      let dx=p1.x-p0.x,dy=p1.y-p0.y;
+      const d=Math.sqrt(dx*dx+dy*dy)||0.0001;
+      const diff=(st.rest-d)/d*0.5;
+      const ox=dx*diff,oy=dy*diff;
+      const m0=!p0.pinned&&!p0.held,m1=!p1.pinned&&!p1.held;
+      if(m0){p0.x-=ox;p0.y-=oy;}
+      if(m1){p1.x+=ox;p1.y+=oy;}
+    }
+  }
+}
+
+function grab(){
+  let best=null,bd=28*28;
+  for(let i=0;i<points.length;i++){
+    const p=points[i];
+    const dx=p.x-mouse.x,dy=p.y-mouse.y,d=dx*dx+dy*dy;
+    if(d<bd){bd=d;best=p;}
+  }
+  if(best){best.held=true;held=best;}
+}
+function tearAt(){
+  const R=24*24;
+  for(let s=0;s<sticks.length;s++){
+    const st=sticks[s];if(st.dead)continue;
+    const p0=points[st.a],p1=points[st.b];
+    const mx=(p0.x+p1.x)*0.5,my=(p0.y+p1.y)*0.5;
+    const dx=mx-mouse.x,dy=my-mouse.y;
+    if(dx*dx+dy*dy<R)st.dead=true;
+  }
+}
+
+// strain color buckets
+const BUCKETS=18;
+const bucketRGB=[];
+function hslToRgb(h,s,l){
+  let r,g,b;const q=l<0.5?l*(1+s):l+s-l*s,p=2*l-q;
+  const hue=(tt)=>{if(tt<0)tt+=1;if(tt>1)tt-=1;if(tt<1/6)return p+(q-p)*6*tt;if(tt<1/2)return q;if(tt<2/3)return p+(q-p)*(2/3-tt)*6;return p;};
+  r=hue(h+1/3);g=hue(h);b=hue(h-1/3);
+  return [Math.round(r*255),Math.round(g*255),Math.round(b*255)];
+}
+for(let i=0;i<BUCKETS;i++){
+  const hue=(190+i/(BUCKETS-1)*145)/360;
+  bucketRGB.push(hslToRgb(hue,1,0.58));
+}
+
+function render(){
+  ctx.globalCompositeOperation='source-over';
+  ctx.fillStyle='#05060c';
+  ctx.fillRect(0,0,W,H);
+  ctx.globalCompositeOperation='lighter';
+  ctx.lineCap='round';
+  const paths=[];
+  for(let i=0;i<BUCKETS;i++)paths.push(new Path2D());
+  for(let s=0;s<sticks.length;s++){
+    const st=sticks[s];if(st.dead)continue;
+    const p0=points[st.a],p1=points[st.b];
+    const dx=p1.x-p0.x,dy=p1.y-p0.y;
+    const d=Math.sqrt(dx*dx+dy*dy);
+    const strain=(d/st.rest)-1;
+    let idx=Math.floor(((strain+0.05)/0.4)*BUCKETS);
+    if(idx<0)idx=0;else if(idx>=BUCKETS)idx=BUCKETS-1;
+    const pt=paths[idx];
+    pt.moveTo(p0.x,p0.y);pt.lineTo(p1.x,p1.y);
+  }
+  // glow pass
+  ctx.lineWidth=3.4;
+  for(let i=0;i<BUCKETS;i++){
+    const c=bucketRGB[i];
+    ctx.strokeStyle='rgba('+c[0]+','+c[1]+','+c[2]+',0.10)';
+    ctx.stroke(paths[i]);
+  }
+  // core pass
+  ctx.lineWidth=1.3;
+  for(let i=0;i<BUCKETS;i++){
+    const c=bucketRGB[i];
+    ctx.strokeStyle='rgba('+c[0]+','+c[1]+','+c[2]+',0.85)';
+    ctx.stroke(paths[i]);
+  }
+  // pinned + held nodes
+  for(let i=0;i<points.length;i++){
+    const p=points[i];
+    if(p.pinned){ctx.fillStyle='rgba(120,200,255,0.9)';ctx.beginPath();ctx.arc(p.x,p.y,2.2,0,6.2832);ctx.fill();}
+  }
+  if(held){ctx.fillStyle='rgba(255,255,255,0.95)';ctx.beginPath();ctx.arc(held.x,held.y,4,0,6.2832);ctx.fill();}
+  ctx.globalCompositeOperation='source-over';
+}
+
+function loop(){
+  t+=dt;
+  if(held){held.ox=held.x;held.oy=held.y;held.x=mouse.x;held.y=mouse.y;}
+  if(mouse.tear)tearAt();
+  integrate();
+  constrain();
+  render();
+  requestAnimationFrame(loop);
+}
+loop();
+
+function setMouse(e){mouse.px=mouse.x;mouse.py=mouse.y;mouse.x=e.clientX;mouse.y=e.clientY;}
+canvas.addEventListener('mousemove',e=>{setMouse(e);});
+canvas.addEventListener('mousedown',e=>{
+  setMouse(e);
+  if(e.button===2){mouse.tear=true;tearAt();}
+  else{mouse.down=true;grab();}
+});
+window.addEventListener('mouseup',()=>{
+  mouse.down=false;mouse.tear=false;
+  if(held){held.held=false;held=null;}
+});
+canvas.addEventListener('contextmenu',e=>e.preventDefault());
+window.addEventListener('keydown',e=>{if(e.key==='r'||e.key==='R'){held=null;build();}});
+canvas.addEventListener('touchstart',e=>{const tt=e.touches[0];mouse.x=tt.clientX;mouse.y=tt.clientY;grab();e.preventDefault();},{passive:false});
+canvas.addEventListener('touchmove',e=>{const tt=e.touches[0];mouse.px=mouse.x;mouse.py=mouse.y;mouse.x=tt.clientX;mouse.y=tt.clientY;e.preventDefault();},{passive:false});
+canvas.addEventListener('touchend',()=>{if(held){held.held=false;held=null;}});
+</script>
+</body>
+</html>

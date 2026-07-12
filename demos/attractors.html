@@ -1,0 +1,90 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Strange Attractors</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#020208}
+  canvas{display:block;position:fixed;inset:0;cursor:grab}
+  canvas:active{cursor:grabbing}
+  #ui{position:fixed;top:12px;left:12px;z-index:10;font:12px/1.6 ui-monospace,Menlo,monospace;
+      color:#bdf;background:rgba(6,8,25,.5);padding:10px 14px;border:1px solid rgba(140,170,255,.25);
+      border-radius:10px;backdrop-filter:blur(6px)}
+  #ui b{color:#fff;letter-spacing:.12em}#ui a{color:#9bf;text-decoration:none}
+  #ui a:hover{text-decoration:underline}#ui .n{color:#7fffd4}
+</style>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div id="ui"><b>STRANGE ATTRACTORS</b><br>drag = rotate · wheel = zoom · click = next system<br>system: <span class="n" id="nm">Lorenz</span> · <a href="index.html">← gallery</a></div>
+<canvas id="c"></canvas>
+<script>
+const cv=document.getElementById('c'),ctx=cv.getContext('2d'),nm=document.getElementById('nm');
+let W,H,DPR;
+function resize(){DPR=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;
+  cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.fillStyle='#020208';ctx.fillRect(0,0,W,H);}
+addEventListener('resize',resize);resize();
+
+// A set of chaotic systems; each gives dx,dy,dz and a scale to fit the view.
+const SYS=[
+ {name:'Lorenz', s:9,  dt:0.005, f:(x,y,z)=>[10*(y-x), x*(28-z)-y, x*y-2.6667*z], c:[0,0,25]},
+ {name:'Aizawa', s:95, dt:0.01,  f:(x,y,z)=>{const a=.95,b=.7,c=.6,d=3.5,e=.25,ff=.1;
+    return [(z-b)*x-d*y, d*x+(z-b)*y, c+a*z-z*z*z/3-(x*x+y*y)*(1+e*z)+ff*z*x*x*x];}, c:[0,0,0]},
+ {name:'Thomas', s:55, dt:0.02,  f:(x,y,z)=>{const b=.19;return [Math.sin(y)-b*x, Math.sin(z)-b*y, Math.sin(x)-b*z];}, c:[0,0,0]},
+ {name:'Halvorsen', s:16, dt:0.005, f:(x,y,z)=>{const a=1.4;return [-a*x-4*y-4*z-y*y, -a*y-4*z-4*x-z*z, -a*z-4*x-4*y-x*x];}, c:[0,0,0]},
+ {name:'Dadras', s:11, dt:0.006, f:(x,y,z)=>{const a=3,b=2.7,c=1.7,d=2,e=9;
+    return [y-a*x+b*y*z, c*y-x*z+z, d*x*y-e*z];}, c:[0,0,0]},
+];
+let sysI=0, N=9000, pts, cx,cy,cz, scale;
+function seed(){
+  const S=SYS[sysI]; nm.textContent=S.name;
+  pts=new Float32Array(N*3);
+  for(let i=0;i<N;i++){                          // scatter near origin, let them fall onto the attractor
+    pts[i*3]  =(Math.random()*2-1)*.1+.1;
+    pts[i*3+1]=(Math.random()*2-1)*.1;
+    pts[i*3+2]=(Math.random()*2-1)*.1+ (S.c[2]?S.c[2]*.02:0);
+  }
+  cx=S.c[0];cy=S.c[1];cz=S.c[2];scale=S.s;
+  // warm up so the shape is formed immediately
+  for(let w=0;w<80;w++)advance();
+}
+function advance(){
+  const S=SYS[sysI],dt=S.dt;
+  for(let i=0;i<N;i++){
+    const x=pts[i*3],y=pts[i*3+1],z=pts[i*3+2];
+    const d=S.f(x,y,z);
+    pts[i*3]  =x+d[0]*dt; pts[i*3+1]=y+d[1]*dt; pts[i*3+2]=z+d[2]*dt;
+  }
+}
+seed();
+
+let yaw=0.6,pitch=-0.3,zoom=1,drag=false,lx,ly;
+cv.addEventListener('pointerdown',e=>{drag=true;lx=e.clientX;ly=e.clientY;});
+addEventListener('pointerup',()=>drag=false);
+addEventListener('pointermove',e=>{if(!drag)return;yaw+=(e.clientX-lx)*.006;pitch+=(e.clientY-ly)*.006;lx=e.clientX;ly=e.clientY;});
+addEventListener('wheel',e=>{zoom*=e.deltaY<0?1.1:0.9;zoom=Math.max(.3,Math.min(6,zoom));e.preventDefault();},{passive:false});
+cv.addEventListener('click',()=>{if(Math.abs(lastMove)<3){sysI=(sysI+1)%SYS.length;seed();}});
+let downX=0,lastMove=0;
+cv.addEventListener('pointerdown',e=>downX=e.clientX);
+cv.addEventListener('pointerup',e=>lastMove=e.clientX-downX);
+
+function frame(){
+  advance();
+  ctx.fillStyle='rgba(2,2,8,.12)';ctx.fillRect(0,0,W,H);
+  ctx.globalCompositeOperation='lighter';
+  const cyaw=Math.cos(yaw),syaw=Math.sin(yaw),cp=Math.cos(pitch),sp=Math.sin(pitch);
+  const f=Math.min(W,H)/scale*zoom, ox=W/2, oy=H/2, foc=scale*2.2;
+  for(let i=0;i<N;i++){
+    let x=pts[i*3]-cx, y=pts[i*3+1]-cy, z=pts[i*3+2]-cz;
+    let X=x*cyaw - z*syaw, Z=x*syaw + z*cyaw;    // yaw about Y
+    let Y=y*cp - Z*sp;    Z=y*sp + Z*cp;          // pitch about X
+    const persp=foc/(foc+Z);
+    const sx=ox+X*f*persp, sy=oy+Y*f*persp;
+    if(sx<0||sx>=W||sy<0||sy>=H)continue;
+    const hue=(200 + Z*6 + i*0.01)%360;
+    const a=Math.max(.05,Math.min(.9,persp*.7));
+    ctx.fillStyle=`hsla(${hue},100%,${55+persp*15}%,${a})`;
+    ctx.fillRect(sx,sy,1.3,1.3);
+  }
+  ctx.globalCompositeOperation='source-over';
+  requestAnimationFrame(frame);
+}
+frame();
+</script>

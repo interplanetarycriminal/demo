@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DNA Helix</title>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#02030a;}
+  canvas{display:block;}
+  #ui{position:fixed;top:12px;left:12px;z-index:10;color:#cfe;font:12px/1.6 monospace;
+       background:rgba(8,10,20,.45);padding:10px 13px;border-radius:8px;
+       border:1px solid rgba(120,160,220,.2);backdrop-filter:blur(3px);}
+  #ui h1{margin:0 0 3px;font-size:12px;letter-spacing:2px;color:#fff;font-weight:600;}
+  #ui .hint{opacity:.65;}
+  #ui a{color:#8bf;text-decoration:none;}
+  #ui a:hover{text-decoration:underline;}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div id="ui">
+  <h1>DNA DOUBLE HELIX</h1>
+  <div class="hint">drag &middot; rotate &nbsp; scroll &middot; zoom</div>
+  <a href="index.html">&larr; gallery</a>
+</div>
+<script type="module">
+import * as THREE from 'three';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+import {EffectComposer} from 'three/addons/postprocessing/EffectComposer.js';
+import {RenderPass} from 'three/addons/postprocessing/RenderPass.js';
+import {UnrealBloomPass} from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x02030a, .014);
+const camera = new THREE.PerspectiveCamera(50, innerWidth/innerHeight, .1, 400);
+camera.position.set(0,4,52);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.autoRotate = true;
+controls.autoRotateSpeed = .6;
+controls.minDistance = 20;
+controls.maxDistance = 120;
+
+scene.add(new THREE.AmbientLight(0x445566, .7));
+const l1 = new THREE.PointLight(0x66aaff, 1.6, 200); l1.position.set(30,20,30); scene.add(l1);
+const l2 = new THREE.PointLight(0xff66aa, 1.2, 200); l2.position.set(-30,-10,20); scene.add(l2);
+
+const helix = new THREE.Group();
+scene.add(helix);
+
+const PAIRS = 46, TURNS = 3.2, RAD = 7, STEP = .95;
+const H = PAIRS*STEP;
+const sphereGeo = new THREE.SphereGeometry(.75, 20, 20);
+const rungColors = [0x4fd0ff, 0xff5e7e, 0x8affc1, 0xffd166];
+const up = new THREE.Vector3(0,1,0), tmp = new THREE.Vector3();
+
+function baseColor(t){ return new THREE.Color().setHSL(.62 - .62*t, .85, .55); }
+
+for(let i=0;i<PAIRS;i++){
+  const t = i/(PAIRS-1);
+  const y = (i-(PAIRS-1)/2)*STEP;
+  const a = t*TURNS*Math.PI*2;
+  const col = baseColor(t);
+  const mat = new THREE.MeshStandardMaterial({color:col, emissive:col, emissiveIntensity:.65, roughness:.35, metalness:.25});
+  const pa = new THREE.Vector3(Math.cos(a)*RAD, y, Math.sin(a)*RAD);
+  const pb = new THREE.Vector3(Math.cos(a+Math.PI)*RAD, y, Math.sin(a+Math.PI)*RAD);
+  const sa = new THREE.Mesh(sphereGeo, mat); sa.position.copy(pa); helix.add(sa);
+  const sb = new THREE.Mesh(sphereGeo, mat); sb.position.copy(pb); helix.add(sb);
+  // base-pair rung
+  const dir = tmp.subVectors(pb, pa); const len = dir.length();
+  const rc = new THREE.Color(rungColors[i%rungColors.length]);
+  const rung = new THREE.Mesh(new THREE.CylinderGeometry(.16,.16,len,10),
+    new THREE.MeshStandardMaterial({color:rc, emissive:rc, emissiveIntensity:.55, roughness:.5}));
+  rung.position.copy(pa).lerp(pb, .5);
+  rung.quaternion.setFromUnitVectors(up, dir.clone().normalize());
+  helix.add(rung);
+}
+
+// ---- drifting glowing particles ----
+const PN = 500, pGeo = new THREE.BufferGeometry(), pPos = new Float32Array(PN*3), pSeed = [];
+for(let i=0;i<PN;i++){
+  const r = 9+Math.random()*18, ang = Math.random()*6.283, yy = (Math.random()-.5)*H*1.5;
+  pPos[i*3]=Math.cos(ang)*r; pPos[i*3+1]=yy; pPos[i*3+2]=Math.sin(ang)*r;
+  pSeed.push(Math.random()*6.283);
+}
+pGeo.setAttribute('position', new THREE.BufferAttribute(pPos,3));
+const particles = new THREE.Points(pGeo, new THREE.PointsMaterial({color:0x88d8ff,size:.3,transparent:true,opacity:.75,blending:THREE.AdditiveBlending,depthWrite:false}));
+scene.add(particles);
+
+// ---- bloom ----
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight), 1.0, .55, .2));
+
+addEventListener('resize', ()=>{
+  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+  composer.setSize(innerWidth,innerHeight);
+});
+
+const clock = new THREE.Clock();
+(function loop(){
+  requestAnimationFrame(loop);
+  const dt = clock.getDelta(), t = clock.getElapsedTime();
+  helix.rotation.y += dt*.35;
+  helix.position.y = Math.sin(t*.6)*1.4;      // gentle bob
+  helix.rotation.z = Math.sin(t*.3)*.05;
+  const pa = pGeo.attributes.position.array;
+  for(let i=0;i<PN;i++){
+    pa[i*3+1] += Math.sin(t*.5+pSeed[i])*dt*.6;
+  }
+  pGeo.attributes.position.needsUpdate = true;
+  particles.rotation.y -= dt*.05;
+  controls.update();
+  composer.render();
+})();
+</script>
+</body>
+</html>
