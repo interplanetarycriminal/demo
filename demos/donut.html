@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Neon Donut — ASCII torus</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#020408;user-select:none}
+  canvas{position:fixed;inset:0;display:block;cursor:grab;touch-action:none}
+  #ui{position:fixed;top:10px;left:12px;z-index:10;font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;
+      color:#9ef7ea;background:rgba(4,8,16,.6);padding:8px 12px;border:1px solid rgba(0,255,213,.28);
+      border-radius:8px;pointer-events:none}
+  #ui b{color:#fff;letter-spacing:.08em}
+  #ui a{color:#5df;pointer-events:auto}
+  #ui .dim{color:#6d8f9c}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <b>DONUT.C&nbsp;//&nbsp;NEON</b><br>
+  <span class="dim">drag: spin &middot; wheel: zoom &middot; click: theme</span><br>
+  <a href="index.html">&larr; gallery</a><span id="st" class="dim"></span>
+</div>
+<script>
+(function(){
+'use strict';
+var cv=document.getElementById('c'),ctx=cv.getContext('2d'),st=document.getElementById('st');
+var CHARS='.,-~:;=!*#$@';
+var THEMES=[
+  {n:'matrix',h:128,s:100},
+  {n:'amber',h:38,s:100},
+  {n:'cyan',h:187,s:100},
+  {n:'magenta',h:308,s:95}
+];
+var theme=0,pal=[];
+var W,H,dpr,charH=20,cellW,cellH,cols,rows,zbuf,lbuf;
+var tc,tctx,gc,gctx;
+var A=1.0,B=0.4,vA=0,vB=0;
+var drag=false,lx=0,ly=0,moved=0;
+
+function buildPal(){
+  pal=[];
+  var t=THEMES[theme];
+  for(var i=0;i<12;i++){
+    var L=26+i*5.4;
+    pal.push('hsl('+t.h+','+t.s+'%,'+L.toFixed(1)+'%)');
+  }
+  st.textContent=' · '+t.n;
+}
+function alloc(){
+  cellH=charH;
+  cellW=Math.max(4,charH*0.62);
+  cols=Math.max(20,Math.floor(W/cellW));
+  rows=Math.max(12,Math.floor(H/cellH));
+  zbuf=new Float32Array(cols*rows);
+  lbuf=new Int8Array(cols*rows);
+}
+function resize(){
+  W=window.innerWidth;H=window.innerHeight;
+  dpr=Math.min(2,window.devicePixelRatio||1);
+  cv.width=Math.round(W*dpr);cv.height=Math.round(H*dpr);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  tc=document.createElement('canvas');
+  tc.width=cv.width;tc.height=cv.height;
+  tctx=tc.getContext('2d');tctx.setTransform(dpr,0,0,dpr,0,0);
+  gc=document.createElement('canvas');
+  gc.width=Math.max(1,(cv.width/4)|0);gc.height=Math.max(1,(cv.height/4)|0);
+  gctx=gc.getContext('2d');
+  alloc();
+}
+function frame(){
+  var R1=1,R2=2,K2=5;
+  var K1=Math.min(W,H)*0.30;
+  A+=0.020+vA;B+=0.011+vB;
+  if(!drag){vA*=0.965;vB*=0.965;}
+  zbuf.fill(0);lbuf.fill(-1);
+  var cA=Math.cos(A),sA=Math.sin(A),cB=Math.cos(B),sB=Math.sin(B);
+  for(var th=0;th<6.283;th+=0.07){
+    var ct=Math.cos(th),stt=Math.sin(th);
+    var ccx=R2+R1*ct,ccy=R1*stt;
+    for(var ph=0;ph<6.283;ph+=0.03){
+      var cp=Math.cos(ph),sp=Math.sin(ph);
+      var x=ccx*(cB*cp+sA*sB*sp)-ccy*cA*sB;
+      var y=ccx*(sB*cp-sA*cB*sp)+ccy*cA*cB;
+      var z=K2+cA*ccx*sp+ccy*sA;
+      var ooz=1/z;
+      var px=W/2+K1*ooz*x,py=H/2-K1*ooz*y;
+      if(px<0||py<0)continue;
+      var col=(px/cellW)|0,row=(py/cellH)|0;
+      if(col>=cols||row>=rows)continue;
+      var idx=row*cols+col;
+      if(ooz>zbuf[idx]){
+        zbuf[idx]=ooz;
+        var Lm=cp*ct*sB-cA*ct*sp-sA*stt+cB*(cA*stt-ct*sA*sp);
+        var li=Lm>0?(Lm*7.7)|0:0;
+        if(li>11)li=11;
+        lbuf[idx]=li;
+      }
+    }
+  }
+  var buckets=[[],[],[],[],[],[],[],[],[],[],[],[]];
+  for(var i=0;i<lbuf.length;i++){
+    var v=lbuf[i];
+    if(v>=0)buckets[v].push(i);
+  }
+  tctx.clearRect(0,0,W,H);
+  tctx.font='bold '+Math.round(charH*0.95)+'px ui-monospace,Menlo,Consolas,monospace';
+  tctx.textBaseline='top';
+  for(var b=0;b<12;b++){
+    var arr=buckets[b];
+    if(!arr.length)continue;
+    tctx.fillStyle=pal[b];
+    var chr=CHARS[b];
+    for(var j=0;j<arr.length;j++){
+      var id=arr[j];
+      tctx.fillText(chr,(id%cols)*cellW,((id/cols)|0)*cellH);
+    }
+  }
+  ctx.fillStyle='#020408';ctx.fillRect(0,0,W,H);
+  gctx.setTransform(1,0,0,1,0,0);
+  gctx.clearRect(0,0,gc.width,gc.height);
+  gctx.drawImage(tc,0,0,gc.width,gc.height);
+  ctx.save();
+  ctx.globalCompositeOperation='lighter';
+  ctx.globalAlpha=0.85;
+  ctx.drawImage(gc,0,0,W,H);
+  ctx.globalAlpha=0.5;
+  ctx.drawImage(gc,0,0,W,H);
+  ctx.restore();
+  ctx.drawImage(tc,0,0,W,H);
+  requestAnimationFrame(frame);
+}
+cv.addEventListener('pointerdown',function(e){
+  drag=true;lx=e.clientX;ly=e.clientY;moved=0;
+  cv.style.cursor='grabbing';
+  if(cv.setPointerCapture)cv.setPointerCapture(e.pointerId);
+});
+window.addEventListener('pointermove',function(e){
+  if(!drag)return;
+  var dx=e.clientX-lx,dy=e.clientY-ly;
+  lx=e.clientX;ly=e.clientY;
+  moved+=Math.abs(dx)+Math.abs(dy);
+  B+=dx*0.005;A+=dy*0.005;
+  vB=dx*0.0012;vA=dy*0.0012;
+});
+window.addEventListener('pointerup',function(){
+  if(!drag)return;
+  drag=false;cv.style.cursor='grab';
+  if(moved<6){theme=(theme+1)%THEMES.length;buildPal();}
+});
+window.addEventListener('wheel',function(e){
+  e.preventDefault();
+  charH*=e.deltaY>0?1.12:0.9;
+  charH=Math.max(7,Math.min(54,charH));
+  alloc();
+},{passive:false});
+window.addEventListener('resize',resize);
+resize();
+buildPal();
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
