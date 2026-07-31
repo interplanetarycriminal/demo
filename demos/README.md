@@ -2,7 +2,7 @@
 
 ### ▶ Live gallery: **https://interplanetarycriminal.github.io/demo/**
 
-92 interactive, ultra-visual web demos — raymarched fractals, GPU sims, strange attractors,
+117 interactive, ultra-visual web demos — raymarched fractals, GPU sims, strange attractors,
 playable neon games, and a large set of algorithm / ML / AI visualizers — built across three
 rapid sprints by fleets of Claude agents working in parallel.
 

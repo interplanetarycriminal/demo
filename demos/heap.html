@@ -52,7 +52,8 @@ var t=0;
 var queue=[];           // pending animation steps
 var wait=0;             // frames to wait before next step
 
-function push(step){queue.push(step);}
+function push(step){queue.push(step);}      // schedule at end
+function pushNext(step){queue.unshift(step);} // continuation: run immediately next
 
 function rnd(){return 5+Math.floor(Math.random()*94);}
 
@@ -113,11 +114,11 @@ function bubbleUpScript(i){
         swaps++;
         var tmp=heap[idx];heap[idx]=heap[p];heap[p]=tmp;
         retarget();
-        push({t:'fn',f:step(p),w:16});
+        pushNext({t:'fn',f:step(p),w:16});
       }
     };
   };
-  push({t:'fn',f:step(i),w:16});
+  pushNext({t:'fn',f:step(i),w:16});
 }
 function opPop(){
   if(heap.length===0){return;}
@@ -141,11 +142,11 @@ function sinkScript(i){
         swaps++;
         var tmp=heap[idx];heap[idx]=heap[m];heap[m]=tmp;
         retarget();
-        push({t:'fn',f:step(m),w:16});
+        pushNext({t:'fn',f:step(m),w:16});
       }
     };
   };
-  push({t:'fn',f:step(i),w:16});
+  pushNext({t:'fn',f:step(i),w:16});
 }
 
 function startHeapMode(){

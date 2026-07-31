@@ -42,8 +42,12 @@ function resize(){
   cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);
   cv.style.width=W+'px';cv.style.height=H+'px';
   ctx.setTransform(DPR,0,0,DPR,0,0);
-  SC=Math.min(W/11.2,H/8.0);
-  cx0=W*0.5+W*0.11; cy0=H*0.5;
+  // fit the semantic bounding box, leaving room for the overlay panel on wide screens
+  var bx=5.05,by=3.6;
+  var padL=(W<860)?24:372, padR=44, padT=52, padB=70;
+  var availW=Math.max(120,W-padL-padR), availH=Math.max(120,H-padT-padB);
+  SC=Math.min(availW/(bx*2),availH/(by*2));
+  cx0=padL+availW/2; cy0=padT+availH/2;
 }
 window.addEventListener('resize',resize);
 function PX(x){return cx0+x*SC;} function PY(y){return cy0-y*SC;}
@@ -87,11 +91,10 @@ var RAW=[
   ['rome',3.05,3.05,'capital'],['cairo',4.65,2.55,'capital'],
   ['berlin',3.75,2.15,'capital'],['madrid',2.90,2.20,'capital'],
 
-  ['walk',-2.55,-3.05,'verb'],['walked',-1.75,-3.35,'verb'],
-  ['swim',-3.35,-2.75,'verb'],['swam',-2.55,-3.05+0.0,'verb']
+  // verbs: walked - walk = (+0.80,-0.30) = swam - swim  (a clean parallelogram)
+  ['walk',-4.30,-2.60,'verb'],['walked',-3.50,-2.90,'verb'],
+  ['swim',-3.10,-1.95,'verb'],['swam',-2.30,-2.25,'verb']
 ];
-// fix duplicate coordinate for 'swam'
-RAW[RAW.length-1][1]=-2.60; RAW[RAW.length-1][2]=-3.55;
 
 var words=[],byName={};
 function resetPos(){
@@ -220,7 +223,6 @@ function draw(t){
     for(var i=0;i<hu.length;i++){var p=hu[i];i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]);}
     ctx.closePath();
     ctx.save();ctx.lineJoin='round';ctx.lineWidth=26;
-    ctx.strokeStyle=CL[key].c.replace(')',',')+'';
     ctx.globalAlpha=0.075;ctx.strokeStyle=CL[key].c;ctx.stroke();
     ctx.globalAlpha=0.055;ctx.fillStyle=CL[key].c;ctx.fill();
     ctx.restore();
