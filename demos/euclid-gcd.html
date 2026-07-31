@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Anthyphairesis — Euclid's algorithm, drawn in squares</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#08060a;color:#efe0c4;
+    font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  canvas{display:block;position:fixed;inset:0}
+  .pane{position:fixed;z-index:5;background:rgba(14,10,7,.62);
+    border:1px solid rgba(230,192,122,.22);border-radius:9px;
+    backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+    box-shadow:0 14px 46px -16px #000,inset 0 1px 0 rgba(255,230,180,.06)}
+  #ui{top:14px;left:14px;padding:11px 13px;max-width:392px}
+  #ui h1{margin:0 0 5px;font-size:12px;letter-spacing:.17em;font-weight:700;
+    background:linear-gradient(92deg,#ffd88a,#ffb454 45%,#ff8a6a);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  #ui p{margin:0 0 7px;color:#b6a488}
+  #ui p b{color:#ffd88a;font-weight:400}
+  #ui .keys{color:#8a7a62;line-height:1.75}
+  kbd{background:rgba(230,192,122,.13);border:1px solid rgba(230,192,122,.3);
+    border-radius:4px;padding:1px 5px;color:#ffdca0;font:inherit}
+  #ui a{color:#ffb454;text-decoration:none;border-bottom:1px dotted rgba(255,180,84,.5)}
+  #ui a:hover{color:#fff}
+  #panel{top:14px;right:14px;padding:11px 13px;width:296px;max-height:calc(100% - 28px);
+    overflow-y:auto;overflow-x:hidden}
+  #panel::-webkit-scrollbar{width:6px}
+  #panel::-webkit-scrollbar-thumb{background:rgba(230,192,122,.25);border-radius:3px}
+  #ptitle{color:#ffd88a;letter-spacing:.13em;font-size:10.5px;margin-bottom:8px}
+  .dims{display:flex;gap:7px;align-items:center;margin-bottom:9px}
+  .dims label{color:#8a7a62;font-size:10.5px}
+  .dims input{width:62px;background:rgba(0,0,0,.5);color:#ffe9c4;text-align:center;
+    border:1px solid rgba(230,192,122,.28);border-radius:5px;padding:3px 4px;
+    font:12px ui-monospace,monospace;outline:none}
+  .dims input:focus{border-color:#ffb454;box-shadow:0 0 0 2px rgba(255,180,84,.16)}
+  .dims input:disabled{opacity:.4}
+  #eqs{border-top:1px solid rgba(230,192,122,.16);padding-top:8px;font-size:11.5px;
+    line-height:1.72;white-space:pre;color:#7d6f5a}
+  .eq{padding:1px 5px;margin:0 -5px;border-radius:4px;transition:background .25s,color .25s}
+  .eq.done{color:#c9b596}
+  .eq.cur{background:rgba(255,255,255,.07);color:#fff2d8}
+  .eq b{font-weight:700}
+  #verdict{margin-top:9px;padding:7px 8px;border-radius:6px;font-size:11.5px;line-height:1.55;
+    border:1px solid rgba(230,192,122,.2);background:rgba(255,180,84,.07);color:#ffd88a;opacity:0;
+    transition:opacity .6s}
+  #verdict.on{opacity:1}
+  #verdict.never{border-color:rgba(255,110,150,.34);background:rgba(255,110,150,.09);color:#ffb0c4}
+  #cf{margin-top:8px;font-size:11px;color:#8a7a62;word-break:break-all}
+  #cf b{color:#ffd88a;font-weight:400}
+  #note{bottom:14px;left:14px;padding:10px 12px;max-width:432px;font-size:11px;line-height:1.65;
+    color:#b6a488;opacity:0;transform:translateY(8px);transition:opacity .7s,transform .7s;
+    pointer-events:none}
+  #note.on{opacity:1;transform:none}
+  #note b{color:#ffd88a;font-weight:400}
+  #note i{color:#ff9ab4;font-style:normal}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="cv"></canvas>
+
+<div id="ui" class="pane">
+  <h1>ANTHYPHAIRESIS — ELEMENTS VII.1–2</h1>
+  <p>Tile a rectangle with the largest squares that fit, repeat on the leftover strip, and the final
+     square's side is the <b>gcd</b> of the two sides — unless the process never ends.</p>
+  <div class="keys">
+    <kbd>1</kbd>–<kbd>6</kbd> presets &nbsp; <kbd>R</kbd> replay &nbsp; <kbd>Space</kbd> pause &nbsp;
+    <kbd>S</kbd> spiral<br>
+    <b style="color:#9c8">drag the rectangle's corner</b> — or type the sides →<br>
+    <a href="index.html">← gallery</a>
+  </div>
+</div>
+
+<div id="panel" class="pane">
+  <div id="ptitle">THE SAME PROCEDURE, IN NUMBERS</div>
+  <div class="dims">
+    <label>a</label><input id="ina" type="number" min="1" max="400" step="1" value="1071">
+    <label>b</label><input id="inb" type="number" min="1" max="400" step="1" value="462">
+    <span id="ratio" style="color:#7d6f5a;font-size:10.5px"></span>
+  </div>
+  <div id="eqs"></div>
+  <div id="cf"></div>
+  <div id="verdict"></div>
+</div>
+
+<div id="note" class="pane"></div>
+
+<script>
+"use strict";
+var cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+var W = 0, H = 0, DPR = 1;
+function resize(){
+  DPR = Math.min(2, window.devicePixelRatio || 1);
+  W = window.innerWidth; H = window.innerHeight;
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+  cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+window.addEventListener('resize', resize); resize();
+
+/* ---------- parchment texture (built once) ---------- */
+var tex = (function(){
+  var c = document.createElement('canvas'); c.width = c.height = 200;
+  var g = c.getContext('2d');
+  for (var i = 0; i < 5200; i++){
+    var a = Math.random() * 0.05;
+    g.fillStyle = 'rgba(' + (200 + ((Math.random()*55)|0)) + ',' + (170 + ((Math.random()*50)|0)) + ',110,' + a + ')';
+    g.fillRect(Math.random()*200, Math.random()*200, 1, 1);
+  }
+  return ctx.createPattern(c, 'repeat');
+})();
+
+/* ---------- the algorithm: anthyphairesis == Euclid's algorithm ---------- */
+var MAXGEN = 40, MINREL = 1e-7, MAXSQ = 20000;
+function tile(a, b){
+  var res = { squares: [], steps: [], cf: [], gcd: 0, terminated: false, gens: 0,
+              capped: false, ok: false, truncated: false };
+  if (!isFinite(a) || !isFinite(b) || a <= 0 || b <= 0) return res;
+  res.ok = true;
+  var x = 0, y = 0, w = a, h = b;
+  var dir = (w >= h) ? 0 : 1;                 // 0 left, 1 top, 2 right, 3 bottom
+  var scale0 = Math.max(a, b), tol = scale0 * 1e-12, g = 0;
+  while (g < MAXGEN){
+    var horiz = (w >= h);
+    var s = horiz ? h : w, lng = horiz ? w : h;
+    if (s / scale0 < MINREL){ res.capped = true; break; }
+    var n = Math.floor(lng / s), r = lng - n * s;
+    while (r >= s){ n++; r -= s; }             // guard against fp drift
+    while (r < 0){ n--; r += s; }
+    if (n < 1){ n = 1; r = lng - s; if (r < 0) r = 0; }
+    var place = Math.min(n, MAXSQ - res.squares.length);
+    if (place < n) res.truncated = true;
+    for (var i = 0; i < place; i++){
+      var q = { s: s, gen: g, idx: i, dir: dir, x: 0, y: 0 };
+      if (dir === 0){ q.x = x + i * s;           q.y = y; }
+      else if (dir === 2){ q.x = x + w - (i+1)*s; q.y = y; }
+      else if (dir === 1){ q.x = x; q.y = y + i * s; }
+      else { q.x = x; q.y = y + h - (i+1) * s; }
+      res.squares.push(q);
+    }
+    res.steps.push({ lng: lng, n: n, s: s, r: r, gen: g, rect: {x:x, y:y, w:w, h:h} });
+    res.cf.push(n);
+    if (dir === 0){ x += n*s; w -= n*s; } else if (dir === 2){ w -= n*s; }
+    else if (dir === 1){ y += n*s; h -= n*s; } else { h -= n*s; }
+    g++;
+    if (r <= tol){ res.terminated = true; res.gcd = s; break; }
+    dir = (dir + 1) % 4;
+  }
+  res.gens = g;
+  if (!res.terminated) res.capped = true;
+  return res;
+}
+
+/* ---------- presets ---------- */
+var PHI = (1 + Math.sqrt(5)) / 2, RT2 = Math.SQRT2;
+var PRESETS = [
+  { a:1071, b:462, tag:'the classic', irr:0 },
+  { a:120,  b:45,  tag:'a big common measure — over in three strides', irr:0 },
+  { a:23,   b:9,   tag:'coprime — it grinds all the way down to unit squares', irr:0 },
+  { a:89,   b:55,  tag:'consecutive Fibonacci — the slowest possible input', irr:0 },
+  { a:PHI,  b:1,   tag:'φ : 1', irr:1, name:'φ', cf:'[1; 1, 1, 1, 1, …]' },
+  { a:RT2,  b:1,   tag:'√2 : 1', irr:2, name:'√2', cf:'[1; 2, 2, 2, 2, …]' }
+];
+var COLS = ['#ffb454','#5fe0c0','#ff6f91','#7aa8ff','#c99bff','#ffe066','#66e5ff','#ff9a5a'];
+function col(g){ return COLS[g % COLS.length]; }
+function rgba(hex, al){
+  var n = parseInt(hex.slice(1), 16);
+  return 'rgba(' + (n>>16 & 255) + ',' + (n>>8 & 255) + ',' + (n & 255) + ',' + al + ')';
+}
+
+/* ---------- model + timeline ---------- */
+var M = null, A = 1071, B = 462, IRR = 0, presetIdx = 0;
+var T = 0, paused = false, spiralOn = true, lastMs = 0, doneAt = 0;
+var eqEls = [], vEl = document.getElementById('verdict'), cfEl = document.getElementById('cf'),
+    noteEl = document.getElementById('note'), ratioEl = document.getElementById('ratio'),
+    inA = document.getElementById('ina'), inB = document.getElementById('inb'),
+    eqsEl = document.getElementById('eqs');
+
+function fmt(v){
+  if (IRR) return (Math.abs(v) < 1e-4 ? v.toExponential(2) : v.toFixed(6));
+  return String(v);
+}
+function pad(s, n){ s = String(s); while (s.length < n) s = ' ' + s; return s; }
+
+function build(){
+  M = tile(A, B);
+  if (!M.ok){ M = tile(1, 1); }
+  // ---- timeline: each square gets an entry time; small squares flash by ----
+  var t = 0.35, mx = Math.max(A, B), lastGen = -1;
+  for (var i = 0; i < M.squares.length; i++){
+    var q = M.squares[i];
+    if (q.gen !== lastGen){ t += 0.17; lastGen = q.gen; }
+    var dt = Math.max(0.035, Math.min(0.34, 0.46 * Math.sqrt(q.s / mx)));
+    q.t0 = t; t += dt;
+  }
+  M.total = t + 0.5;
+  if (M.total > 7.5){                      // keep the whole show under ~8s
+    var k = 7.5 / M.total;
+    for (var j = 0; j < M.squares.length; j++) M.squares[j].t0 *= k;
+    M.total *= k;
+  }
+  // ---- the spiral of quarter-arcs is exact only when every quotient is 1 ----
+  M.allOnes = M.cf.length > 2;
+  for (var c2 = 0; c2 < M.cf.length - (M.terminated ? 1 : 0); c2++)
+    if (M.cf[c2] !== 1) M.allOnes = false;
+  // ---- accumulation point for the endless zoom ----
+  var lr = M.steps[M.steps.length - 1].rect;
+  M.fx = lr.x + lr.w / 2; M.fy = lr.y + lr.h / 2;
+  T = 0; doneAt = 0;
+  buildPanel();
+}
+
+function buildPanel(){
+  var wd = Math.max(String(IRR ? fmt(A) : A).length, String(IRR ? fmt(B) : B).length);
+  var html = '', shown = Math.min(M.steps.length, 13);
+  for (var i = 0; i < shown; i++){
+    var s = M.steps[i], c = col(s.gen);
+    html += '<div class="eq" data-g="' + s.gen + '" style="--c:' + c + '">' +
+      pad(fmt(s.lng), wd) + ' = <b style="color:' + c + '">' + s.n + '</b> × ' +
+      fmt(s.s) + ' + ' + fmt(s.r) + '</div>';
+  }
+  if (M.steps.length > shown)
+    html += '<div class="eq" style="color:#6a5e4c">' + pad('⋮', wd) + '   and on, and on…</div>';
+  eqsEl.innerHTML = html;
+  eqEls = eqsEl.querySelectorAll('.eq');
+  ratioEl.textContent = 'ratio ' + (Math.max(A,B) / Math.min(A,B)).toFixed(5) + (IRR ? '…' : '');
+  vEl.className = 'verdict'; vEl.id = 'verdict'; vEl.classList.remove('on');
+  cfEl.innerHTML = '';
+  noteEl.classList.remove('on');
+  inA.disabled = inB.disabled = !!IRR;
+  inA.value = IRR ? (IRR === 1 ? 'φ' : '√2') : A;
+  inB.value = IRR ? '1' : B;
+  inA.type = IRR ? 'text' : 'number'; inB.type = IRR ? 'text' : 'number';
+}
+
+function setPreset(i){
+  var p = PRESETS[i]; presetIdx = i;
+  A = p.a; B = p.b; IRR = p.irr; spiralOn = true;
+  build();
+}
+
+/* ---------- layout ---------- */
+var frozen = null;
+function layout(){
+  if (frozen) return frozen;
+  var uiB = document.getElementById('ui').getBoundingClientRect();
+  var pB  = document.getElementById('panel').getBoundingClientRect();
+  var top = W < 760 ? uiB.bottom + 16 : 26;
+  var left = W < 760 ? 20 : uiB.right + 22;
+  var right = (W < 760 ? W - 20 : pB.left - 22);
+  var bot = H - (noteEl.classList.contains('on') && W < 1200 ? noteEl.getBoundingClientRect().height + 30 : 26);
+  var rw = Math.max(60, right - left), rh = Math.max(60, bot - top);
+  var sc = Math.min(rw / A, rh / B) * 0.9;
+  return { x: left, y: top, w: rw, h: rh, sc: sc,
+           ox: left + (rw - A * sc) / 2, oy: top + (rh - B * sc) / 2 };
+}
+
+/* ---------- drawing ---------- */
+function ease(p){ return 1 - Math.pow(1 - p, 3); }
+
+function draw(){
+  var L = layout();
+  // zoom: once an endless tiling has finished laying out, fall inward forever
+  var z = 1, zAlpha = 1, zooming = false;
+  if (IRR && doneAt > 0){
+    var zt = T - doneAt, cyc = 24, u = (zt % cyc) / cyc;
+    z = Math.exp(u * Math.log(2600)); zooming = true;
+    zAlpha = Math.min(1, u / 0.05) * Math.min(1, (1 - u) / 0.06);
+  }
+  var cx = L.ox + M.fx * L.sc, cy = L.oy + M.fy * L.sc;
+  function PX(mx){ return cx + (mx - M.fx) * L.sc * z; }
+  function PY(my){ return cy + (my - M.fy) * L.sc * z; }
+  var S = L.sc * z;
+
+  // ---- ground ----
+  var bg = ctx.createRadialGradient(L.x + L.w/2, L.y + L.h/2, 40, L.x + L.w/2, L.y + L.h/2, Math.max(W,H)*0.75);
+  bg.addColorStop(0, '#15100c'); bg.addColorStop(0.55, '#0c0908'); bg.addColorStop(1, '#060507');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+  ctx.globalAlpha = 0.5; ctx.fillStyle = tex; ctx.fillRect(0, 0, W, H); ctx.globalAlpha = 1;
+
+  ctx.save();
+  ctx.beginPath(); ctx.rect(L.x - 8, L.y - 8, L.w + 16, L.h + 16); ctx.clip();
+  ctx.globalAlpha = zAlpha;
+
+  var x0 = PX(0), y0 = PY(0), ww = A * S, hh = B * S;
+
+  // ---- the parent rectangle ----
+  ctx.save();
+  ctx.shadowColor = 'rgba(255,190,110,.32)'; ctx.shadowBlur = 26;
+  ctx.strokeStyle = 'rgba(232,192,122,.78)'; ctx.lineWidth = 1.6;
+  ctx.strokeRect(x0, y0, ww, hh);
+  ctx.restore();
+  ctx.fillStyle = 'rgba(255,214,150,.028)'; ctx.fillRect(x0, y0, ww, hh);
+
+  // ---- squares, popping in one at a time ----
+  var curGen = -1, laid = 0, lastVisible = null;
+  for (var i = 0; i < M.squares.length; i++){
+    var q = M.squares[i];
+    if (T < q.t0) break;
+    laid++; curGen = q.gen; lastVisible = q;
+    var side = q.s * S;
+    if (side < 0.45) continue;
+    var p = Math.min(1, (T - q.t0) / 0.32), e = ease(p);
+    var k = 0.62 + 0.38 * e + 0.07 * Math.sin(Math.PI * p) * (1 - p);
+    var qx = PX(q.x), qy = PY(q.y);
+    if (qx > L.x + L.w + side || qx + side < L.x - side || qy > L.y + L.h + side || qy + side < L.y - side) continue;
+    var mcx = qx + side / 2, mcy = qy + side / 2, hs = side * k / 2;
+    var c = col(q.gen);
+    ctx.save();
+    ctx.globalAlpha = zAlpha * (0.35 + 0.65 * e);
+    var gr = ctx.createLinearGradient(mcx - hs, mcy - hs, mcx + hs, mcy + hs);
+    gr.addColorStop(0, rgba(c, 0.20)); gr.addColorStop(1, rgba(c, 0.055));
+    ctx.fillStyle = gr;
+    ctx.fillRect(mcx - hs, mcy - hs, hs * 2, hs * 2);
+    ctx.strokeStyle = rgba(c, 0.9); ctx.lineWidth = Math.min(1.6, Math.max(0.5, side / 42));
+    if (p < 1){ ctx.shadowColor = c; ctx.shadowBlur = 30 * (1 - p); }
+    ctx.strokeRect(mcx - hs, mcy - hs, hs * 2, hs * 2);
+    // fresh-square flare
+    if (p < 1){
+      ctx.globalAlpha = zAlpha * (1 - p) * 0.5;
+      ctx.strokeStyle = rgba(c, 1); ctx.lineWidth = 2;
+      var f = hs + side * 0.35 * (1 - p);
+      ctx.strokeRect(mcx - f, mcy - f, f * 2, f * 2);
+    }
+    ctx.restore();
+    // label the side of the first square of each generation
+    if (q.idx === 0 && side > 44 && p > 0.55){
+      ctx.save();
+      ctx.globalAlpha = zAlpha * Math.min(1, (p - 0.55) / 0.3) * 0.92;
+      ctx.fillStyle = rgba(c, 0.95);
+      ctx.font = 'italic ' + Math.min(20, Math.max(10, side * 0.16)) + 'px Georgia,"Times New Roman",serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(IRR ? q.s.toFixed(4) : String(q.s), mcx, mcy);
+      ctx.restore();
+    }
+  }
+
+  // ---- the golden spiral: exact whenever every quotient is 1 ----
+  if (spiralOn && M.allOnes){
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,232,180,.72)'; ctx.lineWidth = 1.5;
+    ctx.shadowColor = 'rgba(255,200,120,.6)'; ctx.shadowBlur = 12;
+    for (var si = 0; si < M.squares.length; si++){
+      var sq = M.squares[si];
+      if (T < sq.t0) break;
+      var sd = sq.s * S; if (sd < 1.2) continue;
+      var pp = Math.min(1, (T - sq.t0) / 0.32);
+      var ax = PX(sq.x) + (sq.dir === 0 || sq.dir === 3 ? sd : 0);
+      var ay = PY(sq.y) + (sq.dir === 0 || sq.dir === 1 ? sd : 0);
+      var a0 = (sq.dir + 2) * Math.PI / 2;
+      ctx.globalAlpha = zAlpha * 0.85 * pp;
+      ctx.beginPath(); ctx.arc(ax, ay, sd, a0, a0 + pp * Math.PI / 2); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // ---- the leftover strip: this is the next rectangle ----
+  var st = M.steps[Math.min(curGen, M.steps.length - 1)];
+  if (st && st.r > 0 && curGen >= 0 && laid >= 1){
+    var nr = M.steps[curGen + 1] ? M.steps[curGen + 1].rect : null;
+    if (nr){
+      var rx = PX(nr.x), ry = PY(nr.y), rw2 = nr.w * S, rh2 = nr.h * S;
+      if (Math.min(rw2, rh2) > 2){
+        ctx.save();
+        ctx.setLineDash([6, 5]); ctx.lineDashOffset = -T * 26;
+        ctx.strokeStyle = 'rgba(255,226,170,.66)'; ctx.lineWidth = 1.3;
+        ctx.globalAlpha = zAlpha;
+        ctx.strokeRect(rx, ry, rw2, rh2);
+        ctx.restore();
+        if (Math.min(rw2, rh2) > 26 && !zooming){
+          ctx.save();
+          ctx.fillStyle = 'rgba(255,226,170,.8)';
+          ctx.font = '11px ui-monospace,monospace'; ctx.textAlign = 'center';
+          ctx.fillText('leftover → next rectangle', rx + rw2 / 2, ry - 7);
+          ctx.restore();
+        }
+      }
+    }
+  }
+
+  // ---- dimension labels on the parent ----
+  if (!zooming && ww > 40){
+    ctx.save();
+    ctx.fillStyle = 'rgba(232,192,122,.9)';
+    ctx.font = 'italic 15px Georgia,"Times New Roman",serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText(IRR ? PRESETS[presetIdx].name : 'a = ' + A, x0 + ww / 2, y0 - 12);
+    ctx.translate(x0 - 14, y0 + hh / 2); ctx.rotate(-Math.PI / 2);
+    ctx.fillText(IRR ? '1' : 'b = ' + B, 0, 0);
+    ctx.restore();
+    // drag handle
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,190,110,.9)'; ctx.strokeStyle = 'rgba(255,220,160,.9)';
+    ctx.beginPath(); ctx.arc(x0 + ww, y0 + hh, IRR ? 0 : 6.5, 0, 6.2832); ctx.fill();
+    if (!IRR){
+      ctx.globalAlpha = 0.35 + 0.25 * Math.sin(T * 2.4);
+      ctx.beginPath(); ctx.arc(x0 + ww, y0 + hh, 12, 0, 6.2832); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // ---- the payoff: THE GCD ----
+  if (M.terminated && laid >= M.squares.length && lastVisible){
+    var flash = 0.5 + 0.5 * Math.sin((T - doneAt) * 3.2);
+    var g0 = M.squares[M.squares.length - 1].gen, gc = col(g0);
+    ctx.save();
+    ctx.globalAlpha = zAlpha;
+    // ring every square of the final generation
+    for (var fi = 0; fi < M.squares.length; fi++){
+      var fq = M.squares[fi];
+      if (fq.gen !== g0) continue;
+      var fs = fq.s * S; if (fs < 1) continue;
+      ctx.strokeStyle = rgba(gc, 0.35 + 0.55 * flash);
+      ctx.lineWidth = 1.8; ctx.shadowColor = gc; ctx.shadowBlur = 16 * flash;
+      ctx.strokeRect(PX(fq.x), PY(fq.y), fs, fs);
+    }
+    ctx.restore();
+    var lq = M.squares[M.squares.length - 1], ls = lq.s * S;
+    ctx.save();
+    ctx.globalAlpha = zAlpha * Math.min(1, (T - doneAt) * 1.6);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.shadowColor = gc; ctx.shadowBlur = 22;
+    ctx.fillStyle = '#fff3dc';
+    ctx.font = 'italic 26px Georgia,"Times New Roman",serif';
+    var ty = PY(lq.y) + ls / 2 + (ls < 46 ? -ls / 2 - 22 : 0);
+    ctx.fillText('gcd = ' + M.gcd, PX(lq.x) + ls / 2, ty);
+    ctx.font = '11px ui-monospace,monospace'; ctx.shadowBlur = 8;
+    ctx.fillStyle = rgba(gc, 0.85);
+    ctx.fillText('the last square measures both sides exactly', PX(lq.x) + ls / 2, ty + 22);
+    ctx.restore();
+  }
+
+  // ---- the endless case ----
+  if (IRR && doneAt > 0){
+    ctx.save();
+    ctx.globalAlpha = 0.9;
+    ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(255,154,180,.95)';
+    ctx.font = 'italic 17px Georgia,"Times New Roman",serif';
+    ctx.fillText('…no last square. ever.', L.x + L.w / 2, L.y + L.h - 6);
+    ctx.font = '10.5px ui-monospace,monospace';
+    ctx.fillStyle = 'rgba(255,226,170,.6)';
+    ctx.fillText('zoom ×' + (z < 10 ? z.toFixed(1) : Math.round(z)) +
+                 '  ·  the same rectangle, forever', L.x + L.w / 2, L.y + 14);
+    ctx.restore();
+  }
+
+  ctx.restore();
+
+  // ---- keep the side panel in lockstep with the picture ----
+  for (var ei = 0; ei < eqEls.length; ei++){
+    var g2 = +eqEls[ei].getAttribute('data-g');
+    eqEls[ei].className = 'eq' + (g2 === curGen ? ' cur' : (g2 < curGen ? ' done' : ''));
+  }
+  if (laid >= M.squares.length && doneAt === 0 && T > 0.4) finish();
+  if (IRR && curGen >= 0){
+    var terms = M.cf.slice(0, curGen + 1).join(', ');
+    cfEl.innerHTML = 'continued fraction &nbsp;<b>[' + M.cf[0] + '; ' +
+      (curGen > 0 ? terms.slice(terms.indexOf(',') + 2) : '') + (doneAt ? ' …' : '') + ']</b>';
+  }
+}
+
+function finish(){
+  doneAt = T;
+  vEl.classList.add('on');
+  if (M.terminated){
+    vEl.classList.remove('never');
+    vEl.innerHTML = 'gcd(' + A + ', ' + B + ') = <b style="font-size:14px">' + M.gcd + '</b><br>' +
+      M.steps.length + ' step' + (M.steps.length > 1 ? 's' : '') + ' · ' + M.squares.length +
+      ' squares · every one a multiple of ' + M.gcd + '.';
+    cfEl.innerHTML = 'quotients &nbsp;<b>[' + M.cf[0] + '; ' + M.cf.slice(1).join(', ') + ']</b>' +
+      ' — the continued fraction of ' + Math.max(A,B) + '/' + Math.min(A,B);
+    if (presetIdx === 3 && A === PRESETS[3].a){
+      noteEl.innerHTML = '<b>Fibonacci: the worst case.</b> Every step lays exactly <i>one</i> square, ' +
+        'so the algorithm shaves off as little as it possibly can. No pair of numbers this small ' +
+        'ever takes more steps — that is Lamé\'s theorem, and it is why the Euclidean algorithm ' +
+        'runs in O(log n).';
+      noteEl.classList.add('on');
+    } else if (M.gcd === 1){
+      noteEl.innerHTML = '<b>Coprime.</b> The process only halts once it reaches squares of side 1 — ' +
+        'the sides share no larger common measure, so the unit is the only tile that fits.';
+      noteEl.classList.add('on');
+    }
+  } else {
+    vEl.classList.add('never');
+    var p = PRESETS[presetIdx];
+    vEl.innerHTML = '<b>it never terminates.</b><br>Stopped at depth ' + M.gens +
+      ' — squares are now ' + (M.squares[M.squares.length-1].s).toExponential(1) +
+      ' of the short side, far below one pixel. The real process runs forever.';
+    cfEl.innerHTML = 'continued fraction &nbsp;<b>' + p.cf + '</b> — periodic, and endless';
+    noteEl.innerHTML = '<b>Incommensurability.</b> No square, however small, measures both sides a ' +
+      'whole number of times: these two lengths have <i>no common measure at all</i>. ' +
+      (p.irr === 1
+        ? 'For φ the leftover strip is always a φ:1 rectangle again — the picture is literally self-similar, so it cannot possibly stop. '
+        : 'For √2 the leftover repeats with period two — same rectangle, half the size. ') +
+      'The Pythagoreans met this in the diagonal of the square, and it broke the doctrine that all is number. ' +
+      'Euclid answers by keeping <i>magnitudes</i> (Book V, ratio) apart from <i>numbers</i> (Book VII, gcd) — ' +
+      'two books for one procedure.';
+    noteEl.classList.add('on');
+  }
+}
+
+/* ---------- loop ---------- */
+function frame(ms){
+  var dt = lastMs ? Math.min(0.05, (ms - lastMs) / 1000) : 0;
+  lastMs = ms;
+  if (!paused) T += dt;
+  draw();
+  requestAnimationFrame(frame);
+}
+
+/* ---------- interaction ---------- */
+function applyInputs(){
+  if (IRR) return;
+  var a = Math.max(1, Math.min(400, Math.round(+inA.value || 1)));
+  var b = Math.max(1, Math.min(400, Math.round(+inB.value || 1)));
+  if (a === A && b === B) return;
+  A = a; B = b; build();
+}
+inA.addEventListener('change', applyInputs);
+inB.addEventListener('change', applyInputs);
+inA.addEventListener('input', applyInputs);
+inB.addEventListener('input', applyInputs);
+
+var dragging = false;
+function pos(ev){
+  var r = cv.getBoundingClientRect();
+  return { x: (ev.touches ? ev.touches[0].clientX : ev.clientX) - r.left,
+           y: (ev.touches ? ev.touches[0].clientY : ev.clientY) - r.top };
+}
+function down(ev){
+  if (IRR) return;
+  var L = layout(), p = pos(ev);
+  var hx = L.ox + A * L.sc, hy = L.oy + B * L.sc;
+  if (Math.abs(p.x - hx) < 26 && Math.abs(p.y - hy) < 26){
+    dragging = true; frozen = L; cv.style.cursor = 'nwse-resize';
+    ev.preventDefault();
+  }
+}
+function move(ev){
+  var L = layout(), p = pos(ev);
+  if (!dragging){
+    if (!IRR){
+      var hx = L.ox + A * L.sc, hy = L.oy + B * L.sc;
+      cv.style.cursor = (Math.abs(p.x - hx) < 26 && Math.abs(p.y - hy) < 26) ? 'nwse-resize' : 'default';
+    }
+    return;
+  }
+  var a = Math.round((p.x - L.ox) / L.sc), b = Math.round((p.y - L.oy) / L.sc);
+  a = Math.max(1, Math.min(400, a)); b = Math.max(1, Math.min(400, b));
+  if (a !== A || b !== B){ A = a; B = b; build(); }
+  ev.preventDefault();
+}
+function up(){ dragging = false; frozen = null; cv.style.cursor = 'default'; }
+cv.addEventListener('mousedown', down); window.addEventListener('mousemove', move);
+window.addEventListener('mouseup', up);
+cv.addEventListener('touchstart', down, {passive:false});
+window.addEventListener('touchmove', move, {passive:false});
+window.addEventListener('touchend', up);
+
+window.addEventListener('keydown', function(e){
+  if (e.target.tagName === 'INPUT' && e.key !== 'Escape') return;
+  var k = e.key;
+  if (k >= '1' && k <= '6'){ setPreset(+k - 1); }
+  else if (k === 'r' || k === 'R'){ T = 0; doneAt = 0; vEl.classList.remove('on'); noteEl.classList.remove('on'); }
+  else if (k === ' '){ paused = !paused; e.preventDefault(); }
+  else if (k === 's' || k === 'S'){ spiralOn = !spiralOn; }
+  else if (k === 'ArrowRight'){ if (!IRR){ A = Math.min(400, A + 1); build(); } }
+  else if (k === 'ArrowLeft'){ if (!IRR){ A = Math.max(1, A - 1); build(); } }
+  else if (k === 'ArrowUp'){ if (!IRR){ B = Math.min(400, B + 1); build(); } e.preventDefault(); }
+  else if (k === 'ArrowDown'){ if (!IRR){ B = Math.max(1, B - 1); build(); } e.preventDefault(); }
+});
+
+/* ---------- go ---------- */
+setPreset(0);
+requestAnimationFrame(frame);
+
+// after the classic example lands, invite the reveal
+setTimeout(function(){
+  if (presetIdx === 0 && !noteEl.classList.contains('on')){
+    noteEl.innerHTML = '<b>The picture and the arithmetic are the same act.</b> Laying <i>n</i> squares ' +
+      'of side <i>s</i> along a side of length ℓ <em style="font-style:normal;color:#ffd88a">is</em> ' +
+      'the division ℓ = n·s + r. Press <b>5</b> or <b>6</b> for the ratios where it never ends.';
+    noteEl.classList.add('on');
+  }
+}, 9000);
+</script>
+</body>
+</html>
