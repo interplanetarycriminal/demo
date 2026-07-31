@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Neon Truchet</title>
+<style>
+html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#000}
+canvas{position:fixed;top:0;left:0;width:100%;height:100%;display:block}
+#ui{position:fixed;top:10px;left:10px;z-index:10;color:#d8c8ff;
+font:11px/1.6 ui-monospace,Menlo,Consolas,monospace;background:rgba(8,4,16,.55);
+padding:8px 12px;border:1px solid rgba(180,120,255,.25);border-radius:6px;user-select:none}
+#ui b{color:#b47aff;letter-spacing:1px}
+#ui a{color:#6ee7ff;text-decoration:none}
+#ui a:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="glc"></canvas>
+<div id="ui"><b>NEON TRUCHET</b><br>mouse: zoom target &middot; click: rehash tiles<br><a href="index.html">&larr; gallery</a></div>
+<script>
+(function(){
+'use strict';
+var canvas=document.getElementById('glc');
+var gl=canvas.getContext('webgl')||canvas.getContext('experimental-webgl');
+if(!gl)throw new Error('WebGL not supported');
+
+function compile(type,src){
+  var s=gl.createShader(type);
+  gl.shaderSource(s,src);gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error('shader: '+gl.getShaderInfoLog(s));
+  return s;
+}
+function link(vsSrc,fsSrc){
+  var p=gl.createProgram();
+  gl.attachShader(p,compile(gl.VERTEX_SHADER,vsSrc));
+  gl.attachShader(p,compile(gl.FRAGMENT_SHADER,fsSrc));
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw new Error('link: '+gl.getProgramInfoLog(p));
+  return p;
+}
+
+var VS='attribute vec2 aP;void main(){gl_Position=vec4(aP,0.0,1.0);}';
+
+var FS=`
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+uniform vec2 uRes;
+uniform float uTime;
+uniform vec2 uMouse;
+uniform float uSeed;
+
+float hash(vec2 p){
+  p=fract(p*vec2(123.34,456.21));
+  p+=dot(p,p+45.32);
+  return fract(p.x*p.y);
+}
+vec3 pal(float x){
+  return vec3(0.5)+vec3(0.5)*cos(6.28318*(x+vec3(0.0,0.33,0.67)));
+}
+// quarter-circle arc truchet tile distance, random flip via hash
+float truchet(vec2 p,float seed){
+  vec2 id=floor(p);
+  vec2 f=fract(p)-0.5;
+  float h=hash(id+seed);
+  if(h<0.5)f.x=-f.x;
+  float d1=abs(length(f-vec2(0.5))-0.5);
+  float d2=abs(length(f+vec2(0.5))-0.5);
+  return min(d1,d2);
+}
+void main(){
+  vec2 uv=gl_FragCoord.xy/uRes;
+  float asp=uRes.x/uRes.y;
+  vec2 w=(uv-uMouse)*vec2(asp,1.0);
+  float t=uTime;
+  float zt=t*0.10;
+
+  vec3 col=vec3(0.015,0.008,0.04);
+
+  // three overlaid scales cycling through a continuous zoom
+  for(int k=0;k<3;k++){
+    float fk=float(k);
+    float cyc=(zt+fk)/3.0;
+    float u=fract(cyc);
+    float cycN=floor(cyc);
+    float lseed=uSeed+fk*37.0+cycN*11.0;
+
+    float scale=exp2(mix(-0.5,4.0,u));
+    float alpha=pow(max(sin(3.14159*u),0.0),1.3);
+
+    vec2 drift=vec2(cos(fk*2.1+0.7),sin(fk*1.3+2.0))*(t*(0.05+0.04*fk));
+    vec2 p=w*scale+drift;
+
+    float d=truchet(p,lseed);
+
+    float line=smoothstep(0.09,0.02,d);
+    float halo=exp(-d*d*26.0)*0.35;
+    float core=smoothstep(0.035,0.0,d);
+
+    vec3 c=pal(u+fk*0.333+t*0.04+uSeed*0.1);
+    col+=c*(line*1.1+halo)*alpha*0.75;
+    col+=vec3(1.0)*core*alpha*0.3;
+  }
+
+  vec2 vc=uv-vec2(0.5);
+  col*=1.0-dot(vc,vc)*0.8;
+  col=pow(max(col,vec3(0.0)),vec3(0.85));
+  gl_FragColor=vec4(col,1.0);
+}
+`;
+
+var prog=link(VS,FS);
+gl.useProgram(prog);
+var buf=gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
+var aP=gl.getAttribLocation(prog,'aP');
+gl.enableVertexAttribArray(aP);
+gl.vertexAttribPointer(aP,2,gl.FLOAT,false,0,0);
+
+var U={};
+['uRes','uTime','uMouse','uSeed'].forEach(function(n){U[n]=gl.getUniformLocation(prog,n)});
+
+var mx=0.5,my=0.5,tx=0.5,ty=0.5;
+var seed=7.0;
+var t0=performance.now();
+function nowS(){return (performance.now()-t0)/1000}
+
+function resize(){
+  var d=Math.min(window.devicePixelRatio||1,2);
+  canvas.width=Math.max(1,Math.floor(innerWidth*d));
+  canvas.height=Math.max(1,Math.floor(innerHeight*d));
+  gl.viewport(0,0,canvas.width,canvas.height);
+}
+addEventListener('resize',resize);
+resize();
+
+addEventListener('mousemove',function(e){
+  tx=e.clientX/innerWidth;
+  ty=1-e.clientY/innerHeight;
+});
+addEventListener('mousedown',function(){seed=Math.random()*100});
+
+function frame(){
+  var t=nowS();
+  mx+=(tx-mx)*0.03;
+  my+=(ty-my)*0.03;
+  gl.uniform2f(U.uRes,canvas.width,canvas.height);
+  gl.uniform1f(U.uTime,t);
+  gl.uniform2f(U.uMouse,mx,my);
+  gl.uniform1f(U.uSeed,seed);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sci-Fi Portal</title>
+<style>
+html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#000}
+canvas{position:fixed;top:0;left:0;width:100%;height:100%;display:block}
+#ui{position:fixed;top:10px;left:10px;z-index:10;color:#bfeaff;
+font:11px/1.6 ui-monospace,Menlo,Consolas,monospace;background:rgba(0,8,14,.55);
+padding:8px 12px;border:1px solid rgba(80,200,255,.25);border-radius:6px;user-select:none}
+#ui b{color:#4fd8ff;letter-spacing:1px}
+#ui a{color:#ffb066;text-decoration:none}
+#ui a:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="glc"></canvas>
+<div id="ui"><b>SCI-FI PORTAL</b><br>mouse: move portal &middot; wheel: swirl speed/dir &middot; click: flip colors<br><a href="index.html">&larr; gallery</a></div>
+<script>
+(function(){
+'use strict';
+var canvas=document.getElementById('glc');
+var gl=canvas.getContext('webgl')||canvas.getContext('experimental-webgl');
+if(!gl)throw new Error('WebGL not supported');
+
+function compile(type,src){
+  var s=gl.createShader(type);
+  gl.shaderSource(s,src);gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error('shader: '+gl.getShaderInfoLog(s));
+  return s;
+}
+function link(vsSrc,fsSrc){
+  var p=gl.createProgram();
+  gl.attachShader(p,compile(gl.VERTEX_SHADER,vsSrc));
+  gl.attachShader(p,compile(gl.FRAGMENT_SHADER,fsSrc));
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw new Error('link: '+gl.getProgramInfoLog(p));
+  return p;
+}
+
+var VS='attribute vec2 aP;void main(){gl_Position=vec4(aP,0.0,1.0);}';
+
+var FS=`
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+uniform vec2 uRes;
+uniform float uTime;
+uniform vec2 uCenter;
+uniform float uPhase;
+uniform float uScheme;
+
+float hash(vec2 p){
+  p=fract(p*vec2(123.34,456.21));
+  p+=dot(p,p+45.32);
+  return fract(p.x*p.y);
+}
+float hash1(float n){return fract(sin(n*127.1)*43758.5453);}
+float noise(vec2 p){
+  vec2 i=floor(p);vec2 f=fract(p);
+  vec2 u=f*f*(3.0-2.0*f);
+  float a=hash(i);
+  float b=hash(i+vec2(1.0,0.0));
+  float c=hash(i+vec2(0.0,1.0));
+  float d=hash(i+vec2(1.0,1.0));
+  return mix(mix(a,b,u.x),mix(c,d,u.x),u.y);
+}
+float fbm(vec2 p){
+  float v=0.0;float a=0.5;
+  mat2 m=mat2(1.6,1.2,-1.2,1.6);
+  for(int i=0;i<5;i++){v+=a*noise(p);p=m*p;a*=0.5;}
+  return v;
+}
+void main(){
+  vec2 uv=gl_FragCoord.xy/uRes;
+  float asp=uRes.x/uRes.y;
+  vec2 p=uv-uCenter;
+  p.x*=asp;
+  float r=length(p);
+  float t=uTime;
+  float ph=uPhase;
+  float a=atan(p.y,p.x);
+
+  // polar spiral distortion, stronger toward center
+  float ang=a+ph*0.55/(r+0.22);
+  vec2 dirv=vec2(cos(ang),sin(ang));
+  float n=fbm(dirv*2.2+vec2(r*7.0-ph*1.2,r*4.0)+3.1);
+  float n2=fbm(dirv*3.3+vec2(r*10.0-ph*1.8,-ph*0.6)+9.4);
+
+  // glowing ring with electric rim tendrils
+  float ring0=0.30;
+  float rr=ring0+(n2-0.5)*0.09*smoothstep(0.55,0.0,abs(r-ring0));
+  float dR=abs(r-rr);
+  float ring=exp(-dR*26.0);
+  float rim=exp(-dR*95.0)*1.6;
+
+  float inner=smoothstep(ring0+0.03,0.0,r);
+  float swirl=inner*(0.25+0.95*n);
+
+  float ridge=pow(max(1.0-abs(n2-0.5)*3.6,0.0),3.0);
+  float fil=ridge*exp(-abs(r-ring0)*5.5)*0.75;
+
+  vec3 cMain=mix(vec3(0.15,0.85,1.0),vec3(1.0,0.55,0.12),uScheme);
+  vec3 cDeep=mix(vec3(0.25,0.2,1.0),vec3(1.0,0.12,0.03),uScheme);
+  vec3 cHot=mix(vec3(0.85,1.0,1.0),vec3(1.0,0.9,0.6),uScheme);
+
+  vec3 col=vec3(0.0);
+
+  // twinkling star background (hidden inside the portal)
+  vec2 sp=uv*vec2(asp,1.0)*40.0;
+  vec2 cell=floor(sp);
+  float sh=hash(cell+17.0);
+  vec2 off=vec2(hash(cell+3.7),hash(cell+9.1))-0.5;
+  vec2 fv=fract(sp)-0.5-off*0.8;
+  float tw=0.5+0.5*sin(t*(1.0+sh*4.0)+sh*40.0);
+  col+=vec3(0.7,0.8,1.0)*step(0.93,sh)*exp(-dot(fv,fv)*60.0)*0.5*tw*smoothstep(0.25,0.6,r);
+
+  col+=cDeep*swirl*0.6;
+  col+=cMain*ring*(0.55+0.6*n2);
+  col+=cHot*rim*(0.5+0.8*n2);
+  col+=cMain*fil;
+
+  // sparks being sucked inward along the swirl
+  for(int i=0;i<28;i++){
+    float fi=float(i);
+    float h1=hash1(fi*3.7+1.3);
+    float h2=hash1(fi*7.1+2.9);
+    float spd=0.09+0.15*h2;
+    float life=fract(t*spd+h1);
+    float rad=mix(0.98,0.015,life*life);
+    float th=h1*6.28318+ph*(0.4+0.5*h2)+life*2.5;
+    vec2 spos=vec2(cos(th),sin(th))*rad;
+    vec2 dq=p-spos;
+    float fade=smoothstep(0.0,0.08,life)*(0.35+0.65*life);
+    float g=0.00035/(dot(dq,dq)+0.0005);
+    col+=mix(cMain,cHot,life)*g*fade*0.8;
+  }
+
+  // intense center glow with chromatic aberration
+  float k=0.018;
+  float gr=k/((r-0.010)*(r-0.010)+k);
+  float gg=k/(r*r+k);
+  float gb=k/((r+0.010)*(r+0.010)+k);
+  vec3 core=vec3(gr,gg,gb);
+  core=mix(core,core.bgr,uScheme);
+  col+=core*core*cHot*0.55;
+
+  vec2 vc=uv-vec2(0.5);
+  col*=1.0-dot(vc,vc)*0.55;
+  col=pow(max(col,vec3(0.0)),vec3(0.82));
+  gl_FragColor=vec4(col,1.0);
+}
+`;
+
+var prog=link(VS,FS);
+gl.useProgram(prog);
+var buf=gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
+var aP=gl.getAttribLocation(prog,'aP');
+gl.enableVertexAttribArray(aP);
+gl.vertexAttribPointer(aP,2,gl.FLOAT,false,0,0);
+
+var U={};
+['uRes','uTime','uCenter','uPhase','uScheme'].forEach(function(n){U[n]=gl.getUniformLocation(prog,n)});
+
+var cx=0.5,cy=0.5,tx=0.5,ty=0.5;
+var speed=0.8,phase=0,scheme=0,schemeT=0;
+var t0=performance.now(),last=0;
+function nowS(){return (performance.now()-t0)/1000}
+
+function resize(){
+  var d=Math.min(window.devicePixelRatio||1,2);
+  canvas.width=Math.max(1,Math.floor(innerWidth*d));
+  canvas.height=Math.max(1,Math.floor(innerHeight*d));
+  gl.viewport(0,0,canvas.width,canvas.height);
+}
+addEventListener('resize',resize);
+resize();
+
+addEventListener('mousemove',function(e){
+  tx=e.clientX/innerWidth;
+  ty=1-e.clientY/innerHeight;
+});
+addEventListener('wheel',function(e){
+  speed+=e.deltaY*-0.0012;
+  speed=Math.max(-3,Math.min(3,speed));
+},{passive:true});
+addEventListener('mousedown',function(){schemeT=1-schemeT});
+
+function frame(){
+  var t=nowS();
+  var dt=Math.min(t-last,0.1);
+  last=t;
+  phase+=speed*dt;
+  cx+=(tx-cx)*0.07;
+  cy+=(ty-cy)*0.07;
+  scheme+=(schemeT-scheme)*0.08;
+  gl.uniform2f(U.uRes,canvas.width,canvas.height);
+  gl.uniform1f(U.uTime,t);
+  gl.uniform2f(U.uCenter,cx,cy);
+  gl.uniform1f(U.uPhase,phase);
+  gl.uniform1f(U.uScheme,scheme);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
