@@ -487,9 +487,10 @@ addEventListener('resize', ()=>{
 });
 
 const clock = new THREE.Clock();
+let T = 0;                                        // clamped clock: no jump after a tab switch
 function animate(){
   requestAnimationFrame(animate);
-  const dt = Math.min(0.05, clock.getDelta()), t = clock.elapsedTime;
+  const dt = Math.min(0.05, clock.getDelta()); T += dt;
 
   if(tr < 1) tr = Math.min(1, tr + dt/0.85);
   const a = ease(tr);
@@ -504,9 +505,9 @@ function animate(){
     g.scale.setScalar(sc);
     g.rotation.set(0, spin, 0);
   });
-  root.rotation.y = t*0.16;
-  root.rotation.x = Math.sin(t*0.21)*0.14;
-  sphere.rotation.y = -t*0.16;                    // keep the sphere still in world space
+  root.rotation.y = T*0.16;
+  root.rotation.x = Math.sin(T*0.21)*0.14;
+  sphere.rotation.y = -T*0.16;                    // solids turn inside a sphere that does not
 
   if(!paused) advance(dt);
   drawProof(dt);

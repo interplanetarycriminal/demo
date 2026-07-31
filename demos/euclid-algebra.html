@@ -354,9 +354,9 @@ function scene5(){
     if(i<PARA.length-1)rule(cx,y-fz*.75,mw*.18,.35);
   }
   rule(cx,y-4,mw,.3); y+=Math.min(26,fz+8);
-  txt('EUCLID, ELEMENTS, BOOK II — FOURTEEN PROPOSITIONS, NO EQUATIONS',cx,y,M(Math.min(12.5,fz)),GOLD,.9);
+  txtF('EUCLID, ELEMENTS, BOOK II — FOURTEEN PROPOSITIONS, NO EQUATIONS',cx,y,M(Math.min(12.5,fz)),GOLD,.9,'left',mw);
   y+=Math.min(22,fz+5);
-  txt('a² + 2ab + b²   ·   a² − b²   ·   ab + d² = m²   ·   x = √(c + (b/2)²) − b/2',cx,y,M(Math.min(12.5,fz)),DIM,.7);
+  txtF('a² + 2ab + b²   ·   a² − b²   ·   ab + d² = m²   ·   x = √(c + (b/2)²) − b/2',cx,y,M(Math.min(12.5,fz)),DIM,.7,'left',mw);
 }
 
 // ---------- side panel ----------
@@ -454,22 +454,24 @@ function hit(px,py){
 
 // ---------- frame ----------
 function header(){
-  var h=HEAD[scene], y=CY0+16;
-  txt(h[0],CX0,y,M(12),GOLD,.95); y+=8;
-  rule(CX0,y,Math.min(CX1-CX0,720),.35); y+=22;
-  var ls=wrap('“'+h[1]+'”',Math.min(CX1-CX0,880),S(16.5,1));
-  for(var i=0;i<ls.length&&i<3;i++){txt(ls[i],CX0,y,S(16.5,1),PARCH,.72);y+=23;}
+  var h=HEAD[scene], y=CY0+16, av=H-CY0-90, i;
+  var qs=cl(av*.055,10.5,16.5), maxl=av<210?1:(av<310?2:3), mw=Math.min(CX1-CX0,880);
+  txt(h[0],CX0,y,M(Math.min(12,qs+1)),GOLD,.95); y+=8;
+  rule(CX0,y,Math.min(CX1-CX0,720),.35); y+=Math.round(qs*1.35);
+  var ls=wrap('“'+h[1]+'”',mw,S(qs,1));
+  for(i=0;i<ls.length&&i<maxl;i++){
+    txt(ls[i]+(i===maxl-1&&ls.length>maxl?' …':''),CX0,y,S(qs,1),PARCH,.72); y+=qs*1.4;}
   return y-CY0+4;
 }
 function layout(){
   var wide=W>=760;
   CX0=(wide?348:16); CX1=W-18; CY0=(wide?14:248);
   var hh=header();
-  var top=CY0+hh+8, bot=H-(scene===5?18:76);
-  var stackW=CX1-CX0;
-  if(scene===5){FX=CX0;FY=top;FW=stackW;FH=bot-top;PX=0;PW=0;PY=top;return;}
-  if(stackW<700){ PW=Math.max(0,stackW); PX=CX0; FW=stackW; FX=CX0; FY=top; FH=(bot-top)*.56; PY=FY+FH+12; }
-  else { PW=cl(stackW*.33,260,400); PX=CX1-PW; FX=CX0; FW=stackW-PW-30; FY=top; FH=bot-top; PY=top+4; }
+  var top=CY0+hh+8, bot=H-(scene===5?18:80), stackW=CX1-CX0;
+  if(scene===5){FX=CX0;FY=top;FW=stackW;FH=Math.max(60,bot-top);PX=0;PW=0;PY=top;return;}
+  if(stackW>=560){ PW=cl(stackW*.33,238,400); PX=CX1-PW; FX=CX0; FW=stackW-PW-26; FY=top; FH=bot-top; PY=top+4; }
+  else if(bot-top>=300){ PW=Math.max(0,stackW); PX=CX0; FW=stackW; FX=CX0; FY=top; FH=(bot-top)*.55; PY=FY+FH+10; }
+  else { PW=0; PX=CX0; FW=stackW; FX=CX0; FY=top; FH=bot-top; PY=top; }
   if(FH<80)FH=80; if(FW<80)FW=80;
 }
 function bg(){
@@ -488,6 +490,9 @@ function frame(t){
   ph=(T%CYC[scene])/CYC[scene];
   ctx.setTransform(DPR,0,0,DPR,0,0);
   ctx.lineCap='butt'; ctx.lineJoin='miter'; ctx.textBaseline='alphabetic'; ctx.globalAlpha=1;
+  // scene 2 needs a >= b or the difference of squares is negative; enforce it here
+  // so no stale drag or key press can ever hand a scene an out-of-domain value.
+  sa=cl(sa,scene===2?LEN/2:1.2,scene===2?9.2:8.8); qb=cl(qb,0,12); qc=cl(qc,0,60);
   bg(); layout(); buildRails();
   if(scene===1)scene1(); else if(scene===2)scene2(); else if(scene===3)scene3();
   else if(scene===4)scene4(); else scene5();
