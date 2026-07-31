@@ -324,43 +324,68 @@ var PARA=[
  'With no symbols whatever, this machinery solves quadratics. II.5 turns "sum and product" into "the half, plus or minus a length". Al-Khwārizmī, around 820, laid the two halves of b·x on two sides of the square on x and asked what was missing at the corner. The missing corner is (b/2)². Completing the square is not a metaphor; it is an instruction about a picture.',
  'Descartes, in 1637, cut the cord: he let x·x be a number rather than an area, and the drawings became optional. They were never wrong — only slow. Everything you now push around as symbols, somebody once had to see.'];
 function scene5(){
-  var i,j,y, cx=CX0, mw=Math.min(760,Math.max(180,CX1-CX0));
+  var i,j,y, cx=CX0, mw=Math.min(780,Math.max(180,CX1-CX0));
   ctx.save();                                        // drifting ghost gnomons
-  var spanX=Math.max(200,CX1-CX0+300), spanY=Math.max(160,H-CY0-160);
+  var spanX=Math.max(200,CX1-CX0-120), spanY=Math.max(160,H-CY0-200);
   for(i=0;i<7;i++){
-    var t=T*.06+i*.9, s=90+70*Math.sin(i*2.1), gx=CX0+((i*233+T*7)%spanX)-150,
-        gy=CY0+60+(((i*167+Math.sin(t)*40)%spanY)+spanY)%spanY;
+    var t=T*.06+i*.9, s=Math.min(90+70*Math.sin(i*2.1),Math.max(40,spanY*.4)),
+        gx=CX0+((i*233+T*7)%spanX), gy=CY0+40+((((i*167+Math.sin(t)*40)%spanY)+spanY)%spanY);
     ctx.strokeStyle=rgba(i%2?GOLD:VERD,.055); ctx.lineWidth=1;
     ctx.strokeRect(gx,gy,s,s); ctx.strokeRect(gx+s*.55,gy+s*.55,s*.45,s*.45);
   } ctx.restore();
-  y=FY+16;
-  for(i=0;i<PARA.length;i++){
-    var ls=wrap(PARA[i],mw,S(17.5));
-    for(j=0;j<ls.length;j++){txt(ls[j],cx,y,S(17.5),i===2?BONE:PARCH,i===2?.95:.78);y+=27;}
-    y+=17;
-    if(i<PARA.length-1){rule(cx,y-24,mw*.18,.35);}
+  var fz=17.5, avail=H-FY-56, tot, pass;
+  for(pass=0;pass<7;pass++){                          // shrink the column to fit the viewport
+    for(tot=76,i=0;i<PARA.length;i++)tot+=wrap(PARA[i],mw,S(fz)).length*(fz*1.54)+fz;
+    if(tot<=avail||fz<=9.5)break;
+    fz=Math.max(9.5,fz*Math.max(.75,avail/tot));
   }
-  rule(cx,y-4,mw,.3); y+=26;
-  txt('EUCLID, ELEMENTS, BOOK II — FOURTEEN PROPOSITIONS, NO EQUATIONS',cx,y,M(12.5),GOLD,.9);
-  y+=22; txt('a² + 2ab + b²   ·   a² − b²   ·   ab + d² = m²   ·   x = √(c + (b/2)²) − b/2',cx,y,M(12.5),DIM,.7);
+  var lh=fz*1.54;
+  y=FY+lh;
+  for(i=0;i<PARA.length;i++){
+    var ls=wrap(PARA[i],mw,S(fz));
+    for(j=0;j<ls.length;j++){txt(ls[j],cx,y,S(fz),i===2?BONE:PARCH,i===2?.95:.78);y+=lh;}
+    y+=fz;
+    if(i<PARA.length-1)rule(cx,y-fz*.75,mw*.18,.35);
+  }
+  rule(cx,y-4,mw,.3); y+=Math.min(26,fz+8);
+  txt('EUCLID, ELEMENTS, BOOK II — FOURTEEN PROPOSITIONS, NO EQUATIONS',cx,y,M(Math.min(12.5,fz)),GOLD,.9);
+  y+=Math.min(22,fz+5);
+  txt('a² + 2ab + b²   ·   a² − b²   ·   ab + d² = m²   ·   x = √(c + (b/2)²) − b/2',cx,y,M(Math.min(12.5,fz)),DIM,.7);
 }
 
 // ---------- side panel ----------
 function panel(rows){
   if(PW<40)return;
-  var y=PY+16, i, r, fs=PW<300?11.5:12.5;
-  ctx.save(); ctx.beginPath(); ctx.rect(PX-10,PY-6,PW+16,Math.max(10,H-PY-40)); ctx.clip();
+  var i,j,r,w, fs=PW<300?11.5:12.5, avail=H-PY-38, mw=0;
+  for(i=0;i<rows.length;i++){ r=rows[i];                       // shrink to the widest row
+    if(!r||r==='-'||r[0]==='CHK'||r[0]==='NOTE')continue;
+    for(w=0,j=0;j<r.length;j++){ctx.font=r[j][2]?S(fs+2.5,1):M(fs);w+=ctx.measureText(r[j][0]).width;}
+    if(w>mw)mw=w;}
+  if(mw>PW-6)fs=Math.max(8,fs*(PW-6)/mw);
+  var nfs=Math.min(14,fs+1.5), lead=fs+7, note=1;
+  function measure(){var n=22,k,q;
+    for(k=0;k<rows.length;k++){q=rows[k];
+      if(q===null)n+=9; else if(q==='-')n+=11;
+      else if(q[0]==='NOTE'){if(note)n+=17+wrap(q[1],PW-10,S(nfs)).length*(nfs+6);}
+      else n+=lead;}
+    return n;}
+  var need=measure();
+  if(need>avail){note=0;need=measure();}
+  if(need>avail&&need>0)lead=Math.max(fs+1,lead*avail/need);
+  var y=PY+16;
+  ctx.save(); ctx.beginPath(); ctx.rect(PX-10,PY-8,PW+16,Math.max(10,H-PY-30)); ctx.clip();
   for(i=0;i<rows.length;i++){
     r=rows[i];
     if(r===null){y+=9;continue;}
     if(r==='-'){rule(PX,y-4,PW-10,.35);y+=11;continue;}
-    if(r[0]==='CHK'){okmark(PX+PW*.42,y,r[1],'residual');y+=fs+7;continue;}
+    if(r[0]==='CHK'){okmark(PX+Math.max(90,PW*.42),y,r[1],'residual');y+=lead;continue;}
     if(r[0]==='NOTE'){
+      if(!note)continue;
       rule(PX,y+1,PW-10,.3); y+=17;
-      var ls=wrap(r[1],PW-12,S(14));
-      for(var j=0;j<ls.length;j++){txt(ls[j],PX,y,S(14),DIM,.85);y+=20;}
+      var ls=wrap(r[1],PW-10,S(nfs));
+      for(j=0;j<ls.length;j++){txt(ls[j],PX,y,S(nfs),DIM,.85);y+=nfs+6;}
       continue;}
-    tline(PX,y,r,fs); y+=fs+7;
+    tline(PX,y,r,fs); y+=lead;
   }
   ctx.restore();
 }
@@ -393,8 +418,8 @@ function drawRails(){
       txt('b = '+f(LEN-r.val,2),(kx+r.x1)/2,r.y-13,M(12),LAPIS,.95,'center');
       if(scene===2){ ctx.strokeStyle=rgba(VERM,.3);ctx.lineWidth=1;ctx.setLineDash([3,4]);
         ctx.beginPath();ctx.moveTo(r.x0,r.y+11);ctx.lineTo(mnx,r.y+11);ctx.stroke();ctx.setLineDash([]);
-        txt('b ≤ a required',r.x0,r.y+24,M(10.5),VERM,.55); }
-      txt('cut the line at random — drag C',r.x1+14,r.y+4,M(11),DIM,.6);
+        txt('b ≤ a required here',r.x0+16,r.y+24,M(10.5),VERM,.55); }
+      txt('the line cut at random — drag C',(r.x0+r.x1)/2,r.y+40,M(11),DIM,.55,'center');
     } else {
       ctx.strokeStyle=rgba(DIM,.28);ctx.lineWidth=3;ctx.lineCap='round';
       ctx.beginPath();ctx.moveTo(r.x0,r.y);ctx.lineTo(r.x1,r.y);ctx.stroke();

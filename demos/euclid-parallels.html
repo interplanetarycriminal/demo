@@ -23,8 +23,9 @@
   <div class="exp">Two thousand years of failed attempts to prove Euclid&rsquo;s parallel postulate from the other four ended in the discovery that you can simply deny it &mdash; and get two other geometries that are just as consistent.</div>
   <div><span class="tab on" id="tA">1 &mdash; parallels</span> <span class="tab" id="tB">2 &mdash; triangle</span></div>
   <div class="hint">
-    <b>drag</b> the bright points in any panel &middot; <b>[1]/[2]</b> or <b>[space]</b> switch experiment<br>
-    <b>[r]</b> reset &middot; <b>[t]</b> tiling &middot; <b>[p]</b> pause spin &middot; <a href="index.html">&larr; gallery</a>
+    <b>drag</b> the bright points in any panel &middot; drag the <b>globe</b> to turn it<br>
+    <b>[1]/[2]</b> or <b>[space]</b> switch experiment &middot; <b>[r]</b> reset &middot; <b>[t]</b> tiling &middot; <b>[p]</b> pause<br>
+    <a href="index.html">&larr; gallery</a>
   </div>
 </div>
 <script>
@@ -86,12 +87,13 @@ function nA(a){a%=TAU;return a<0?a+TAU:a;}
 function inArc(b,a1,a2){var d=nA(b-a1),s=nA(a2-a1);return d>1e-12&&d<s-1e-12;}
 
 /* ======================= STATE ======================= */
-var mode=0, paused=false, tiling=true, t0=0, clock=0, sweep=0, yaw=0.5;
+var mode=0, paused=false, tiling=true, t0=0, clock=0, sweep=0, yawB=PI*1.25, yaw=yawB;
 var ELY=-0.55, eP=[0.00,0.45], eT=[[-0.62,-0.42],[0.66,-0.50],[0.06,0.58]];
 var sP=nr3([0.34,0.26,0.62]), sT=[[0,0,1],[1,0,0],[0,1,0]];
 var hL=[PI*-0.86,PI*-0.14], hP=[-0.05,0.42], hT=[[-0.52,-0.28],[0.56,-0.30],[0.03,0.58]];
 var DEF=JSON.stringify([eP,eT,[sP,sT],hP,hT]);
-function reset(){var d=JSON.parse(DEF);eP=d[0];eT=d[1];sP=d[2][0];sT=d[2][1];hP=d[3];hT=d[4];yaw=0.5;}
+function reset(){var d=JSON.parse(DEF);eP=d[0];eT=d[1];sP=d[2][0];sT=d[2][1];hP=d[3];hT=d[4];
+  yawB=PI*1.25;TLT=-1.10;}
 var TLT=-1.10, CT=Math.cos(TLT), ST=Math.sin(TLT), CY=1, SY=0;
 function rot(v){var x=v[0]*CY-v[1]*SY,y=v[0]*SY+v[1]*CY,z=v[2];return[x,y*CT-z*ST,y*ST+z*CT];}
 function unrot(vx,vy,vz){var y=vy*CT+vz*ST,z=-vy*ST+vz*CT;return nr3([vx*CY+y*SY,-vx*SY+y*CY,z]);}
@@ -270,8 +272,10 @@ function drawSphere(p){
       else{ctx.globalAlpha=.4;dotm(qw[0],qw[1],4,MEET,1);ctx.globalAlpha=1;}}
     sphLine(p,gcPts([0,0,1],0,TAU,80),PARCH,2.4,.95,.26);   // the line L = equator
     var q=sphPt(p,sP);handle(q[0],q[1],A,'P');
-    var qe=sphPt(p,nr3([Math.cos(yaw*0+.6),Math.sin(.6),0]));
-    if(qe[2]>=0)txt('L',qe[0]+8,qe[1]+14,'12px '+MONO,PARCH);
+    var best=null;                                   // label L on the leftmost visible equator point
+    for(i=0;i<40;i++){var a2=i*TAU/40,qe=sphPt(p,[Math.cos(a2),Math.sin(a2),0]);
+      if(qe[2]>=.15&&(!best||qe[0]<best[0]))best=qe;}
+    if(best)txt('L',best[0]+7,best[1]+15,'12px '+MONO,PARCH);
   }else{
     var an=[angSph(sT[0],sT[1],sT[2]),angSph(sT[1],sT[2],sT[0]),angSph(sT[2],sT[0],sT[1])];
     for(i=0;i<3;i++)sphLine(p,arcPts(sT[i],sT[(i+1)%3],48),A,2.4,.95,.22);
@@ -289,9 +293,9 @@ function drawSphere(p){
                           Av[1]*Math.cos(.34)+Math.sin(.34)*(u[1]*Math.cos(m)+w[1]*Math.sin(m)),
                           Av[2]*Math.cos(.34)+Math.sin(.34)*(u[2]*Math.cos(m)+w[2]*Math.sin(m))];
         var qm=sphPt(p,md);
-        if(qm[2]>=-.05){ctx.textBaseline='middle';
-          txt(L[i]+' '+(an[i]*DEG).toFixed(1)+'°',qm[0],qm[1],'bold 11px '+MONO,A,'center');
-          ctx.textBaseline='alphabetic';}
+        ctx.textBaseline='middle';ctx.globalAlpha=qm[2]>=0?1:.32;
+        txt(L[i]+' '+(an[i]*DEG).toFixed(1)+'°',qm[0],qm[1],'bold 11px '+MONO,A,'center');
+        ctx.globalAlpha=1;ctx.textBaseline='alphabetic';
       }
       var qv=sphPt(p,sT[i]);
       if(qv[2]>=0)handle(qv[0],qv[1],A,'');
@@ -338,8 +342,7 @@ function drawHyper(p){
       ctx.save();ctx.shadowColor=MEET;ctx.shadowBlur=10;dotm(qs[0],qs[1],4,MEET,1);ctx.restore();}}
     ctx.strokeStyle=PARCH;ctx.lineWidth=2.4;ctx.beginPath();fullGeo(p,gL);ctx.stroke();
     var qp=px(p,hP);handle(qp[0],qp[1],A,'P');
-    var lm=px(p,[Math.cos(-PI/2)*.24,Math.sin(-PI/2)*.24+ -.02]);
-    txt('L',lm[0]+p.R*.42,lm[1]+16,'12px '+MONO,PARCH);
+    var lm=px(p,[.42,-.30]);txt('L',lm[0],lm[1]+15,'12px '+MONO,PARCH);
   }else{
     var an=[angHyp(hT[0],hT[1],hT[2]),angHyp(hT[1],hT[2],hT[0]),angHyp(hT[2],hT[0],hT[1])];
     ctx.beginPath();
@@ -444,11 +447,16 @@ function targets(){
 }
 function down(e){var m=pos(e),T=targets(),best=null,bd=24;
   for(var i=0;i<T.length;i++){var d=Math.hypot(m[0]-T[i].s[0],m[1]-T[i].s[1]);if(d<bd){bd=d;best=T[i];}}
+  if(!best&&pans.length){var g=pans[1];                       // bare globe drag = rotate it
+    if(Math.hypot(m[0]-g.cx,m[1]-g.cy)<g.R*1.06)
+      best={k:'rot',mx:m[0],my:m[1],y0:yawB,t0:TLT,p:g};}
   if(best){drag=best;move(e);e.preventDefault();}}
 function clampD(v,mx){var l=Math.hypot(v[0],v[1]);return l>mx?[v[0]*mx/l,v[1]*mx/l]:v;}
 function move(e){
   if(!drag)return;
   var m=pos(e),p=drag.p,u=[(m[0]-p.cx)/p.R,(p.cy-m[1])/p.R];
+  if(drag.k==='rot'){yawB=drag.y0+(m[0]-drag.mx)*.009;
+    TLT=Math.max(-1.42,Math.min(-.2,drag.t0+(m[1]-drag.my)*.005));e.preventDefault();return;}
   if(drag.k==='e'){u=clampD(u,.92);if(Math.abs(u[1]-ELY)<.14)u[1]=ELY+(u[1]>ELY?.14:-.14);eP=u;}
   else if(drag.k==='et')eT[drag.i]=clampD(u,.94);
   else if(drag.k==='h')hP=clampD(u,.9);
@@ -477,9 +485,10 @@ window.addEventListener('keydown',function(e){var k=e.key.toLowerCase();
   else if(k==='r')reset();else if(k==='t')tiling=!tiling;else if(k==='p')paused=!paused;});
 /* ======================= LOOP ======================= */
 function tick(ts){
-  var dt=t0?Math.min(.05,(ts-t0)/1000):0; t0=ts; clock+=dt;
-  if(!paused){sweep+=dt*.24; if(!drag)yaw+=dt*.14;}
-  CY=Math.cos(yaw);SY=Math.sin(yaw);
+  var dt=t0?Math.min(.05,(ts-t0)/1000):0; t0=ts;
+  if(!paused){clock+=dt; sweep+=dt*.24;}
+  yaw=yawB+.42*Math.sin(clock*.22);
+  CT=Math.cos(TLT);ST=Math.sin(TLT);CY=Math.cos(yaw);SY=Math.sin(yaw);
   ctx.setTransform(DPR,0,0,DPR,0,0);
   ctx.fillStyle=BG;ctx.fillRect(0,0,W,H);
   var vg=ctx.createRadialGradient(W*.5,H*.42,0,W*.5,H*.42,Math.max(W,H)*.72);

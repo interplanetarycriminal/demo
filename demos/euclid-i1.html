@@ -86,7 +86,7 @@ function thru(c,p,half){var a=Math.atan2(p.y-c.y,p.x-c.x);return {a0:a-half,sp:2
 function SEG(a,b,o){if(!fin(a)||!fin(b))return null;o=o||{};o.k='s';o.a=a;o.b=b;return o;}
 function LIN(a,u,e0,e1,o){if(!fin(a)||!fin(u))return null;o=o||{};o.k='L';o.a=a;o.u=u;o.e0=e0;o.e1=e1;return o;}
 function CIR(c,r,o){if(!fin(c)||!(r>1e-9))return null;o=o||{};o.k='c';o.c=c;o.r=r;
-  if(o.a0===undefined){o.a0=Math.PI*0.5;o.sp=TAU;} return o;}
+  if(!isFinite(o.a0))o.a0=Math.PI*0.5; if(!isFinite(o.sp))o.sp=TAU; return o;}
 function PT(p,l,o){if(!fin(p))return null;o=o||{};o.k='p';o.p=p;o.l=l;return o;}
 function TIC(a,b,o){if(!fin(a)||!fin(b))return null;o=o||{};o.k='t';o.a=a;o.b=b;return o;}
 function FIL(ps,o){for(var i=0;i<ps.length;i++)if(!fin(ps[i]))return null;
