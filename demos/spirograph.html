@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Spirograph — rolling gears</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#05060c}
+#c{display:block;position:fixed;inset:0}
+#hud{position:fixed;top:10px;left:12px;z-index:10;font:11px/1.6 ui-monospace,Menlo,Consolas,monospace;color:#9fe8ff;background:rgba(4,8,18,.55);border:1px solid rgba(110,220,255,.22);border-radius:8px;padding:7px 10px}
+#hud b{color:#fff;letter-spacing:1px}
+#hud a{color:#7ef0c0;text-decoration:none}
+#hud a:hover{text-decoration:underline}
+#vals{color:#ffa8ec}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="hud"><b>SPIROGRAPH</b> — live gear system<br>
+mouse X: pen offset · mouse Y: speed · click: fresh curve · <a href="index.html">&larr; gallery</a><br>
+<span id="vals"></span></div>
+<script>
+(function(){
+'use strict';
+var cv=document.getElementById('c'),ctx=cv.getContext('2d');
+var vals=document.getElementById('vals');
+var hist=document.createElement('canvas'),hctx=hist.getContext('2d');
+var live=document.createElement('canvas'),lctx=live.getContext('2d');
+var W=0,H=0,DPR=1,mx=0.5,my=0.42;
+var R=0,r=0,d=0,t=0,tMax=1,scale=1,baseHue=0;
+var dCur=0,spdCur=1,px=0,py=0,haveP=false;
+
+function gcd(a,b){while(b){var q=a%b;a=b;b=q}return a}
+
+function pickGears(){
+  var revs=0,tries=0;
+  do{
+    R=52+Math.floor(Math.random()*48);
+    r=12+Math.floor(Math.random()*(R-24));
+    revs=r/gcd(R,r);
+    tries++;
+  }while((revs<5||revs>22)&&tries<60);
+  d=r*(0.5+Math.random()*0.7);
+  dCur=d;
+  t=0;haveP=false;
+  tMax=Math.PI*2*revs+0.01;
+  baseHue=Math.random()*360;
+  fitScale();
+}
+function fitScale(){
+  var maxR=(R-r)+d*1.45;
+  scale=Math.min(W,H)*0.46/Math.max(maxR,R*0.75);
+}
+function copyCanvas(src){
+  var tmp=document.createElement('canvas');
+  tmp.width=src.width;tmp.height=src.height;
+  if(src.width>0)tmp.getContext('2d').drawImage(src,0,0);
+  return tmp;
+}
+function resize(){
+  DPR=Math.min(window.devicePixelRatio||1,2);
+  var oh=copyCanvas(hist),ol=copyCanvas(live);
+  W=window.innerWidth;H=window.innerHeight;
+  cv.width=W*DPR;cv.height=H*DPR;
+  hist.width=W*DPR;hist.height=H*DPR;
+  live.width=W*DPR;live.height=H*DPR;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  hctx.setTransform(DPR,0,0,DPR,0,0);
+  lctx.setTransform(DPR,0,0,DPR,0,0);
+  if(oh.width>0)hctx.drawImage(oh,0,0,W,H);
+  if(ol.width>0)lctx.drawImage(ol,0,0,W,H);
+  haveP=false;
+  if(R>0)fitScale();
+}
+function pen(tt,dd){
+  var k=(R-r)/r;
+  return[(R-r)*Math.cos(tt)+dd*Math.cos(k*tt),(R-r)*Math.sin(tt)-dd*Math.sin(k*tt)];
+}
+function archive(alphaMul){
+  hctx.globalAlpha=0.16;
+  hctx.fillStyle='#05060c';
+  hctx.fillRect(0,0,W,H);
+  hctx.globalAlpha=alphaMul;
+  hctx.drawImage(live,0,0,W,H);
+  hctx.globalAlpha=1;
+  lctx.clearRect(0,0,W,H);
+}
+function drawGears(cx,cy){
+  var k=(R-r)/r;
+  var gx=cx+(R-r)*scale*Math.cos(t),gy=cy+(R-r)*scale*Math.sin(t);
+  var p=pen(t,dCur),pxs=cx+p[0]*scale,pys=cy+p[1]*scale;
+  ctx.save();
+  ctx.lineWidth=1;
+  ctx.strokeStyle='rgba(120,220,255,0.35)';
+  ctx.beginPath();ctx.arc(cx,cy,R*scale,0,6.2832);ctx.stroke();
+  ctx.strokeStyle='rgba(120,220,255,0.12)';
+  ctx.beginPath();ctx.arc(cx,cy,(R+3)*scale,0,6.2832);ctx.stroke();
+  ctx.strokeStyle='rgba(150,255,210,0.55)';
+  ctx.beginPath();ctx.arc(gx,gy,r*scale,0,6.2832);ctx.stroke();
+  ctx.strokeStyle='rgba(150,255,210,0.22)';
+  ctx.beginPath();
+  for(var i=0;i<4;i++){
+    var a=-k*t+i*Math.PI/2;
+    ctx.moveTo(gx,gy);
+    ctx.lineTo(gx+Math.cos(a)*r*scale,gy+Math.sin(a)*r*scale);
+  }
+  ctx.stroke();
+  ctx.strokeStyle='rgba(255,180,240,0.8)';
+  ctx.beginPath();ctx.moveTo(gx,gy);ctx.lineTo(pxs,pys);ctx.stroke();
+  ctx.fillStyle='#fff';
+  ctx.shadowColor='hsl('+((baseHue+t*38)%360)+',95%,65%)';
+  ctx.shadowBlur=14;
+  ctx.beginPath();ctx.arc(pxs,pys,2.6,0,6.2832);ctx.fill();
+  ctx.restore();
+}
+var last=0;
+function frame(ts){
+  requestAnimationFrame(frame);
+  var dtms=Math.min(50,ts-last)||16;last=ts;
+  var fmul=dtms/16.7;
+  var dTarget=d*(0.55+0.9*mx);
+  var spdTarget=0.35+2.3*(1-my);
+  dCur+=(dTarget-dCur)*0.08;
+  spdCur+=(spdTarget-spdCur)*0.08;
+  var cx=W/2,cy=H/2;
+  if(t<tMax){
+    var steps=Math.max(2,Math.round((3+spdCur*16)*fmul));
+    var dt=0.008;
+    lctx.lineCap='round';
+    for(var i=0;i<steps&&t<tMax;i++){
+      t+=dt;
+      var p=pen(t,dCur);
+      var sx=cx+p[0]*scale,sy=cy+p[1]*scale;
+      if(haveP){
+        var hue=(baseHue+t*38)%360;
+        lctx.strokeStyle='hsla('+hue+',95%,65%,0.9)';
+        lctx.shadowColor='hsl('+hue+',95%,60%)';
+        lctx.shadowBlur=9;
+        lctx.lineWidth=1.7;
+        lctx.beginPath();lctx.moveTo(px,py);lctx.lineTo(sx,sy);lctx.stroke();
+      }
+      px=sx;py=sy;haveP=true;
+    }
+    if(t>=tMax){archive(0.6);pickGears();}
+  }
+  ctx.fillStyle='#05060c';ctx.fillRect(0,0,W,H);
+  ctx.drawImage(hist,0,0,W,H);
+  ctx.drawImage(live,0,0,W,H);
+  drawGears(cx,cy);
+  vals.textContent='R='+R+'  r='+r+'  d='+dCur.toFixed(1)+'  speed=x'+spdCur.toFixed(2)+'  '+Math.min(100,Math.round(t/tMax*100))+'%';
+}
+addEventListener('pointermove',function(e){mx=e.clientX/W;my=e.clientY/H});
+addEventListener('pointerdown',function(){archive(0.55);pickGears()});
+addEventListener('resize',resize);
+resize();
+pickGears();
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
