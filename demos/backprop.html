@@ -409,7 +409,7 @@ function frame(t){
   uiT+=dt;
   if(uiT>0.08){
     uiT=0;
-    el.phase.textContent=paused?'paused':(phase==='update'?'weight update':phase);
+    el.phase.textContent=paused?'paused':(solvedT>0?'solved ✓':(phase==='update'?'weight update':phase));
     el.io.textContent='['+DATA[curSample].x.join(',')+'] → '+DATA[curSample].t;
     el.pred.textContent=a[L-1][0].toFixed(4);
     el.loss.textContent=sampleLoss.toFixed(5);
