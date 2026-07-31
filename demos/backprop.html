@@ -28,10 +28,10 @@
   <div class="row"><span class="k">prediction</span><span class="v" id="s-pred">-</span></div>
   <div class="row"><span class="k">loss (sample)</span><span class="v" id="s-loss">-</span></div>
   <div class="row"><span class="k">loss (epoch avg)</span><span class="v" id="s-avg">-</span></div>
-  <div class="row"><span class="k">epochs</span><span class="v" id="s-ep">0</span></div>
-  <label class="k">speed <span class="v" id="s-spd">1.0x</span></label>
+  <div class="row"><span class="k">epochs trained</span><span class="v" id="s-ep">0</span></div>
+  <label class="k">animation speed <span class="v" id="s-spd">1.0x</span></label>
   <input type="range" id="spd" min="15" max="400" value="100">
-  <div class="hint">hover an edge → w and ∂L/∂w · [space] pause · [r] reset weights · <a href="index.html">← gallery</a></div>
+  <div class="hint">one step is animated in slow motion while identical steps run at full speed underneath — that is why the loss falls faster than the pulses.<br>hover an edge → w and ∂L/∂w · [space] pause · [r] reset weights · <a href="index.html">← gallery</a></div>
 </div>
 <script>
 (function(){
@@ -50,22 +50,26 @@ window.addEventListener('resize',resize);
 // ---------- network ----------
 var SIZES=[2,3,2,1];
 var L=SIZES.length;
-var w=[],b=[],a=[],z=[],dw=[],db=[],delta=[],nudge=[];
-function rnd(){return (Math.random()*2-1)*1.2;}
+var w=[],b=[],a=[],z=[],dw=[],db=[],delta=[],nudge=[],vw=[],vb=[],sa=[],sd=[];
+function rnd(){return (Math.random()*2-1)*1.6;}
 function initNet(){
-  w=[];b=[];dw=[];db=[];nudge=[];
+  w=[];b=[];dw=[];db=[];nudge=[];vw=[];vb=[];
   for(var l=1;l<L;l++){
-    var wl=[],bl=[],dwl=[],dbl=[],nl=[];
+    var wl=[],bl=[],dwl=[],dbl=[],nl=[],vwl=[],vbl=[];
     for(var j=0;j<SIZES[l];j++){
-      var row=[],drow=[],nrow=[];
-      for(var i=0;i<SIZES[l-1];i++){row.push(rnd());drow.push(0);nrow.push(0);}
-      wl.push(row);dwl.push(drow);nl.push(nrow);bl.push(rnd()*0.3);dbl.push(0);
+      var row=[],drow=[],nrow=[],vrow=[];
+      for(var i=0;i<SIZES[l-1];i++){row.push(rnd());drow.push(0);nrow.push(0);vrow.push(0);}
+      wl.push(row);dwl.push(drow);nl.push(nrow);vwl.push(vrow);
+      bl.push(rnd()*0.3);dbl.push(0);vbl.push(0);
     }
-    w.push(wl);b.push(bl);dw.push(dwl);db.push(dbl);nudge.push(nl);
+    w.push(wl);b.push(bl);dw.push(dwl);db.push(dbl);nudge.push(nl);vw.push(vwl);vb.push(vbl);
   }
-  a=[];z=[];delta=[];
-  for(var k=0;k<L;k++){a.push(new Array(SIZES[k]).fill(0));z.push(new Array(SIZES[k]).fill(0));delta.push(new Array(SIZES[k]).fill(0));}
-  epochs=0; avgLoss=0; lossHist=[];
+  a=[];z=[];delta=[];sa=[];sd=[];
+  for(var k=0;k<L;k++){
+    a.push(new Array(SIZES[k]).fill(0));z.push(new Array(SIZES[k]).fill(0));delta.push(new Array(SIZES[k]).fill(0));
+    sa.push(new Array(SIZES[k]).fill(0));sd.push(new Array(SIZES[k]).fill(0));
+  }
+  epochs=0; avgLoss=0; lossHist=[]; solvedT=0; bgAcc=0;
 }
 function sig(x){return 1/(1+Math.exp(-x));}
 function forward(x){
@@ -98,17 +102,50 @@ function backward(t){
   }
   return 0.5*(out-t)*(out-t);
 }
-function applyGrads(lr){
+var LR=0.9, MOM=0.95, BG_RATE=9; // background epochs per second
+function applyGrads(){
   for(var l=0;l<w.length;l++)for(var j=0;j<w[l].length;j++){
     for(var i=0;i<w[l][j].length;i++){
-      var d=-lr*dw[l][j][i];
-      w[l][j][i]+=d;
-      nudge[l][j][i]=d;
+      vw[l][j][i]=MOM*vw[l][j][i]-LR*dw[l][j][i];
+      w[l][j][i]+=vw[l][j][i];
+      nudge[l][j][i]=vw[l][j][i];
     }
-    b[l][j]+=-lr*db[l][j];
+    vb[l][j]=MOM*vb[l][j]-LR*db[l][j];
+    b[l][j]+=vb[l][j];
   }
 }
-var LR=3.2;
+// identical math on scratch arrays, so background training never disturbs
+// the activations/gradients currently being animated
+function bgStep(x,t){
+  var l,i,j,s;
+  for(i=0;i<SIZES[0];i++) sa[0][i]=x[i];
+  for(l=1;l<L;l++)for(j=0;j<SIZES[l];j++){
+    s=b[l-1][j];
+    for(i=0;i<SIZES[l-1];i++) s+=w[l-1][j][i]*sa[l-1][i];
+    sa[l][j]=sig(s);
+  }
+  var o=sa[L-1][0];
+  sd[L-1][0]=(o-t)*o*(1-o);
+  for(l=L-2;l>=1;l--)for(i=0;i<SIZES[l];i++){
+    s=0;
+    for(j=0;j<SIZES[l+1];j++) s+=w[l][j][i]*sd[l+1][j];
+    sd[l][i]=s*sa[l][i]*(1-sa[l][i]);
+  }
+  for(l=1;l<L;l++)for(j=0;j<SIZES[l];j++){
+    vb[l-1][j]=MOM*vb[l-1][j]-LR*sd[l][j];
+    b[l-1][j]+=vb[l-1][j];
+    for(i=0;i<SIZES[l-1];i++){
+      vw[l-1][j][i]=MOM*vw[l-1][j][i]-LR*sd[l][j]*sa[l-1][i];
+      w[l-1][j][i]+=vw[l-1][j][i];
+    }
+  }
+  return 0.5*(o-t)*(o-t);
+}
+function bgEpoch(){
+  var tot=0;
+  for(var i=0;i<DATA.length;i++) tot+=bgStep(DATA[i].x,DATA[i].t);
+  return tot/DATA.length;
+}
 var DATA=[{x:[0,0],t:0},{x:[0,1],t:1},{x:[1,0],t:1},{x:[1,1],t:0}];
 
 // ---------- layout ----------
@@ -135,7 +172,7 @@ function layout(){
 
 // ---------- animation state ----------
 var phase='forward', phaseT=0, curSample=0, sampleLoss=0, pred=0, epochs=0, avgLoss=0, epochAcc=0, lossHist=[];
-var speed=1.0, paused=false, hoverEdge=null, mx=-999,my=-999, tPrev=0, flash=0;
+var speed=1.0, paused=false, hoverEdge=null, mx=-999,my=-999, tPrev=0, flash=0, solvedT=0, bgAcc=0;
 initNet(); resize();
 
 var spd=document.getElementById('spd');
@@ -297,6 +334,18 @@ function draw(t){
     ctx.fillText('epoch loss ↓',cx0-4,cy0-4);
   }
 
+  // solved banner
+  if(solvedT>0){
+    var pa=Math.min(1,solvedT/0.5)*(0.72+0.28*Math.sin(t*0.008));
+    ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillStyle='rgba(255,224,138,'+pa+')';
+    ctx.font='bold '+Math.round(Math.min(42,W*0.038))+'px ui-monospace,monospace';
+    ctx.fillText('XOR SOLVED — loss '+avgLoss.toFixed(4),W/2,H*0.09);
+    ctx.font=Math.round(Math.min(15,W*0.015))+'px ui-monospace,monospace';
+    ctx.fillStyle='rgba(255,236,190,.75)';
+    ctx.fillText('reinitialising weights to learn it again…',W/2,H*0.09+30);
+  }
+
   // hover tooltip
   if(hoverEdge){
     var E4=hoverEdge;
@@ -318,6 +367,22 @@ function draw(t){
 // ---------- loop ----------
 function step(dt){
   if(paused) return;
+  // --- background training: the same math at full speed, so the loss really falls
+  bgAcc+=dt*BG_RATE;
+  var guard=0;
+  while(bgAcc>=1&&guard<120){
+    bgAcc-=1;guard++;
+    avgLoss=bgEpoch();epochs++;
+    if(epochs%3===0){lossHist.push(avgLoss);if(lossHist.length>170)lossHist.shift();}
+  }
+  if(solvedT>0){
+    solvedT-=dt;
+    if(solvedT<=0){initNet();forward(DATA[curSample].x);phase='forward';phaseT=0;}
+    return;
+  }
+  if(avgLoss>0&&avgLoss<0.004){solvedT=3.6;}          // XOR learned → celebrate, then restart
+  else if(epochs>2600&&avgLoss>0.02){initNet();forward(DATA[curSample].x);} // rare dead-sigmoid plateau
+
   phaseT+=dt*speed*(phase==='pause'?1.6:0.9);
   flash=Math.max(0,flash-dt*2.2);
   if(phase==='forward'&&phaseT>=1){
@@ -326,15 +391,10 @@ function step(dt){
     flash=1;
     phase='backward';phaseT=0;
   } else if(phase==='backward'&&phaseT>=1){
-    applyGrads(LR);
+    applyGrads();
     phase='update';phaseT=0;
   } else if(phase==='update'&&phaseT>=1){
-    epochAcc+=sampleLoss;
     curSample=(curSample+1)%DATA.length;
-    if(curSample===0){
-      epochs++; avgLoss=epochAcc/DATA.length; epochAcc=0;
-      lossHist.push(avgLoss); if(lossHist.length>160) lossHist.shift();
-    }
     forward(DATA[curSample].x);
     phase='forward';phaseT=0;
   }

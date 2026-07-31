@@ -20,7 +20,7 @@
 <canvas id="c"></canvas>
 <div id="ui">
   <h1>Multi-Armed Bandit</h1>
-  <p class="e">Three strategies race to find the best slot machine while paying as little as possible for what they learn.</p>
+  <p class="e">Three strategies race to find the best slot machine — watch ε-greedy's regret climb in a straight line while UCB and Thompson flatten off.</p>
   <div class="k">R reroll odds &middot; 1/2/3 spotlight &middot; 0 all &middot; Space pause &middot; F fast</div>
   <hr>
   <div id="stats"></div>
@@ -343,7 +343,8 @@ function drawRegret(g){
   ctx.fillStyle = 'rgba(200,190,225,.7)';
   ctx.font = '11px ui-monospace,monospace';
   ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-  ctx.fillText('cumulative regret (lower = better)  —  reward you gave up vs always picking arm '+(best+1),
+  ctx.fillText('cumulative regret (lower = better) — reward given up vs always playing arm '+(best+1)+
+               '   |   straight line = linear regret, flattening = logarithmic regret',
                gx+8, gy+6);
 }
 
