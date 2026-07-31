@@ -452,23 +452,39 @@ function down(e){var m=pos(e),T=targets(),best=null,bd=24;
       best={k:'rot',mx:m[0],my:m[1],y0:yawB,t0:TLT,p:g};}
   if(best){drag=best;move(e);e.preventDefault();}}
 function clampD(v,mx){var l=Math.hypot(v[0],v[1]);return l>mx?[v[0]*mx/l,v[1]*mx/l]:v;}
+// A triangle flattened onto a single line/great circle/geodesic degenerates to 0+0+180.
+// Reject any drag that would break the geometry's defining inequality, so it is never violated.
+function okTri(V,kind){
+  var i,s;
+  if(kind===1){
+    for(i=0;i<3;i++){var g2=Math.acos(Math.max(-1,Math.min(1,dot3(V[i],V[(i+1)%3]))));
+      if(g2<.14||g2>PI-.14)return false;}
+    s=angSph(V[0],V[1],V[2])+angSph(V[1],V[2],V[0])+angSph(V[2],V[0],V[1]);
+    return s>PI+2e-3;
+  }
+  for(i=0;i<3;i++)if(Math.hypot(V[i][0]-V[(i+1)%3][0],V[i][1]-V[(i+1)%3][1])<(kind?.03:.07))return false;
+  if(!kind)return true;                                   // euclidean: sum is 180 regardless
+  s=angHyp(V[0],V[1],V[2])+angHyp(V[1],V[2],V[0])+angHyp(V[2],V[0],V[1]);
+  return s<PI-2e-3;
+}
 function move(e){
   if(!drag)return;
   var m=pos(e),p=drag.p,u=[(m[0]-p.cx)/p.R,(p.cy-m[1])/p.R];
   if(drag.k==='rot'){yawB=drag.y0+(m[0]-drag.mx)*.009;
     TLT=Math.max(-1.42,Math.min(-.2,drag.t0+(m[1]-drag.my)*.005));e.preventDefault();return;}
+  var o=null;
   if(drag.k==='e'){u=clampD(u,.92);if(Math.abs(u[1]-ELY)<.14)u[1]=ELY+(u[1]>ELY?.14:-.14);eP=u;}
-  else if(drag.k==='et')eT[drag.i]=clampD(u,.94);
-  else if(drag.k==='h')hP=clampD(u,.9);
-  else if(drag.k==='ht')hT[drag.i]=clampD(u,.93);
+  else if(drag.k==='et'){o=eT[drag.i];eT[drag.i]=clampD(u,.94);if(!okTri(eT,0))eT[drag.i]=o;}
+  else if(drag.k==='ht'){o=hT[drag.i];hT[drag.i]=clampD(u,.93);if(!okTri(hT,2))hT[drag.i]=o;}
+  else if(drag.k==='h'){o=hP;hP=clampD(u,.9);                 // keep P off the line L
+    var gl=geoPP([Math.cos(hL[0]),Math.sin(hL[0])],[Math.cos(hL[1]),Math.sin(hL[1])]);
+    var dd=gl.line?Math.abs(hP[0]*gl.vx+hP[1]*gl.vy):Math.abs(Math.hypot(hP[0]-gl.cx,hP[1]-gl.cy)-gl.r);
+    if(dd<.05)hP=o;}
   else{
     var l=Math.hypot(u[0],u[1]);if(l>1){u[0]/=l;u[1]/=l;l=1;}
     var v=unrot(u[0],u[1],Math.sqrt(Math.max(0,1-l*l)));
     if(drag.k==='s'){if(Math.abs(v[2])<.14)v=nr3([v[0],v[1],v[2]>=0?.14:-.14]);sP=v;}
-    else{var o=sT[drag.i];sT[drag.i]=v;
-      for(var i=0;i<3;i++){if(i===drag.i)continue;
-        var dp=Math.max(-1,Math.min(1,dot3(v,sT[i])));
-        if(Math.acos(dp)<.14||Math.acos(dp)>PI-.14){sT[drag.i]=o;break;}}}
+    else{o=sT[drag.i];sT[drag.i]=v;if(!okTri(sT,1))sT[drag.i]=o;}
   }
   e.preventDefault();
 }

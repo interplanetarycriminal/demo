@@ -339,7 +339,9 @@ function drawProof(dt){
   fold = acc ? tf : 0;
   const aimA = phase<2 ? 0 : (acc ? 0.95 : 0.42);
   camA += (aimA - camA) * Math.min(1, dt*3.2);
-  camPsi += dt * 0.30 * Math.min(1, camA/0.35);
+  // spin only once we are up in 3D; settle back to a square-on view for the flat diagram
+  if(phase < 2) camPsi -= camPsi * Math.min(1, dt*2.4);
+  else camPsi += dt * 0.30 * Math.min(1, camA/0.35);
 
   /* ---- stage ---- */
   const sx0=16, sx1=w-16, sy0=50, sy1=h-78;
@@ -421,16 +423,13 @@ function drawProof(dt){
   let msg, col;
   if(phase === 0){ msg = C.k+' × '+th+'° … laying them round the vertex'; col = '#8d7a5c'; }
   else if(!acc){
-    msg = sum===360 ? sum+'° = 360° — lies flat, never closes  ✗'
-                    : sum+'° > 360° — the faces overlap  ✗';
+    msg = sum===360 ? sum+'° — it lies flat, never closes ✗'
+                    : sum+'° — the faces overlap ✗';
+    if(C.n===6) msg = '360° flat — and 7,8,9…gons only worse ✗';
     col = '#ff8f7c';
-  } else if(phase === 1){ msg = sum+'° < 360° — there is room to spare  ✓'; col = '#8ef0b2'; }
+  } else if(phase === 1){ msg = sum+'° < 360° — there is room to spare ✓'; col = '#8ef0b2'; }
   else { msg = 'it folds up → '+SOLIDS[C.s].nm; col = '#ffd48a'; }
   px.fillStyle = col; px.fillText(msg, 14, h-14);
-  if(C.n===6 && phase>0){
-    px.font = '9.5px ui-monospace,Menlo,Consolas,monospace'; px.fillStyle='#6d5c44';
-    px.textAlign='right'; px.fillText('and 7,8,9… gons are worse', w-14, h-14); px.textAlign='left';
-  }
   if(paused){ px.fillStyle='#6d5c44'; px.font='9px ui-monospace,Menlo,Consolas,monospace';
               px.textAlign='right'; px.fillText('PAUSED', w-13, 34); px.textAlign='left'; }
 }
@@ -481,10 +480,10 @@ addEventListener('keydown', ev=>{
 
 /* ================================= loop ================================= */
 addEventListener('resize', ()=>{
+  const pr = Math.min(window.devicePixelRatio, 2);
   camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
-  composer.setSize(innerWidth, innerHeight);
-  bloom.setSize(innerWidth, innerHeight);
+  renderer.setPixelRatio(pr); renderer.setSize(innerWidth, innerHeight);
+  composer.setPixelRatio(pr); composer.setSize(innerWidth, innerHeight);  // also resizes bloom
 });
 
 const clock = new THREE.Clock();

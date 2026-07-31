@@ -70,6 +70,12 @@ var HEAD=[null,
 
 // ---------- primitives ----------
 function txt(s,x,y,fo,c,a,al){ctx.font=fo;ctx.fillStyle=rgba(c,a==null?.9:a);ctx.textAlign=al||'left';ctx.textBaseline='alphabetic';ctx.fillText(s,x,y);}
+function txtF(s,x,y,fo,c,a,al,mw){                       // same, shrunk to fit mw
+  var g=/([\d.]+)px/.exec(fo), sz=g?+g[1]:12; ctx.font=fo;
+  var w=ctx.measureText(s).width;
+  if(w>mw&&w>0&&mw>0)fo=fo.replace(/[\d.]+px/,Math.max(7,sz*mw/w).toFixed(1)+'px');
+  txt(s,x,y,fo,c,a,al);
+}
 function X(x){return SX+x*SC;} function Y(y){return SY+y*SC;}
 function fit(we,he){SC=Math.min(FW/we,FH/he);SX=FX+(FW-we*SC)/2;SY=FY+(FH-he*SC)/2;}
 function label(cx,cy,sz,col,sym,val){
@@ -134,8 +140,8 @@ function scene1(){
   dimA(X(o-g),Y(o-g),X(o-g+a),Y(o-g),-d,'a = '+f(a,2),GOLD,1);
   dimA(X(o+a+g),Y(o-g),X(o+a+g+b),Y(o-g),-d,'b = '+f(b,2),LAPIS,1);
   dimA(X(o),Y(o+LEN),X(o),Y(o),-16,'a + b = '+f(LEN,2),PARCH,da);
-  txt(ex>.45?'four pieces — nothing added, nothing lost':'one square on the whole line',
-      FX+FW/2,FY+FH-2,M(12),DIM,.75,'center');
+  txtF(ex>.45?'four pieces — nothing added, nothing lost':'one square on the whole line',
+      FX+FW/2,FY+FH-2,M(12),DIM,.75,'center',FW);
   var res=(a+b)*(a+b)-(a*a+2*a*b+b*b);
   panel([
    [[' (a + b)²',PARCH,1],['  =  ',DIM],['a²',GOLD,1],['  +  ',DIM],['2ab',VERM,1],['  +  ',DIM],['b²',LAPIS,1]],
@@ -178,9 +184,9 @@ function scene2(){
   dimA(X(o),Y(o+d),X(o),Y(o+a),14,'b = '+f(b,2),LAPIS,(1-cut)*.9);
   dimA(X(o),Y(o+d),X(o+a+b),Y(o+d),16+18*sh,'a + b = '+f(a+b,2),BONE,sh);
   dimA(X(o+a+b),Y(o+d),X(o+a+b),Y(o),16+16*sh,'a − b = '+f(d,2),BONE,sh);
-  txt(mv<.25?'take the square on b out of the square on a — an L remains: the gnomon'
+  txtF(mv<.25?'take the square on b out of the square on a — an L remains: the gnomon'
       :(mv<.9?'cut the gnomon and swing the arm around':'the same area, now a rectangle (a+b) by (a−b)'),
-      FX+FW/2,FY+FH-2,M(12),DIM,.75,'center');
+      FX+FW/2,FY+FH-2,M(12),DIM,.75,'center',FW);
   var res=(a*a-b*b)-(a+b)*d;
   panel([
    [[' a² − b²',PARCH,1],['  =  ',DIM],['(a + b)(a − b)',VERD,1]],
@@ -214,8 +220,8 @@ function gnoFig(ox,oy,sz,Sd,K,gcol,kcol,tg){
   label(ox+sz-k/2,oy+sz-k/2,k,kcol,tg.k[0],tg.k[1]);
   dimA(ox,oy+sz,ox+sz,oy+sz,20,tg.side,PARCH,1);
   txt(tg.cap,ox,oy-26,M(11.5),GOLD,.95);
-  txt(tg.eq,ox,oy-9,S(14.5,1),PARCH,.85);
-  txt(tg.num,ox+sz/2,oy+sz+44,M(12),BONE,.85,'center');
+  txtF(tg.eq,ox,oy-9,S(14.5,1),PARCH,.85,'left',sz*1.4);
+  txtF(tg.num,ox+sz/2,oy+sz+44,M(12),BONE,.85,'center',sz*1.4);
 }
 function scene3(){
   var a=sa,b=LEN-sa, m=(a+b)/2, d=Math.abs(a-b)/2, m2=a/2, n=b;
@@ -228,8 +234,8 @@ function scene3(){
   for(var i=0;i<4;i++){var p=pts[i],px=lx+p[0]*lw;
     ctx.strokeStyle=rgba(BONE,.8);ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(px,ly-9);ctx.lineTo(px,ly+9);ctx.stroke();
     txt(p[1],px,ly-14,S(14,1),BONE,.9,'center');}
-  txt('AC = CB = m = '+f(m,2)+'   ·   AD = a = '+f(a,2)+'   ·   DB = b = '+f(b,2)+'   ·   CD = d = '+f(d,2),
-      lx,ly+28,M(12),DIM,.85);
+  txtF('AC = CB = m = '+f(m,2)+'   ·   AD = a = '+f(a,2)+'   ·   DB = b = '+f(b,2)+'   ·   CD = d = '+f(d,2),
+      lx,ly+28,M(12),DIM,.85,'left',lw);
   var top=FY+96, sz=Math.min((FW-110)/2, FH-top+FY-70);
   if(sz<40)sz=40;
   var x1=FX+FW/2-sz-34, x2=FX+FW/2+34;
@@ -237,7 +243,7 @@ function scene3(){
     cap:'II.5',eq:'ab + d² = m²',num:f(a*b)+' + '+f(d*d)+' = '+f(m*m)});
   gnoFig(x2,top,sz,m2+n,m2,VERM,GOLD,{g:['(a+b)b',f((a+b)*b)],k:['(a/2)²',f(m2*m2)],side:'a/2 + b = '+f(m2+n,2),
     cap:'II.6',eq:'(a + b)b + (a/2)² = (a/2 + b)²',num:f((a+b)*b)+' + '+f(m2*m2)+' = '+f((m2+n)*(m2+n))});
-  txt('same figure, twice: a square with a corner square removed',FX+FW/2,FY+FH-2,M(12),DIM,.7,'center');
+  txtF('same figure, twice: a square with a corner square removed',FX+FW/2,FY+FH-2,M(12),DIM,.7,'center',FW);
   var res=(a*b+d*d)-m*m, res6=((a+b)*b+m2*m2)-(m2+n)*(m2+n);
   panel([
    [[' ab + d²',PARCH,1],['  =  ',DIM],['m²',VERD,1],['       (II.5)',DIM,0,.55]],
@@ -295,7 +301,7 @@ function scene4(){
   var cap=mv<.15?'a square on x, with b·x laid alongside — together they are c'
         :(mv<.9?'halve the b·x rectangle and lay the halves on two sides':
          (fl<.5?'a corner is missing — exactly (b/2)²':'complete the square: the whole is c + (b/2)²'));
-  txt(cap,FX+FW/2,FY+FH-2,M(12),DIM,.78,'center');
+  txtF(cap,FX+FW/2,FY+FH-2,M(12),DIM,.78,'center',FW);
   var lhs=x*x+b*x, res=lhs-c, big=c+hb*hb;
   panel([
    [[' x² + b·x = c',PARCH,1],['      solve for x',DIM,0,.55]],
@@ -456,8 +462,8 @@ function header(){
   return y-CY0+4;
 }
 function layout(){
-  var wide=W>=1000;
-  CX0=(wide?348:16); CX1=W-18; CY0=(wide?14:H<620?150:206);
+  var wide=W>=760;
+  CX0=(wide?348:16); CX1=W-18; CY0=(wide?14:248);
   var hh=header();
   var top=CY0+hh+8, bot=H-(scene===5?18:76);
   var stackW=CX1-CX0;
