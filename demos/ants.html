@@ -1,0 +1,271 @@
+<meta charset="utf-8">
+<title>Ant Colony Optimization — TSP</title>
+<style>
+  html,body{margin:0;height:100%;background:#04060b;overflow:hidden}
+  canvas{display:block;position:fixed;inset:0}
+  #ui{position:fixed;top:12px;left:12px;z-index:10;max-width:330px;
+      font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#bfe9ff;
+      background:rgba(4,10,18,.62);border:1px solid rgba(0,220,255,.22);
+      border-radius:8px;padding:10px 12px;backdrop-filter:blur(4px)}
+  #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.14em;color:#7df9ff;text-transform:uppercase}
+  #ui p{margin:0 0 7px;color:#7d9bb0}
+  #ui .k{color:#ffd36e}
+  #ui .s{color:#8affc1}
+  #ui a{color:#7df9ff;text-decoration:none;border-bottom:1px solid rgba(125,249,255,.35)}
+  #ui table{border-collapse:collapse;margin:2px 0 6px}
+  #ui td{padding:0 8px 0 0;color:#6f8ea3}
+  #ui td.v{color:#eaffff}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>Ant Colony · TSP</h1>
+  <p>40 ants pick edges by pheromone<sup>α</sup>·(1/dist)<sup>β</sup>, and the trails they reinforce evaporate into one short tour.</p>
+  <table>
+    <tr><td>iteration</td><td class="v" id="it">0</td></tr>
+    <tr><td>cities</td><td class="v" id="nc">25</td></tr>
+    <tr><td>best tour</td><td class="v s" id="best">—</td></tr>
+    <tr><td>this round</td><td class="v" id="cur">—</td></tr>
+    <tr><td>evaporation ρ</td><td class="v" id="rho">0.10</td></tr>
+    <tr><td>improvement</td><td class="v s" id="imp">0.0%</td></tr>
+  </table>
+  <p><span class="k">click</span> add city · <span class="k">[ ]</span> evaporation · <span class="k">R</span> reseed</p>
+  <a href="index.html">← gallery</a>
+</div>
+<script>
+(function(){
+"use strict";
+var cv=document.getElementById('c'),ctx=cv.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  W=window.innerWidth;H=window.innerHeight;
+  cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);
+  cv.style.width=W+'px';cv.style.height=H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize',resize);resize();
+
+// ---- parameters -------------------------------------------------------
+var ALPHA=1.0, BETA=3.5, Q=110, NANTS=40, RHO=0.10, TAU0=1.0;
+var cities=[], D=[], tau=[], N=0;
+var ants=[], iter=0, best=null, bestLen=Infinity, firstLen=0, spark=[];
+var roundLen=0;
+
+function rnd(a,b){return a+Math.random()*(b-a);}
+
+function seedCities(n){
+  cities=[];
+  var pad=90, w=Math.max(240,W-pad*2), h=Math.max(200,H-pad*2-40);
+  for(var i=0;i<n;i++) cities.push({x:pad+rnd(0,w), y:pad+40+rnd(0,h)});
+  rebuild(true);
+}
+function rebuild(full){
+  N=cities.length;
+  D=[];tau=[];
+  for(var i=0;i<N;i++){
+    D.push(new Float64Array(N));
+    tau.push(new Float64Array(N));
+    for(var j=0;j<N;j++){
+      var dx=cities[i].x-cities[j].x, dy=cities[i].y-cities[j].y;
+      D[i][j]=Math.max(1e-6,Math.sqrt(dx*dx+dy*dy));
+      tau[i][j]=TAU0;
+    }
+  }
+  best=null;bestLen=Infinity;firstLen=0;spark=[];iter=0;
+  spawnAnts();
+}
+function spawnAnts(){
+  ants=[];
+  for(var k=0;k<NANTS;k++) ants.push(newAnt(Math.floor(Math.random()*N)));
+}
+function newAnt(start){
+  var vis=new Uint8Array(N);vis[start]=1;
+  return {tour:[start],vis:vis,len:0,cur:start,prev:start,t:0,done:false};
+}
+
+// pick next city with real ACO probability rule
+function pickNext(a){
+  var i=a.cur,sum=0,w=new Float64Array(N),j;
+  for(j=0;j<N;j++){
+    if(a.vis[j])continue;
+    var v=Math.pow(tau[i][j],ALPHA)*Math.pow(1/D[i][j],BETA);
+    if(!isFinite(v)||v<=0)v=1e-12;
+    w[j]=v;sum+=v;
+  }
+  if(sum<=0){for(j=0;j<N;j++) if(!a.vis[j]) return j; return -1;}
+  var r=Math.random()*sum,acc=0;
+  for(j=0;j<N;j++){ if(a.vis[j])continue; acc+=w[j]; if(acc>=r) return j; }
+  for(j=N-1;j>=0;j--) if(!a.vis[j]) return j;
+  return -1;
+}
+
+function tourLength(t){
+  var s=0;
+  for(var i=0;i<t.length;i++) s+=D[t[i]][t[(i+1)%t.length]];
+  return s;
+}
+
+// advance every ant one city-step
+function stepAnts(){
+  var allDone=true;
+  for(var k=0;k<ants.length;k++){
+    var a=ants[k];
+    if(a.done)continue;
+    allDone=false;
+    if(a.tour.length>=N){
+      a.len=tourLength(a.tour);
+      a.done=true;
+      continue;
+    }
+    var nx=pickNext(a);
+    if(nx<0){a.done=true;a.len=tourLength(a.tour);continue;}
+    a.prev=a.cur;a.cur=nx;a.vis[nx]=1;a.tour.push(nx);a.t=0;
+  }
+  if(allDone) finishRound();
+}
+
+function finishRound(){
+  // evaporate
+  var i,j,k;
+  for(i=0;i<N;i++) for(j=0;j<N;j++) tau[i][j]*=(1-RHO);
+  // deposit
+  var roundBest=Infinity;
+  for(k=0;k<ants.length;k++){
+    var a=ants[k]; if(!a.len) a.len=tourLength(a.tour);
+    if(a.len<roundBest) roundBest=a.len;
+    var dep=Q/a.len;
+    for(i=0;i<a.tour.length;i++){
+      var u=a.tour[i],v=a.tour[(i+1)%a.tour.length];
+      tau[u][v]+=dep;tau[v][u]+=dep;
+    }
+    if(a.len<bestLen){bestLen=a.len;best=a.tour.slice();}
+  }
+  // elitist reinforcement of the global best
+  if(best){
+    var eb=(Q*3)/bestLen;
+    for(i=0;i<best.length;i++){
+      var p=best[i],q2=best[(i+1)%best.length];
+      tau[p][q2]+=eb;tau[q2][p]+=eb;
+    }
+  }
+  // clamp
+  for(i=0;i<N;i++) for(j=0;j<N;j++){ if(tau[i][j]>60)tau[i][j]=60; if(tau[i][j]<0.02)tau[i][j]=0.02; }
+  roundLen=roundBest;
+  if(!firstLen) firstLen=bestLen;
+  iter++;
+  spark.push(bestLen); if(spark.length>190) spark.shift();
+  spawnAnts();
+}
+
+// ---- rendering --------------------------------------------------------
+function drawTrails(){
+  var maxT=0.02,i,j;
+  for(i=0;i<N;i++) for(j=i+1;j<N;j++) if(tau[i][j]>maxT) maxT=tau[i][j];
+  ctx.lineCap='round';
+  for(i=0;i<N;i++) for(j=i+1;j<N;j++){
+    var s=tau[i][j]/maxT;
+    if(s<0.055) continue;
+    var a=cities[i],b=cities[j];
+    var e=Math.pow(s,1.5);
+    ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);
+    ctx.strokeStyle='rgba(60,235,255,'+(0.05+e*0.55).toFixed(3)+')';
+    ctx.lineWidth=0.4+e*4.6;
+    ctx.shadowBlur=e*16;ctx.shadowColor='rgba(0,220,255,0.8)';
+    ctx.stroke();
+  }
+  ctx.shadowBlur=0;
+}
+function drawBest(){
+  if(!best)return;
+  ctx.beginPath();
+  for(var i=0;i<best.length;i++){
+    var c=cities[best[i]];
+    if(i===0)ctx.moveTo(c.x,c.y);else ctx.lineTo(c.x,c.y);
+  }
+  ctx.closePath();
+  ctx.strokeStyle='rgba(255,206,84,0.92)';ctx.lineWidth=2.1;
+  ctx.shadowBlur=16;ctx.shadowColor='rgba(255,190,60,0.9)';
+  ctx.stroke();ctx.shadowBlur=0;
+}
+function drawCities(){
+  for(var i=0;i<N;i++){
+    var c=cities[i];
+    ctx.beginPath();ctx.arc(c.x,c.y,4.2,0,6.2832);
+    ctx.fillStyle='#eafcff';ctx.shadowBlur=10;ctx.shadowColor='#5ce8ff';ctx.fill();
+    ctx.shadowBlur=0;
+    ctx.beginPath();ctx.arc(c.x,c.y,9,0,6.2832);
+    ctx.strokeStyle='rgba(120,230,255,0.22)';ctx.lineWidth=1;ctx.stroke();
+  }
+}
+function drawAnts(dt){
+  for(var k=0;k<ants.length;k++){
+    var a=ants[k];
+    if(a.done)continue;
+    a.t=Math.min(1,a.t+dt*7.5);
+    var p=cities[a.prev],q=cities[a.cur];
+    var x=p.x+(q.x-p.x)*a.t, y=p.y+(q.y-p.y)*a.t;
+    ctx.beginPath();ctx.arc(x,y,2.1,0,6.2832);
+    ctx.fillStyle='rgba(255,255,255,0.85)';ctx.fill();
+    ctx.beginPath();ctx.moveTo(p.x+(q.x-p.x)*Math.max(0,a.t-0.16),p.y+(q.y-p.y)*Math.max(0,a.t-0.16));
+    ctx.lineTo(x,y);ctx.strokeStyle='rgba(255,255,255,0.28)';ctx.lineWidth=1;ctx.stroke();
+  }
+}
+function drawSpark(){
+  if(spark.length<2)return;
+  var w=270,h=54,x0=W-w-22,y0=H-h-22;
+  ctx.fillStyle='rgba(4,10,18,0.6)';
+  ctx.strokeStyle='rgba(0,220,255,0.2)';ctx.lineWidth=1;
+  ctx.beginPath();ctx.rect(x0-8,y0-16,w+16,h+30);ctx.fill();ctx.stroke();
+  var mn=Infinity,mx=-Infinity,i;
+  for(i=0;i<spark.length;i++){if(spark[i]<mn)mn=spark[i];if(spark[i]>mx)mx=spark[i];}
+  if(mx-mn<1e-6)mx=mn+1;
+  ctx.beginPath();
+  for(i=0;i<spark.length;i++){
+    var x=x0+(i/(spark.length-1))*w;
+    var y=y0+h-((spark[i]-mn)/(mx-mn))*h;
+    if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+  }
+  ctx.strokeStyle='rgba(255,206,84,0.95)';ctx.lineWidth=1.6;
+  ctx.shadowBlur=8;ctx.shadowColor='rgba(255,190,60,0.7)';ctx.stroke();ctx.shadowBlur=0;
+  ctx.fillStyle='rgba(140,180,200,0.85)';ctx.font='10px ui-monospace,monospace';
+  ctx.fillText('best tour length over iterations',x0-4,y0-4);
+}
+
+// ---- loop -------------------------------------------------------------
+var last=performance.now(),acc=0,STEP=0.028;
+function frame(now){
+  var dt=Math.min(0.05,(now-last)/1000);last=now;
+  acc+=dt;
+  var guard=0;
+  while(acc>=STEP && guard<12){acc-=STEP;stepAnts();guard++;}
+
+  ctx.fillStyle='rgba(4,6,11,0.34)';ctx.fillRect(0,0,W,H);
+  drawTrails();drawBest();drawCities();drawAnts(dt);drawSpark();
+
+  document.getElementById('it').textContent=iter;
+  document.getElementById('nc').textContent=N;
+  document.getElementById('best').textContent=isFinite(bestLen)?bestLen.toFixed(1):'—';
+  document.getElementById('cur').textContent=roundLen?roundLen.toFixed(1):'—';
+  document.getElementById('rho').textContent=RHO.toFixed(2);
+  document.getElementById('imp').textContent=(firstLen&&isFinite(bestLen))?
+      (((firstLen-bestLen)/firstLen)*100).toFixed(1)+'%':'0.0%';
+  requestAnimationFrame(frame);
+}
+
+cv.addEventListener('click',function(e){
+  cities.push({x:e.clientX,y:e.clientY});
+  rebuild(false);
+});
+window.addEventListener('keydown',function(e){
+  var k=e.key.toLowerCase();
+  if(k==='r'){seedCities(25);}
+  else if(e.key==='['){RHO=Math.max(0.01,RHO-0.02);}
+  else if(e.key===']'){RHO=Math.min(0.60,RHO+0.02);}
+});
+
+seedCities(25);
+ctx.fillStyle='#04060b';ctx.fillRect(0,0,W,H);
+requestAnimationFrame(frame);
+})();
+</script>

@@ -1,0 +1,205 @@
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<title>Self-Attention</title>
+<style>
+  html,body{margin:0;height:100%;background:#05060c;overflow:hidden;font-family:ui-monospace,Menlo,Consolas,monospace}
+  canvas{display:block;position:fixed;inset:0}
+  #ui{position:fixed;top:14px;left:14px;z-index:10;background:rgba(8,10,20,.72);border:1px solid rgba(120,180,255,.28);
+      border-radius:10px;padding:12px 14px;color:#cfe3ff;font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;
+      max-width:390px;backdrop-filter:blur(6px)}
+  #ui h1{margin:0 0 6px;font-size:15px;letter-spacing:.16em;color:#7fe7ff;text-transform:uppercase}
+  #ui p{margin:0 0 8px;color:#8fa6c8}
+  #ui .hint{color:#6f86a8}
+  #ui a{color:#ff7ad9;text-decoration:none}
+  #ui a:hover{text-decoration:underline}
+  input[type=text]{width:100%;box-sizing:border-box;background:#0b1120;color:#bfe9ff;border:1px solid #23406b;
+      border-radius:5px;padding:5px 7px;font:12px ui-monospace,monospace;margin:4px 0}
+  input[type=range]{width:100%;accent-color:#ff7ad9;margin:2px 0 4px}
+  .stat{color:#7fe7ff}
+</style>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>Self-Attention</h1>
+  <p>Every word looks at every other word and decides how much to listen — that's attention.</p>
+  <input type="text" id="sent" value="the cat sat on the mat because it was tired" spellcheck="false">
+  <label class="hint">softmax temperature <span class="stat" id="tv">1.00</span></label>
+  <input type="range" id="temp" min="0.1" max="3" step="0.01" value="1">
+  <div class="hint">hover a token to freeze &amp; inspect · edit the sentence above</div>
+  <div class="hint">query <span class="stat" id="qn">—</span> · d=<span class="stat" id="dn">16</span>
+     · max w <span class="stat" id="mw">—</span> · entropy <span class="stat" id="en">—</span></div>
+  <div class="hint" id="top3">top-3: —</div>
+  <p class="hint" style="margin-top:8px">Embeddings are toy pseudo-random vectors, but the Q·Kᵀ/√d softmax math is exactly what real transformers run.</p>
+  <a href="index.html">← gallery</a>
+</div>
+<script>
+(function(){
+var c=document.getElementById('c'),x=c.getContext('2d');
+var W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;
+  c.width=W*DPR;c.height=H*DPR;x.setTransform(DPR,0,0,DPR,0,0);layout();}
+addEventListener('resize',resize);
+
+var D=16; // head dim
+// deterministic pseudo-random
+function hash(s){var h=2166136261>>>0;for(var i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)>>>0;}return h;}
+function rngFrom(seed){var s=seed>>>0||1;return function(){s^=s<<13;s>>>=0;s^=s>>17;s^=s<<5;s>>>=0;return s/4294967296;}}
+function gauss(r){var u=Math.max(1e-9,r()),v=r();return Math.sqrt(-2*Math.log(u))*Math.cos(6.283185*v);}
+
+var toks=[],E=[],Wq=[],Wk=[],A=[];
+// fixed projection matrices (seeded once, shared across sentences)
+(function(){var r=rngFrom(1234567);
+ for(var i=0;i<D;i++){var a=[],b=[];for(var j=0;j<D;j++){a.push(gauss(r)/Math.sqrt(D));b.push(gauss(r)/Math.sqrt(D));}Wq.push(a);Wk.push(b);}
+})();
+function mv(M,v){var o=[];for(var i=0;i<D;i++){var s=0;for(var j=0;j<D;j++)s+=M[i][j]*v[j];o.push(s);}return o;}
+function dot(a,b){var s=0;for(var i=0;i<D;i++)s+=a[i]*b[i];return s;}
+
+function build(str){
+  toks=str.trim().split(/\s+/).filter(Boolean).slice(0,14);
+  if(!toks.length)toks=['hello'];
+  E=toks.map(function(t,i){var r=rngFrom(hash(t)+i*7919),v=[];for(var k=0;k<D;k++)v.push(gauss(r));
+    // add a mild positional signal (real transformers do this too)
+    for(var k2=0;k2<D;k2++)v[k2]+=0.5*Math.sin(i/Math.pow(1000,k2/D)+(k2%2)*1.5707963);
+    return v;});
+  compute();
+}
+function compute(){
+  var T=parseFloat(document.getElementById('temp').value)||1;
+  var Q=E.map(function(e){return mv(Wq,e)}),K=E.map(function(e){return mv(Wk,e)});
+  var n=toks.length;A=[];
+  for(var i=0;i<n;i++){
+    var s=[],mx=-1e9;
+    for(var j=0;j<n;j++){var v=dot(Q[i],K[j])/Math.sqrt(D)/T;s.push(v);if(v>mx)mx=v;}
+    var sum=0;for(var j2=0;j2<n;j2++){s[j2]=Math.exp(s[j2]-mx);sum+=s[j2];}
+    for(var j3=0;j3<n;j3++)s[j3]/=sum;
+    A.push(s);
+  }
+}
+
+var chips=[],hm={x:0,y:0,cell:20};
+function layout(){
+  var n=toks.length;if(!n)return;
+  x.font='16px ui-monospace,monospace';
+  var pad=18,ws=[],total=0;
+  for(var i=0;i<n;i++){var w=x.measureText(toks[i]).width+pad*2;ws.push(w);total+=w+10;}
+  total-=10;
+  var scale=Math.min(1,(W-80)/total);
+  var cx=(W-total*scale)/2,cy=Math.max(150,H*0.30);
+  chips=[];
+  for(var i2=0;i2<n;i2++){var w2=ws[i2]*scale;
+    chips.push({t:toks[i2],x:cx+w2/2,y:cy,w:w2,h:36*Math.max(.8,scale)});cx+=w2+10*scale;}
+  var avail=Math.min(H-cy-140,W-120);
+  hm.cell=Math.max(12,Math.min(38,avail/n));
+  hm.x=W/2-hm.cell*n/2;hm.y=cy+120;
+}
+
+var mouse={x:-999,y:-999},hover=-1,t0=performance.now(),qi=0,qf=0;
+c.addEventListener('mousemove',function(e){mouse.x=e.clientX;mouse.y=e.clientY;});
+c.addEventListener('mouseleave',function(){mouse.x=-999;mouse.y=-999;});
+
+function hexA(h,a){return 'rgba('+parseInt(h.substr(1,2),16)+','+parseInt(h.substr(3,2),16)+','+parseInt(h.substr(5,2),16)+','+a+')';}
+function heat(v){ // v in 0..1 -> deep blue -> cyan -> magenta -> white
+  var r,g,b;
+  if(v<0.5){var t=v/0.5;r=10+t*20;g=20+t*210;b=60+t*195;}
+  else{var t2=(v-0.5)/0.5;r=30+t2*225;g=230-t2*110;b=255-t2*20;}
+  return 'rgb('+(r|0)+','+(g|0)+','+(b|0)+')';
+}
+
+function arc(a,b,w,col,glow){
+  var mx=(a.x+b.x)/2, dy=Math.min(160,40+Math.abs(b.x-a.x)*0.42);
+  x.beginPath();x.moveTo(a.x,a.y);x.quadraticCurveTo(mx,a.y-dy,b.x,b.y);
+  x.lineWidth=w;x.strokeStyle=col;x.shadowColor=col;x.shadowBlur=glow;x.stroke();x.shadowBlur=0;
+}
+
+function frame(now){
+  var dt=(now-t0)/1000;t0=now;
+  x.fillStyle='#05060c';x.fillRect(0,0,W,H);
+  // subtle grid
+  x.strokeStyle='rgba(70,110,180,.07)';x.lineWidth=1;
+  for(var gx=0;gx<W;gx+=44){x.beginPath();x.moveTo(gx,0);x.lineTo(gx,H);x.stroke();}
+  for(var gy=0;gy<H;gy+=44){x.beginPath();x.moveTo(0,gy);x.lineTo(W,gy);x.stroke();}
+
+  var n=toks.length;
+  hover=-1;
+  for(var i=0;i<n;i++){var ch=chips[i];
+    if(Math.abs(mouse.x-ch.x)<ch.w/2&&Math.abs(mouse.y-ch.y)<ch.h/2+6)hover=i;}
+
+  if(hover<0){qf+=dt*0.62;if(qf>=1){qf=0;qi=(qi+1)%n;}}
+  var active=hover>=0?hover:qi;
+  var reveal=hover>=0?1:Math.min(1,qf*2.4);
+
+  // arcs from active query
+  var row=A[active]||[];
+  for(var j=0;j<n;j++){
+    var w=row[j]||0;
+    var a=chips[active],b=chips[j];
+    if(j===active){continue;}
+    var alpha=Math.min(1,w*3.2)*reveal;
+    if(alpha<0.02)continue;
+    arc({x:a.x,y:a.y-18},{x:b.x,y:b.y-18},0.6+w*13,heat(Math.min(1,w*2.6)).replace('rgb(','rgba(').replace(')',','+alpha.toFixed(3)+')'),14*w+3);
+  }
+  // self loop
+  var sa=chips[active],sw=row[active]||0;
+  if(sw>0.02){x.beginPath();x.arc(sa.x,sa.y-30,14+sw*10,0,6.2832);
+    x.lineWidth=0.6+sw*8;x.strokeStyle=heat(Math.min(1,sw*2.6)).replace('rgb(','rgba(').replace(')',',.8)');
+    x.shadowColor=x.strokeStyle;x.shadowBlur=10;x.stroke();x.shadowBlur=0;}
+
+  // chips
+  for(var i2=0;i2<n;i2++){
+    var ch2=chips[i2],w2=row[i2]||0,isQ=(i2===active);
+    var g=isQ?1:Math.min(1,w2*3);
+    x.beginPath();
+    var rr=8,X=ch2.x-ch2.w/2,Y=ch2.y-ch2.h/2;
+    x.moveTo(X+rr,Y);x.lineTo(X+ch2.w-rr,Y);x.quadraticCurveTo(X+ch2.w,Y,X+ch2.w,Y+rr);
+    x.lineTo(X+ch2.w,Y+ch2.h-rr);x.quadraticCurveTo(X+ch2.w,Y+ch2.h,X+ch2.w-rr,Y+ch2.h);
+    x.lineTo(X+rr,Y+ch2.h);x.quadraticCurveTo(X,Y+ch2.h,X,Y+ch2.h-rr);
+    x.lineTo(X,Y+rr);x.quadraticCurveTo(X,Y,X+rr,Y);x.closePath();
+    x.fillStyle=isQ?'rgba(255,122,217,.20)':'rgba(40,110,190,'+(0.08+g*0.30).toFixed(3)+')';
+    x.fill();
+    x.lineWidth=isQ?2:1;
+    x.strokeStyle=isQ?'#ff7ad9':'rgba(120,200,255,'+(0.25+g*0.7).toFixed(3)+')';
+    x.shadowColor=x.strokeStyle;x.shadowBlur=isQ?18:8*g;x.stroke();x.shadowBlur=0;
+    x.font=Math.round(ch2.h*0.44)+'px ui-monospace,monospace';
+    x.textAlign='center';x.textBaseline='middle';
+    x.fillStyle=isQ?'#ffe9fb':'rgba(210,235,255,'+(0.45+g*0.55).toFixed(3)+')';
+    x.fillText(ch2.t,ch2.x,ch2.y+1);
+    if(!isQ&&w2>0.02){x.font='10px ui-monospace,monospace';x.fillStyle=heat(Math.min(1,w2*2.6));
+      x.fillText(w2.toFixed(2),ch2.x,ch2.y+ch2.h/2+11);}
+  }
+
+  // heatmap
+  var cs=hm.cell;
+  x.font=Math.max(8,Math.min(11,cs*0.45))+'px ui-monospace,monospace';
+  for(var r=0;r<n;r++)for(var cc=0;cc<n;cc++){
+    var v=A[r][cc],px=hm.x+cc*cs,py=hm.y+r*cs;
+    x.fillStyle=heat(Math.pow(v,0.6));
+    x.globalAlpha=(r===active?1:0.55);
+    x.fillRect(px+1,py+1,cs-2,cs-2);
+    x.globalAlpha=1;
+  }
+  // active row outline
+  x.strokeStyle='#ff7ad9';x.lineWidth=1.5;x.shadowColor='#ff7ad9';x.shadowBlur=10;
+  x.strokeRect(hm.x-1,hm.y+active*cs-1,cs*n+2,cs+2);x.shadowBlur=0;
+  x.textAlign='right';x.textBaseline='middle';x.font='10px ui-monospace,monospace';
+  for(var r2=0;r2<n;r2++){x.fillStyle=r2===active?'#ff7ad9':'rgba(150,180,220,.6)';
+    x.fillText(toks[r2],hm.x-7,hm.y+r2*cs+cs/2);}
+  x.save();x.translate(hm.x-7,hm.y-9);x.textAlign='left';
+  x.fillStyle='rgba(150,180,220,.55)';x.fillText('rows = query · cols = key  →',0,0);x.restore();
+
+  // stats
+  document.getElementById('qn').textContent=toks[active];
+  var mx=0,ent=0;for(var k=0;k<n;k++){if(row[k]>mx)mx=row[k];if(row[k]>1e-9)ent-=row[k]*Math.log2(row[k]);}
+  document.getElementById('mw').textContent=mx.toFixed(3);
+  document.getElementById('en').textContent=ent.toFixed(2)+' bits';
+  var idx=row.map(function(v,i){return[v,i]}).sort(function(a,b){return b[0]-a[0]}).slice(0,3);
+  document.getElementById('top3').textContent='top-3: '+idx.map(function(p){return toks[p[1]]+' '+p[0].toFixed(2)}).join('  ');
+  requestAnimationFrame(frame);
+}
+
+document.getElementById('sent').addEventListener('input',function(){build(this.value);qi=0;qf=0;layout();});
+document.getElementById('temp').addEventListener('input',function(){
+  document.getElementById('tv').textContent=parseFloat(this.value).toFixed(2);compute();});
+document.getElementById('dn').textContent=D;
+build(document.getElementById('sent').value);
+resize();
+requestAnimationFrame(frame);
+})();
+</script>

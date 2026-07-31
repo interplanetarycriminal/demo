@@ -1,0 +1,365 @@
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<title>Q-Learning Gridworld</title>
+<style>
+  html,body{margin:0;height:100%;background:#05070d;overflow:hidden}
+  canvas{display:block;position:fixed;inset:0}
+  #ui{position:fixed;top:0;left:0;margin:12px;padding:10px 12px;background:rgba(6,10,20,.72);
+      border:1px solid rgba(80,200,255,.25);border-radius:8px;color:#bfe9ff;
+      font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;max-width:330px;z-index:10;
+      backdrop-filter:blur(6px);text-shadow:0 0 8px rgba(80,200,255,.35)}
+  #ui h1{margin:0 0 4px;font-size:14px;letter-spacing:.11em;color:#6ff;text-transform:uppercase}
+  #ui .e{color:#8fb4c9;margin:0 0 7px}
+  #ui .k{color:#5d7f95}
+  #ui b{color:#fff;font-weight:600}
+  #ui a{color:#ff7bd5;text-decoration:none;display:inline-block;margin-top:7px}
+  #ui a:hover{text-decoration:underline}
+  #ui hr{border:0;border-top:1px solid rgba(80,200,255,.16);margin:7px 0}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>Q-Learning Gridworld</h1>
+  <p class="e">The agent learns a value for every move by trial and error, and the goal's reward flows backward through the grid.</p>
+  <div class="k">click walls &middot; L lava &middot; G goal &middot; Space pause &middot; F fast &middot; R reset</div>
+  <hr>
+  <div id="stats"></div>
+  <a href="index.html">&larr; gallery</a>
+</div>
+<script>
+'use strict';
+var cv = document.getElementById('c'), ctx = cv.getContext('2d');
+var statsEl = document.getElementById('stats');
+var W = 12, H = 8;
+var EMPTY = 0, WALL = 1, LAVA = 2, GOAL = 3;
+var grid, Q, gx, gy, ax, ay, sx, sy;
+var eps = 1.0, EPS_MIN = 0.05, EPS_DECAY = 0.992;
+var ALPHA = 0.35, GAMMA = 0.95;
+var episode = 0, steps = 0, epReward = 0, totalSteps = 0, lastReward = 0;
+var history = [], trail = [];
+var paused = false, fast = false, mode = 'wall';
+var ACT = [[0,-1],[1,0],[0,1],[-1,0]];
+
+function idx(x,y){ return y*W + x; }
+
+function resetQ(){
+  Q = new Float32Array(W*H*4);
+  episode = 0; history = []; eps = 1.0; totalSteps = 0;
+}
+
+function buildWorld(){
+  grid = new Uint8Array(W*H);
+  // a few walls
+  var walls = [[3,1],[3,2],[3,3],[3,4],[7,3],[7,4],[7,5],[7,6],[5,6],[9,1],[9,2]];
+  for (var i=0;i<walls.length;i++) grid[idx(walls[i][0],walls[i][1])] = WALL;
+  var lava = [[4,5],[5,5],[6,1],[6,2],[8,5],[2,6],[10,4]];
+  for (var j=0;j<lava.length;j++) grid[idx(lava[j][0],lava[j][1])] = LAVA;
+  sx = 0; sy = H-1;
+  gx = W-1; gy = 0;
+  grid[idx(gx,gy)] = GOAL;
+  grid[idx(sx,sy)] = EMPTY;
+  resetQ();
+  newEpisode();
+}
+
+function newEpisode(){
+  ax = sx; ay = sy; steps = 0; epReward = 0; trail = [];
+}
+
+function maxQ(s){
+  var b = Q[s*4];
+  for (var a=1;a<4;a++) if (Q[s*4+a] > b) b = Q[s*4+a];
+  return b;
+}
+function argmaxQ(s){
+  var b = 0;
+  for (var a=1;a<4;a++) if (Q[s*4+a] > Q[s*4+b]) b = a;
+  return b;
+}
+
+function stepAgent(){
+  var s = idx(ax,ay);
+  var a;
+  if (Math.random() < eps) a = (Math.random()*4)|0;
+  else a = argmaxQ(s);
+  var nx = ax + ACT[a][0], ny = ay + ACT[a][1];
+  if (nx<0||ny<0||nx>=W||ny>=H||grid[idx(nx,ny)] === WALL){ nx = ax; ny = ay; }
+  var ns = idx(nx,ny);
+  var cell = grid[ns];
+  var r = -0.02, done = false;
+  if (cell === GOAL){ r = 1.0; done = true; }
+  else if (cell === LAVA){ r = -1.0; done = true; }
+
+  var target = done ? r : (r + GAMMA * maxQ(ns));
+  Q[s*4+a] += ALPHA * (target - Q[s*4+a]);
+
+  ax = nx; ay = ny; steps++; epReward += r; totalSteps++;
+  trail.push([ax,ay]);
+  if (trail.length > 40) trail.shift();
+
+  if (done || steps > 260){
+    lastReward = epReward;
+    history.push(epReward);
+    if (history.length > 160) history.shift();
+    episode++;
+    eps = Math.max(EPS_MIN, eps * EPS_DECAY);
+    newEpisode();
+  }
+}
+
+// ---------- rendering ----------
+var dpr = 1, cw = 0, ch = 0, cell = 40, ox = 0, oy = 0;
+function resize(){
+  dpr = Math.min(2, window.devicePixelRatio || 1);
+  cw = window.innerWidth; ch = window.innerHeight;
+  cv.width = Math.floor(cw*dpr); cv.height = Math.floor(ch*dpr);
+  cv.style.width = cw+'px'; cv.style.height = ch+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  var pad = 60;
+  cell = Math.min((cw - pad*2)/W, (ch - pad*2 - 90)/H);
+  cell = Math.max(24, cell);
+  ox = (cw - cell*W)/2;
+  oy = (ch - cell*H)/2 - 30;
+}
+window.addEventListener('resize', resize);
+
+function heat(v){
+  // v in [-1,1] -> deep blue (low) to cyan/green to hot yellow
+  var t = Math.max(-1, Math.min(1, v));
+  var r,g,b;
+  if (t < 0){
+    var k = -t;
+    r = 90*k + 10; g = 8*(1-k)+6; b = 40*(1-k)+30;
+  } else {
+    r = 12 + 240*Math.pow(t,1.5);
+    g = 30 + 200*Math.pow(t,0.75);
+    b = 70 + 90*(1-t);
+  }
+  return 'rgb('+(r|0)+','+(g|0)+','+(b|0)+')';
+}
+
+function drawArrow(cx, cy, a, alpha, len){
+  var d = ACT[a];
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,255,255,'+alpha+')';
+  ctx.fillStyle = 'rgba(255,255,255,'+alpha+')';
+  ctx.lineWidth = Math.max(1, cell*0.045);
+  ctx.beginPath();
+  ctx.moveTo(cx - d[0]*len*0.5, cy - d[1]*len*0.5);
+  ctx.lineTo(cx + d[0]*len*0.5, cy + d[1]*len*0.5);
+  ctx.stroke();
+  var hx = cx + d[0]*len*0.5, hy = cy + d[1]*len*0.5;
+  var px = -d[1], py = d[0], hs = len*0.28;
+  ctx.beginPath();
+  ctx.moveTo(hx + d[0]*hs, hy + d[1]*hs);
+  ctx.lineTo(hx + px*hs*0.6, hy + py*hs*0.6);
+  ctx.lineTo(hx - px*hs*0.6, hy - py*hs*0.6);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+var t0 = performance.now();
+function draw(now){
+  var time = now*0.001;
+  ctx.fillStyle = '#05070d';
+  ctx.fillRect(0,0,cw,ch);
+
+  // grid cells
+  for (var y=0;y<H;y++){
+    for (var x=0;x<W;x++){
+      var s = idx(x,y), c = grid[s];
+      var px = ox + x*cell, py = oy + y*cell;
+      if (c === WALL){
+        ctx.fillStyle = '#141a26';
+        ctx.fillRect(px+1,py+1,cell-2,cell-2);
+        ctx.strokeStyle = 'rgba(120,150,190,.22)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(px+1.5,py+1.5,cell-3,cell-3);
+        continue;
+      }
+      if (c === LAVA){
+        var pulse = 0.55 + 0.2*Math.sin(time*3 + x*0.7 + y);
+        ctx.fillStyle = 'rgba('+(220*pulse|0)+',40,60,.95)';
+        ctx.fillRect(px+1,py+1,cell-2,cell-2);
+        ctx.strokeStyle = 'rgba(255,90,110,.65)';
+        ctx.strokeRect(px+1.5,py+1.5,cell-3,cell-3);
+        continue;
+      }
+      if (c === GOAL){
+        var g = 0.7 + 0.3*Math.sin(time*4);
+        ctx.fillStyle = 'rgba(60,255,180,'+(0.55+0.3*g)+')';
+        ctx.fillRect(px+1,py+1,cell-2,cell-2);
+        ctx.save();
+        ctx.shadowColor = '#3fffb4'; ctx.shadowBlur = 22*g;
+        ctx.strokeStyle = '#aaffdd'; ctx.lineWidth = 2;
+        ctx.strokeRect(px+2,py+2,cell-4,cell-4);
+        ctx.restore();
+        continue;
+      }
+      var v = maxQ(s);
+      ctx.fillStyle = heat(v);
+      ctx.fillRect(px+1,py+1,cell-2,cell-2);
+      ctx.strokeStyle = 'rgba(90,140,190,.10)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(px+1.5,py+1.5,cell-3,cell-3);
+      // best action arrow
+      var mag = Math.abs(v);
+      if (mag > 0.004){
+        var a = argmaxQ(s);
+        drawArrow(px+cell/2, py+cell/2, a, Math.min(0.9, 0.25 + mag*0.9), cell*0.44);
+      }
+      if (cell > 44){
+        ctx.fillStyle = 'rgba(255,255,255,.42)';
+        ctx.font = Math.round(cell*0.19)+'px ui-monospace,monospace';
+        ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+        ctx.fillText(v.toFixed(2), px+4, py+3);
+      }
+    }
+  }
+
+  // start marker
+  ctx.strokeStyle = 'rgba(150,190,255,.55)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(ox+sx*cell+3, oy+sy*cell+3, cell-6, cell-6);
+
+  // trail
+  for (var i=0;i<trail.length;i++){
+    var tt = (i+1)/trail.length;
+    ctx.fillStyle = 'rgba(120,230,255,'+(tt*0.30)+')';
+    var r = cell*0.11*tt + 1;
+    ctx.beginPath();
+    ctx.arc(ox+trail[i][0]*cell+cell/2, oy+trail[i][1]*cell+cell/2, r, 0, 6.2832);
+    ctx.fill();
+  }
+
+  // agent orb
+  var acx = ox+ax*cell+cell/2, acy = oy+ay*cell+cell/2;
+  var gr = ctx.createRadialGradient(acx,acy,0,acx,acy,cell*0.55);
+  gr.addColorStop(0,'rgba(255,255,255,.95)');
+  gr.addColorStop(0.35,'rgba(120,235,255,.85)');
+  gr.addColorStop(1,'rgba(60,180,255,0)');
+  ctx.fillStyle = gr;
+  ctx.beginPath(); ctx.arc(acx,acy,cell*0.55,0,6.2832); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(acx,acy,cell*0.16,0,6.2832); ctx.fill();
+
+  drawSparkline();
+  drawLegend();
+}
+
+function drawSparkline(){
+  var gw = Math.min(420, cw*0.42), gh = 62;
+  var gxp = ox, gyp = oy + H*cell + 26;
+  if (gyp + gh > ch - 8){ gyp = ch - gh - 10; }
+  ctx.fillStyle = 'rgba(10,16,28,.7)';
+  ctx.fillRect(gxp, gyp, gw, gh);
+  ctx.strokeStyle = 'rgba(80,200,255,.22)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(gxp+.5, gyp+.5, gw-1, gh-1);
+  ctx.fillStyle = 'rgba(150,200,230,.65)';
+  ctx.font = '10px ui-monospace,monospace';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  ctx.fillText('episode reward', gxp+6, gyp+5);
+
+  // zero line
+  var mid = gyp + gh*0.5;
+  ctx.strokeStyle = 'rgba(255,255,255,.14)';
+  ctx.beginPath(); ctx.moveTo(gxp,mid); ctx.lineTo(gxp+gw,mid); ctx.stroke();
+
+  if (history.length > 1){
+    ctx.beginPath();
+    for (var i=0;i<history.length;i++){
+      var v = Math.max(-1.6, Math.min(1.2, history[i]));
+      var px = gxp + (i/(history.length-1))*(gw-4) + 2;
+      var py = mid - (v/1.6)*(gh*0.42);
+      if (i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+    }
+    ctx.strokeStyle = '#6ff';
+    ctx.lineWidth = 1.6;
+    ctx.shadowColor = '#3ee'; ctx.shadowBlur = 8;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+}
+
+function drawLegend(){
+  var lw = 150, lh = 14;
+  var lx = cw - lw - 22, ly = ch - 46;
+  for (var i=0;i<lw;i++){
+    ctx.fillStyle = heat(-1 + 2*(i/lw));
+    ctx.fillRect(lx+i, ly, 1, lh);
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,.2)';
+  ctx.strokeRect(lx+.5, ly+.5, lw, lh);
+  ctx.fillStyle = 'rgba(180,215,235,.7)';
+  ctx.font = '10px ui-monospace,monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.fillText('max Q(s,a)', lx+lw/2, ly+lh+4);
+  ctx.textAlign = 'right'; ctx.fillText('-1', lx-4, ly+2);
+  ctx.textAlign = 'left'; ctx.fillText('+1', lx+lw+4, ly+2);
+}
+
+function updateStats(){
+  var avg = 0, n = Math.min(20, history.length);
+  for (var i=history.length-n;i<history.length;i++) avg += history[i];
+  avg = n ? avg/n : 0;
+  statsEl.innerHTML =
+    'episode <b>'+episode+'</b> &nbsp; step <b>'+steps+'</b><br>'+
+    '&epsilon; (explore) <b>'+eps.toFixed(3)+'</b><br>'+
+    '&alpha; '+ALPHA+' &nbsp; &gamma; '+GAMMA+'<br>'+
+    'last reward <b>'+lastReward.toFixed(2)+'</b><br>'+
+    'avg(20) <b>'+avg.toFixed(2)+'</b> &nbsp; total steps <b>'+totalSteps+'</b><br>'+
+    'paint mode: <b>'+mode+'</b>'+(paused?' &nbsp; <b>PAUSED</b>':'')+(fast?' &nbsp; <b>FAST</b>':'');
+}
+
+var acc = 0;
+function loop(now){
+  if (!paused){
+    var n = fast ? 300 : 40;
+    for (var i=0;i<n;i++) stepAgent();
+  }
+  draw(now);
+  acc++;
+  if (acc % 6 === 0) updateStats();
+  requestAnimationFrame(loop);
+}
+
+// ---------- interaction ----------
+function cellAt(mx,my){
+  var x = Math.floor((mx-ox)/cell), y = Math.floor((my-oy)/cell);
+  if (x<0||y<0||x>=W||y>=H) return null;
+  return [x,y];
+}
+cv.addEventListener('mousedown', function(ev){
+  var p = cellAt(ev.clientX, ev.clientY);
+  if (!p) return;
+  var s = idx(p[0],p[1]);
+  if (grid[s] === GOAL) return;
+  if (p[0]===sx && p[1]===sy) return;
+  if (mode === 'wall') grid[s] = (grid[s] === WALL) ? EMPTY : WALL;
+  else grid[s] = (grid[s] === LAVA) ? EMPTY : LAVA;
+  if (grid[idx(ax,ay)] === WALL) newEpisode();
+});
+window.addEventListener('keydown', function(ev){
+  var k = ev.key.toLowerCase();
+  if (k === ' ' || ev.code === 'Space'){ paused = !paused; ev.preventDefault(); }
+  else if (k === 'f') fast = !fast;
+  else if (k === 'l') mode = (mode === 'lava') ? 'wall' : 'lava';
+  else if (k === 'g'){
+    // move goal to a random free cell, reset Q
+    grid[idx(gx,gy)] = EMPTY;
+    var tries = 0, nx, ny;
+    do { nx = (Math.random()*W)|0; ny = (Math.random()*H)|0; tries++; }
+    while (tries < 200 && (grid[idx(nx,ny)] !== EMPTY || (nx===sx&&ny===sy)));
+    gx = nx; gy = ny; grid[idx(gx,gy)] = GOAL;
+    resetQ(); newEpisode();
+  }
+  else if (k === 'r'){ buildWorld(); }
+  else if (k === 'w') mode = 'wall';
+});
+
+resize();
+buildWorld();
+requestAnimationFrame(loop);
+</script>
+</body>

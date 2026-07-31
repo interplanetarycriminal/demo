@@ -1,0 +1,276 @@
+<meta charset="utf-8">
+<title>PCA — Principal Axes, Live</title>
+<style>
+  html,body{margin:0;height:100%;background:#05070c;overflow:hidden}
+  canvas{display:block;position:fixed;inset:0}
+  #ui{position:fixed;top:14px;left:14px;z-index:10;background:rgba(6,10,18,.62);
+      border:1px solid rgba(80,220,255,.28);border-radius:8px;padding:12px 14px;
+      font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#9fe8ff;
+      max-width:340px;backdrop-filter:blur(6px);text-shadow:0 0 8px rgba(0,220,255,.25)}
+  #ui h1{margin:0 0 6px;font-size:14px;letter-spacing:.14em;color:#6ff;text-transform:uppercase}
+  #ui p{margin:0 0 8px;color:#7fb6cc}
+  #ui .k{color:#ffe066}
+  #ui .row{color:#c9f6ff}
+  #ui a{color:#ff7ad9;text-decoration:none}
+  #ui a:hover{text-decoration:underline}
+  .bar{height:7px;background:rgba(255,255,255,.09);border-radius:4px;margin:3px 0 6px;overflow:hidden}
+  .bar i{display:block;height:100%;width:0;border-radius:4px}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>PCA</h1>
+  <p>Power iteration hunts the direction of greatest variance, then projects the cloud onto it.</p>
+  <div class="row"><span class="k">R</span> reseed &nbsp; <span class="k">SPACE</span> project/restore &nbsp; <span class="k">drag</span> stretch cloud</div>
+  <div class="row" id="st1">iter 0 · Δ 0.000</div>
+  <div class="row" style="color:#6ff">PC1 <span id="v1">0%</span></div>
+  <div class="bar"><i id="b1" style="background:linear-gradient(90deg,#0ff,#6ff)"></i></div>
+  <div class="row" style="color:#ff7ad9">PC2 <span id="v2">0%</span></div>
+  <div class="bar"><i id="b2" style="background:linear-gradient(90deg,#f0a,#ff7ad9)"></i></div>
+  <div class="row" id="st2">n = 0 points</div>
+  <div class="row" id="st3">mode: exploring</div>
+  <a href="index.html">← gallery</a>
+</div>
+<script>
+(function(){
+"use strict";
+var cv=document.getElementById('c'),ctx=cv.getContext('2d');
+var W=0,H=0,DPR=1;
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  W=window.innerWidth;H=window.innerHeight;
+  cv.width=Math.floor(W*DPR);cv.height=Math.floor(H*DPR);
+  cv.style.width=W+'px';cv.style.height=H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize',resize);resize();
+
+// ---- data ----
+var N=420, pts=[], proj=[], mean={x:0,y:0};
+function gauss(){var u=0,v=0;while(u===0)u=Math.random();while(v===0)v=Math.random();
+  return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+var sx=1,sy=1,theta=0;
+function seed(){
+  sx=90+Math.random()*130; sy=14+Math.random()*40; theta=Math.random()*Math.PI;
+  rebuild();
+}
+function rebuild(){
+  pts.length=0;
+  var ct=Math.cos(theta),st=Math.sin(theta);
+  for(var i=0;i<N;i++){
+    var a=gauss()*sx, b=gauss()*sy;
+    pts.push({x:a*ct-b*st, y:a*st+b*ct, ax:0, ay:0, t:Math.random()});
+  }
+  centre();
+  v={x:Math.cos(0.9),y:Math.sin(0.9)}; iter=0; delta=1;
+}
+function centre(){
+  var mx=0,my=0;
+  for(var i=0;i<pts.length;i++){mx+=pts[i].x;my+=pts[i].y;}
+  mx/=pts.length;my/=pts.length;
+  for(i=0;i<pts.length;i++){pts[i].x-=mx;pts[i].y-=my;}
+}
+
+// ---- covariance ----
+var C=[0,0,0]; // cxx, cxy, cyy
+function cov(){
+  var a=0,b=0,c=0,n=pts.length;
+  for(var i=0;i<n;i++){var p=pts[i];a+=p.x*p.x;b+=p.x*p.y;c+=p.y*p.y;}
+  C[0]=a/n;C[1]=b/n;C[2]=c/n;
+}
+// ---- power iteration state ----
+var v={x:1,y:0}, iter=0, delta=1, converged=false;
+function powerStep(){
+  var nx=C[0]*v.x+C[1]*v.y, ny=C[1]*v.x+C[2]*v.y;
+  var L=Math.hypot(nx,ny)||1; nx/=L; ny/=L;
+  if(nx*v.x+ny*v.y<0){nx=-nx;ny=-ny;}
+  delta=Math.hypot(nx-v.x,ny-v.y);
+  v.x=nx;v.y=ny;iter++;
+  converged=delta<1e-6;
+}
+// exact eigen for variance labels (2x2 closed form)
+var lam1=1,lam2=0;
+function eigen(){
+  var tr=C[0]+C[2], det=C[0]*C[2]-C[1]*C[1];
+  var d=Math.sqrt(Math.max(0,tr*tr/4-det));
+  lam1=tr/2+d; lam2=Math.max(0,tr/2-d);
+}
+
+// ---- projection anim ----
+var projT=0, projTarget=0;
+// ---- interaction ----
+var drag=false, lx=0, ly=0;
+cv.addEventListener('mousedown',function(e){drag=true;lx=e.clientX;ly=e.clientY;});
+window.addEventListener('mouseup',function(){drag=false;});
+window.addEventListener('mousemove',function(e){
+  if(!drag)return;
+  var dx=(e.clientX-lx), dy=(e.clientY-ly);
+  lx=e.clientX;ly=e.clientY;
+  // horizontal drag = stretch along current PC1, vertical = rotate
+  var s=1+dx*0.004, r=dy*0.006;
+  var cr=Math.cos(r),sr=Math.sin(r);
+  var ux=v.x,uy=v.y, wx=-uy, wy=ux;
+  for(var i=0;i<pts.length;i++){
+    var p=pts[i];
+    var a=p.x*ux+p.y*uy, b=p.x*wx+p.y*wy;
+    a*=s;
+    var X=a*ux+b*wx, Y=a*uy+b*wy;
+    p.x=X*cr-Y*sr; p.y=X*sr+Y*cr;
+  }
+  centre(); delta=1; converged=false;
+});
+window.addEventListener('keydown',function(e){
+  if(e.code==='Space'){e.preventDefault();projTarget=projTarget>0.5?0:1;}
+  else if(e.key==='r'||e.key==='R'){seed();projTarget=0;}
+});
+
+// ---- rendering helpers ----
+function arrow(cx,cy,dx,dy,len,col,label,glow){
+  var ex=cx+dx*len, ey=cy+dy*len;
+  ctx.save();
+  ctx.strokeStyle=col;ctx.fillStyle=col;
+  ctx.shadowColor=col;ctx.shadowBlur=glow;
+  ctx.lineWidth=2.4;ctx.lineCap='round';
+  ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(ex,ey);ctx.stroke();
+  var ang=Math.atan2(dy,dx),h=13;
+  ctx.beginPath();
+  ctx.moveTo(ex,ey);
+  ctx.lineTo(ex-h*Math.cos(ang-0.35),ey-h*Math.sin(ang-0.35));
+  ctx.lineTo(ex-h*Math.cos(ang+0.35),ey-h*Math.sin(ang+0.35));
+  ctx.closePath();ctx.fill();
+  ctx.shadowBlur=0;
+  ctx.font='bold 13px ui-monospace,monospace';
+  ctx.fillText(label, ex+dx*16-6, ey+dy*16+4);
+  ctx.restore();
+}
+
+var els={st1:document.getElementById('st1'),st2:document.getElementById('st2'),
+  st3:document.getElementById('st3'),v1:document.getElementById('v1'),
+  v2:document.getElementById('v2'),b1:document.getElementById('b1'),b2:document.getElementById('b2')};
+
+seed();
+var last=0, acc=0, uiAcc=0;
+function frame(ts){
+  var dt=Math.min(0.05,(ts-last)/1000||0.016); last=ts;
+  cov(); eigen();
+
+  // step power iteration a few times per second so it's visible
+  acc+=dt;
+  if(acc>0.09 && !converged){acc=0;powerStep();}
+
+  projT+=(projTarget-projT)*Math.min(1,dt*3.2);
+
+  var cx=W/2, cy=H/2, S=Math.min(W,H)/720*1.35;
+
+  // background
+  ctx.fillStyle='#05070c';ctx.fillRect(0,0,W,H);
+  // grid
+  ctx.save();ctx.strokeStyle='rgba(70,120,160,.10)';ctx.lineWidth=1;
+  var g=48;
+  for(var x=cx%g;x<W;x+=g){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
+  for(var y=cy%g;y<H;y+=g){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+  ctx.restore();
+
+  var ux=v.x, uy=v.y, wx=-uy, wy=ux;
+  var L1=Math.sqrt(Math.max(lam1,1e-6)), L2=Math.sqrt(Math.max(lam2,1e-6));
+
+  // PC1 line (infinite)
+  ctx.save();
+  ctx.strokeStyle='rgba(0,255,255,'+(0.18+0.5*projT)+')';
+  ctx.lineWidth=1+2*projT;ctx.shadowColor='#0ff';ctx.shadowBlur=12*projT;
+  ctx.setLineDash([10,8]);
+  var big=Math.max(W,H);
+  ctx.beginPath();
+  ctx.moveTo(cx-ux*big,cy-uy*big);ctx.lineTo(cx+ux*big,cy+uy*big);ctx.stroke();
+  ctx.restore();
+
+  // candidate axis (power iteration) — shown while converging
+  if(!converged){
+    var pulse=0.5+0.5*Math.sin(ts/180);
+    ctx.save();
+    ctx.strokeStyle='rgba(255,224,102,'+(0.35+0.4*pulse)+')';
+    ctx.lineWidth=1.6;ctx.setLineDash([4,6]);
+    ctx.beginPath();
+    ctx.moveTo(cx-ux*big*0.6,cy-uy*big*0.6);ctx.lineTo(cx+ux*big*0.6,cy+uy*big*0.6);
+    ctx.stroke();ctx.restore();
+  }
+
+  // points
+  for(var i=0;i<pts.length;i++){
+    var p=pts[i];
+    var a=p.x*ux+p.y*uy, b=p.x*wx+p.y*wy;
+    var bb=b*(1-projT);
+    var X=cx+(a*ux+bb*wx)*S, Y=cy+(a*uy+bb*wy)*S;
+    // whisker to PC1 while collapsing
+    if(projT>0.02 && projT<0.995 && (i%3===0)){
+      var fx=cx+a*ux*S, fy=cy+a*uy*S;
+      ctx.strokeStyle='rgba(255,122,217,'+(0.30*(1-projT))+')';
+      ctx.lineWidth=1;
+      ctx.beginPath();ctx.moveTo(X,Y);ctx.lineTo(fx,fy);ctx.stroke();
+    }
+    var hue=projT>0.5?185:200+30*Math.sin(p.t*6.28);
+    ctx.fillStyle='hsla('+hue+',100%,'+(62+10*p.t)+'%,0.85)';
+    ctx.shadowColor='hsla('+hue+',100%,60%,1)';ctx.shadowBlur=6;
+    ctx.beginPath();ctx.arc(X,Y,2.1,0,6.2832);ctx.fill();
+  }
+  ctx.shadowBlur=0;
+
+  // eigen arrows scaled by explained variance
+  var tot=lam1+lam2||1;
+  var e1=lam1/tot, e2=lam2/tot;
+  var base=Math.min(W,H)*0.30;
+  arrow(cx,cy,ux,uy, base*(0.45+0.55*e1)*(1), '#66ffff','PC1 '+(e1*100).toFixed(1)+'%',18);
+  arrow(cx,cy,wx,wy, base*(0.45+0.55*e2)*(1-0.85*projT), '#ff7ad9','PC2 '+(e2*100).toFixed(1)+'%',14);
+
+  // centroid
+  ctx.save();ctx.strokeStyle='#fff';ctx.lineWidth=1.4;ctx.shadowColor='#fff';ctx.shadowBlur=8;
+  ctx.beginPath();ctx.arc(cx,cy,5,0,6.2832);ctx.stroke();ctx.restore();
+
+  // covariance ellipse (1 sigma)
+  ctx.save();
+  ctx.translate(cx,cy);ctx.rotate(Math.atan2(uy,ux));
+  ctx.strokeStyle='rgba(120,200,255,.25)';ctx.lineWidth=1.2;
+  ctx.beginPath();ctx.ellipse(0,0,L1*S,L2*S*(1-projT)+0.6,0,0,6.2832);ctx.stroke();
+  ctx.restore();
+
+  // variance bars on canvas (bottom right)
+  var bw=210,bh=12,bx=W-bw-28,by=H-70;
+  ctx.save();ctx.font='11px ui-monospace,monospace';
+  ctx.fillStyle='rgba(159,232,255,.85)';
+  ctx.fillText('explained variance',bx,by-10);
+  ctx.fillStyle='rgba(255,255,255,.08)';ctx.fillRect(bx,by,bw,bh);
+  ctx.fillStyle='#0ff';ctx.shadowColor='#0ff';ctx.shadowBlur=10;
+  ctx.fillRect(bx,by,bw*e1,bh);
+  ctx.fillStyle='#ff7ad9';ctx.shadowColor='#f5a';
+  ctx.fillRect(bx,by+bh+6,bw*e2,bh);
+  ctx.shadowBlur=0;
+  ctx.fillStyle='rgba(255,255,255,.08)';ctx.fillRect(bx+bw*e2,by+bh+6,bw*(1-e2),bh);
+  ctx.restore();
+
+  if(projT>0.6){
+    ctx.save();
+    ctx.font='bold 15px ui-monospace,monospace';
+    ctx.fillStyle='rgba(102,255,255,'+((projT-0.6)/0.4)+')';
+    ctx.shadowColor='#0ff';ctx.shadowBlur=14;
+    ctx.fillText('2D → 1D · '+(e1*100).toFixed(1)+'% of variance kept', 28, H-28);
+    ctx.restore();
+  }
+
+  // UI text (throttled)
+  uiAcc+=dt;
+  if(uiAcc>0.1){
+    uiAcc=0;
+    els.st1.textContent='iter '+iter+' · Δ '+delta.toExponential(2)+(converged?' ✓ converged':' …');
+    els.st2.textContent='n = '+pts.length+' points · λ1='+lam1.toFixed(1)+' λ2='+lam2.toFixed(1);
+    els.st3.textContent='mode: '+(projT>0.5?'projected onto PC1':'full 2D');
+    els.v1.textContent=(e1*100).toFixed(1)+'%';
+    els.v2.textContent=(e2*100).toFixed(1)+'%';
+    els.b1.style.width=(e1*100)+'%';
+    els.b2.style.width=(e2*100)+'%';
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+})();
+</script>

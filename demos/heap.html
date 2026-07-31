@@ -1,0 +1,347 @@
+<title>Binary Min-Heap — Tree + Array</title>
+<style>
+  html,body{margin:0;padding:0;background:#05060c;overflow:hidden;height:100%}
+  canvas{display:block}
+  #ui{position:fixed;top:12px;left:12px;z-index:10;background:rgba(6,10,20,.62);
+      border:1px solid rgba(90,220,255,.28);border-radius:8px;padding:10px 12px;
+      font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#bfe9ff;
+      max-width:340px;backdrop-filter:blur(6px);text-shadow:0 0 8px rgba(60,200,255,.25)}
+  #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.14em;color:#7df9ff;text-transform:uppercase}
+  #ui p{margin:0 0 7px;color:#87a8bd}
+  #ui .k{color:#ffd479}
+  #ui .row{color:#9fd7ee}
+  #ui b{color:#fff}
+  #ui a{color:#ff7ce5;text-decoration:none}
+  #ui a:hover{text-decoration:underline}
+  .mode{color:#8affc1}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>Binary Min-Heap</h1>
+  <p>A heap is an array that pretends to be a tree: child <span class="k">2i+1 / 2i+2</span> is never smaller than its parent.</p>
+  <div class="row">[<span class="k">H</span>] heap mode &nbsp; [<span class="k">S</span>] heapsort &nbsp; [<span class="k">SPACE</span>] pause</div>
+  <div class="row">mode <b class="mode" id="sMode">heap</b> &nbsp; op <b id="sOp">idle</b></div>
+  <div class="row">size <b id="sN">0</b> &nbsp; compares <b id="sC">0</b> &nbsp; swaps <b id="sS">0</b></div>
+  <div class="row" style="margin-top:6px"><a href="index.html">← gallery</a></div>
+</div>
+<script>
+(function(){
+"use strict";
+var c=document.getElementById('c'),g=c.getContext('2d');
+var W=0,H=0,DPR=1;
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  W=window.innerWidth;H=window.innerHeight;
+  c.width=W*DPR;c.height=H*DPR;c.style.width=W+'px';c.style.height=H+'px';
+  g.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize',resize);resize();
+
+// ---- node model: each node has value + animated position -------------------
+function Node(v){this.v=v;this.x=0;this.y=0;this.tx=0;this.ty=0;this.glow=0;this.born=0;}
+var heap=[];            // array of Node
+var sorted=[];          // heapsort output
+var cmp=0,swaps=0;
+var mode='heap';        // 'heap' | 'sort'
+var paused=false;
+var opName='idle';
+var t=0;
+
+var queue=[];           // pending animation steps
+var wait=0;             // frames to wait before next step
+
+function push(step){queue.push(step);}
+
+function rnd(){return 5+Math.floor(Math.random()*94);}
+
+// layout ---------------------------------------------------------------------
+var treeTop, treeBot, arrY, cellW, arrX0;
+function layout(){
+  treeTop=Math.max(120,H*0.17);
+  treeBot=H*0.60;
+  arrY=H*0.80;
+  var n=Math.max(1,Math.max(heap.length,sorted.length,8));
+  cellW=Math.min(52,(W-80)/n);
+  arrX0=(W-cellW*n)/2+cellW/2;
+}
+function depthOf(i){return Math.floor(Math.log(i+1)/Math.LN2);}
+function treePos(i,n){
+  var d=depthOf(i);
+  var maxD=Math.max(1,depthOf(Math.max(0,n-1)));
+  var levelCount=Math.pow(2,d);
+  var idxInLevel=i-(levelCount-1);
+  var span=Math.min(W-120,900+maxD*40);
+  var x=(W-span)/2+span*(idxInLevel+0.5)/levelCount;
+  var y=treeTop+(maxD>0?(treeBot-treeTop)*d/maxD:0);
+  return {x:x,y:y};
+}
+function retarget(){
+  layout();
+  var n=heap.length;
+  for(var i=0;i<n;i++){
+    var p=treePos(i,n);
+    heap[i].tx=p.x;heap[i].ty=p.y;
+    heap[i].ax=arrX0+i*cellW;heap[i].ay=arrY;
+  }
+  for(var j=0;j<sorted.length;j++){
+    sorted[j].tx=arrX0+j*cellW;sorted[j].ty=arrY-140;
+    sorted[j].ax=arrX0+j*cellW;sorted[j].ay=arrY;
+  }
+}
+
+// ---- scripted operations ---------------------------------------------------
+function opPush(){
+  var v=rnd();
+  var nd=new Node(v);
+  nd.x=W/2;nd.y=-40;nd.glow=1;nd.born=t;
+  push({t:'label',s:'push '+v});
+  push({t:'fn',f:function(){heap.push(nd);retarget();},w:16});
+  var i;
+  push({t:'fn',f:function(){bubbleUpScript(heap.length-1);},w:6});
+}
+function bubbleUpScript(i){
+  // expand comparisons lazily as separate queued steps
+  var step=function(idx){
+    return function(){
+      if(idx<=0){return;}
+      var p=(idx-1)>>1;
+      cmp++;
+      heap[idx].glow=1;heap[p].glow=1;
+      if(heap[idx].v<heap[p].v){
+        swaps++;
+        var tmp=heap[idx];heap[idx]=heap[p];heap[p]=tmp;
+        retarget();
+        push({t:'fn',f:step(p),w:16});
+      }
+    };
+  };
+  push({t:'fn',f:step(i),w:16});
+}
+function opPop(){
+  if(heap.length===0){return;}
+  push({t:'label',s:'pop-min '+heap[0].v});
+  push({t:'fn',f:function(){
+    heap[0].glow=1.6;
+    var last=heap.pop();
+    if(heap.length){ last.tx=heap[0].tx; last.ty=heap[0].ty; heap[0]=last; }
+    retarget();
+  },w:20});
+  push({t:'fn',f:function(){ if(heap.length>1) sinkScript(0); },w:6});
+}
+function sinkScript(i){
+  var step=function(idx){
+    return function(){
+      var n=heap.length,l=2*idx+1,r=2*idx+2,m=idx;
+      if(l<n){cmp++;heap[l].glow=1;if(heap[l].v<heap[m].v)m=l;}
+      if(r<n){cmp++;heap[r].glow=1;if(heap[r].v<heap[m].v)m=r;}
+      heap[idx].glow=1;
+      if(m!==idx){
+        swaps++;
+        var tmp=heap[idx];heap[idx]=heap[m];heap[m]=tmp;
+        retarget();
+        push({t:'fn',f:step(m),w:16});
+      }
+    };
+  };
+  push({t:'fn',f:step(i),w:16});
+}
+
+function startHeapMode(){
+  mode='heap';queue.length=0;wait=0;cmp=0;swaps=0;sorted.length=0;heap.length=0;
+  opName='seeding';
+  for(var i=0;i<7;i++) opPush();
+  scheduleHeapLoop();
+}
+var heapPhase=0;
+function scheduleHeapLoop(){
+  push({t:'fn',f:function(){
+    heapPhase++;
+    if(heap.length<12 && (heapPhase%3!==0)) opPush(); else opPop();
+    if(heap.length===0) opPush();
+    scheduleHeapLoop();
+  },w:26});
+}
+
+function startSortMode(){
+  mode='sort';queue.length=0;wait=0;cmp=0;swaps=0;sorted.length=0;heap.length=0;
+  opName='build-heap';
+  var n=11;
+  for(var i=0;i<n;i++){
+    var nd=new Node(rnd());
+    nd.x=W/2+(Math.random()-.5)*200;nd.y=-40;nd.born=t;
+    heap.push(nd);
+  }
+  retarget();
+  push({t:'label',s:'build-heap (heapify)'});
+  for(var j=(n>>1)-1;j>=0;j--){ (function(k){ push({t:'fn',f:function(){sinkScript(k);},w:10}); })(j); }
+  push({t:'label',s:'extract-min ×'+n});
+  for(var e=0;e<n;e++){
+    push({t:'fn',f:function(){
+      if(!heap.length)return;
+      var min=heap[0];min.glow=2;
+      sorted.push(min);
+      var last=heap.pop();
+      if(heap.length){last.tx=heap[0].tx;last.ty=heap[0].ty;heap[0]=last;}
+      retarget();
+      if(heap.length>1) sinkScript(0);
+    },w:22});
+  }
+  push({t:'label',s:'sorted!'});
+  push({t:'fn',f:function(){},w:120});
+  push({t:'fn',f:function(){ if(mode==='sort') startSortMode(); },w:4});
+}
+
+// ---- step runner -----------------------------------------------------------
+function tickQueue(){
+  if(paused)return;
+  if(wait>0){wait--;return;}
+  if(!queue.length)return;
+  var s=queue.shift();
+  if(s.t==='label'){opName=s.s;wait=8;return;}
+  s.f();
+  wait=s.w||10;
+}
+
+// ---- drawing ---------------------------------------------------------------
+function colorFor(v){
+  var h=205-Math.min(1,v/100)*170;
+  return 'hsl('+h+',100%,62%)';
+}
+function ease(a,b,k){return a+(b-a)*k;}
+
+function drawNode(n,r,label){
+  var col=colorFor(n.v);
+  g.save();
+  g.shadowBlur=14+n.glow*30;g.shadowColor=n.glow>0.05?'#fff':col;
+  g.beginPath();g.arc(n.x,n.y,r,0,6.2832);
+  var grd=g.createRadialGradient(n.x-r*.35,n.y-r*.4,r*.15,n.x,n.y,r);
+  grd.addColorStop(0,'rgba(255,255,255,'+(0.35+n.glow*0.5)+')');
+  grd.addColorStop(1,col);
+  g.fillStyle=grd;g.fill();
+  g.shadowBlur=0;
+  g.lineWidth=n.glow>0.05?2.4:1.2;
+  g.strokeStyle=n.glow>0.05?'rgba(255,255,255,'+Math.min(1,n.glow)+')':'rgba(255,255,255,.35)';
+  g.stroke();
+  g.fillStyle='#04060d';g.font='bold 13px ui-monospace,monospace';
+  g.textAlign='center';g.textBaseline='middle';
+  g.fillText(String(n.v),n.x,n.y+1);
+  g.restore();
+}
+
+function frame(){
+  t++;
+  tickQueue();
+  retarget();
+
+  // integrate motion
+  var all=heap.concat(sorted);
+  for(var i=0;i<all.length;i++){
+    var n=all[i];
+    n.x=ease(n.x,n.tx,0.16);
+    n.y=ease(n.y,n.ty,0.16);
+    n.glow*=0.93;
+  }
+
+  // background
+  g.fillStyle='#05060c';g.fillRect(0,0,W,H);
+  var vg=g.createRadialGradient(W/2,H*0.35,20,W/2,H*0.45,Math.max(W,H)*0.7);
+  vg.addColorStop(0,'rgba(30,90,150,.20)');vg.addColorStop(1,'rgba(0,0,0,0)');
+  g.fillStyle=vg;g.fillRect(0,0,W,H);
+
+  // grid
+  g.strokeStyle='rgba(80,150,200,.06)';g.lineWidth=1;
+  for(var x=0;x<W;x+=48){g.beginPath();g.moveTo(x,0);g.lineTo(x,H);g.stroke();}
+  for(var y=0;y<H;y+=48){g.beginPath();g.moveTo(0,y);g.lineTo(W,y);g.stroke();}
+
+  // tree edges
+  g.lineWidth=1.6;
+  for(var k=1;k<heap.length;k++){
+    var p=heap[(k-1)>>1],ch=heap[k];
+    var hot=Math.max(p.glow,ch.glow);
+    g.strokeStyle='rgba(120,220,255,'+(0.16+hot*0.7)+')';
+    g.shadowBlur=hot>0.1?12:0;g.shadowColor='#7df9ff';
+    g.beginPath();g.moveTo(p.x,p.y);g.lineTo(ch.x,ch.y);g.stroke();
+    g.shadowBlur=0;
+  }
+
+  // array row (mirror of heap) + link lines
+  var n2=heap.length;
+  g.textAlign='center';g.textBaseline='middle';
+  g.font='11px ui-monospace,monospace';
+  var cells=Math.max(n2,12);
+  for(var a=0;a<cells;a++){
+    var cx=arrX0+a*cellW, cy=arrY;
+    g.strokeStyle='rgba(110,180,220,.22)';g.lineWidth=1;
+    g.strokeRect(cx-cellW/2+2,cy-20,cellW-4,40);
+    g.fillStyle='rgba(140,190,220,.42)';
+    g.fillText(String(a),cx,cy+30);
+  }
+  for(var b=0;b<n2;b++){
+    var nd=heap[b],cx2=arrX0+b*cellW;
+    // link line tree<->array
+    g.strokeStyle='rgba(255,124,229,'+(0.06+nd.glow*0.45)+')';
+    g.lineWidth=1;g.beginPath();g.moveTo(nd.x,nd.y);g.lineTo(cx2,arrY-22);g.stroke();
+    // bar in cell
+    var hgt=6+(nd.v/100)*30;
+    g.fillStyle=colorFor(nd.v);
+    g.shadowBlur=nd.glow>0.05?18:6;g.shadowColor=colorFor(nd.v);
+    g.fillRect(cx2-cellW/2+5,arrY+18-hgt,cellW-10,hgt);
+    g.shadowBlur=0;
+    g.fillStyle='rgba(5,8,14,.9)';g.font='bold 11px ui-monospace,monospace';
+    g.fillText(String(nd.v),cx2,arrY+10);
+    if(nd.glow>0.05){
+      g.strokeStyle='rgba(255,255,255,'+Math.min(1,nd.glow)+')';g.lineWidth=2;
+      g.strokeRect(cx2-cellW/2+2,arrY-20,cellW-4,40);
+    }
+  }
+
+  // sorted output row (heapsort)
+  if(sorted.length){
+    g.font='11px ui-monospace,monospace';
+    g.fillStyle='rgba(138,255,193,.75)';g.textAlign='left';
+    g.fillText('sorted output →',24,arrY-140);
+    g.textAlign='center';
+    for(var s2=0;s2<sorted.length;s2++){
+      var sn=sorted[s2];
+      var h2=8+(sn.v/100)*44;
+      g.fillStyle='rgba(138,255,193,.85)';
+      g.shadowBlur=10;g.shadowColor='#8affc1';
+      g.fillRect(sn.x-cellW/2+5,arrY-118-h2,cellW-10,h2);
+      g.shadowBlur=0;
+      g.fillStyle='#052';g.font='bold 10px ui-monospace,monospace';
+      g.fillText(String(sn.v),sn.x,arrY-126);
+    }
+  }
+
+  // heap nodes on top
+  for(var q=0;q<heap.length;q++) drawNode(heap[q],17);
+
+  // headers
+  g.textAlign='left';g.font='11px ui-monospace,monospace';
+  g.fillStyle='rgba(125,249,255,.55)';
+  g.fillText('TREE VIEW  ·  parent i → children 2i+1, 2i+2',24,treeTop-46);
+  g.fillText('ARRAY VIEW  ·  same data, contiguous memory',24,arrY-46);
+
+  document.getElementById('sMode').textContent=mode==='heap'?'heap ops':'heapsort';
+  document.getElementById('sOp').textContent=opName;
+  document.getElementById('sN').textContent=heap.length;
+  document.getElementById('sC').textContent=cmp;
+  document.getElementById('sS').textContent=swaps;
+
+  requestAnimationFrame(frame);
+}
+
+window.addEventListener('keydown',function(e){
+  var k=e.key.toLowerCase();
+  if(k==='h')startHeapMode();
+  else if(k==='s')startSortMode();
+  else if(e.code==='Space'){paused=!paused;e.preventDefault();}
+});
+
+layout();
+startHeapMode();
+requestAnimationFrame(frame);
+})();
+</script>

@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cellular Rules — Elementary Automata</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;background:#04060c;overflow:hidden}
+  canvas{display:block;position:fixed;inset:0}
+  #ui{
+    position:fixed;top:12px;left:12px;z-index:10;
+    font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    color:#bfe9ff;background:rgba(4,8,18,.62);
+    border:1px solid rgba(90,200,255,.28);border-radius:8px;
+    padding:10px 13px;max-width:330px;
+    backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+    text-shadow:0 0 8px rgba(60,180,255,.45);
+  }
+  #ui h1{margin:0 0 5px;font-size:13px;letter-spacing:.14em;color:#7ef9ff;text-transform:uppercase}
+  #ui p{margin:0 0 7px;color:#8fb6cf}
+  #ui .k{color:#ffd76e}
+  #ui .hint{color:#6f93ab;margin-bottom:7px}
+  #ui .stats{color:#9be8b4}
+  #ui .tag{color:#ff8ad8}
+  #ui a{color:#7ef9ff;text-decoration:none;border-bottom:1px dotted rgba(126,249,255,.5)}
+  #ui a:hover{color:#fff}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+
+<canvas id="cv"></canvas>
+
+<div id="ui">
+  <h1>Cellular Rules</h1>
+  <p>Eight tiny bits of rule — one lookup per 3-cell neighborhood — are enough to produce chaos, fractals, or universal computation.</p>
+  <div class="hint">
+    <span class="k">&larr;/&rarr;</span> step rule &middot; <span class="k">R</span> random rule<br>
+    <span class="k">1</span> rule 30 &middot; <span class="k">2</span> rule 90 &middot; <span class="k">3</span> rule 110<br>
+    <span class="k">S</span> seed mode &middot; <span class="k">Space</span> pause
+  </div>
+  <div class="stats" id="stats">rule 110</div>
+  <div class="tag" id="tag">Turing-complete: universal computation</div>
+  <div style="margin-top:7px"><a href="index.html">&larr; gallery</a></div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var cv = document.getElementById('cv');
+  var ctx = cv.getContext('2d', {alpha:false});
+  var statsEl = document.getElementById('stats');
+  var tagEl = document.getElementById('tag');
+
+  var CELL = 4;              // px per cell (css px)
+  var HEADER = 108;          // px reserved at top for the 8 rule tiles
+  var W = 0, H = 0;          // css size
+  var cols = 0, rows = 0;    // grid dims of the scrolling field
+  var dpr = 1;
+
+  var rule = 110;
+  var bits = [];             // bits[n] = output for neighborhood n (0..7)
+  var randomSeed = false;
+  var paused = false;
+  var cur = null;            // current row (Uint8Array)
+  var history = [];          // array of Uint8Array, newest last
+  var generation = 0;
+  var liveCount = 0;
+  var lastActiveNeighborhood = -1;
+
+  var LABELS = {
+    30:  'Class 3 — chaos, used as a randomizer',
+    90:  'Class 2 — Sierpinski triangle fractal',
+    110: 'Turing-complete: universal computation',
+    184: 'Traffic flow model',
+    150: 'XOR of the whole neighborhood',
+    54:  'Class 4 — complex, particle-like',
+    18:  'Nested fractal structure',
+    45:  'Class 3 — chaotic'
+  };
+
+  function decodeRule(r){
+    bits = [];
+    for (var i = 0; i < 8; i++) bits.push((r >> i) & 1);
+  }
+
+  function resetField(){
+    cur = new Uint8Array(cols);
+    if (randomSeed){
+      for (var i = 0; i < cols; i++) cur[i] = Math.random() < 0.5 ? 1 : 0;
+    } else {
+      cur[cols >> 1] = 1;
+    }
+    history = [cur.slice()];
+    generation = 0;
+    countLive();
+  }
+
+  function countLive(){
+    var c = 0;
+    for (var i = 0; i < cur.length; i++) c += cur[i];
+    liveCount = c;
+  }
+
+  function setRule(r){
+    rule = ((r % 256) + 256) % 256;
+    decodeRule(rule);
+    resetField();
+    updateUI();
+  }
+
+  function updateUI(){
+    var b = '';
+    for (var i = 7; i >= 0; i--) b += bits[i];
+    statsEl.textContent = 'rule ' + rule + '  =  ' + b + '₂   gen ' + generation +
+                          '   live ' + liveCount + '/' + cols;
+    tagEl.textContent = LABELS[rule] || (randomSeed ? 'random initial row' : 'single seed cell');
+  }
+
+  function step(){
+    var next = new Uint8Array(cols);
+    for (var i = 0; i < cols; i++){
+      var l = cur[(i - 1 + cols) % cols];
+      var c = cur[i];
+      var r = cur[(i + 1) % cols];
+      var n = (l << 2) | (c << 1) | r;
+      next[i] = bits[n];
+    }
+    cur = next;
+    history.push(cur.slice());
+    if (history.length > rows) history.shift();
+    generation++;
+    countLive();
+  }
+
+  // hue by row age: newest rows are cyan/green, older rows drift to magenta/violet
+  function rowColor(age, total){
+    var t = total > 1 ? age / (total - 1) : 0;      // 0 = newest, 1 = oldest
+    var hue = 170 + t * 130;                         // 170 -> 300
+    var light = 66 - t * 26;                         // fade with depth
+    var sat = 100 - t * 18;
+    return 'hsl(' + hue.toFixed(0) + ',' + sat.toFixed(0) + '%,' + light.toFixed(0) + '%)';
+  }
+
+  function resize(){
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth;
+    H = window.innerHeight;
+    cv.width  = Math.max(1, Math.floor(W * dpr));
+    cv.height = Math.max(1, Math.floor(H * dpr));
+    cv.style.width = W + 'px';
+    cv.style.height = H + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    var newCols = Math.max(16, Math.floor(W / CELL));
+    var newRows = Math.max(8, Math.floor((H - HEADER) / CELL));
+    var changed = (newCols !== cols);
+    cols = newCols; rows = newRows;
+    if (changed || !cur) resetField();
+    if (history.length > rows) history = history.slice(history.length - rows);
+    updateUI();
+  }
+
+  // ---- rule tiles across the top -------------------------------------------
+  function drawTiles(){
+    var pad = 14;
+    var n = 8;
+    var avail = W - pad * 2;
+    var tw = Math.min(96, Math.floor(avail / n) - 8);
+    if (tw < 26) tw = Math.max(18, Math.floor(avail / n) - 3);
+    var gap = (avail - tw * n) / (n - 1);
+    if (gap < 3) gap = 3;
+    var totalW = tw * n + gap * (n - 1);
+    var x0 = W - pad - totalW;   // right-aligned so the left overlay stays clear
+    if (x0 < pad) x0 = pad;
+    var y0 = 16;
+    var cellW = tw / 3;
+    var cellH = Math.max(7, Math.min(16, tw / 3));
+
+    ctx.save();
+    ctx.textAlign = 'center';
+
+    for (var i = 0; i < n; i++){
+      // tile 7 on the left down to tile 0 on the right = binary MSB..LSB order
+      var idx = 7 - i;
+      var x = x0 + i * (tw + gap);
+      var out = bits[idx];
+      var hot = (idx === lastActiveNeighborhood);
+
+      // background plate
+      ctx.fillStyle = out ? 'rgba(20,60,90,.55)' : 'rgba(10,16,30,.5)';
+      ctx.strokeStyle = hot ? 'rgba(255,215,110,.95)'
+                            : (out ? 'rgba(120,240,255,.55)' : 'rgba(70,110,150,.35)');
+      ctx.lineWidth = hot ? 2 : 1;
+      ctx.shadowBlur = hot ? 16 : (out ? 9 : 0);
+      ctx.shadowColor = hot ? 'rgba(255,215,110,.8)' : 'rgba(90,220,255,.6)';
+      roundRect(x - 3, y0 - 4, tw + 6, cellH * 2 + 26, 5);
+      ctx.fill();
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // the 3-cell neighborhood pattern
+      for (var b = 0; b < 3; b++){
+        var on = (idx >> (2 - b)) & 1;
+        ctx.fillStyle = on ? '#7ef9ff' : 'rgba(255,255,255,.09)';
+        if (on){ ctx.shadowBlur = 8; ctx.shadowColor = '#3fd8ff'; }
+        ctx.fillRect(x + b * cellW + 1, y0, cellW - 2, cellH);
+        ctx.shadowBlur = 0;
+      }
+
+      // resulting cell, centered underneath
+      ctx.fillStyle = out ? '#ff6ad5' : 'rgba(255,255,255,.07)';
+      if (out){ ctx.shadowBlur = 12; ctx.shadowColor = '#ff6ad5'; }
+      ctx.fillRect(x + cellW + 1, y0 + cellH + 5, cellW - 2, cellH);
+      ctx.shadowBlur = 0;
+
+      // the bit itself — this digit is literally a digit of the rule number
+      ctx.fillStyle = out ? '#ffd76e' : 'rgba(160,190,215,.45)';
+      ctx.font = 'bold 12px ui-monospace,Menlo,Consolas,monospace';
+      ctx.fillText(String(out), x + tw / 2, y0 + cellH * 2 + 20);
+    }
+
+    // caption tying the 8 bits to the rule number
+    ctx.font = '11px ui-monospace,Menlo,Consolas,monospace';
+    ctx.fillStyle = 'rgba(150,200,230,.7)';
+    ctx.textAlign = 'right';
+    var bstr = '';
+    for (var k = 7; k >= 0; k--) bstr += bits[k];
+    ctx.fillText('binary ' + bstr + '  =  rule ' + rule, x0 + totalW, y0 + cellH * 2 + 38);
+    ctx.restore();
+  }
+
+  function roundRect(x, y, w, h, r){
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function drawField(){
+    var top = HEADER;
+    var count = history.length;
+    // newest row sits at the bottom of the field once it has filled
+    var startY = top + Math.max(0, (rows - count)) * 0; // always draw top-down from header
+    for (var r = 0; r < count; r++){
+      var row = history[r];
+      var age = count - 1 - r;                // 0 = newest
+      ctx.fillStyle = rowColor(age, count);
+      var y = top + r * CELL;
+      if (y > H) break;
+      for (var i = 0; i < cols; i++){
+        if (row[i]) ctx.fillRect(i * CELL, y, CELL - 0.6, CELL - 0.6);
+      }
+    }
+    // soft glow band over the freshest row
+    if (count){
+      var yLast = top + (count - 1) * CELL;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = 'rgba(60,255,220,.13)';
+      ctx.fillRect(0, yLast - CELL, W, CELL * 3);
+      ctx.restore();
+    }
+    // separator glow under the header
+    var g = ctx.createLinearGradient(0, top - 18, 0, top + 2);
+    g.addColorStop(0, 'rgba(0,0,0,0)');
+    g.addColorStop(1, 'rgba(90,220,255,.16)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, top - 18, W, 20);
+  }
+
+  function frame(){
+    if (!paused){
+      step();
+      // remember one neighborhood that actually fired, to highlight its tile
+      var mid = cols >> 1;
+      var prev = history[history.length - 2];
+      if (prev){
+        var probe = (generation * 7) % cols;
+        var l = prev[(probe - 1 + cols) % cols], c = prev[probe], rr = prev[(probe + 1) % cols];
+        lastActiveNeighborhood = (l << 2) | (c << 1) | rr;
+      }
+      if (generation % 6 === 0) updateUI();
+    }
+
+    ctx.fillStyle = '#04060c';
+    ctx.fillRect(0, 0, W, H);
+    drawField();
+    drawTiles();
+    requestAnimationFrame(frame);
+  }
+
+  window.addEventListener('keydown', function(e){
+    var k = e.key;
+    if (k === 'ArrowRight'){ setRule(rule + 1); e.preventDefault(); }
+    else if (k === 'ArrowLeft'){ setRule(rule - 1); e.preventDefault(); }
+    else if (k === 'r' || k === 'R'){ setRule(Math.floor(Math.random() * 256)); }
+    else if (k === '1'){ setRule(30); }
+    else if (k === '2'){ setRule(90); }
+    else if (k === '3'){ setRule(110); }
+    else if (k === 's' || k === 'S'){ randomSeed = !randomSeed; resetField(); updateUI(); }
+    else if (k === ' '){ paused = !paused; e.preventDefault(); }
+  });
+
+  window.addEventListener('resize', resize);
+
+  decodeRule(rule);
+  resize();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
