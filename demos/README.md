@@ -2,9 +2,13 @@
 
 ### ▶ Live gallery: **https://interplanetarycriminal.github.io/demo/**
 
-49 interactive, ultra-visual web demos — raymarched fractals, GPU sims, particle galaxies,
-playable neon games, strange attractors and more — built across two rapid sprints by fleets
-of Claude agents working in parallel.
+92 interactive, ultra-visual web demos — raymarched fractals, GPU sims, strange attractors,
+playable neon games, and a large set of algorithm / ML / AI visualizers — built across three
+rapid sprints by fleets of Claude agents working in parallel.
+
+Use the filter chips on the gallery to jump to **Algorithms** (pathfinding, spanning trees,
+DP, recursion, complexity) or **ML/AI** (neural nets, optimizers, clustering, convolution,
+diffusion, genetic algorithms).
 
 ## Run it
 
