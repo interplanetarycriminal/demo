@@ -54,7 +54,7 @@ function shoe(P){var s=0;for(var i=0;i<P.length;i++){var j=(i+1)%P.length;s+=P[i
 /* Right angle at A, hypotenuse BC on the x-axis, squares erected outward.
    Euclid's letters: square BDEC on BC, ABFG on AB, ACKH on AC; AL meets BC at M, DE at L. */
 function geom(a,b){
-  var c=Math.sqrt(a*a+b*b);
+  var c=Math.hypot(a,b);                                  // hypot, not sqrt(a*a+b*b): no overflow
   var B={x:0,y:0}, C={x:c,y:0};
   var A={x:a*a/c, y:a*b/c}, M={x:a*a/c, y:0}, L={x:a*a/c, y:-c};
   var D={x:0,y:-c}, E={x:c,y:-c};

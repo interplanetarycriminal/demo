@@ -32,7 +32,7 @@
 (function(){
 "use strict";
 var cv=document.getElementById('c'), ctx=cv.getContext('2d'), W=0,H=0,DPR=1;
-var TA=document.getElementById('tA'), TB=document.getElementById('tB');
+var TA=document.getElementById('tA'), TB=document.getElementById('tB'), UI=document.getElementById('ui');
 var PI=Math.PI, TAU=2*PI, DEG=180/PI;
 var BG='#05060b', GOLD='#f0cd8c', PARCH='#c9b389', MUTE='#7a6c50', DUSK='#4d4433', MEET='#ff8a55';
 var ACC=['#ffd07a','#5fe0ff','#ff6fd0'];
@@ -99,22 +99,33 @@ function rot(v){var x=v[0]*CY-v[1]*SY,y=v[0]*SY+v[1]*CY,z=v[2];return[x,y*CT-z*S
 function unrot(vx,vy,vz){var y=vy*CT+vz*ST,z=-vy*ST+vz*CT;return nr3([vx*CY+y*SY,-vx*SY+y*CY,z]);}
 
 /* ======================= LAYOUT ======================= */
-var PAD=16, UIW=330, pans=[], head={}, S=1;
+var PAD=16, UIW=330, pans=[], head={}, S=1, FH=60;
 function layout(){
   S=Math.max(.66,Math.min(1.18,W/1520));
-  var hx=Math.min(UIW+22,W*.3), hw=W-hx-PAD, two=hw>720;
-  head={x:hx,w:hw,cw:two?(hw-34)/2:hw,two:two};
-  head.h=drawHead(true);
-  var y0=Math.max(head.h+PAD+10,PAD+8), y1=H-52*S-PAD, gp=13, pw=(W-2*PAD-2*gp)/3;
+  var uh=(UI&&UI.offsetHeight)||186, narrow=W<880;   // keep clear of the overlay panel
+  head={x:narrow?PAD:UIW+22,y:narrow?uh+26:PAD+15*S,hs:S,note:true};
+  head.w=Math.max(120,W-head.x-PAD);
+  head.two=head.w>720; head.cw=head.two?(head.w-34)/2:head.w;
+  var y0=0,y1=0;
+  for(var it=0;it<14;it++){                          // shrink the header until the plates fit
+    head.h=drawHead(true); FH=drawFoot(true);
+    y0=Math.max(head.h+PAD+10,narrow?0:uh+24); y1=H-FH-PAD;
+    if(y1-y0>=300||head.hs<=.4)break;
+    head.hs*=.88; if(head.hs<.62*S)head.note=false;
+  }
+  var gp=13, pw=(W-2*PAD-2*gp)/3;
   pans=[];
   for(var i=0;i<3;i++){
-    var x=PAD+i*(pw+gp), ph=Math.max(200,y1-y0), th=44*S, rh=76*S;
+    var x=PAD+i*(pw+gp), ph=Math.max(160,y1-y0), th=44*S, rh=76*S;
     var cyy=y0+th+(ph-th-rh)/2, R=Math.max(40,Math.min(pw*.44,(ph-th-rh)*.45));
     pans.push({x:x,y:y0,w:pw,h:ph,cx:x+pw/2,cy:cyy,R:R,th:th,rh:rh});
   }
 }
 /* ======================= DRAW HELPERS ======================= */
 function txt(s,x,y,f,c,al){ctx.font=f;ctx.fillStyle=c;ctx.textAlign=al||'left';ctx.fillText(s,x,y);}
+function txtFit(s,x,y,mw,sz,fam,c,al){          // shrink to fit rather than spill
+  for(;;){ctx.font=sz.toFixed(1)+'px '+fam;if(ctx.measureText(s).width<=mw||sz<=5.5)break;sz-=.5;}
+  ctx.fillStyle=c;ctx.textAlign=al||'left';ctx.fillText(s,x,y);}
 function wrap(s,x,y,mw,lh,f,c,al,ms){ctx.font=f;if(!ms){ctx.fillStyle=c;ctx.textAlign=al||'left';}
   var w=s.split(' '),ln='',yy=y;
   for(var i=0;i<w.length;i++){var t=ln?ln+' '+w[i]:w[i];
@@ -384,11 +395,11 @@ function drawPanel(i,p,sm){
   var A=ACC[i];
   frame(p,GOLD);
   txt(TITLES[i][0],p.x+14,p.y+22*S,'bold '+(13*S).toFixed(1)+'px '+MONO,A);
-  txt(TITLES[i][1],p.x+14,p.y+37*S,(10.5*S).toFixed(1)+'px '+MONO,MUTE);
+  txtFit(TITLES[i][1],p.x+14,p.y+37*S,p.w-28,10.5*S,MONO,MUTE);
   plate(p,GOLD);
   if(i===0)drawEuclid(p);else if(i===1)drawSphere(p);else drawHyper(p);
   var by=p.y+p.h-p.rh, fs=(10*S).toFixed(1)+'px '+MONO;
-  ctx.globalAlpha=.5;txt(CAPS[mode][i],p.cx,by+2,fs,MUTE,'center');ctx.globalAlpha=1;
+  ctx.globalAlpha=.5;txtFit(CAPS[mode][i],p.cx,by+2,p.w-24,10*S,MONO,MUTE,'center');ctx.globalAlpha=1;
   ctx.save();ctx.globalAlpha=.22;ctx.strokeStyle=GOLD;ctx.lineWidth=1;
   ctx.beginPath();ctx.moveTo(p.x+14,by+12);ctx.lineTo(p.x+p.w-14,by+12);ctx.stroke();ctx.restore();
   var y1=by+32*S, y2=by+58*S, xl=p.x+14, xr=p.x+p.w-14;
@@ -406,7 +417,7 @@ function drawPanel(i,p,sm){
 var Q1='"That, if a straight line falling on two straight lines make the interior angles on the same side less than two right angles, the two straight lines, if produced indefinitely, meet on that side on which are the angles less than the two right angles."';
 var Q2='"Through a point not on a given line there is exactly one line parallel to it."';
 function drawHead(ms){
-  var x=head.x, cw=head.cw, y=PAD+15*S, fh=(12.6*S).toFixed(1)+'px '+SER, lh=16.5*S;
+  var x=head.x, cw=head.cw, y=head.y, fh=(12.6*S).toFixed(1)+'px '+SER, lh=16.5*S;
   var y2;
   if(!ms)txt('EUCLID, ELEMENTS — POSTULATE 5  (c. 300 BC)',x,y-4,'bold '+(10*S).toFixed(1)+'px '+MONO,MUTE);
   y2=wrap(Q1,x,y+15*S,cw,lh,'italic '+fh,PARCH,'left',ms);
@@ -419,12 +430,16 @@ function drawHead(ms){
     ctx.beginPath();ctx.moveTo(x-16,y-16);ctx.lineTo(x-16,Math.max(y2,y4));ctx.stroke();ctx.restore();}
   return Math.max(y2,y4);
 }
-function drawFoot(){
-  var y=H-PAD-14*S;
+var CAP='Denying the fifth postulate never produced a contradiction — it produced NEW GEOMETRIES. All three are perfectly self-consistent, so logic alone cannot choose between them: the universe gets to decide. In general relativity it does — mass and energy curve spacetime, and the angles of a triangle need not sum to 180°.';
+function drawFoot(ms){
+  var mw=Math.min(W-2*PAD-24,1240), lh=17*S, f='italic '+(12.6*S).toFixed(1)+'px '+SER;
+  var n=Math.round(wrap(CAP,0,0,mw,lh,f,PARCH,'center',true)/lh), h=n*lh+16*S;
+  if(ms)return h;
+  var y=H-PAD-h+15*S;
   ctx.save();ctx.globalAlpha=.16;ctx.strokeStyle=GOLD;ctx.lineWidth=1;
-  ctx.beginPath();ctx.moveTo(PAD,y-24*S);ctx.lineTo(W-PAD,y-24*S);ctx.stroke();ctx.restore();
-  txt('Denying the fifth postulate never produced a contradiction — it produced NEW GEOMETRIES. All three are perfectly self-consistent; logic cannot pick between them. The universe gets to decide — and in general relativity, mass and energy decide locally, curving spacetime so that the angles of a triangle need not sum to 180°.',
-      W/2,y,'italic '+(12.4*S).toFixed(1)+'px '+SER,PARCH,'center');
+  ctx.beginPath();ctx.moveTo(PAD,y-13*S);ctx.lineTo(W-PAD,y-13*S);ctx.stroke();ctx.restore();
+  wrap(CAP,W/2,y,mw,lh,f,PARCH,'center',false);
+  return h;
 }
 /* ======================= INTERACTION ======================= */
 var drag=null;

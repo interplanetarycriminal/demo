@@ -89,21 +89,16 @@ import {OutputPass} from 'three/addons/postprocessing/OutputPass.js';
    V-E+F=2, n*F=2E, q*V=2E for all five; edge/diameter for circumradius 1. */
 const CUBE_SIDE = 2/Math.sqrt(3);                 // cube of circumradius 1
 const SOLIDS = [
-  {nm:'TETRAHEDRON',  gr:'πυραμίς · pyramis',       V:4, E:6,  F:4,  n:3, q:3, el:'FIRE',
-   pr:'XIII.13 · d² = 1½a²', ad:'0.8165',
-   geo:()=>new THREE.TetrahedronGeometry(1,0)},
-  {nm:'HEXAHEDRON',   gr:'κύβος · kybos',           V:8, E:12, F:6,  n:4, q:3, el:'EARTH',
-   pr:'XIII.15 · d² = 3a²', ad:'0.5774',
-   geo:()=>new THREE.BoxGeometry(CUBE_SIDE,CUBE_SIDE,CUBE_SIDE)},
-  {nm:'OCTAHEDRON',   gr:'ὀκτάεδρον · oktaedron',   V:6, E:12, F:8,  n:3, q:4, el:'AIR',
-   pr:'XIII.14 · d² = 2a²', ad:'0.7071',
-   geo:()=>new THREE.OctahedronGeometry(1,0)},
-  {nm:'DODECAHEDRON', gr:'δωδεκάεδρον · dodekaedron', V:20,E:30, F:12, n:5, q:3, el:'THE COSMOS',
-   pr:'XIII.17 · a is an apotome', ad:'0.3568',
-   geo:()=>new THREE.DodecahedronGeometry(1,0)},
-  {nm:'ICOSAHEDRON',  gr:'εἰκοσάεδρον · eikosaedron', V:12,E:30, F:20, n:3, q:5, el:'WATER',
-   pr:'XIII.16 · a is a minor', ad:'0.5257',
-   geo:()=>new THREE.IcosahedronGeometry(1,0)}
+  {nm:'TETRAHEDRON',  gr:'πυραμίς · pyramis',   V:4, E:6,  F:4,  n:3, q:3, el:'FIRE',
+   pr:'XIII.13 · d² = 1½a²', ad:'0.8165', geo:()=>new THREE.TetrahedronGeometry(1,0)},
+  {nm:'HEXAHEDRON',   gr:'κύβος · kybos',       V:8, E:12, F:6,  n:4, q:3, el:'EARTH',
+   pr:'XIII.15 · d² = 3a²',  ad:'0.5774', geo:()=>new THREE.BoxGeometry(CUBE_SIDE,CUBE_SIDE,CUBE_SIDE)},
+  {nm:'OCTAHEDRON',   gr:'ὀκτάεδρον · oktaedron', V:6, E:12, F:8, n:3, q:4, el:'AIR',
+   pr:'XIII.14 · d² = 2a²',  ad:'0.7071', geo:()=>new THREE.OctahedronGeometry(1,0)},
+  {nm:'DODECAHEDRON', gr:'δωδεκάεδρον · dodekaedron', V:20,E:30,F:12, n:5, q:3, el:'THE COSMOS',
+   pr:'XIII.17 · a is an apotome', ad:'0.3568', geo:()=>new THREE.DodecahedronGeometry(1,0)},
+  {nm:'ICOSAHEDRON',  gr:'εἰκοσάεδρον · eikosaedron', V:12,E:30,F:20, n:3, q:5, el:'WATER',
+   pr:'XIII.16 · a is a minor',    ad:'0.5257', geo:()=>new THREE.IcosahedronGeometry(1,0)}
 ];
 const FACE_NAME = {3:'equilateral triangle', 4:'square', 5:'regular pentagon', 6:'regular hexagon'};
 const PLURAL    = {3:'triangles', 4:'squares', 5:'pentagons', 6:'hexagons'};
@@ -455,10 +450,8 @@ function drawQED(w,h){
   px.font='700 '+(15*F).toFixed(1)+'px ui-monospace,Menlo,Consolas,monospace'; px.fillStyle='#ffcf80';
   px.textAlign='center'; px.fillText('EXACTLY FIVE.', w/2, y+step*0.8);
   px.font=(9.4*F).toFixed(1)+'px ui-monospace,Menlo,Consolas,monospace'; px.fillStyle='#8d7a5c';
-  const txt = ['"No other figure, besides the said five figures,',
-               'can be constructed which is contained by',
-               'equilateral and equiangular figures equal',
-               'to one another."','',
+  const txt = ['"No other figure, besides the said five figures,', 'can be constructed which is contained by',
+               'equilateral and equiangular figures equal', 'to one another."', '',
                '— Elements XIII.18, the last words of the work'];
   let ty = y + step*2.1;
   for(const line of txt){ px.fillText(line, w/2, ty); ty += 14*F; }
