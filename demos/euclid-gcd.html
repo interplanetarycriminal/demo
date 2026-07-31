@@ -225,7 +225,7 @@ function buildPanel(){
   eqsEl.innerHTML = html;
   eqEls = eqsEl.querySelectorAll('.eq');
   ratioEl.textContent = 'ratio ' + (Math.max(A,B) / Math.min(A,B)).toFixed(5) + (IRR ? '…' : '');
-  vEl.className = 'verdict'; vEl.id = 'verdict'; vEl.classList.remove('on');
+  vEl.className = ''; vEl.classList.remove('on');
   cfEl.innerHTML = '';
   noteEl.classList.remove('on');
   inA.disabled = inB.disabled = !!IRR;
@@ -246,10 +246,12 @@ function layout(){
   if (frozen) return frozen;
   var uiB = document.getElementById('ui').getBoundingClientRect();
   var pB  = document.getElementById('panel').getBoundingClientRect();
-  var top = W < 760 ? uiB.bottom + 16 : 26;
-  var left = W < 760 ? 20 : uiB.right + 22;
-  var right = (W < 760 ? W - 20 : pB.left - 22);
-  var bot = H - (noteEl.classList.contains('on') && W < 1200 ? noteEl.getBoundingClientRect().height + 30 : 26);
+  var nB  = noteEl.classList.contains('on') ? noteEl.getBoundingClientRect() : null;
+  var narrow = W < 900;
+  var top = narrow ? uiB.bottom + 16 : 26;
+  var left = narrow ? 20 : Math.max(uiB.right, nB ? nB.right : 0) + 22;
+  var right = (narrow ? W - 20 : pB.left - 22);
+  var bot = (nB && narrow) ? nB.top - 16 : H - 26;
   var rw = Math.max(60, right - left), rh = Math.max(60, bot - top);
   var sc = Math.min(rw / A, rh / B) * 0.9;
   return { x: left, y: top, w: rw, h: rh, sc: sc,
