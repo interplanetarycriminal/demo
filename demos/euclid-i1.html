@@ -1,0 +1,578 @@
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<title>Euclid I.1 — To Construct an Equilateral Triangle</title>
+<style>
+  html,body{margin:0;padding:0;background:#07060a;overflow:hidden;height:100%}
+  canvas{display:block;position:fixed;inset:0;cursor:default}
+  #ui{position:fixed;top:0;left:0;margin:12px;padding:10px 12px;background:rgba(14,11,8,.72);
+      border:1px solid rgba(201,163,92,.26);border-radius:8px;color:#cdbb96;
+      font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;width:292px;
+      backdrop-filter:blur(6px);z-index:10}
+  #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.14em;color:#f0d9a0;text-transform:uppercase}
+  #ui .exp{color:#8c7d64;margin-bottom:9px}
+  #ui .cl{margin:0 0 8px;border-top:1px solid rgba(201,163,92,.17);
+          border-bottom:1px solid rgba(201,163,92,.17);padding:6px 0}
+  #ui .cl span{display:block;color:#7d7059;cursor:pointer;white-space:nowrap;padding:1px 0}
+  #ui .cl span:hover{color:#c9a35c}
+  #ui .cl span.on{color:#8ce7ff;text-shadow:0 0 9px rgba(140,231,255,.45)}
+  #ui .cl b{color:inherit;font-weight:normal}
+  #ui .hint{color:#6d6250;line-height:1.55}
+  #ui .hint b{color:#a8926a;font-weight:normal}
+  #ui a{color:#8ce7ff;text-decoration:none}
+  #ui a:hover{text-decoration:underline}
+  #ui .st{color:#f0d9a0}
+</style>
+
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>Euclid, Elements I</h1>
+  <div class="exp">From five postulates and nothing else, a truth is <i>built</i> — every line, every circle, every step licensed by name.</div>
+  <div class="cl" id="cl">
+    <span data-k="0">[1] <b>I.1</b> &nbsp;equilateral triangle</span>
+    <span data-k="1">[2] <b>I.9</b> &nbsp;bisect an angle</span>
+    <span data-k="2">[3] <b>I.10</b> bisect a straight line</span>
+    <span data-k="3">[4] <b>I.11</b> erect a perpendicular</span>
+    <span data-k="4">[5] <b>I.31</b> parallel through a point</span>
+  </div>
+  <div class="hint">
+    <b>&larr; &rarr;</b> step &middot; <b>[space]</b> <span class="st" id="ps">playing</span> &middot; <b>[r]</b> replay<br>
+    <b>drag the lettered points</b> &mdash; it stays true<br>
+    <a href="index.html">&larr; gallery</a>
+  </div>
+</div>
+<script>
+(function(){
+"use strict";
+var cv=document.getElementById('c'), ctx=cv.getContext('2d'), W=0,H=0,DPR=1,bg=null;
+var TAU=Math.PI*2, US=1, S=200, CX=0, CY=0, TOPY=0, BOTY=0, BANDY=0, BANDH=0, PIPY=0, GW=0;
+var SER='"Iowan Old Style","Palatino Linotype","Book Antiqua",Palatino,Georgia,"Times New Roman",serif';
+var C_GOLD='201,163,92', C_IVORY='238,227,203', C_HOT='140,231,255', C_PT='255,212,140';
+
+/* ============================ geometry (verified in node) ============================ */
+function d2(a,b){var dx=a.x-b.x,dy=a.y-b.y;return dx*dx+dy*dy;}
+function dist(a,b){return Math.sqrt(d2(a,b));}
+function cross(o,a,b){return (a.x-o.x)*(b.y-o.y)-(a.y-o.y)*(b.x-o.x);}
+function unit(a,b){var dx=b.x-a.x,dy=b.y-a.y,l=Math.sqrt(dx*dx+dy*dy);
+  if(!(l>1e-9))return {x:1,y:0}; return {x:dx/l,y:dy/l};}
+function along(a,u,t){return {x:a.x+u.x*t,y:a.y+u.y*t};}
+function mid(a,b){return {x:(a.x+b.x)/2,y:(a.y+b.y)/2};}
+function fin(p){return !!p&&isFinite(p.x)&&isFinite(p.y);}
+function ccInt(c0,r0,c1,r1){                       // two circles -> [p,p] or null
+  var dx=c1.x-c0.x,dy=c1.y-c0.y,d=Math.sqrt(dx*dx+dy*dy);
+  if(!(d>1e-9)||!(r0>1e-9)||!(r1>1e-9))return null;
+  if(d>r0+r1||d<Math.abs(r0-r1))return null;
+  var a=(r0*r0-r1*r1+d*d)/(2*d),h2=r0*r0-a*a; if(h2<0)h2=0;
+  var h=Math.sqrt(h2),mx=c0.x+a*dx/d,my=c0.y+a*dy/d;
+  return [{x:mx+h*dy/d,y:my-h*dx/d},{x:mx-h*dy/d,y:my+h*dx/d}];
+}
+function ccPick(c0,r0,c1,r1,sc){var s=ccInt(c0,r0,c1,r1); if(!s)return null;
+  return sc(s[0])>=sc(s[1])?s[0]:s[1];}
+function llInt(p1,p2,p3,p4){
+  var x1=p1.x,y1=p1.y,x2=p2.x,y2=p2.y,x3=p3.x,y3=p3.y,x4=p4.x,y4=p4.y;
+  var d=(x1-x2)*(y3-y4)-(y1-y2)*(x3-x4); if(!(Math.abs(d)>1e-12))return null;
+  var a=x1*y2-y1*x2,b=x3*y4-y3*x4;
+  return {x:(a*(x3-x4)-(x1-x2)*b)/d,y:(a*(y3-y4)-(y1-y2)*b)/d};
+}
+function proj(p,a,b){var dx=b.x-a.x,dy=b.y-a.y,L=dx*dx+dy*dy;
+  if(!(L>1e-12))return {x:a.x,y:a.y};
+  var t=((p.x-a.x)*dx+(p.y-a.y)*dy)/L; return {x:a.x+dx*t,y:a.y+dy*t};}
+function wrapPi(d){while(d>Math.PI)d-=TAU;while(d<-Math.PI)d+=TAU;return d;}
+function span(c,p,q,pad){                          // arc from c->p round to c->q, padded
+  var a=Math.atan2(p.y-c.y,p.x-c.x),b=Math.atan2(q.y-c.y,q.x-c.x),d=wrapPi(b-a);
+  var s=d>=0?1:-1; return {a0:a-s*pad,sp:d+2*s*pad};
+}
+function thru(c,p,half){var a=Math.atan2(p.y-c.y,p.x-c.x);return {a0:a-half,sp:2*half};}
+
+/* ============================ items ============================ */
+function SEG(a,b,o){if(!fin(a)||!fin(b))return null;o=o||{};o.k='s';o.a=a;o.b=b;return o;}
+function LIN(a,u,e0,e1,o){if(!fin(a)||!fin(u))return null;o=o||{};o.k='L';o.a=a;o.u=u;o.e0=e0;o.e1=e1;return o;}
+function CIR(c,r,o){if(!fin(c)||!(r>1e-9))return null;o=o||{};o.k='c';o.c=c;o.r=r;
+  if(o.a0===undefined){o.a0=Math.PI*0.5;o.sp=TAU;} return o;}
+function PT(p,l,o){if(!fin(p))return null;o=o||{};o.k='p';o.p=p;o.l=l;return o;}
+function TIC(a,b,o){if(!fin(a)||!fin(b))return null;o=o||{};o.k='t';o.a=a;o.b=b;return o;}
+function FIL(ps,o){for(var i=0;i<ps.length;i++)if(!fin(ps[i]))return null;
+  o=o||{};o.k='f';o.ps=ps;return o;}
+function ANG(o_,a,b,r,x){if(!fin(o_)||!fin(a)||!fin(b))return null;x=x||{};x.k='a';x.o=o_;x.a=a;x.b=b;x.r=r;return x;}
+function SQR(o_,a,b,x){if(!fin(o_)||!fin(a)||!fin(b))return null;x=x||{};x.k='q';x.o=o_;x.a=a;x.b=b;return x;}
+
+/* ============================ constructions ============================ */
+var PS=[
+ {A:{x:-.46,y:.02},  B:{x:.46,y:.02}},
+ {A:{x:-.66,y:-.50}, B:{x:.80,y:-.14}, C:{x:-.16,y:.84}},
+ {A:{x:-.70,y:-.14}, B:{x:.70,y:-.14}},
+ {A:{x:-1.06,y:-.30},B:{x:1.06,y:-.30},C:{x:.04,y:-.30}},
+ {A:{x:-.14,y:.62},  B:{x:-1.06,y:-.56},C:{x:1.00,y:-.56},D:{x:-.40,y:-.56}}
+];
+var DRAGS=[['A','B'],['A','B','C'],['A','B'],['A','B','C'],['A','B','C','D']];
+
+function sI1(){
+  var P=PS[0],A=P.A,B=P.B,r=dist(A,B);
+  var C=ccPick(A,r,B,r,function(p){return cross(A,B,p);});
+  return {n:'I.1',st:'On a given finite straight line to construct an equilateral triangle.',
+  note:'† That the two circles meet at all is nowhere proved. No postulate grants it — the figure is doing the work. Hilbert (1899) had to add an axiom of continuity.',
+  nfrom:3, steps:[
+  {d:800,say:'Let AB be the given finite straight line. It is required to construct an equilateral triangle on the straight line AB.',
+   c:'THE PROBLEM',items:[SEG(A,B,{c:'i'}),PT(A,'A'),PT(B,'B')]},
+  {d:1900,say:'With centre A and distance AB let the circle BCD be described.',
+   c:'POST. 3 — to describe a circle with any centre and distance',
+   items:[CIR(A,r,{comp:1,a0:Math.atan2(B.y-A.y,B.x-A.x)})]},
+  {d:1900,say:'Again, with centre B and distance BA let the circle ACE be described.',
+   c:'POST. 3 — the compass may be opened to any radius, anywhere',
+   items:[CIR(B,r,{comp:1,a0:Math.atan2(A.y-B.y,A.x-B.x)})]},
+  {d:900,say:'And from the point C, in which the circles cut one another, …',
+   c:'DEF. 15 — a circle: all lines from its centre to it are equal',items:[PT(C,'C',{big:1})]},
+  {d:1300,say:'… to the points A, B let the straight lines CA, CB be joined.',
+   c:'POST. 1 — to draw a straight line from any point to any point',
+   items:[SEG(A,C,{c:'i',t1:.55}),SEG(B,C,{c:'i',t0:.45}),FIL([A,B,C],{t0:.6})]},
+  {d:1500,say:'Now, since the point A is the centre of the circle CDB, AC is equal to AB.',
+   c:'DEF. 15 — every radius of one circle is equal to every other',
+   items:[CIR(A,r,{tr:1}),SEG(A,C,{c:'i'}),SEG(A,B,{c:'i'}),TIC(A,C),TIC(A,B)]},
+  {d:1500,say:'Again, since the point B is the centre of the circle CAE, BC is equal to BA.',
+   c:'DEF. 15 — the same reason, said again of the other circle',
+   items:[CIR(B,r,{tr:1}),SEG(B,C,{c:'i'}),SEG(A,B,{c:'i'}),TIC(B,C),TIC(A,B)]},
+  {d:1700,say:'But CA was also proved equal to AB; therefore each of the straight lines CA, CB is equal to AB. And things which are equal to the same thing are also equal to one another; therefore CA is also equal to CB.',
+   c:'C.N. 1 — things equal to the same thing are equal to one another',
+   items:[SEG(A,C,{c:'i'}),SEG(B,C,{c:'i'}),SEG(A,B,{c:'i'}),TIC(A,C),TIC(B,C),TIC(A,B),FIL([A,B,C])]},
+  {d:1200,say:'Therefore the three straight lines CA, AB, BC are equal to one another. Therefore the triangle ABC is equilateral, and it has been constructed on the given finite straight line AB.',
+   c:'Q.E.F. — being what it was required to do',
+   items:[FIL([A,B,C],{pulse:1}),SEG(A,B,{c:'i',pulse:1}),SEG(A,C,{c:'i',pulse:1}),SEG(B,C,{c:'i',pulse:1}),
+          TIC(A,C),TIC(B,C),TIC(A,B)]}
+]};}
+
+function sI9(){
+  var P=PS[1],A=P.A,B=P.B,C=P.C;
+  var r=Math.min(dist(A,B),dist(A,C))*0.62;
+  var D=r>1e-9?along(A,unit(A,B),r):null, E=r>1e-9?along(A,unit(A,C),r):null;
+  var de=(D&&E)?dist(D,E):0;
+  var F=(D&&E)?ccPick(D,de,E,de,function(p){return d2(p,A);}):null;
+  var s1=(D&&E)?span(A,D,E,.10):{a0:0,sp:1}, s2=(D&&F)?thru(D,F,.85):{a0:0,sp:1}, s3=(E&&F)?thru(E,F,.85):{a0:0,sp:1};
+  return {n:'I.9',st:'To bisect a given rectilineal angle.',
+  note:'† The proof leans on I.8 — three sides equal, therefore the triangles are equal — which Euclid gets by superposition, sliding one figure onto another. No postulate licenses that.',
+  nfrom:6, steps:[
+  {d:1000,say:'Let the angle BAC be the given rectilineal angle. It is required to bisect it.',
+   c:'THE PROBLEM',items:[SEG(A,B,{c:'i'}),SEG(A,C,{c:'i'}),PT(A,'A'),PT(B,'B'),PT(C,'C'),ANG(A,B,C,34,{tr:1})]},
+  {d:900,say:'Let a point D be taken at random on AB.',
+   c:'A point may be taken at random on a given straight line',items:[PT(D,'D')]},
+  {d:1600,say:'Let AE be cut off from AC equal to AD: with centre A and distance AD let a circle be described; it cuts AC at E.',
+   c:'I.3 — to cut off from the greater line a line equal to the less  ·  POST. 3',
+   items:[CIR(A,r,{comp:1,a0:s1.a0,sp:s1.sp,t1:.8}),PT(E,'E',{t0:.78})]},
+  {d:900,say:'Let DE be joined.',c:'POST. 1 — a straight line from any point to any point',
+   items:[SEG(D,E,{c:'g'})]},
+  {d:2300,say:'On DE let the equilateral triangle DEF be constructed: with centre D and distance DE, and with centre E and distance ED, let circles be described; they cut at F.',
+   c:'I.1 — the proposition just proved, now used as a tool',
+   items:[CIR(D,de,{comp:1,a0:s2.a0,sp:s2.sp,t1:.44}),CIR(E,de,{comp:1,a0:s3.a0,sp:s3.sp,t0:.44,t1:.88}),
+          PT(F,'F',{t0:.86}),SEG(D,F,{c:'g',t0:.9}),SEG(E,F,{c:'g',t0:.9})]},
+  {d:1200,say:'Let AF be joined. I say that the angle BAC has been bisected by the straight line AF.',
+   c:'POST. 1',items:[SEG(A,F,{c:'i'})]},
+  {d:1900,say:'For, since AD is equal to AE, and AF is common, the two sides DA, AF are equal to the two sides EA, AF respectively; and the base DF is equal to the base EF; therefore the angle DAF is equal to the angle EAF.',
+   c:'I.8 — triangles with three sides equal have equal angles',
+   items:[TIC(A,D),TIC(A,E),TIC(D,F,{n2:1}),TIC(E,F,{n2:1}),
+          ANG(A,D,F,44),ANG(A,F,E,44),FIL([A,D,F],{t0:.5}),FIL([A,F,E],{t0:.5})]},
+  {d:1200,say:'Therefore the given rectilineal angle BAC has been bisected by the straight line AF.',
+   c:'Q.E.F. — being what it was required to do',
+   items:[SEG(A,F,{c:'i',pulse:1}),ANG(A,D,F,44,{pulse:1}),ANG(A,F,E,44,{pulse:1}),
+          FIL([A,D,F]),FIL([A,F,E])]}
+]};}
+
+function sI10(){
+  var P=PS[2],A=P.A,B=P.B,r=dist(A,B);
+  var s=ccInt(A,r,B,r), C=null,Cp=null,D=null;
+  if(s){var up=cross(A,B,s[0])>=cross(A,B,s[1]); C=up?s[0]:s[1]; Cp=up?s[1]:s[0]; D=llInt(C,Cp,A,B);}
+  return {n:'I.10',st:'To bisect a given finite straight line.',
+  note:'† Euclid builds one equilateral triangle and bisects its apex angle by I.9. Doing it on both sides at once reveals the whole perpendicular bisector.',
+  nfrom:4, steps:[
+  {d:800,say:'Let AB be the given finite straight line. It is required to bisect the finite straight line AB.',
+   c:'THE PROBLEM',items:[SEG(A,B,{c:'i'}),PT(A,'A'),PT(B,'B')]},
+  {d:1800,say:'Let the equilateral triangle ABC be constructed on it: with centre A and distance AB, and with centre B and distance BA, let circles be described.',
+   c:'I.1  ·  POST. 3 — to describe a circle with any centre and distance',
+   items:[CIR(A,r,{comp:1,a0:Math.atan2(B.y-A.y,B.x-A.x),t1:.5}),
+          CIR(B,r,{comp:1,a0:Math.atan2(A.y-B.y,A.x-B.x),t0:.5})]},
+  {d:1100,say:'They cut one another at C; and CA is equal to CB, both being radii of equal circles.',
+   c:'DEF. 15 — a circle: all lines from the centre to it are equal',
+   items:[PT(C,'C',{big:1}),SEG(A,C,{c:'g',t0:.3}),SEG(B,C,{c:'g',t0:.3}),TIC(A,C,{t0:.7}),TIC(B,C,{t0:.7})]},
+  {d:1100,say:'But the same two circles cut one another a second time, below AB, at C′ — and by the very same reason C′A is equal to C′B.',
+   c:'DEF. 15 — said again of the second point of section',
+   items:[PT(Cp,'C′',{big:1}),SEG(A,Cp,{c:'g',t0:.3}),SEG(B,Cp,{c:'g',t0:.3}),TIC(A,Cp,{t0:.7}),TIC(B,Cp,{t0:.7})]},
+  {d:1300,say:'Let CC′ be joined. Since C and C′ each stand equally from A and from B, the straight line CC′ bisects the angle ACB.',
+   c:'POST. 1  ·  I.9 — to bisect a given rectilineal angle',
+   items:[SEG(C,Cp,{c:'i'})]},
+  {d:1500,say:'It cuts AB at D. In the triangles ACD, BCD the two sides AC, CD equal the two sides BC, CD, and the angles they contain are equal; therefore the base AD is equal to the base DB.',
+   c:'I.4 — two sides and the included angle: the triangles are equal',
+   items:[PT(D,'D',{big:1}),TIC(A,D,{n2:1,t0:.45}),TIC(B,D,{n2:1,t0:.45}),
+          FIL([A,C,D],{t0:.3}),FIL([B,C,D],{t0:.3})]},
+  {d:1500,say:'And the adjacent angles at D are likewise equal; but when a straight line set up on a straight line makes the adjacent angles equal, each of them is right. So CC′ stands at right angles to AB.',
+   c:'DEF. 10 — what a right angle is',
+   items:[SQR(D,A,C),SQR(D,B,C),SEG(C,Cp,{c:'i'})]},
+  {d:1100,say:'Therefore the given finite straight line AB has been bisected at D.',
+   c:'Q.E.F. — being what it was required to do',
+   items:[SEG(A,B,{c:'i',pulse:1}),PT(D,'D',{big:1}),TIC(A,D,{n2:1}),TIC(B,D,{n2:1}),
+          SEG(C,Cp,{c:'i',pulse:1}),SQR(D,A,C),SQR(D,B,C)]}
+]};}
+
+function sI11(){
+  var P=PS[3],A=P.A,B=P.B; P.C=proj(P.C,A,B); var Cc=P.C;
+  var u=unit(A,B), r=dist(A,B)*0.30;
+  var D=r>1e-9?along(Cc,u,-r):null, E=r>1e-9?along(Cc,u,r):null;
+  var de=(D&&E)?dist(D,E):0;
+  var F=(D&&E)?ccPick(D,de,E,de,function(p){return cross(D,E,p);}):null;
+  var s2=(D&&F)?thru(D,F,.8):{a0:0,sp:1}, s3=(E&&F)?thru(E,F,.8):{a0:0,sp:1};
+  var s1=(D&&E)?span(Cc,D,E,.12):{a0:0,sp:1};
+  return {n:'I.11',st:'To draw a straight line at right angles to a given straight line from a given point on it.',
+  note:'† Def. 10 says what a right angle is. Post. 4 — that all right angles are equal to one another — is what turns it into a standard of measure good anywhere in the plane.',
+  nfrom:5, steps:[
+  {d:900,say:'Let AB be the given straight line, and C the given point on it. It is required to draw from C a straight line at right angles to AB.',
+   c:'THE PROBLEM',items:[SEG(A,B,{c:'i'}),PT(A,'A'),PT(B,'B'),PT(Cc,'C',{big:1})]},
+  {d:1700,say:'Let a point D be taken at random on CA, and let CE be made equal to CD: with centre C and distance CD let a circle be described, cutting CB at E.',
+   c:'I.3 — to cut off a line equal to a given line  ·  POST. 3',
+   items:[PT(D,'D',{t1:.2}),CIR(Cc,r,{comp:1,a0:s1.a0,sp:s1.sp,t0:.15,t1:.85}),PT(E,'E',{t0:.82}),
+          TIC(Cc,D,{t0:.9}),TIC(Cc,E,{t0:.9})]},
+  {d:2300,say:'On DE let the equilateral triangle FDE be constructed: with centre D and distance DE, and with centre E and distance ED, let circles be described; they cut at F.',
+   c:'I.1 — the first proposition, doing work for the eleventh',
+   items:[CIR(D,de,{comp:1,a0:s2.a0,sp:s2.sp,t1:.44}),CIR(E,de,{comp:1,a0:s3.a0,sp:s3.sp,t0:.44,t1:.88}),
+          PT(F,'F',{t0:.86}),SEG(D,F,{c:'g',t0:.9}),SEG(E,F,{c:'g',t0:.9})]},
+  {d:1100,say:'Let FC be joined. I say that the straight line FC has been drawn at right angles to AB.',
+   c:'POST. 1',items:[SEG(Cc,F,{c:'i'})]},
+  {d:1900,say:'For, since DC is equal to CE, and CF is common, the two sides DC, CF are equal to the two sides EC, CF; and the base FD is equal to the base FE; therefore the angle DCF is equal to the angle ECF.',
+   c:'I.8 — three sides equal, therefore the angles are equal',
+   items:[TIC(D,F,{n2:1}),TIC(E,F,{n2:1}),ANG(Cc,D,F,40),ANG(Cc,F,E,40),
+          FIL([Cc,D,F],{t0:.5}),FIL([Cc,E,F],{t0:.5})]},
+  {d:1600,say:'But when a straight line set up on a straight line makes the adjacent angles equal to one another, each of the equal angles is right. Therefore each of the angles DCF, ECF is right.',
+   c:'DEF. 10 — a right angle is defined, not measured',
+   items:[SQR(Cc,D,F),SQR(Cc,E,F),SEG(Cc,F,{c:'i'})]},
+  {d:1100,say:'Therefore the straight line CF has been drawn at right angles to the given straight line AB, from the given point C on it.',
+   c:'Q.E.F. — being what it was required to do',
+   items:[SEG(Cc,F,{c:'i',pulse:1}),SQR(Cc,D,F),SQR(Cc,E,F),SEG(A,B,{c:'i'})]}
+]};}
+
+function sI31(){
+  var P=PS[4],A=P.A,B=P.B,C=P.C; P.D=proj(P.D,B,C); var D=P.D;
+  var u=unit(D,C), v=unit(D,A), r=dist(D,A)*0.45;
+  var Q=r>1e-9?along(D,v,r):null, Pp=r>1e-9?along(D,u,r):null;
+  var pq=(Q&&Pp)?dist(Pp,Q):0;
+  var Qp=r>1e-9?along(A,unit(A,D),r):null;
+  var sg=cross(A,D,Pp||C)>=0?1:-1;
+  var E=(Qp&&pq>1e-9)?ccPick(A,r,Qp,pq,function(p){return -sg*cross(A,D,p);}):null;
+  var eu=E?unit(A,E):null, ext=Math.max(dist(B,C),1.4)*0.62;
+  var s1=(Pp&&Q)?span(D,Pp,Q,.14):{a0:0,sp:1}, s2=(Qp&&E)?span(A,Qp,E,.14):{a0:0,sp:1};
+  var s3=(Qp&&E)?thru(Qp,E,.55):{a0:0,sp:1};
+  return {n:'I.31',st:'Through a given point to draw a straight line parallel to a given straight line.',
+  note:'† No parallel postulate is used here: I.27 gives existence. Postulate 5 is needed only for uniqueness — that this is the only parallel through A.',
+  nfrom:6, steps:[
+  {d:900,say:'Let A be the given point, and BC the given straight line. It is required to draw through A a straight line parallel to BC.',
+   c:'THE PROBLEM',items:[SEG(B,C,{c:'i'}),PT(B,'B'),PT(C,'C'),PT(A,'A',{big:1})]},
+  {d:1200,say:'Let a point D be taken at random on BC, and let AD be joined.',
+   c:'POST. 1 — to draw a straight line from any point to any point',
+   items:[PT(D,'D',{t1:.25}),SEG(A,D,{c:'i',t0:.2})]},
+  {d:1700,say:'The angle ADC is now to be copied at A. With centre D and any distance let a circle be described, cutting DC at P and DA at Q.',
+   c:'POST. 3 — a circle of any radius, to carry the angle',
+   items:[CIR(D,r,{comp:1,a0:s1.a0,sp:s1.sp,t1:.8}),PT(Pp,'P',{t0:.5}),PT(Q,'Q',{t0:.78}),SEG(Pp,Q,{c:'g',t0:.85})]},
+  {d:1400,say:'With the same distance, and centre A, let a circle be described, cutting AD at Q′.',
+   c:'POST. 3 — the compass keeps its opening',
+   items:[CIR(A,r,{comp:1,a0:s2.a0,sp:s2.sp,t1:.85}),PT(Qp,'Q′',{t0:.4})]},
+  {d:1800,say:'With centre Q′ and distance PQ let a circle be described; it cuts the former at E, on the other side of AD.',
+   c:'POST. 3  ·  I.22 — to build a triangle out of three given lines',
+   items:[CIR(Qp,pq,{comp:1,a0:s3.a0,sp:s3.sp,t1:.8}),PT(E,'E',{t0:.78}),SEG(Qp,E,{c:'g',t0:.85})]},
+  {d:1800,say:'The triangles DPQ and AEQ′ have their three sides respectively equal; therefore the angle DAE is equal to the angle ADC. So the angle ADC has been copied at A.',
+   c:'I.8  ·  I.23 — to construct an angle equal to a given angle',
+   items:[SEG(A,E,{c:'i'}),ANG(D,Pp,A,42),ANG(A,D,E,42),FIL([D,Pp,Q],{t0:.4}),FIL([A,Qp,E],{t0:.4})]},
+  {d:1500,say:'Let EA be produced in a straight line to F. The straight line AD, falling on the two straight lines EF and BC, has made the alternate angles EAD, ADC equal to one another.',
+   c:'POST. 2 — to produce a finite straight line continuously in a straight line',
+   items:[LIN(A,eu,ext,ext,{c:'i'}),ANG(D,Pp,A,42),ANG(A,D,E,42)]},
+  {d:1300,say:'Therefore EF is parallel to BC — and it has been drawn through the given point A.',
+   c:'I.27 — equal alternate angles make the lines parallel  ·  Q.E.F.',
+   items:[LIN(A,eu,ext,ext,{c:'i',pulse:1}),SEG(B,C,{c:'i',pulse:1}),PT(A,'A',{big:1}),
+          ANG(D,Pp,A,42),ANG(A,D,E,42)]}
+]};}
+
+var BUILD=[sI1,sI9,sI10,sI11,sI31];
+
+/* ============================ state ============================ */
+var cur=0, step=0, tt=0, hold=0, play=true, clock=0, noteA=0, sc=null;
+var pts=document.querySelectorAll('#cl span'), PSTAT=document.getElementById('ps');
+
+function build(){
+  sc=BUILD[cur]();
+  var i,j,st,it,ps=[],cx=0,cy=0;
+  for(i=0;i<sc.steps.length;i++){
+    st=sc.steps[i]; st.items=st.items.filter(Boolean);
+    for(j=0;j<st.items.length;j++){it=st.items[j];
+      if(it.t0===undefined)it.t0=0; if(it.t1===undefined)it.t1=1;
+      if(it.k==='p')ps.push(it.p);}
+  }
+  for(i=0;i<ps.length;i++){cx+=ps[i].x;cy+=ps[i].y;}
+  if(ps.length){cx/=ps.length;cy/=ps.length;}
+  for(i=0;i<sc.steps.length;i++){st=sc.steps[i];
+    for(j=0;j<st.items.length;j++){it=st.items[j];
+      if(it.k==='p'&&!it.ld){var dx=it.p.x-cx,dy=it.p.y-cy,l=Math.sqrt(dx*dx+dy*dy);
+        it.ld=l>1e-6?{x:dx/l,y:dy/l}:{x:0,y:1};}}}
+  if(step>=sc.steps.length)step=sc.steps.length-1;
+}
+function setCur(k){cur=k;step=0;tt=0;hold=0;play=true;noteA=0;build();ui();}
+function ui(){for(var i=0;i<pts.length;i++)pts[i].className=(i===cur?'on':'');
+  PSTAT.textContent=play?'playing':'paused';}
+
+/* ============================ layout & background ============================ */
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  W=Math.max(240,window.innerWidth); H=Math.max(240,window.innerHeight);
+  cv.width=Math.round(W*DPR); cv.height=Math.round(H*DPR);
+  cv.style.width=W+'px'; cv.style.height=H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  US=Math.max(.68,Math.min(1.12,Math.min(W,H*1.35)/900));
+  BANDH=Math.round(114*US); BANDY=H-BANDH-13; PIPY=BANDY-15; BOTY=PIPY-12;
+  TOPY=Math.round(92*US);
+  GW=W>=720?Math.round(Math.min(240,W*0.26)):0;
+  var ah=Math.max(70,BOTY-TOPY-16);
+  S=Math.max(40,Math.min((W-70)/3.15,ah/2.32));
+  CX=W*0.5+Math.min(64,W*0.05); CY=(TOPY+BOTY)*0.5;
+  makeBG();
+}
+function makeBG(){
+  bg=document.createElement('canvas'); bg.width=cv.width; bg.height=cv.height;
+  var b=bg.getContext('2d'); b.setTransform(DPR,0,0,DPR,0,0);
+  var g=b.createRadialGradient(W*.52,H*.42,0,W*.52,H*.42,Math.max(W,H)*.82);
+  g.addColorStop(0,'#151009'); g.addColorStop(.42,'#0d0a08'); g.addColorStop(1,'#050406');
+  b.fillStyle=g; b.fillRect(0,0,W,H);
+  var i,n=Math.round(W*H/380);
+  for(i=0;i<n;i++){                                   // parchment grain
+    var x=Math.random()*W,y=Math.random()*H,s=Math.random()<.12?1.7:.9;
+    b.globalAlpha=.012+Math.random()*.045;
+    b.fillStyle=Math.random()<.62?'#e6cf9c':'#3a2c1a';
+    b.fillRect(x,y,s,s);
+  }
+  b.globalAlpha=1;
+  var v=b.createRadialGradient(W*.52,H*.45,Math.min(W,H)*.28,W*.52,H*.45,Math.max(W,H)*.78);
+  v.addColorStop(0,'rgba(0,0,0,0)'); v.addColorStop(1,'rgba(0,0,0,.62)');
+  b.fillStyle=v; b.fillRect(0,0,W,H);
+}
+function sx(p){return CX+p.x*S;}
+function sy(p){return CY-p.y*S;}
+function w2(x,y){return {x:(x-CX)/S,y:(CY-y)/S};}
+
+/* ============================ drawing ============================ */
+function eq(t){return t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;}
+function es(t){return .5-.5*Math.cos(Math.PI*t);}
+function cl01(t){return t<0?0:t>1?1:t;}
+function pen(rgb,a,w,bl){ctx.strokeStyle='rgba('+rgb+','+a+')';ctx.lineWidth=w;
+  ctx.shadowBlur=bl||0;ctx.shadowColor='rgba('+rgb+',.8)';}
+
+function item(it,t,hot,last){
+  var e,a,rgb,lw,bl,pulse=1;
+  if(last&&it.pulse&&t>=1)pulse=.72+.28*Math.sin(clock*2.2);
+  var loc=cl01((t-it.t0)/Math.max(1e-6,it.t1-it.t0));
+  if(loc<=0)return;
+  var base=it.c==='i'?C_IVORY:C_GOLD;
+  if(hot){rgb=C_HOT;bl=13;}else{rgb=base;bl=0;}
+  ctx.lineCap='round'; ctx.lineJoin='round';
+  if(it.k==='s'||it.k==='L'){
+    e=eq(loc); a=(hot?1:(it.c==='i'?.88:.5))*pulse; lw=(hot?2.5:2.1)*(it.c==='i'?1:.8);
+    pen(rgb,a,lw,bl);
+    var p0,p1;
+    if(it.k==='L'){p0={x:it.a.x-it.u.x*it.e0*e,y:it.a.y-it.u.y*it.e0*e};
+                   p1={x:it.a.x+it.u.x*it.e1*e,y:it.a.y+it.u.y*it.e1*e};}
+    else{p0=it.a;p1={x:it.a.x+(it.b.x-it.a.x)*e,y:it.a.y+(it.b.y-it.a.y)*e};}
+    ctx.beginPath();ctx.moveTo(sx(p0),sy(p0));ctx.lineTo(sx(p1),sy(p1));ctx.stroke();
+    if(loc<1&&hot){ctx.fillStyle='rgba('+C_HOT+',.95)';ctx.shadowBlur=14;
+      ctx.beginPath();ctx.arc(sx(p1),sy(p1),2.6,0,TAU);ctx.fill();}
+  }else if(it.k==='c'){
+    e=es(loc); a=(hot?.95:.30)*pulse; lw=hot?1.7:1.1;
+    pen(rgb,a,lw,bl);
+    ctx.beginPath();ctx.arc(sx(it.c),sy(it.c),it.r*S,-it.a0,-(it.a0+it.sp*e),it.sp>0);ctx.stroke();
+    if(loc<1&&it.comp){                                  // compass: needle, leg, pen
+      var th=it.a0+it.sp*e, tp={x:it.c.x+Math.cos(th)*it.r,y:it.c.y+Math.sin(th)*it.r};
+      pen(C_GOLD,.42,1,0);
+      ctx.beginPath();ctx.moveTo(sx(it.c),sy(it.c));ctx.lineTo(sx(tp),sy(tp));ctx.stroke();
+      ctx.shadowBlur=0;ctx.fillStyle='rgba('+C_GOLD+',.6)';
+      ctx.beginPath();ctx.arc(sx(it.c),sy(it.c),2.4,0,TAU);ctx.fill();
+      ctx.fillStyle='rgba('+C_HOT+',1)';ctx.shadowBlur=16;ctx.shadowColor='rgba('+C_HOT+',.9)';
+      ctx.beginPath();ctx.arc(sx(tp),sy(tp),3,0,TAU);ctx.fill();
+    }
+  }else if(it.k==='f'){
+    e=eq(loc); ctx.shadowBlur=0;
+    var q=it.ps, gx=(sx(q[0])+sx(q[1])+sx(q[2]))/3, gy=(sy(q[0])+sy(q[1])+sy(q[2]))/3;
+    var gr=ctx.createRadialGradient(gx,gy,0,gx,gy,S*.9);
+    gr.addColorStop(0,'rgba('+(hot?C_HOT:C_GOLD)+','+(.16*e*pulse)+')');
+    gr.addColorStop(1,'rgba('+(hot?C_HOT:C_GOLD)+','+(.03*e*pulse)+')');
+    ctx.fillStyle=gr; ctx.beginPath(); ctx.moveTo(sx(q[0]),sy(q[0]));
+    for(var i=1;i<q.length;i++)ctx.lineTo(sx(q[i]),sy(q[i]));
+    ctx.closePath(); ctx.fill();
+  }else if(it.k==='t'){
+    e=eq(loc); var m=mid(it.a,it.b),d=unit(it.a,it.b),L=7.5*e;
+    pen(hot?C_HOT:C_PT,(hot?1:.8)*pulse,2,hot?10:6);
+    var mx=sx(m),my=sy(m),dx=d.x,dy=-d.y,off=it.n2?3.2:0;
+    for(var k=0;k<(it.n2?2:1);k++){
+      var o=it.n2?(k?off:-off):0, bx=mx+dx*o, by=my+dy*o;
+      ctx.beginPath();ctx.moveTo(bx-dy*L,by+dx*L);ctx.lineTo(bx+dy*L,by-dx*L);ctx.stroke();
+    }
+  }else if(it.k==='a'){
+    e=es(loc); var s=span(it.o,it.a,it.b,0);
+    pen(hot?C_HOT:C_PT,(hot?.95:.75)*pulse,2,hot?11:5);
+    ctx.beginPath();ctx.arc(sx(it.o),sy(it.o),it.r*US,-s.a0,-(s.a0+s.sp*e),s.sp>0);ctx.stroke();
+  }else if(it.k==='q'){
+    e=eq(loc); var ua=unit(it.o,it.a),ub=unit(it.o,it.b),z=15*US*e;
+    var ox=sx(it.o),oy=sy(it.o), ax=ua.x*z,ay=-ua.y*z, bx2=ub.x*z,by2=-ub.y*z;
+    pen(hot?C_HOT:C_PT,(hot?1:.8)*pulse,1.8,hot?11:5);
+    ctx.beginPath();ctx.moveTo(ox+ax,oy+ay);ctx.lineTo(ox+ax+bx2,oy+ay+by2);
+    ctx.lineTo(ox+bx2,oy+by2);ctx.stroke();
+  }else if(it.k==='p'){
+    e=cl01(loc); var R=(it.big?5.2:4.3)*(1+(1-e)*1.6), X=sx(it.p), Y=sy(it.p);
+    ctx.shadowBlur=hot?18:8; ctx.shadowColor='rgba('+C_PT+',.9)';
+    ctx.fillStyle='rgba('+C_PT+','+(.55+.45*e)*pulse+')';
+    ctx.beginPath();ctx.arc(X,Y,R,0,TAU);ctx.fill();
+    ctx.shadowBlur=0; ctx.fillStyle='rgba(8,6,4,.85)';
+    ctx.beginPath();ctx.arc(X,Y,R*.42,0,TAU);ctx.fill();
+    if(e<1&&hot){pen(C_HOT,(1-e)*.9,1.4,10);
+      ctx.beginPath();ctx.arc(X,Y,6+34*e,0,TAU);ctx.stroke();}
+    if(e>.25){                                           // classical letter
+      ctx.shadowBlur=6;ctx.shadowColor='rgba(0,0,0,.9)';
+      ctx.fillStyle='rgba(244,224,178,'+cl01((e-.25)/.4)+')';
+      ctx.font='italic '+Math.round(16*US)+'px '+SER;
+      ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.fillText(it.l,X+it.ld.x*19*US,Y-it.ld.y*19*US);
+    }
+  }
+  ctx.shadowBlur=0; ctx.globalAlpha=1;
+}
+
+function track(s,x,y,sp,ctr){
+  var i,w=0; for(i=0;i<s.length;i++)w+=ctx.measureText(s[i]).width+sp; w-=sp;
+  var px=ctr?x-w/2:x;
+  for(i=0;i<s.length;i++){ctx.fillText(s[i],px,y);px+=ctx.measureText(s[i]).width+sp;}
+  return w;
+}
+function wrapT(txt,maxw){
+  var w=txt.split(' '),lines=[],c='';
+  for(var i=0;i<w.length;i++){var t=c?c+' '+w[i]:w[i];
+    if(ctx.measureText(t).width>maxw&&c){lines.push(c);c=w[i];}else c=t;}
+  if(c)lines.push(c); return lines;
+}
+function rrect(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+
+function chrome(){
+  var st=sc.steps[step], i;
+  /* ---- heading ---- */
+  ctx.textBaseline='alphabetic'; ctx.textAlign='left';
+  ctx.font=Math.round(11*US)+'px ui-monospace,Menlo,Consolas,monospace';
+  ctx.fillStyle='rgba('+C_GOLD+',.85)';
+  track('PROPOSITION '+sc.n,CX,TOPY-Math.round(44*US),3.4*US,1);
+  ctx.font='italic '+Math.round(21*US)+'px '+SER;
+  ctx.textAlign='center'; ctx.fillStyle='rgba('+C_IVORY+',.93)';
+  var hl=wrapT(sc.st,Math.min(W-60,760));
+  for(i=0;i<hl.length;i++)ctx.fillText(hl[i],CX,TOPY-Math.round(20*US)+i*Math.round(25*US));
+  ctx.strokeStyle='rgba('+C_GOLD+',.28)';ctx.lineWidth=1;
+  var uw=Math.min(W*.34,300);
+  ctx.beginPath();ctx.moveTo(CX-uw/2,TOPY+(hl.length-1)*25*US+8);
+  ctx.lineTo(CX+uw/2,TOPY+(hl.length-1)*25*US+8);ctx.stroke();
+  /* ---- step pips ---- */
+  var n=sc.steps.length, gap=Math.min(19,(Math.min(W-40,520))/n), x0=W/2-(n-1)*gap/2;
+  for(i=0;i<n;i++){
+    var X=x0+i*gap, on=i<step, now=i===step;
+    ctx.beginPath();ctx.arc(X,PIPY,now?4.2:2.5,0,TAU);
+    if(now){ctx.fillStyle='rgba('+C_HOT+',.95)';ctx.shadowBlur=11;ctx.shadowColor='rgba('+C_HOT+',.8)';ctx.fill();}
+    else if(on){ctx.fillStyle='rgba('+C_GOLD+',.72)';ctx.shadowBlur=0;ctx.fill();}
+    else{ctx.strokeStyle='rgba('+C_GOLD+',.34)';ctx.lineWidth=1;ctx.shadowBlur=0;ctx.stroke();}
+  }
+  ctx.shadowBlur=0;
+  /* ---- band ---- */
+  var bx=16,bw=W-32;
+  ctx.fillStyle='rgba(13,10,7,.82)';rrect(bx,BANDY,bw,BANDH,7);ctx.fill();
+  ctx.strokeStyle='rgba('+C_GOLD+',.22)';ctx.lineWidth=1;rrect(bx,BANDY,bw,BANDH,7);ctx.stroke();
+  var pad=Math.round(15*US), tx=bx+pad, tw=bw-pad*2;
+  if(GW){
+    ctx.strokeStyle='rgba('+C_GOLD+',.17)';
+    ctx.beginPath();ctx.moveTo(bx+GW,BANDY+10);ctx.lineTo(bx+GW,BANDY+BANDH-10);ctx.stroke();
+    tx=bx+GW+pad; tw=bw-GW-pad*2;
+    if(step>=sc.nfrom)noteA=Math.min(1,noteA+.028); else noteA=Math.max(0,noteA-.06);
+    if(noteA>.01){
+      ctx.textAlign='left';ctx.font='italic '+Math.round(11.5*US)+'px '+SER;
+      ctx.fillStyle='rgba('+C_GOLD+','+(noteA*.72)+')';
+      var gl=wrapT(sc.note,GW-pad*1.6),lh=Math.round(14.2*US);
+      for(i=0;i<gl.length&&i<7;i++)ctx.fillText(gl[i],bx+pad,BANDY+pad+8+i*lh);
+    }
+  }
+  ctx.textAlign='left';
+  ctx.font=Math.round(9.8*US)+'px ui-monospace,Menlo,Consolas,monospace';
+  ctx.fillStyle='rgba('+C_GOLD+',.9)';
+  track(st.c.toUpperCase(),tx,BANDY+pad+4,1.5*US,0);
+  ctx.textAlign='right';ctx.fillStyle='rgba('+C_GOLD+',.55)';
+  track('STEP '+(step+1)+' / '+sc.steps.length,bx+bw-pad,BANDY+pad+4,1.5*US,0);
+  ctx.textAlign='left';
+  ctx.font=Math.round(15*US)+'px '+SER;
+  ctx.fillStyle='rgba('+C_IVORY+',.94)';
+  var ln=wrapT(st.say,tw),lh2=Math.round(20.5*US),y0=BANDY+pad+Math.round(24*US);
+  for(i=0;i<ln.length&&i<4;i++)ctx.fillText(ln[i],tx,y0+i*lh2);
+}
+
+function frame(dt){
+  build();
+  var st=sc.steps[step];
+  if(tt<1)tt=Math.min(1,tt+dt/st.d);
+  else if(play){hold+=dt;
+    if(hold>620){if(step<sc.steps.length-1){step++;tt=0;hold=0;}else{play=false;ui();}}}
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  if(bg)ctx.drawImage(bg,0,0,W,H); else{ctx.fillStyle='#0a0807';ctx.fillRect(0,0,W,H);}
+  var order={f:0,c:1,L:2,s:3,q:4,a:5,t:6,p:7},draw=[],i,j;
+  for(i=0;i<=step;i++){
+    var s=sc.steps[i],hot=(i===step);
+    for(j=0;j<s.items.length;j++){var it=s.items[j];
+      if(it.tr&&!hot)continue;
+      draw.push({it:it,t:hot?tt:1,h:hot,z:order[it.k]*100+j,last:(i===sc.steps.length-1)});}
+  }
+  draw.sort(function(a,b){return a.z-b.z;});
+  for(i=0;i<draw.length;i++)item(draw[i].it,draw[i].t,draw[i].h,draw[i].last);
+  chrome();
+}
+
+/* ============================ input ============================ */
+function next(){if(tt<1){tt=1;}else if(step<sc.steps.length-1){step++;tt=0;hold=0;}}
+function prev(){if(step>0){step--;tt=1;hold=0;}else tt=1;}
+window.addEventListener('keydown',function(e){
+  var k=e.key;
+  if(k==='ArrowRight'||k==='n'){play=false;next();ui();e.preventDefault();}
+  else if(k==='ArrowLeft'||k==='p'){play=false;prev();ui();e.preventDefault();}
+  else if(k===' '){play=!play;if(play&&step===sc.steps.length-1&&tt>=1){step=0;tt=0;hold=0;}ui();e.preventDefault();}
+  else if(k==='r'||k==='R'){step=0;tt=0;hold=0;play=true;noteA=0;ui();}
+  else if(k>='1'&&k<='5')setCur(+k-1);
+});
+for(var q=0;q<pts.length;q++)pts[q].addEventListener('click',function(e){
+  setCur(+e.currentTarget.getAttribute('data-k'));});
+
+var grab=null,gt=0,gm=0;
+function hit(x,y){
+  var names=DRAGS[cur],P=PS[cur],best=null,bd=22*22;
+  for(var i=0;i<names.length;i++){var p=P[names[i]];if(!fin(p))continue;
+    var dx=sx(p)-x,dy=sy(p)-y,d=dx*dx+dy*dy;
+    if(d<bd){bd=d;best=names[i];}}
+  return best;
+}
+cv.addEventListener('pointerdown',function(e){
+  var r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;
+  grab=hit(x,y); gt=performance.now(); gm=0;
+  if(grab){cv.setPointerCapture(e.pointerId);cv.style.cursor='grabbing';}
+});
+cv.addEventListener('pointermove',function(e){
+  var r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;
+  if(grab){
+    gm+=Math.abs(e.movementX||0)+Math.abs(e.movementY||0);
+    var w=w2(x,y);
+    PS[cur][grab].x=Math.max(-1.55,Math.min(1.55,w.x));
+    PS[cur][grab].y=Math.max(-1.12,Math.min(1.12,w.y));
+  }else cv.style.cursor=hit(x,y)?'grab':'default';
+});
+cv.addEventListener('pointerup',function(e){
+  if(grab)cv.style.cursor='grab';
+  if((!grab||gm<4)&&performance.now()-gt<420){play=false;next();ui();}
+  grab=null;
+});
+cv.addEventListener('pointercancel',function(){grab=null;});
+window.addEventListener('resize',resize);
+
+/* ============================ loop ============================ */
+var tp=0;
+function loop(ts){
+  var dt=tp?Math.min(64,ts-tp):16; tp=ts; clock+=dt/1000;
+  frame(dt); requestAnimationFrame(loop);
+}
+resize(); build(); ui(); requestAnimationFrame(loop);
+})();
+</script>
