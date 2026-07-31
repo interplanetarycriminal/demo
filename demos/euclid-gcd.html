@@ -324,6 +324,13 @@ function draw(){
     var c = col(q.gen);
     ctx.save();
     ctx.globalAlpha = zAlpha * (0.35 + 0.65 * e);
+    if (side > 4 * Math.max(W, H)){        // deep zoom: this square engulfs the view
+      ctx.fillStyle = rgba(c, 0.13);
+      var ax1 = Math.max(qx, L.x - 8), ay1 = Math.max(qy, L.y - 8);
+      ctx.fillRect(ax1, ay1, Math.min(qx + side, L.x + L.w + 8) - ax1,
+                             Math.min(qy + side, L.y + L.h + 8) - ay1);
+      ctx.restore(); continue;
+    }
     var gr = ctx.createLinearGradient(mcx - hs, mcy - hs, mcx + hs, mcy + hs);
     gr.addColorStop(0, rgba(c, 0.20)); gr.addColorStop(1, rgba(c, 0.055));
     ctx.fillStyle = gr;

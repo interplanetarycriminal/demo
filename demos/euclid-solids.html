@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Euclid XIII // the five Platonic solids</title>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#07050b;color:#e8d8b4;
+            font:12px/1.6 ui-monospace,Menlo,Consolas,monospace}
+  body>canvas{display:block;position:fixed;inset:0;z-index:0}
+  .pane{position:fixed;z-index:10;background:rgba(14,10,8,.58);border:1px solid rgba(255,196,110,.20);
+        border-radius:8px;backdrop-filter:blur(7px);letter-spacing:.03em}
+  #ui{top:12px;left:12px;width:308px;padding:10px 13px 11px}
+  #ui h1{margin:0;font-size:12.5px;letter-spacing:.16em;color:#ffcf80;font-weight:700}
+  #ui .sub{color:#8d7a5c;font-size:10.5px;letter-spacing:.13em;margin:1px 0 7px}
+  #ui .exp{color:#b6a display:block}
+  .exp{color:#b3a headers}
+  #ui p.exp{color:#ac9b7e;margin:0 0 9px;font-size:11px;line-height:1.62}
+  #nm{color:#fff0cf;font-size:15px;letter-spacing:.11em;font-weight:700;margin-top:2px}
+  #gr{color:#7d6a4e;font-size:10px;letter-spacing:.06em;margin-bottom:6px}
+  table{border-collapse:collapse;width:100%;font-size:11px}
+  td{padding:1px 0;vertical-align:baseline}
+  td.k{color:#7d6a4e;width:96px}
+  td.v{color:#f0dcae}
+  .big{color:#ffd48a;font-weight:700}
+  #euler{margin:7px 0 0;padding:5px 7px;border-radius:5px;background:rgba(255,190,100,.07);
+         border:1px solid rgba(255,190,100,.16);color:#ffd48a;font-size:11px;text-align:center}
+  #euler small{display:block;color:#7d6a4e;font-size:9.5px;letter-spacing:.05em;margin-top:2px}
+  #hint{margin-top:8px;color:#6d5c44;font-size:10px;line-height:1.7}
+  #hint b{color:#c9ab74;font-weight:400}
+  a{color:#ff9ec4;text-decoration:none}a:hover{text-decoration:underline}
+  #picker{display:flex;gap:4px;margin:8px 0 0}
+  #picker div{flex:1;text-align:center;padding:3px 0;font-size:9.5px;letter-spacing:.06em;
+              border:1px solid rgba(255,196,110,.16);border-radius:4px;color:#8d7a5c;cursor:pointer;
+              transition:.25s}
+  #picker div:hover{color:#e8cf9c;border-color:rgba(255,196,110,.4)}
+  #picker div.on{background:rgba(255,190,100,.16);color:#ffe0ac;border-color:rgba(255,196,110,.55)}
+  #proof{right:12px;bottom:12px;width:386px;height:412px;padding:0;overflow:hidden}
+  #pc{display:block;width:100%;height:100%}
+  #hist{left:12px;bottom:12px;width:308px;padding:9px 13px;color:#7d6a4e;font-size:10px;line-height:1.72}
+  #hist b{color:#c9ab74;font-weight:400}
+  @media (max-width:900px),(max-height:720px){
+    #proof{width:300px;height:330px}
+    #hist{display:none}
+    #ui{width:250px}
+  }
+  @media (max-width:620px){ #proof{display:none} }
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+
+<div class="pane" id="ui">
+  <h1>EUCLID &middot; ELEMENTS XIII</h1>
+  <div class="sub">THE FIVE PLATONIC SOLIDS</div>
+  <p class="exp">Euclid ends the <i>Elements</i> by constructing the only five solids whose faces are identical regular polygons &mdash; and proving that no sixth can exist.</p>
+  <div id="nm">TETRAHEDRON</div>
+  <div id="gr">&mdash;</div>
+  <table>
+    <tr><td class="k">faces</td><td class="v"><span class="big" id="f">4</span> &nbsp;<span id="ft">equilateral triangle</span></td></tr>
+    <tr><td class="k">vertices</td><td class="v"><span class="big" id="v">4</span></td></tr>
+    <tr><td class="k">edges</td><td class="v"><span class="big" id="e">6</span></td></tr>
+    <tr><td class="k">at each vertex</td><td class="v" id="q">3 faces &middot; 3&times;60&deg; = 180&deg;</td></tr>
+    <tr><td class="k">element</td><td class="v" id="el">FIRE</td></tr>
+    <tr><td class="k">in a sphere</td><td class="v" id="sph">XIII.13</td></tr>
+    <tr><td class="k">edge &divide; diameter</td><td class="v" id="ad">0.8165</td></tr>
+  </table>
+  <div id="euler">V &minus; E + F &nbsp;=&nbsp; <span id="eu">4 &minus; 6 + 4 = 2</span>
+    <small>EULER'S FORMULA &mdash; 2000 YEARS AFTER EUCLID</small></div>
+  <div id="picker"><div data-i="0">1 TET</div><div data-i="1">2 CUBE</div><div data-i="2">3 OCT</div><div data-i="3">4 DOD</div><div data-i="4">5 ICO</div></div>
+  <div id="hint"><b>drag</b> orbit &middot; <b>wheel</b> zoom &middot; <b>1-5</b> solid &middot; <b>&larr;&rarr;</b> step proof &middot; <b>space</b> pause &middot; <b>s</b> sphere<br><a href="index.html">&larr; gallery</a></div>
+</div>
+
+<div class="pane" id="proof"><canvas id="pc"></canvas></div>
+
+<div class="pane" id="hist">
+  <b>BOOK XIII</b> inscribes each solid in a sphere and compares its edge to the diameter: XIII.13 pyramid, .14 octahedron, .15 cube, .16 icosahedron, .17 dodecahedron. XIII.18 lays the five edges side by side &mdash; pyramid &gt; octahedron &gt; cube &gt; icosahedron &gt; dodecahedron &mdash; then closes the <i>Elements</i>. <b>Plato's Timaeus</b> gave four to the elements and kept the dodecahedron for the cosmos.
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+import {EffectComposer} from 'three/addons/postprocessing/EffectComposer.js';
+import {RenderPass} from 'three/addons/postprocessing/RenderPass.js';
+import {UnrealBloomPass} from 'three/addons/postprocessing/UnrealBloomPass.js';
+import {OutputPass} from 'three/addons/postprocessing/OutputPass.js';
+
+/* ============================ verified data =============================
+   V,E,F and (n = sides per face, q = faces at each vertex) checked in node:
+   V-E+F=2, n*F=2E, q*V=2E for all five; edge/diameter for circumradius 1. */
+const CUBE_SIDE = 2/Math.sqrt(3);                 // cube of circumradius 1
+const SOLIDS = [
+  {nm:'TETRAHEDRON',  gr:'πυραμίς · pyramis',  V:4, E:6,  F:4,  n:3, q:3, el:'FIRE',
+   pr:'XIII.13 · diam² = 1½ · edge²', ad:'0.8165',
+   geo:()=>new THREE.TetrahedronGeometry(1,0)},
+  {nm:'HEXAHEDRON',   gr:'κύβος · kybos (the cube)',      V:8, E:12, F:6,  n:4, q:3, el:'EARTH',
+   pr:'XIII.15 · diam² = 3 · edge²', ad:'0.5774',
+   geo:()=>new THREE.BoxGeometry(CUBE_SIDE,CUBE_SIDE,CUBE_SIDE)},
+  {nm:'OCTAHEDRON',   gr:'ὀκτάεδρον',      V:6, E:12, F:8,  n:3, q:4, el:'AIR',
+   pr:'XIII.14 · diam² = 2 · edge²', ad:'0.7071',
+   geo:()=>new THREE.OctahedronGeometry(1,0)},
+  {nm:'DODECAHEDRON', gr:'δωδεκάεδρον', V:20,E:30, F:12, n:5, q:3, el:'THE COSMOS',
+   pr:'XIII.17 · edge is an "apotome"', ad:'0.3568',
+   geo:()=>new THREE.DodecahedronGeometry(1,0)},
+  {nm:'ICOSAHEDRON',  gr:'εἰκοσάεδρον', V:12,E:30, F:20, n:3, q:5, el:'WATER',
+   pr:'XIII.16 · edge is a "minor"', ad:'0.5257',
+   geo:()=>new THREE.IcosahedronGeometry(1,0)}
+];
+const FACE_NAME = {3:'equilateral triangle', 4:'square', 5:'regular pentagon', 6:'regular hexagon'};
+const interior = n => (n-2)*180/n;                // 60 / 90 / 108 / 120
+
+/* the enumeration Euclid's final remark rests on. s = index into SOLIDS, -1 = impossible */
+const CASES = [
+  {n:3,k:3,s:0},{n:3,k:4,s:2},{n:3,k:5,s:4},{n:3,k:6,s:-1},
+  {n:4,k:3,s:1},{n:4,k:4,s:-1},
+  {n:5,k:3,s:3},{n:5,k:4,s:-1},
+  {n:6,k:3,s:-1}
+];
+const CASE_OF_SOLID = [0,4,1,6,2];                // solid index -> case index
+
+/* ============================== three.js ================================ */
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.06;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x07050b);
+scene.fog = new THREE.FogExp2(0x07050b, 0.055);
+
+const camera = new THREE.PerspectiveCamera(48, innerWidth/innerHeight, 0.1, 120);
+camera.position.set(0.35, 1.05, 3.95);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.dampingFactor = 0.06; controls.enablePan = false;
+controls.minDistance = 2.1; controls.maxDistance = 9;
+
+const root = new THREE.Group(); scene.add(root);
+
+/* luminous translucent faces: additive fresnel shell */
+function faceMaterial(){
+  return new THREE.ShaderMaterial({
+    uniforms:{uCore:{value:new THREE.Color(0xff9a3c)}, uRim:{value:new THREE.Color(0xfff2d2)}, uOp:{value:1}},
+    vertexShader:`varying vec3 vN; varying vec3 vP;
+      void main(){ vN=normalize(normalMatrix*normal); vec4 mv=modelViewMatrix*vec4(position,1.0);
+                   vP=mv.xyz; gl_Position=projectionMatrix*mv; }`,
+    fragmentShader:`uniform vec3 uCore; uniform vec3 uRim; uniform float uOp;
+      varying vec3 vN; varying vec3 vP;
+      void main(){ vec3 N=normalize(vN), V=normalize(-vP);
+                   float f=1.0-abs(dot(N,V));
+                   vec3 c=uCore*0.10+uRim*pow(f,2.4)*0.80;
+                   gl_FragColor=vec4(c*uOp, uOp); }`,
+    transparent:true, depthWrite:false, side:THREE.DoubleSide, blending:THREE.AdditiveBlending
+  });
+}
+function dotTexture(){
+  const c=document.createElement('canvas'); c.width=c.height=64;
+  const g=c.getContext('2d'), rg=g.createRadialGradient(32,32,0,32,32,32);
+  rg.addColorStop(0,'rgba(255,248,226,1)'); rg.addColorStop(.22,'rgba(255,206,124,.8)');
+  rg.addColorStop(1,'rgba(255,170,70,0)');
+  g.fillStyle=rg; g.fillRect(0,0,64,64);
+  const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; return t;
+}
+const DOT = dotTexture();
+
+/* unique vertices via integer hash (|0 also normalises -0) */
+function uniqueVerts(geo){
+  const p=geo.getAttribute('position'), seen=new Set(), out=[];
+  for(let i=0;i<p.count;i++){
+    const x=p.getX(i), y=p.getY(i), z=p.getZ(i);
+    const k=((Math.round(x*1000)|0)+'_'+(Math.round(y*1000)|0)+'_'+(Math.round(z*1000)|0));
+    if(!seen.has(k)){ seen.add(k); out.push(x,y,z); }
+  }
+  return out;
+}
+
+const GROUPS = SOLIDS.map(S=>{
+  const g = new THREE.Group(); g.visible=false; root.add(g);
+  const geo = S.geo();
+  const fm = faceMaterial();
+  g.add(new THREE.Mesh(geo, fm));
+  const lm = new THREE.LineBasicMaterial({color:0xffcd82, transparent:true, opacity:1,
+                                          blending:THREE.AdditiveBlending, depthWrite:false});
+  g.add(new THREE.LineSegments(new THREE.EdgesGeometry(geo, 1), lm));
+  const pg = new THREE.BufferGeometry();
+  pg.setAttribute('position', new THREE.Float32BufferAttribute(uniqueVerts(geo), 3));
+  const pm = new THREE.PointsMaterial({size:0.115, map:DOT, transparent:true, opacity:1,
+                                       blending:THREE.AdditiveBlending, depthWrite:false, sizeAttenuation:true});
+  g.add(new THREE.Points(pg, pm));
+  g.userData = {fm, lm, pm};
+  return g;
+});
+
+/* the circumsphere of Book XIII — every solid is inscribed in it */
+const sphere = new THREE.Group(); root.add(sphere);
+sphere.add(new THREE.LineSegments(
+  new THREE.WireframeGeometry(new THREE.SphereGeometry(1, 26, 13)),
+  new THREE.LineBasicMaterial({color:0x8fb4ff, transparent:true, opacity:0.045,
+                               blending:THREE.AdditiveBlending, depthWrite:false})));
+for(let a=0;a<3;a++){
+  const pts=[]; for(let i=0;i<=180;i++){ const t=i/180*Math.PI*2; pts.push(new THREE.Vector3(Math.cos(t),Math.sin(t),0)); }
+  const ring = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
+    new THREE.LineBasicMaterial({color:0xa8c6ff, transparent:true, opacity:0.16,
+                                 blending:THREE.AdditiveBlending, depthWrite:false}));
+  if(a===1) ring.rotation.x = Math.PI/2; if(a===2) ring.rotation.y = Math.PI/2;
+  sphere.add(ring);
+}
+
+/* faint dust for depth */
+{
+  const N=520, pos=new Float32Array(N*3);
+  for(let i=0;i<N;i++){
+    const u=Math.random()*2-1, th=Math.random()*Math.PI*2, r=7+Math.random()*17, s=Math.sqrt(1-u*u);
+    pos[i*3]=r*s*Math.cos(th); pos[i*3+1]=r*s*Math.sin(th); pos[i*3+2]=r*u;
+  }
+  const pg=new THREE.BufferGeometry(); pg.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+  scene.add(new THREE.Points(pg, new THREE.PointsMaterial({size:0.09, map:DOT, color:0x9ab0e0,
+    transparent:true, opacity:0.5, blending:THREE.AdditiveBlending, depthWrite:false})));
+}
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.92, 0.62, 0.12);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+/* ============================ solid selection =========================== */
+let cur = 0, prev = -1, tr = 1;                   // tr = transition progress 0..1
+const D = id => document.getElementById(id);
+const ease = t => t<0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2;
+
+function updateInfo(){
+  const S = SOLIDS[cur];
+  D('nm').textContent = S.nm + (cur===1 ? ' · CUBE' : '');
+  D('gr').textContent = S.gr;
+  D('f').textContent = S.F; D('v').textContent = S.V; D('e').textContent = S.E;
+  D('ft').textContent = FACE_NAME[S.n];
+  D('q').textContent = S.q + ' faces · ' + S.q + '×' + interior(S.n) + '° = ' + (S.q*interior(S.n)) + '°';
+  D('el').textContent = S.el; D('sph').textContent = S.pr; D('ad').textContent = S.ad;
+  const chi = S.V - S.E + S.F;                    // computed live, not hard-coded
+  D('eu').innerHTML = S.V+' − '+S.E+' + '+S.F+' = <b>'+chi+'</b>'+(chi===2?' ✓':' ✗');
+  [...D('picker').children].forEach((d,i)=>d.classList.toggle('on', i===cur));
+}
+function selectSolid(i){ if(i===cur||i<0) return; prev=cur; cur=i; tr=0; updateInfo(); }
+updateInfo();
+
+/* ======================= the "why exactly five" panel =================== */
+const pc = D('pc'), px = pc.getContext('2d');
+let PW=0, PH=0;
+let ci = 0, phase = 0, pt = 0, paused = false, fold = 0, camA = 0, camPsi = 0;
+let fitS = 60, fitX = 0, fitY = 0, fitInit = false;
+
+const accepted = c => c.k*interior(c.n) < 360;
+function phaseDur(){
+  const c = CASES[ci]; if(!c) return 4.2;         // QED screen
+  const a = accepted(c);
+  return [0.34*c.k + 0.55, 0.8, a?1.75:1.3, a?1.25:0.95][phase];
+}
+function gotoCase(i){
+  ci = (i + CASES.length + 1) % (CASES.length + 1); // last slot = QED
+  phase = 0; pt = 0; fold = 0;
+  if(CASES[ci] && accepted(CASES[ci])) { /* solid switches when it folds */ }
+}
+function advance(dt){
+  pt += dt;
+  if(pt < phaseDur()) return;
+  pt = 0;
+  if(!CASES[ci]) { gotoCase(0); return; }         // leaving QED
+  if(phase === 1 && accepted(CASES[ci])) selectSolid(CASES[ci].s);
+  phase++;
+  if(phase > 3) gotoCase(ci+1);
+}
+
+/* --- fan of k regular n-gons around one vertex; ft=0 flat, ft=1 folded up --- */
+const v3 = (x,y,z)=>({x,y,z});
+function fanPolys(n,k,ft){
+  const th = (n-2)*Math.PI/n, Dk = 2*Math.PI/k;
+  const Az = th + (Dk - th)*ft;                   // azimuth step: theta -> 2pi/k
+  let s2 = (1-Math.cos(th))/(1-Math.cos(Az));     // sin^2(phi): verified in node
+  s2 = Math.max(1e-6, Math.min(1, s2));
+  const sp = Math.sqrt(s2), cp = Math.sqrt(1-s2);
+  const off = Math.PI/2 - k*th/2;                 // centre the flat fan on +y
+  const e = j => v3(sp*Math.cos(j*Az+off), sp*Math.sin(j*Az+off), cp);
+  const R = 1/(2*Math.sin(Math.PI/n));            // circumradius, unit side
+  const P2 = []; for(let j=0;j<n;j++){ const a=Math.PI+j*2*Math.PI/n; P2.push([R+R*Math.cos(a), R*Math.sin(a)]); }
+  const out = [];
+  for(let i=0;i<k;i++){
+    const A=e(i), B=e(i+1);
+    let mx=A.x+B.x, my=A.y+B.y, mz=A.z+B.z; let L=Math.hypot(mx,my,mz); mx/=L; my/=L; mz/=L;
+    const d=B.x*mx+B.y*my+B.z*mz;
+    let nx=B.x-d*mx, ny=B.y-d*my, nz=B.z-d*mz; L=Math.hypot(nx,ny,nz)||1; nx/=L; ny/=L; nz/=L;
+    out.push(P2.map(([x,y])=>v3(x*mx+y*nx, x*my+y*ny, x*mz+y*nz)));
+  }
+  return {polys:out, off, th};
+}
+function project(p){
+  const c=Math.cos(camPsi), s=Math.sin(camPsi);
+  const x = p.x*c - p.y*s, y = p.x*s + p.y*c;
+  const ca=Math.cos(camA), sa=Math.sin(camA);
+  return {x:x, y:y*ca + p.z*sa, d:-y*sa + p.z*ca};
+}
+
+function drawProof(dt){
+  const w = pc.clientWidth|0, h = pc.clientHeight|0;
+  if(!w || !h) return;
+  const dpr = Math.min(window.devicePixelRatio, 2);
+  if(PW!==w || PH!==h){ PW=w; PH=h; pc.width=w*dpr; pc.height=h*dpr; }
+  px.setTransform(dpr,0,0,dpr,0,0);
+  px.clearRect(0,0,w,h);
+  px.textBaseline = 'alphabetic';
+  const C = CASES[ci];
+
+  /* ---- header ---- */
+  px.font = '700 10.5px ui-monospace,Menlo,Consolas,monospace';
+  px.fillStyle = '#ffcf80'; px.fillText('WHY THERE ARE EXACTLY FIVE', 13, 20);
+  px.font = '10px ui-monospace,Menlo,Consolas,monospace'; px.fillStyle = '#6d5c44';
+  px.textAlign = 'right';
+  px.fillText(C ? 'CASE '+(ci+1)+'/'+CASES.length : 'Q.E.D.', w-13, 20);
+  px.textAlign = 'left';
+  px.fillStyle = '#8d7a5c';
+  px.fillText('a corner needs ≥3 faces summing to <360°', 13, 34);
+  px.strokeStyle = 'rgba(255,196,110,.14)'; px.lineWidth = 1;
+  px.beginPath(); px.moveTo(13,42.5); px.lineTo(w-13,42.5); px.stroke();
+
+  if(!C){ drawQED(w,h); return; }
+
+  /* ---- animation state ---- */
+  const th = interior(C.n), acc = accepted(C), sum = C.k*th;
+  let shown = C.k, grow = 1;
+  if(phase === 0){
+    const p = Math.min(1, pt/phaseDur()) * C.k;
+    shown = Math.min(C.k, Math.floor(p)+1);
+    grow = Math.min(1, (p - Math.floor(p))*1.6);
+  }
+  const live = phase===0 ? Math.min(sum, ((shown-1)+ease(grow))*th) : sum;
+  let tf = 0;
+  if(phase >= 2) tf = phase===2 ? ease(Math.min(1, pt/phaseDur())) : 1;
+  fold = acc ? tf : 0;
+  const aimA = phase<2 ? 0 : (acc ? 0.95 : 0.42);
+  camA += (aimA - camA) * Math.min(1, dt*3.2);
+  camPsi += dt * 0.30 * Math.min(1, camA/0.35);
+
+  /* ---- stage ---- */
+  const sx0=16, sx1=w-16, sy0=50, sy1=h-78;
+  const {polys, off} = fanPolys(C.n, C.k, fold);
+  const P = polys.map(poly => poly.map(project));
+  let mnx=1e9,mxx=-1e9,mny=1e9,mxy=-1e9;
+  for(const poly of P) for(const q of poly){
+    if(q.x<mnx)mnx=q.x; if(q.x>mxx)mxx=q.x; if(q.y<mny)mny=q.y; if(q.y>mxy)mxy=q.y;
+  }
+  const tS = Math.min((sx1-sx0)/Math.max(0.4,mxx-mnx), (sy1-sy0)/Math.max(0.4,mxy-mny))*0.84;
+  const tX = (mnx+mxx)/2, tY = (mny+mxy)/2;
+  if(!fitInit){ fitS=tS; fitX=tX; fitY=tY; fitInit=true; }
+  const lerp = Math.min(1, dt*5.5);
+  fitS += (tS-fitS)*lerp; fitX += (tX-fitX)*lerp; fitY += (tY-fitY)*lerp;
+  const cx = (sx0+sx1)/2, cy = (sy0+sy1)/2;
+  const SX = q => cx + (q.x-fitX)*fitS, SY = q => cy - (q.y-fitY)*fitS;
+
+  /* angle sector at the apex, only meaningful while flat */
+  if(camA < 0.06){
+    const fade = 1 - camA/0.06, r = 0.46;
+    px.beginPath();
+    px.arc(SX({x:0,y:0}), SY({x:0,y:0}), r*fitS, 0, Math.PI*2);
+    px.strokeStyle = 'rgba(255,120,120,'+(0.34*fade)+')';
+    px.setLineDash([3,3]); px.lineWidth = 1; px.stroke(); px.setLineDash([]);
+    const a0 = off, a1 = off + live*Math.PI/180;
+    px.beginPath(); px.moveTo(SX({x:0,y:0}), SY({x:0,y:0}));
+    for(let i=0;i<=48;i++){ const a=a0+(a1-a0)*i/48; const q=project(v3(r*Math.cos(a), r*Math.sin(a),0)); px.lineTo(SX(q),SY(q)); }
+    px.closePath();
+    px.fillStyle = (live>=359.99?'rgba(255,96,80,':'rgba(120,255,170,')+(0.15*fade)+')'; px.fill();
+    px.strokeStyle = (live>=359.99?'rgba(255,120,100,':'rgba(150,255,190,')+(0.5*fade)+')'; px.stroke();
+  }
+
+  /* polygons, painter-sorted */
+  const order = P.map((poly,i)=>({i, poly, d:poly.reduce((s,q)=>s+q.d,0)/poly.length}))
+                 .sort((a,b)=>a.d-b.d);
+  for(const o of order){
+    if(o.i >= shown) continue;
+    const isNew = (o.i === shown-1) && phase===0;
+    const g = isNew ? ease(grow) : 1;
+    px.beginPath();
+    o.poly.forEach((q,j)=>{
+      const X = SX({x:0,y:0}) + (SX(q)-SX({x:0,y:0}))*g, Y = SY({x:0,y:0}) + (SY(q)-SY({x:0,y:0}))*g;
+      j ? px.lineTo(X,Y) : px.moveTo(X,Y);
+    });
+    px.closePath();
+    const shade = 0.5 + 0.5*Math.max(0,Math.min(1,(o.d+1)/2));
+    px.fillStyle = acc ? 'rgba(255,178,84,'+(0.10*shade*g)+')' : 'rgba(255,110,88,'+(0.10*shade*g)+')';
+    px.fill();
+    px.lineWidth = 1.35; px.lineJoin = 'round';
+    px.strokeStyle = acc ? 'rgba(255,214,140,'+(0.62+0.34*shade)*g+')' : 'rgba(255,140,116,'+(0.55+0.32*shade)*g+')';
+    px.stroke();
+  }
+  /* apex */
+  px.beginPath(); px.arc(SX({x:0,y:0}), SY({x:0,y:0}), 3.1, 0, Math.PI*2);
+  px.fillStyle = '#fff3d6'; px.fill();
+
+  /* ---- the 360 gauge ---- */
+  const gy = h-62, gx0 = 16, gx1 = w-16, MAXA = 440;
+  px.fillStyle = 'rgba(255,255,255,.05)'; px.fillRect(gx0, gy, gx1-gx0, 9);
+  const lim = gx0 + (gx1-gx0)*360/MAXA;
+  const wpx = (gx1-gx0)*Math.min(live,MAXA)/MAXA;
+  px.fillStyle = live<359.99 ? 'rgba(126,240,170,.72)' : 'rgba(255,104,86,.72)';
+  px.fillRect(gx0, gy, wpx, 9);
+  px.strokeStyle = 'rgba(255,120,110,.85)'; px.lineWidth = 1.4;
+  px.beginPath(); px.moveTo(lim, gy-4); px.lineTo(lim, gy+13); px.stroke();
+  px.font = '9px ui-monospace,Menlo,Consolas,monospace'; px.fillStyle = '#c8746a';
+  px.fillText('360°', lim+4, gy-6);
+
+  /* ---- readout ---- */
+  px.font = '700 13px ui-monospace,Menlo,Consolas,monospace';
+  px.fillStyle = '#ffe0ac';
+  px.fillText(C.k+' × '+FACE_NAME[C.n].split(' ').pop()+'  ('+th+'°)', 14, h-32);
+  px.textAlign = 'right';
+  px.fillStyle = live<359.99 ? '#8ef0b2' : '#ff8f7c';
+  px.fillText(live.toFixed(0)+'°', w-14, h-32);
+  px.textAlign = 'left';
+  px.font = '10.5px ui-monospace,Menlo,Consolas,monospace';
+  let msg, col;
+  if(phase === 0){ msg = C.k+' × '+th+'° … laying them round the vertex'; col = '#8d7a5c'; }
+  else if(!acc){
+    msg = sum===360 ? sum+'° = 360° — lies flat, never closes  ✗'
+                    : sum+'° > 360° — the faces overlap  ✗';
+    col = '#ff8f7c';
+  } else if(phase === 1){ msg = sum+'° < 360° — there is room to spare  ✓'; col = '#8ef0b2'; }
+  else { msg = 'it folds up → '+SOLIDS[C.s].nm; col = '#ffd48a'; }
+  px.fillStyle = col; px.fillText(msg, 14, h-14);
+  if(C.n===6 && phase>0){
+    px.font = '9.5px ui-monospace,Menlo,Consolas,monospace'; px.fillStyle='#6d5c44';
+    px.textAlign='right'; px.fillText('and 7,8,9… gons are worse', w-14, h-14); px.textAlign='left';
+  }
+  if(paused){ px.fillStyle='#6d5c44'; px.font='9px ui-monospace,Menlo,Consolas,monospace';
+              px.textAlign='right'; px.fillText('PAUSED', w-13, 34); px.textAlign='left'; }
+}
+
+function drawQED(w,h){
+  const rows = [
+    ['3 triangles','180°','TETRAHEDRON'], ['4 triangles','240°','OCTAHEDRON'],
+    ['5 triangles','300°','ICOSAHEDRON'], ['3 squares','270°','HEXAHEDRON'],
+    ['3 pentagons','324°','DODECAHEDRON']
+  ];
+  let y = 78;
+  px.font = '11px ui-monospace,Menlo,Consolas,monospace';
+  for(const [a,b,c] of rows){
+    px.fillStyle='#8d7a5c'; px.fillText(a, 20, y);
+    px.fillStyle='#8ef0b2'; px.textAlign='center'; px.fillText(b, w*0.5, y);
+    px.fillStyle='#ffe0ac'; px.textAlign='right'; px.fillText(c, w-20, y);
+    px.textAlign='left'; y += 24;
+  }
+  px.strokeStyle='rgba(255,196,110,.2)'; px.beginPath(); px.moveTo(20,y-12); px.lineTo(w-20,y-12); px.stroke();
+  px.font='700 15px ui-monospace,Menlo,Consolas,monospace'; px.fillStyle='#ffcf80';
+  px.textAlign='center'; px.fillText('EXACTLY FIVE.', w/2, y+16); px.textAlign='left';
+  px.font='10px ui-monospace,Menlo,Consolas,monospace'; px.fillStyle='#8d7a5c';
+  const txt = ['"No other figure, besides the said five figures,','can be constructed which is contained by','equilateral and equiangular figures equal','to one another."','','— Elements XIII.18, the last words of the work'];
+  let ty = y+42;
+  for(const line of txt){ px.textAlign='center'; px.fillText(line, w/2, ty); ty += 15; }
+  px.textAlign='left';
+}
+
+/* ================================ input ================================= */
+addEventListener('keydown', ev=>{
+  const k = ev.key;
+  if(k>='1' && k<='5'){ const i=+k-1; selectSolid(i); gotoCase(CASE_OF_SOLID[i]); phase=1; pt=0; }
+  else if(k==='ArrowRight'){ gotoCase(ci+1); }
+  else if(k==='ArrowLeft'){ gotoCase(ci-1); }
+  else if(k===' '){ paused=!paused; ev.preventDefault(); }
+  else if(k==='s'||k==='S'){ sphere.visible=!sphere.visible; }
+});
+[...D('picker').children].forEach(d=>d.addEventListener('click',()=>{
+  const i=+d.dataset.i; selectSolid(i); gotoCase(CASE_OF_SOLID[i]); phase=1; pt=0;
+}));
+
+/* ================================= loop ================================= */
+addEventListener('resize', ()=>{
+  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+  bloom.setSize(innerWidth, innerHeight);
+});
+
+const clock = new THREE.Clock();
+function animate(){
+  requestAnimationFrame(animate);
+  const dt = Math.min(0.05, clock.getDelta()), t = clock.elapsedTime;
+
+  if(tr < 1) tr = Math.min(1, tr + dt/0.85);
+  const a = ease(tr);
+  GROUPS.forEach((g,i)=>{
+    let op = 0, sc = 1, spin = 0;
+    if(i === cur){ op = a; sc = 0.55 + 0.45*a; spin = (1-a)*0.85; }
+    else if(i === prev && tr < 1){ op = 1-a; sc = 1 + 0.55*a; spin = -a*0.85; }
+    g.visible = op > 0.003;
+    if(!g.visible) return;
+    g.userData.fm.uniforms.uOp.value = op;
+    g.userData.lm.opacity = op; g.userData.pm.opacity = op;
+    g.scale.setScalar(sc);
+    g.rotation.set(0, spin, 0);
+  });
+  root.rotation.y = t*0.16;
+  root.rotation.x = Math.sin(t*0.21)*0.14;
+  sphere.rotation.y = -t*0.16;                    // keep the sphere still in world space
+
+  if(!paused) advance(dt);
+  drawProof(dt);
+
+  controls.update();
+  composer.render();
+}
+animate();
+</script>
+</body>
+</html>
