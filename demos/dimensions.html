@@ -272,7 +272,8 @@ function drawHead(){
 function drawDist(){
   var p=P.dist, in0=box(p,'1 · DISTANCE CONCENTRATION',
     N+' sampled points · histogram of distance to '+NREF+' random query points (measured, not modelled)','#7df9ff');
-  var srow=Math.min(56,in0.h*0.34), ph=in0.h-srow-8;
+  if(in0.h<50){ ctx.restore(); return; }
+  var srow=Math.min(62,in0.h*0.38), ph=in0.h-srow-8;
   var px=in0.x, py=in0.y, pw=in0.w;
   if(ph<40){ ctx.restore(); return; }
   // axis
@@ -329,9 +330,10 @@ function drawDist(){
   }
   // punchline
   var a=smoothstep(0.15,0.6,st.ratio);
-  ctx.textAlign='right'; ctx.font=F(11,1);
-  ctx.fillStyle='rgba(255,224,138,'+(0.22+0.78*a)+')';
-  ctx.fillText('→ 0  and  → 1 : nearest and farthest neighbours become indistinguishable',in0.x+in0.w,sy+12);
+  ctx.textAlign='right'; ctx.font=F(10.5,1);
+  ctx.fillStyle='rgba(255,224,138,'+(0.20+0.80*a)+')';
+  ctx.fillText('↑ → 0   and   ↑ → 1 :  nearest and farthest neighbours become indistinguishable',
+    in0.x+in0.w,in0.y+in0.h-1);
   ctx.textAlign='left';
   ctx.restore();
 }
@@ -340,8 +342,9 @@ function drawDist(){
 function drawShell(){
   var p=P.shell, in0=box(p,'2 · ALL THE VOLUME IS IN THE SHELL',
     'points drawn uniformly in a d-ball: r = u^(1/d)','#7dffb0');
+  if(in0.h<50){ ctx.restore(); return; }
   var f=shellFrac(dInt);
-  var cx=in0.x+in0.w*0.5, R=Math.min(in0.w*0.42,in0.h*0.40), cy=in0.y+R+6;
+  var cx=in0.x+in0.w*0.5, R=Math.max(6,Math.min(in0.w*0.42,in0.h*0.40)), cy=in0.y+R+6;
   var i;
   // annulus fill
   ctx.beginPath(); ctx.arc(cx,cy,R,0,6.2832); ctx.arc(cx,cy,R*0.9,0,6.2832,true);
@@ -358,8 +361,8 @@ function drawShell(){
     if(r>0.9){ ctx.fillStyle='rgba(255,224,138,.92)'; ctx.fillRect(x-1,y-1,2.2,2.2); }
     else { nin++; ctx.fillStyle='rgba(125,200,255,.42)'; ctx.fillRect(x-0.7,y-0.7,1.5,1.5); }
   }
-  ctx.fillStyle='rgba(125,255,176,.10)'; ctx.font=F(9.5); ctx.textAlign='center';
-  ctx.fillText('outer 10%',cx,cy-R-2);
+  ctx.fillStyle='rgba(255,224,138,.7)'; ctx.font=F(9); ctx.textAlign='center';
+  ctx.fillText('outer 10% shell',cx,cy-R-4);
   // number
   var ty=cy+R+Math.min(40,in0.h*0.20), fs=clamp(in0.w/8,16,38);
   ctx.textAlign='center'; ctx.textBaseline='alphabetic';
@@ -380,8 +383,9 @@ function drawShell(){
 function drawSphere(){
   var p=P.sphere, in0=box(p,'3 · THE SPHERE INSIDE THE CUBE VANISHES',
     'V_ball(d, r=½) / V_cube — closed form via log Γ','#ff7bd5');
+  if(in0.h<50){ ctx.restore(); return; }
   var l10=log10BallFrac(dInt), ratio=Math.pow(10,Math.max(l10,-300));
-  var S=Math.min(in0.w*0.62,in0.h*0.46), cx=in0.x+in0.w*0.5, cy=in0.y+S*0.5+6;
+  var S=Math.max(12,Math.min(in0.w*0.62,in0.h*0.46)), cx=in0.x+in0.w*0.5, cy=in0.y+S*0.5+6;
   var x0=cx-S/2, y0=cy-S/2, i;
   // corners glow
   var ca=clamp(-l10/6,0,1);
@@ -437,15 +441,15 @@ var MARKS=[[9.9,'people on Earth'],[17.6,'seconds since the Big Bang'],[18.9,'gr
 function drawSamp(){
   var p=P.samp, in0=box(p,'4 · SAMPLING IS HOPELESS',
     '10 bins per axis → 10^d cells must each get a point','#ff6b6b');
+  if(in0.h<50){ ctx.restore(); return; }
   var d=dInt, l10=d, i;
   var fs=clamp(in0.w/8,18,44), cx=in0.x+in0.w*0.5;
   ctx.textAlign='center'; ctx.textBaseline='alphabetic';
   ctx.shadowColor='rgba(255,107,107,.5)'; ctx.shadowBlur=14;
   pow10(cx,in0.y+fs*0.85,d,fs,'#ff6b6b','center'); ctx.shadowBlur=0;
   ctx.font=F(9.5); ctx.fillStyle='#6b8096';
-  var exact=(d<=15)?(' = '+Math.pow(10,d).toLocaleString('en-US')):'';
-  ctx.fillText('points needed for 10-bin coverage'+ (d<=15?'':''),cx,in0.y+fs*0.85+14);
-  if(exact) ctx.fillText(exact.slice(3),cx,in0.y+fs*0.85+27);
+  ctx.fillText('points needed to put one sample in every cell',cx,in0.y+fs*0.85+14);
+  if(d<=15) ctx.fillText('= '+Math.pow(10,d).toLocaleString('en-US'),cx,in0.y+fs*0.85+27);
   // log ladder
   var by=in0.y+fs*0.85+38, bwd=in0.w, bx=in0.x;
   ctx.fillStyle='rgba(120,200,255,.10)'; ctx.fillRect(bx,by,bwd,6);
