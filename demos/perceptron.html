@@ -44,7 +44,7 @@ function resize(){
   cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);
   cv.style.width=W+'px';cv.style.height=H+'px';
   ctx.setTransform(DPR,0,0,DPR,0,0);
-  cxp=W*0.5+W*0.10; cyp=H*0.5; SC=Math.min(W,H)*0.165;
+  cxp=W*0.5+Math.min(W*0.12,170); cyp=H*0.5; SC=Math.min(W*0.155,H*0.185);
 }
 window.addEventListener('resize',resize);
 function px(x){return cxp+x*SC;} function py(y){return cyp-y*SC;}
@@ -83,7 +83,7 @@ function shuffle(A){for(var i=A.length-1;i>0;i--){var j=Math.floor(Math.random()
 function predict(p){return (w[0]*p.x+w[1]*p.y+bias)>=0?1:-1;}
 
 // ---------- state ----------
-var idx=0,updates=0,errThisPass=0,lastErrs=-1,converged=false,goldFlash=0,cur=null;
+var idx=0,updates=0,errThisPass=0,lastErrs=-1,converged=false,goldFlash=0,cur=null,order=[];
 var phase='pick',phaseT=0,prevW=[0,0,0],speed=1,paused=false,oscHist=[],passCount=0,wasWrong=false,tPrev=0;
 resize();makeData(true);
 
@@ -104,10 +104,10 @@ function stepLogic(){
       oscHist.push(errThisPass); if(oscHist.length>140) oscHist.shift();
       if(errThisPass===0&&separable){converged=true;goldFlash=1;}
       errThisPass=0;idx=0;shuffle(order);
-      if(converged&&passCount>2){
-        // sit on the solution a while, then reseed with the non-separable set
-        if(passCount>4){separable=!separable;makeData(separable);return;}
-      }
+      // sit on the solution a while, then reseed with the non-separable set
+      if(converged&&passCount>4){separable=false;makeData(false);return;}
+      // after showing the endless oscillation, cycle back to a separable set
+      if(!separable&&passCount>22){separable=true;makeData(true);return;}
     }
     cur=pts[order[idx]];
     var pr=predict(cur);

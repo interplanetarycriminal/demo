@@ -112,7 +112,7 @@ function neighbours(i){
 }
 
 // ---- DBSCAN incremental state machine ----
-var label, isCore, ign, order=[], oi=0, queue=[], cid=0, cur=-1, probe=-1;
+var label, isCore, seen, ign, order=[], oi=0, queue=[], cid=0, cur=-1, probe=-1;
 var phase='scan';
 var COLS=['#00e5ff','#ff7ad9','#7dffb0','#ffd166','#b28dff','#ff8a5c','#5cffe0','#ff5c8a','#9dff5c','#5c9dff'];
 
@@ -121,6 +121,7 @@ function reset(){
   var n=pts.length;
   label=new Int32Array(n);   // 0 unvisited, -1 noise, >0 cluster id
   isCore=new Uint8Array(n);
+  seen=new Uint8Array(n);    // already queued for expansion (each point expands once)
   ign=new Float32Array(n);   // ignition animation 0..1
   order=[];
   for(var i=0;i<n;i++){order.push(i);pts[i].r0=0;}
@@ -134,18 +135,18 @@ var stats={clusters:0,noise:0};
 function step(){
   if(phase==='done')return;
   if(queue.length){
-    // expanding current cluster
+    // expanding current cluster (each point is dequeued exactly once)
     var j=queue.shift();
     probe=j;
     if(label[j]===NOISE){label[j]=cur;ign[j]=0.001;stats.noise--;}   // border point joins
-    if(label[j]!==UNVISITED && label[j]!==cur) return;
-    if(label[j]===UNVISITED){label[j]=cur;ign[j]=0.001;}
+    else if(label[j]===UNVISITED){label[j]=cur;ign[j]=0.001;}
+    else if(label[j]!==cur) return;                                  // owned by another cluster
     var nb=neighbours(j);
-    if(nb.length>=minPts){
+    if(nb.length>=minPts){                                           // core → keep flooding
       isCore[j]=1;
       for(var k=0;k<nb.length;k++){
         var q=nb[k];
-        if(label[q]===UNVISITED || label[q]===NOISE) queue.push(q);
+        if(!seen[q] && (label[q]===UNVISITED || label[q]===NOISE)){seen[q]=1;queue.push(q);}
       }
     }
     return;
@@ -161,10 +162,10 @@ function step(){
     return;
   }
   cid++;stats.clusters=cid;cur=cid;
-  isCore[i]=1;label[i]=cur;ign[i]=0.001;
+  isCore[i]=1;label[i]=cur;ign[i]=0.001;seen[i]=1;
   for(var m=0;m<nbs.length;m++){
     var q2=nbs[m];
-    if(label[q2]===UNVISITED||label[q2]===NOISE) queue.push(q2);
+    if(!seen[q2] && (label[q2]===UNVISITED||label[q2]===NOISE)){seen[q2]=1;queue.push(q2);}
   }
   oi++;
 }

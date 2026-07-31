@@ -70,7 +70,7 @@ var gridX,gridY,cw,ch,cols;
 function layout(){
   cols=Math.min(cap,Math.max(4,Math.floor((W-160)/86)));
   var rows=Math.ceil(cap/cols);
-  cw=Math.min(96,(W-160)/cols);
+  cw=Math.max(52,Math.min(96,(W-160)/cols));
   ch=52;
   gridX=(W-cw*cols)/2;
   gridY=H*0.40-(rows*(ch+34))/2+40;

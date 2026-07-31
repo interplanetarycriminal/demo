@@ -63,7 +63,7 @@ function layout(){
   treeBot=H*0.60;
   arrY=H*0.80;
   var n=Math.max(1,Math.max(heap.length,sorted.length,8));
-  cellW=Math.min(52,(W-80)/n);
+  cellW=Math.max(26,Math.min(52,(W-80)/n));
   arrX0=(W-cellW*n)/2+cellW/2;
 }
 function depthOf(i){return Math.floor(Math.log(i+1)/Math.LN2);}

@@ -170,8 +170,9 @@ newData();
 
 // layout
 function plotBox(){
-  var gw=Math.min(380,W*0.30), pad=26;
-  return {px:pad+180, py:70, pw:W-gw-pad*3-190, ph:H-140, gx:W-gw-pad, gy:H-pad-Math.min(300,H*0.42), gw:gw, gh:Math.min(300,H*0.42)};
+  var gw=Math.min(380,W*0.30), pad=26, left=Math.min(200,W*0.20);
+  return {px:pad+left, py:70, pw:Math.max(140,W-gw-pad*3-left-10), ph:Math.max(160,H-140),
+          gx:W-gw-pad, gy:H-pad-Math.min(300,H*0.42), gw:gw, gh:Math.min(300,H*0.42)};
 }
 var YR=4.2;
 function X2S(x,B){return B.px+(x+3.2)/6.4*B.pw;}
