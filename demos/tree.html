@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Living Fractal Tree</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#04060b}
+canvas{display:block;position:fixed;inset:0}
+#ui{position:fixed;top:10px;left:12px;z-index:10;font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;
+color:rgba(210,230,215,.85);background:rgba(4,10,8,.5);padding:8px 12px;
+border:1px solid rgba(120,255,180,.16);border-radius:8px;user-select:none}
+#ui b{color:#7dffb4;letter-spacing:.1em}
+#ui a{color:#ffb4f0;text-decoration:none}
+#ui a:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui"><b>LIVING TREE</b><br>mouse X: wind &middot; mouse Y: split angle &middot; click: regrow<br><a href="index.html">&larr; gallery</a></div>
+<script>
+(function(){
+'use strict';
+var canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+var W=2,H=2,DPR=1,mx=-1,my=-1;
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  W=window.innerWidth;H=window.innerHeight;
+  canvas.width=Math.round(W*DPR);canvas.height=Math.round(H*DPR);
+  canvas.style.width=W+'px';canvas.style.height=H+'px';
+  if(mx<0){mx=W*0.5;my=H*0.38;}
+}
+window.addEventListener('resize',resize);
+resize();
+function mulberry32(a){
+  return function(){
+    a|=0;a=a+0x6D2B79F5|0;
+    var t=Math.imul(a^a>>>15,1|a);
+    t=t+Math.imul(t^t>>>7,61|t)^t;
+    return((t^t>>>14)>>>0)/4294967296;
+  };
+}
+var PALS=[
+  {branch:'150,200,160',glow:'150,255,190',leaves:['#ffb7e0','#ffd6f2','#b6ffd0','#fff3b0']},
+  {branch:'110,190,120',glow:'92,255,157',leaves:['#42ff9e','#a8ff5e','#2cd9a0','#eaff7a']},
+  {branch:'210,150,90',glow:'255,179,92',leaves:['#ff9d3a','#ff5e3a','#ffd23a','#ff7c50']},
+  {branch:'90,210,255',glow:'70,216,255',leaves:['#ff3af0','#3affd5','#c83aff','#5e8cff']}
+];
+var MAXD=9,tree=null,pal=PALS[1],seed=90210,growStart=0,petals=[];
+function gen(){
+  var rng=mulberry32(seed);
+  pal=PALS[Math.floor(rng()*PALS.length)];
+  function node(depth,len){
+    var n={len:len,phase:rng()*6.283,leaf:Math.floor(rng()*4),rel:0,kids:[]};
+    var end=depth>=MAXD||(depth>4&&rng()<0.07);
+    if(!end){
+      var cnt=rng()<0.82?2:3,k;
+      for(k=0;k<cnt;k++){
+        var c=node(depth+1,len*(0.66+rng()*0.16));
+        var side=cnt===2?(k===0?-1:1):(k-1);
+        c.rel=side===0?(rng()-0.5)*0.35:side*(0.55+rng()*0.5);
+        n.kids.push(c);
+      }
+    }
+    return n;
+  }
+  tree=node(0,1);
+  growStart=performance.now()/1000;
+}
+gen();
+window.addEventListener('pointermove',function(e){mx=e.clientX;my=e.clientY});
+canvas.addEventListener('pointerdown',function(){
+  seed=(Math.random()*1e9)|0;
+  gen();
+});
+var t=0,grow=0,windX=0,gust=0,splitA=0.6,scaleLen=100;
+function drawNode(n,depth){
+  var vis=grow*(MAXD+1.5)-depth;
+  if(vis<=0)return;
+  if(vis>1)vis=1;
+  var sway=Math.sin(t*(0.6+depth*0.3)+n.phase)*(0.005+depth*0.007)*(1+0.8*gust);
+  var bend=windX*(0.018*depth+0.02);
+  ctx.save();
+  ctx.rotate(n.rel*splitA+sway+bend);
+  var L=n.len*scaleLen*vis;
+  var w=Math.pow((MAXD+1-depth)/(MAXD+1),1.7)*(scaleLen*0.06)+0.4;
+  ctx.strokeStyle='rgba('+pal.branch+','+(0.35+depth*0.05)+')';
+  ctx.lineWidth=w;
+  if(depth===0)ctx.shadowBlur=14;
+  ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(0,-L);ctx.stroke();
+  if(depth===0)ctx.shadowBlur=0;
+  if(n.kids.length===0){
+    if(vis>0.85){
+      var lc=pal.leaves[n.leaf];
+      var pulse=0.55+0.45*Math.sin(t*1.7+n.phase*3);
+      ctx.globalAlpha=0.15*pulse+0.04;
+      ctx.fillStyle=lc;
+      ctx.beginPath();ctx.arc(0,-L,6.5,0,6.283);ctx.fill();
+      ctx.globalAlpha=0.75*pulse+0.15;
+      ctx.beginPath();ctx.arc(0,-L,2.3,0,6.283);ctx.fill();
+      ctx.globalAlpha=1;
+      if(petals.length<140&&Math.random()<0.0022&&grow>=1){
+        var m=ctx.getTransform();
+        petals.push({
+          x:(m.c*(-L)+m.e)/DPR,y:(m.d*(-L)+m.f)/DPR,
+          vx:(Math.random()-0.5)*0.3,vy:0.1+Math.random()*0.25,
+          ph:Math.random()*6.28,life:1,c:lc,r:1.6+Math.random()*1.6
+        });
+      }
+    }
+  }else{
+    ctx.translate(0,-L);
+    for(var k=0;k<n.kids.length;k++)drawNode(n.kids[k],depth+1);
+  }
+  ctx.restore();
+}
+function frame(){
+  t=performance.now()/1000;
+  grow=Math.min(1,(t-growStart)/3);
+  windX=(mx/W-0.5)*2;
+  gust=Math.sin(t*0.6)*0.5+Math.sin(t*0.23+1.7)*0.5;
+  splitA=0.3+(my/Math.max(1,H))*0.9;
+  scaleLen=H*0.23;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.globalCompositeOperation='source-over';
+  ctx.fillStyle='#04060b';
+  ctx.fillRect(0,0,W,H);
+  var rg=ctx.createRadialGradient(W/2,H*0.55,0,W/2,H*0.55,Math.max(W,H)*0.7);
+  rg.addColorStop(0,'rgba('+pal.glow+',0.07)');
+  rg.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=rg;ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='rgba('+pal.glow+',0.12)';
+  ctx.fillRect(0,H-2,W,2);
+  ctx.globalCompositeOperation='lighter';
+  ctx.lineCap='round';
+  ctx.shadowColor='rgba('+pal.glow+',0.8)';
+  ctx.shadowBlur=0;
+  ctx.save();
+  ctx.translate(W/2,H-4);
+  drawNode(tree,0);
+  ctx.restore();
+  for(var i=petals.length-1;i>=0;i--){
+    var pt=petals[i];
+    pt.vy=Math.min(0.9,pt.vy+0.008);
+    pt.x+=pt.vx+Math.sin(t*2+pt.ph)*0.5+windX*1.2;
+    pt.y+=pt.vy;
+    pt.life-=0.005;
+    if(pt.life<=0||pt.y>H+12){petals.splice(i,1);continue;}
+    ctx.globalAlpha=pt.life*0.85;
+    ctx.fillStyle=pt.c;
+    ctx.beginPath();ctx.arc(pt.x,pt.y,pt.r,0,6.283);ctx.fill();
+  }
+  ctx.globalAlpha=1;
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

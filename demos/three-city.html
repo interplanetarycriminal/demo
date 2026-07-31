@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>three-city</title>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#000}
+canvas{display:block}
+#ui{position:fixed;top:12px;left:12px;z-index:10;font:11px/1.7 monospace;color:#c9d4ff;background:rgba(5,8,20,.55);padding:9px 12px;border:1px solid rgba(140,160,255,.25);border-radius:6px}
+#ui b{color:#fff;letter-spacing:.12em}
+#ui a{color:#8ab4ff;text-decoration:none}
+#ui a:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div id="ui"><b>NEON CITY</b> &mdash; endless flythrough<br>auto-cruise &middot; drag look around &middot; scroll zoom<br><a href="index.html">&larr; gallery</a></div>
+<script type="module">
+import * as THREE from 'three';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+import {EffectComposer} from 'three/addons/postprocessing/EffectComposer.js';
+import {RenderPass} from 'three/addons/postprocessing/RenderPass.js';
+import {UnrealBloomPass} from 'three/addons/postprocessing/UnrealBloomPass.js';
+import {OutputPass} from 'three/addons/postprocessing/OutputPass.js';
+
+const FOGC = 0x04050e;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(FOGC);
+scene.fog = new THREE.Fog(FOGC, 25, 230);
+
+const camera = new THREE.PerspectiveCamera(62, innerWidth/innerHeight, 0.1, 500);
+camera.position.set(0, 16, 40);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.07;
+controls.target.set(0, 12, -8);
+controls.minDistance = 8;
+controls.maxDistance = 120;
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 1.0, 0.55, 0.32));
+composer.addPass(new OutputPass());
+
+// ---- lit-window canvas texture ----
+const cv = document.createElement('canvas');
+cv.width = 64; cv.height = 128;
+const ctx = cv.getContext('2d');
+ctx.fillStyle = '#04040a';
+ctx.fillRect(0, 0, 64, 128);
+const winColors = ['#ffd9a0','#ffe6bf','#9fd4ff','#ffb37c','#7fffe9'];
+for(let y=0; y<16; y++){
+  for(let x=0; x<8; x++){
+    if(Math.random() < 0.34){
+      ctx.fillStyle = winColors[(Math.random()*winColors.length)|0];
+      ctx.globalAlpha = 0.35 + Math.random()*0.65;
+      ctx.fillRect(x*8+2, y*8+2, 4, 4);
+    }
+  }
+}
+ctx.globalAlpha = 1;
+const tex = new THREE.CanvasTexture(cv);
+tex.colorSpace = THREE.SRGBColorSpace;
+tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+
+const sideMat = new THREE.MeshStandardMaterial({
+  color: 0x0d0f18, emissive: 0xffffff, emissiveMap: tex,
+  emissiveIntensity: 1.25, roughness: 0.85, metalness: 0.15
+});
+const topMat = new THREE.MeshStandardMaterial({color: 0x0b0d16, roughness: 0.95});
+const mats = [sideMat, sideMat, topMat, topMat, sideMat, sideMat];
+const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+boxGeo.translate(0, 0.5, 0); // base sits on ground
+
+// ---- building layout: periodic in z (period P), duplicated so wrap is seamless ----
+const P = 420, STEP = 13;
+const list = [];
+for(let side=-1; side<=1; side+=2){
+  for(let k=0; k<11; k++){
+    const cx = side * (15 + k*STEP);
+    for(let r=0; r<Math.floor(P/STEP); r++){
+      if(r % 6 === 5) continue;            // cross streets
+      if(Math.random() < 0.08) continue;   // vacant lots
+      const cz = -P/2 + r*STEP + STEP/2;
+      const near = Math.abs(cx) < 45;
+      let h = 5 + Math.pow(Math.random(), 2.4) * (near ? 52 : 38);
+      if(Math.random() < 0.05) h += 25;    // spires
+      list.push({x: cx+(Math.random()*2-1)*2, z: cz+(Math.random()*2-1)*1.5,
+                 w: 5+Math.random()*5, h, d: 5+Math.random()*5});
+      if(Math.random() < 0.4){
+        list.push({x: cx+(Math.random()*2-1)*3, z: cz+(Math.random()*2-1)*3,
+                   w: 3+Math.random()*3, h: 4+Math.random()*10, d: 3+Math.random()*3});
+      }
+    }
+  }
+}
+const city = new THREE.InstancedMesh(boxGeo, mats, list.length*2);
+city.frustumCulled = false;
+const dummy = new THREE.Object3D();
+let idx = 0;
+for(const b of list){
+  for(const zo of [0, -P]){
+    dummy.position.set(b.x, 0, b.z + zo);
+    dummy.scale.set(b.w, b.h, b.d);
+    dummy.updateMatrix();
+    city.setMatrixAt(idx++, dummy.matrix);
+  }
+}
+city.instanceMatrix.needsUpdate = true;
+scene.add(city);
+
+// ---- ground + neon avenue strips ----
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(900, 900),
+  new THREE.MeshStandardMaterial({color: 0x07080f, roughness: 0.9, metalness: 0.4})
+);
+ground.rotation.x = -Math.PI/2;
+scene.add(ground);
+
+const stripGeo = new THREE.BoxGeometry(0.35, 0.1, P*2.2);
+const stripA = new THREE.Mesh(stripGeo, new THREE.MeshBasicMaterial({color: 0x00e5ff}));
+stripA.position.set(-7.5, 0.05, -P/2);
+const stripB = new THREE.Mesh(stripGeo, new THREE.MeshBasicMaterial({color: 0xff3fa4}));
+stripB.position.set(7.5, 0.05, -P/2);
+scene.add(stripA, stripB);
+
+// ---- lights (rig follows the camera path) ----
+const rig = new THREE.Group();
+scene.add(rig);
+const l1 = new THREE.PointLight(0xff40c0, 1600, 160, 1.8); l1.position.set(-20, 26, -30);
+const l2 = new THREE.PointLight(0x30c8ff, 1600, 160, 1.8); l2.position.set(22, 30, -70);
+const l3 = new THREE.PointLight(0xffa040, 1200, 140, 1.8); l3.position.set(0, 20, -130);
+rig.add(l1, l2, l3);
+scene.add(new THREE.HemisphereLight(0x2a3570, 0x05060a, 0.5));
+const moon = new THREE.DirectionalLight(0x91a8ff, 0.35);
+moon.position.set(-40, 80, 20);
+scene.add(moon);
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+});
+
+// ---- auto flythrough: target glides down the avenue, camera dragged along; wrap by P ----
+const clock = new THREE.Clock();
+const SPEED = 26;
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  const dz = SPEED * dt;
+  camera.position.z -= dz;
+  controls.target.z -= dz;
+  if(controls.target.z < -P/2){
+    camera.position.z += P;
+    controls.target.z += P;
+  }
+  rig.position.z = controls.target.z;
+  controls.update();
+  composer.render();
+});
+</script>
+</body>
+</html>

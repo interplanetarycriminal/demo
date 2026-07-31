@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Stable Fluids</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#000}
+canvas{display:block;position:fixed;inset:0}
+#ui{position:fixed;top:10px;left:12px;z-index:10;font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;
+color:rgba(190,225,255,.85);background:rgba(4,8,18,.5);padding:8px 12px;
+border:1px solid rgba(120,180,255,.18);border-radius:8px;user-select:none}
+#ui b{color:#7fd8ff;letter-spacing:.1em}
+#ui a{color:#ff9ff5;text-decoration:none}
+#ui a:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui"><b>STABLE FLUIDS</b><br>drag to stir dye &middot; C clears<br><a href="index.html">&larr; gallery</a></div>
+<script>
+(function(){
+'use strict';
+var canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+var W=2,H=2,DPR=1,GW=128,GH=72,size=0;
+var u,v,u0,v0,dr,dg,db,s0,pr,dv;
+var gcan=document.createElement('canvas'),gctx=gcan.getContext('2d'),img=null;
+function IX(i,j){return i+(GW+2)*j}
+function alloc(){
+  size=(GW+2)*(GH+2);
+  u=new Float32Array(size);v=new Float32Array(size);
+  u0=new Float32Array(size);v0=new Float32Array(size);
+  dr=new Float32Array(size);dg=new Float32Array(size);db=new Float32Array(size);
+  s0=new Float32Array(size);pr=new Float32Array(size);dv=new Float32Array(size);
+  gcan.width=GW;gcan.height=GH;img=gctx.createImageData(GW,GH);
+}
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  W=window.innerWidth;H=window.innerHeight;
+  canvas.width=Math.round(W*DPR);canvas.height=Math.round(H*DPR);
+  canvas.style.width=W+'px';canvas.style.height=H+'px';
+  GW=128;GH=Math.max(24,Math.min(220,Math.round(GW*H/Math.max(1,W))));
+  alloc();
+}
+window.addEventListener('resize',resize);
+resize();
+function setBnd(b,x){
+  var i,j;
+  for(i=1;i<=GW;i++){
+    x[IX(i,0)]=b===2?-x[IX(i,1)]:x[IX(i,1)];
+    x[IX(i,GH+1)]=b===2?-x[IX(i,GH)]:x[IX(i,GH)];
+  }
+  for(j=1;j<=GH;j++){
+    x[IX(0,j)]=b===1?-x[IX(1,j)]:x[IX(1,j)];
+    x[IX(GW+1,j)]=b===1?-x[IX(GW,j)]:x[IX(GW,j)];
+  }
+  x[IX(0,0)]=.5*(x[IX(1,0)]+x[IX(0,1)]);
+  x[IX(0,GH+1)]=.5*(x[IX(1,GH+1)]+x[IX(0,GH)]);
+  x[IX(GW+1,0)]=.5*(x[IX(GW,0)]+x[IX(GW+1,1)]);
+  x[IX(GW+1,GH+1)]=.5*(x[IX(GW,GH+1)]+x[IX(GW+1,GH)]);
+}
+function linSolve(b,x,x0){
+  var k,i,j,row=GW+2;
+  for(k=0;k<10;k++){
+    for(j=1;j<=GH;j++){
+      var o=j*row;
+      for(i=1;i<=GW;i++){
+        var id=o+i;
+        x[id]=(x0[id]+x[id-1]+x[id+1]+x[id-row]+x[id+row])*0.25;
+      }
+    }
+    setBnd(b,x);
+  }
+}
+function project(){
+  var i,j,row=GW+2,o,id;
+  for(j=1;j<=GH;j++){o=j*row;for(i=1;i<=GW;i++){id=o+i;
+    dv[id]=-0.5*(u[id+1]-u[id-1]+v[id+row]-v[id-row]);pr[id]=0;}}
+  setBnd(0,dv);setBnd(0,pr);
+  linSolve(0,pr,dv);
+  for(j=1;j<=GH;j++){o=j*row;for(i=1;i<=GW;i++){id=o+i;
+    u[id]-=0.5*(pr[id+1]-pr[id-1]);v[id]-=0.5*(pr[id+row]-pr[id-row]);}}
+  setBnd(1,u);setBnd(2,v);
+}
+function advect(b,d,d0,uu,vv){
+  var i,j;
+  for(j=1;j<=GH;j++)for(i=1;i<=GW;i++){
+    var id=IX(i,j),x=i-uu[id],y=j-vv[id];
+    if(x<0.5)x=0.5;else if(x>GW+0.5)x=GW+0.5;
+    if(y<0.5)y=0.5;else if(y>GH+0.5)y=GH+0.5;
+    var i0=x|0,i1=i0+1,j0=y|0,j1=j0+1;
+    var s1=x-i0,s=1-s1,t1=y-j0,t=1-t1;
+    d[id]=s*(t*d0[IX(i0,j0)]+t1*d0[IX(i0,j1)])+s1*(t*d0[IX(i1,j0)]+t1*d0[IX(i1,j1)]);
+  }
+  setBnd(b,d);
+}
+function splat(cx,cy,vx,vy,cr,cg,cb){
+  var R=3,ci=Math.round(cx),cj=Math.round(cy);
+  for(var dj=-R;dj<=R;dj++)for(var di=-R;di<=R;di++){
+    var i=ci+di,j=cj+dj;
+    if(i<1||i>GW||j<1||j>GH)continue;
+    var w=Math.exp(-(di*di+dj*dj)/3.5),id=IX(i,j);
+    u[id]+=vx*w;v[id]+=vy*w;
+    dr[id]+=cr*w;dg[id]+=cg*w;db[id]+=cb*w;
+  }
+}
+function hsv(h,sa,vv){
+  h=((h%1)+1)%1;
+  var i=Math.floor(h*6),f=h*6-i,pp=vv*(1-sa),q=vv*(1-f*sa),tt=vv*(1-(1-f)*sa),m=i%6;
+  var r=[vv,q,pp,pp,tt,vv][m],g=[tt,vv,vv,q,pp,pp][m],b=[pp,pp,tt,vv,vv,q][m];
+  return [r,g,b];
+}
+var mx=0,my=0,pmx=0,pmy=0,down=false;
+canvas.addEventListener('pointerdown',function(e){
+  down=true;mx=pmx=e.clientX;my=pmy=e.clientY;
+  try{canvas.setPointerCapture(e.pointerId)}catch(err){}
+});
+window.addEventListener('pointermove',function(e){mx=e.clientX;my=e.clientY});
+window.addEventListener('pointerup',function(){down=false});
+window.addEventListener('keydown',function(e){
+  if(e.key==='c'||e.key==='C'){u.fill(0);v.fill(0);dr.fill(0);dg.fill(0);db.fill(0);}
+});
+var t=0;
+function frame(){
+  t+=1/60;
+  var hue=(t*0.07)%1,k,i,j,n,tmp;
+  for(k=0;k<2;k++){
+    var a=t*0.25+k*Math.PI,R0=Math.min(GW,GH)*0.32;
+    var ex=GW/2+Math.cos(a)*R0*1.35,ey=GH/2+Math.sin(a*0.9)*R0;
+    var col=hsv(hue+k*0.45,0.85,1);
+    splat(ex,ey,-Math.sin(a)*0.35,Math.cos(a)*0.35,col[0]*0.022,col[1]*0.022,col[2]*0.022);
+  }
+  if(down){
+    var gx=mx/W*GW,gy=my/H*GH;
+    var dvx=(mx-pmx)/W*GW,dvy=(my-pmy)/H*GH;
+    var sp=Math.sqrt(dvx*dvx+dvy*dvy);
+    if(sp>6){dvx*=6/sp;dvy*=6/sp;}
+    var c2=hsv(hue*3.5,0.9,1);
+    splat(gx,gy,dvx*1.6,dvy*1.6,c2[0]*0.5,c2[1]*0.5,c2[2]*0.5);
+  }
+  pmx=mx;pmy=my;
+  project();
+  tmp=u0;u0=u;u=tmp;tmp=v0;v0=v;v=tmp;
+  advect(1,u,u0,u0,v0);
+  advect(2,v,v0,u0,v0);
+  project();
+  for(n=0;n<size;n++){u[n]*=0.995;v[n]*=0.995;}
+  s0.set(dr);advect(0,dr,s0,u,v);
+  s0.set(dg);advect(0,dg,s0,u,v);
+  s0.set(db);advect(0,db,s0,u,v);
+  var fade=0.988;
+  for(n=0;n<size;n++){dr[n]*=fade;dg[n]*=fade;db[n]*=fade;}
+  var data=img.data,pi=0;
+  for(j=1;j<=GH;j++)for(i=1;i<=GW;i++){
+    var id=IX(i,j),rr=dr[id]*255,gg=dg[id]*255,bb=db[id]*255;
+    data[pi++]=rr>255?255:rr;
+    data[pi++]=gg>255?255:gg;
+    data[pi++]=bb>255?255:bb;
+    data[pi++]=255;
+  }
+  gctx.putImageData(img,0,0);
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.imageSmoothingEnabled=true;
+  ctx.drawImage(gcan,0,0,W,H);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

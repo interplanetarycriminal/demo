@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>three-galaxy</title>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#000}
+canvas{display:block}
+#ui{position:fixed;top:12px;left:12px;z-index:10;font:11px/1.7 monospace;color:#c9d4ff;background:rgba(5,8,20,.55);padding:9px 12px;border:1px solid rgba(140,160,255,.25);border-radius:6px}
+#ui b{color:#fff;letter-spacing:.12em}
+#ui a{color:#8ab4ff;text-decoration:none}
+#ui a:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div id="ui"><b>SPIRAL GALAXY</b> &mdash; 120,000 stars<br>drag orbit &middot; scroll dive &middot; click regenerate<br><a href="index.html">&larr; gallery</a></div>
+<script type="module">
+import * as THREE from 'three';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+import {EffectComposer} from 'three/addons/postprocessing/EffectComposer.js';
+import {RenderPass} from 'three/addons/postprocessing/RenderPass.js';
+import {UnrealBloomPass} from 'three/addons/postprocessing/UnrealBloomPass.js';
+import {OutputPass} from 'three/addons/postprocessing/OutputPass.js';
+
+const COUNT = 120000;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x000004);
+
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.05, 300);
+camera.position.set(0, 7.5, 17);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.minDistance = 0.3;
+controls.maxDistance = 80;
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.95, 0.65, 0);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+function gauss(){ return (Math.random()+Math.random()+Math.random()+Math.random()-2)*0.7; }
+
+function randomParams(first){
+  const h = Math.random();
+  return {
+    arms:    first ? 4 : 2 + Math.floor(Math.random()*5),
+    radius:  12 + Math.random()*4,
+    spin:    (0.22 + Math.random()*0.14) * (first || Math.random()<0.5 ? 1 : -1),
+    scatter: 0.55 + Math.random()*0.5,
+    bulge:   0.16,
+    bulgeR:  2.6 + Math.random()*1.2,
+    core: new THREE.Color().setHSL(0.10, 0.65, 0.85),
+    arm:  new THREE.Color().setHSL(first ? 0.66 : h, 0.85, 0.58),
+    rim:  new THREE.Color().setHSL(first ? 0.75 : (h+0.07)%1, 0.9, 0.30)
+  };
+}
+
+function buildGeometry(p){
+  const pos = new Float32Array(COUNT*3);
+  const col = new Float32Array(COUNT*3);
+  const tmp = new THREE.Color();
+  for(let i=0;i<COUNT;i++){
+    const i3 = i*3;
+    let x, y, z, t;
+    if(Math.random() < p.bulge){
+      // central bulge: dense squashed spheroid
+      const r = Math.pow(Math.random(), 2.2) * p.bulgeR;
+      const u = Math.random()*2-1, phi = Math.random()*Math.PI*2, s = Math.sqrt(1-u*u);
+      x = s*Math.cos(phi)*r; z = s*Math.sin(phi)*r; y = u*r*0.6;
+      t = (r/p.radius)*0.5;
+    } else {
+      // spiral arms with gaussian scatter, thin disk
+      const r = Math.pow(Math.random(), 1.7) * p.radius + 0.15;
+      const ang = (i % p.arms)/p.arms * Math.PI*2 + r*p.spin;
+      const sc = p.scatter * (0.3 + 0.7*r/p.radius);
+      x = Math.cos(ang)*r + gauss()*sc;
+      z = Math.sin(ang)*r + gauss()*sc;
+      y = gauss()*sc*0.28*(1.15 - 0.75*r/p.radius);
+      t = r/p.radius;
+    }
+    pos[i3]=x; pos[i3+1]=y; pos[i3+2]=z;
+    if(t < 0.32) tmp.copy(p.core).lerp(p.arm, t/0.32);
+    else tmp.copy(p.arm).lerp(p.rim, Math.min((t-0.32)/0.68, 1));
+    const b = 0.72 + Math.random()*0.4;
+    col[i3]=tmp.r*b; col[i3+1]=tmp.g*b; col[i3+2]=tmp.b*b;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  return g;
+}
+
+const material = new THREE.PointsMaterial({
+  size: 0.045, sizeAttenuation: true, vertexColors: true,
+  transparent: true, opacity: 0.9,
+  blending: THREE.AdditiveBlending, depthWrite: false
+});
+
+let params = randomParams(true);
+const points = new THREE.Points(buildGeometry(params), material);
+scene.add(points);
+
+function regenerate(){
+  params = randomParams(false);
+  const old = points.geometry;
+  points.geometry = buildGeometry(params);
+  old.dispose();
+}
+
+// click (not drag) regenerates
+let downX=0, downY=0;
+renderer.domElement.addEventListener('pointerdown', e => { downX=e.clientX; downY=e.clientY; });
+renderer.domElement.addEventListener('click', e => {
+  if(Math.hypot(e.clientX-downX, e.clientY-downY) < 6) regenerate();
+});
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+});
+
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), 0.05);
+  points.rotation.y += dt * 0.055;
+  controls.update();
+  composer.render();
+});
+</script>
+</body>
+</html>

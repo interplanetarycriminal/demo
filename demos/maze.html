@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Neon Maze — carve &amp; solve</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#04060b;user-select:none}
+  canvas{position:fixed;inset:0;display:block;touch-action:none}
+  #ui{position:fixed;top:10px;left:12px;z-index:10;font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;
+      color:#9ef7ea;background:rgba(4,8,16,.6);padding:8px 12px;border:1px solid rgba(0,255,213,.28);
+      border-radius:8px;pointer-events:none}
+  #ui b{color:#fff;letter-spacing:.08em}
+  #ui a{color:#5df;pointer-events:auto}
+  #ui .dim{color:#6d8f9c}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <b>MAZE&nbsp;LAB</b> <span class="dim">carve &rarr; flood &rarr; solve</span><br>
+  <span class="dim">click: new maze &nbsp;&middot;&nbsp; [ / ]: cell size</span><br>
+  <a href="index.html">&larr; gallery</a>&nbsp; <span id="st" class="dim"></span>
+</div>
+<script>
+(function(){
+'use strict';
+var cv=document.getElementById('c'),ctx=cv.getContext('2d'),st=document.getElementById('st');
+var W=0,H=0,dpr=1,cell=24,ox=0,oy=0;
+var cols,rows,N,walls,visited,stack,phase,stepsPF;
+var dist,par,order,maxDist,wave,waveSpd,wavePtr,floodCols,path,pathProg,pulseT=0;
+var wallC,wallCtx,baseC,baseCtx;
+var DX=[0,1,0,-1],DY=[-1,0,1,0],BIT=[1,2,4,8],OPP=[4,8,1,2];
+
+function sizeCanvas(c){
+  c.width=Math.max(1,Math.round(W*dpr));
+  c.height=Math.max(1,Math.round(H*dpr));
+  c.getContext('2d').setTransform(dpr,0,0,dpr,0,0);
+}
+function resize(){
+  W=window.innerWidth;H=window.innerHeight;
+  dpr=Math.min(2,window.devicePixelRatio||1);
+  sizeCanvas(cv);
+  wallC=document.createElement('canvas');sizeCanvas(wallC);wallCtx=wallC.getContext('2d');
+  baseC=document.createElement('canvas');sizeCanvas(baseC);baseCtx=baseC.getContext('2d');
+  newMaze();
+}
+function newMaze(){
+  cols=Math.max(5,Math.floor((W-24)/cell));
+  rows=Math.max(5,Math.floor((H-24)/cell));
+  ox=Math.round((W-cols*cell)/2);oy=Math.round((H-rows*cell)/2);
+  N=cols*rows;
+  walls=new Uint8Array(N);walls.fill(15);
+  visited=new Uint8Array(N);
+  stack=[0];visited[0]=1;
+  phase='carve';
+  stepsPF=Math.max(3,Math.ceil(N/80));
+  wallCtx.clearRect(0,0,W,H);
+  st.textContent=cell+'px · '+cols+'×'+rows+' · carving';
+}
+function wallSegs(g,i){
+  var x=ox+(i%cols)*cell,y=oy+((i/cols)|0)*cell,w=walls[i];
+  if(w&1){g.moveTo(x,y);g.lineTo(x+cell,y);}
+  if(w&2){g.moveTo(x+cell,y);g.lineTo(x+cell,y+cell);}
+  if(w&4){g.moveTo(x,y+cell);g.lineTo(x+cell,y+cell);}
+  if(w&8){g.moveTo(x,y);g.lineTo(x,y+cell);}
+}
+function stampWalls(list){
+  wallCtx.beginPath();
+  for(var i=0;i<list.length;i++)wallSegs(wallCtx,list[i]);
+  wallCtx.lineWidth=3;wallCtx.strokeStyle='rgba(0,240,255,0.16)';wallCtx.stroke();
+  wallCtx.lineWidth=1.1;wallCtx.strokeStyle='rgba(150,255,250,0.95)';wallCtx.stroke();
+}
+function carveBatch(){
+  var popped=[];
+  for(var s=0;s<stepsPF&&stack.length;s++){
+    var cur=stack[stack.length-1],cx=cur%cols,cy=(cur/cols)|0,opts=[];
+    for(var d=0;d<4;d++){
+      var nx=cx+DX[d],ny=cy+DY[d];
+      if(nx>=0&&ny>=0&&nx<cols&&ny<rows&&!visited[ny*cols+nx])opts.push(d);
+    }
+    if(opts.length){
+      var d2=opts[(Math.random()*opts.length)|0];
+      var nb=(cy+DY[d2])*cols+cx+DX[d2];
+      walls[cur]&=~BIT[d2];walls[nb]&=~OPP[d2];
+      visited[nb]=1;stack.push(nb);
+    }else{stack.pop();popped.push(cur);}
+  }
+  if(popped.length)stampWalls(popped);
+  if(!stack.length)startFlood();
+}
+function startFlood(){
+  dist=new Int32Array(N);dist.fill(-1);
+  par=new Int32Array(N);
+  order=new Int32Array(N);
+  var qh=0,qt=0;
+  order[qt++]=0;dist[0]=0;par[0]=-1;
+  while(qh<qt){
+    var c=order[qh++],x=c%cols,y=(c/cols)|0,w=walls[c];
+    for(var d=0;d<4;d++){
+      if(w&BIT[d])continue;
+      var nb=(y+DY[d])*cols+(x+DX[d]);
+      if(dist[nb]<0){dist[nb]=dist[c]+1;par[nb]=c;order[qt++]=nb;}
+    }
+  }
+  maxDist=Math.max(1,dist[order[qt-1]]);
+  floodCols=[];
+  for(var b=0;b<64;b++)floodCols.push('hsla('+(185+b*2.6)+',100%,55%,0.34)');
+  wave=0;wavePtr=0;waveSpd=Math.max(1,maxDist/140);
+  phase='flood';
+  st.textContent=cell+'px · '+cols+'×'+rows+' · flooding';
+}
+function drawFlood(g,count){
+  var band=-1;
+  for(var p=0;p<count;p++){
+    var i=order[p],b=(dist[i]*63/maxDist)|0;
+    if(b>63)b=63;
+    if(b!==band){g.fillStyle=floodCols[b];band=b;}
+    g.fillRect(ox+(i%cols)*cell,oy+((i/cols)|0)*cell,cell,cell);
+  }
+}
+function startPath(){
+  path=[];
+  var c=N-1;
+  while(c>=0){path.push(c);if(c===0)break;c=par[c];}
+  path.reverse();
+  pathProg=0;phase='path';
+  baseCtx.fillStyle='#04060b';baseCtx.fillRect(0,0,W,H);
+  drawFlood(baseCtx,N);
+  baseCtx.drawImage(wallC,0,0,W,H);
+  st.textContent=cell+'px · '+cols+'×'+rows+' · solving';
+}
+function drawPathLine(){
+  var n=Math.min(path.length,Math.ceil(pathProg));
+  if(n<2)return;
+  ctx.beginPath();
+  for(var i=0;i<n;i++){
+    var c=path[i],x=ox+(c%cols)*cell+cell/2,y=oy+((c/cols)|0)*cell+cell/2;
+    if(i)ctx.lineTo(x,y);else ctx.moveTo(x,y);
+  }
+  var pulse=phase==='pulse'?0.6+0.4*Math.sin(pulseT*0.18):1;
+  ctx.lineJoin='round';ctx.lineCap='round';
+  ctx.lineWidth=Math.max(2,cell*0.34);ctx.strokeStyle='rgba(255,200,40,'+(0.16*pulse).toFixed(3)+')';ctx.stroke();
+  ctx.lineWidth=Math.max(1.5,cell*0.15);ctx.strokeStyle='rgba(255,216,80,'+(0.95*pulse).toFixed(3)+')';ctx.stroke();
+}
+function markers(){
+  ctx.fillStyle='#3f6';ctx.fillRect(ox+cell*0.25,oy+cell*0.25,cell*0.5,cell*0.5);
+  var ex=ox+(cols-1)*cell,ey=oy+(rows-1)*cell;
+  ctx.fillStyle='#f4a';ctx.fillRect(ex+cell*0.25,ey+cell*0.25,cell*0.5,cell*0.5);
+}
+function frame(){
+  if(phase==='carve')carveBatch();
+  ctx.fillStyle='#04060b';ctx.fillRect(0,0,W,H);
+  if(phase==='carve'){
+    ctx.fillStyle='rgba(0,255,220,0.07)';
+    for(var i=0;i<stack.length;i++){
+      var si=stack[i];
+      ctx.fillRect(ox+(si%cols)*cell+1,oy+((si/cols)|0)*cell+1,cell-2,cell-2);
+    }
+    var tail=Math.max(0,stack.length-30);
+    for(var k=tail;k<stack.length;k++){
+      var sk=stack[k],a=((k-tail)/30*0.25).toFixed(3);
+      ctx.fillStyle='rgba(120,255,235,'+a+')';
+      ctx.fillRect(ox+(sk%cols)*cell+1,oy+((sk/cols)|0)*cell+1,cell-2,cell-2);
+    }
+    ctx.drawImage(wallC,0,0,W,H);
+    if(stack.length){
+      ctx.beginPath();
+      for(var q=0;q<stack.length;q++)wallSegs(ctx,stack[q]);
+      ctx.lineWidth=3;ctx.strokeStyle='rgba(0,240,255,0.16)';ctx.stroke();
+      ctx.lineWidth=1.1;ctx.strokeStyle='rgba(150,255,250,0.95)';ctx.stroke();
+      var h=stack[stack.length-1],hx=ox+(h%cols)*cell+cell/2,hy=oy+((h/cols)|0)*cell+cell/2;
+      var g=ctx.createRadialGradient(hx,hy,0,hx,hy,cell*1.2);
+      g.addColorStop(0,'rgba(255,255,255,0.9)');
+      g.addColorStop(0.3,'rgba(0,255,220,0.5)');
+      g.addColorStop(1,'rgba(0,255,220,0)');
+      ctx.fillStyle=g;ctx.beginPath();ctx.arc(hx,hy,cell*1.2,0,6.2832);ctx.fill();
+    }
+  }else if(phase==='flood'){
+    wave+=waveSpd;
+    while(wavePtr<N&&dist[order[wavePtr]]<=wave)wavePtr++;
+    drawFlood(ctx,wavePtr);
+    ctx.fillStyle='rgba(220,255,255,0.5)';
+    var fq=wavePtr-1;
+    while(fq>=0&&dist[order[fq]]>=wave-1.5){
+      var fi=order[fq];
+      ctx.fillRect(ox+(fi%cols)*cell,oy+((fi/cols)|0)*cell,cell,cell);
+      fq--;
+    }
+    ctx.drawImage(wallC,0,0,W,H);
+    if(wave>maxDist+3)startPath();
+  }else{
+    ctx.drawImage(baseC,0,0,W,H);
+    if(phase==='path'){
+      pathProg+=Math.max(2,path.length/55);
+      if(pathProg>=path.length){
+        pathProg=path.length;phase='pulse';pulseT=0;
+        st.textContent=cell+'px · '+cols+'×'+rows+' · solved';
+      }
+      drawPathLine();
+    }else{
+      pulseT++;
+      if(pulseT>170)newMaze();
+      else drawPathLine();
+    }
+  }
+  markers();
+  requestAnimationFrame(frame);
+}
+cv.addEventListener('pointerdown',function(){newMaze();});
+window.addEventListener('keydown',function(e){
+  if(e.key==='['){cell=Math.max(12,cell-4);newMaze();}
+  else if(e.key===']'){cell=Math.min(48,cell+4);newMaze();}
+});
+window.addEventListener('resize',resize);
+resize();
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
