@@ -1,0 +1,339 @@
+<meta charset="utf-8">
+<title>DBSCAN — Density Clustering, Animated</title>
+<style>
+  html,body{margin:0;height:100%;background:#04060a;overflow:hidden}
+  canvas{display:block;position:fixed;inset:0}
+  #ui{position:fixed;top:14px;left:14px;z-index:10;background:rgba(6,10,16,.64);
+      border:1px solid rgba(120,255,180,.26);border-radius:8px;padding:12px 14px;
+      font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#c8ffe4;
+      max-width:344px;backdrop-filter:blur(6px)}
+  #ui h1{margin:0 0 6px;font-size:14px;letter-spacing:.14em;color:#6cffc0;text-transform:uppercase}
+  #ui p{margin:0 0 8px;color:#7fae98}
+  #ui .k{color:#ffe066}
+  #ui .row{color:#e6fff4}
+  #ui a{color:#ff7ad9;text-decoration:none}
+  #ui a:hover{text-decoration:underline}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>DBSCAN</h1>
+  <p>Points with enough neighbours inside eps ignite as cores and flood their cluster outward; the rest is noise.</p>
+  <div class="row"><span class="k">wheel</span> eps &nbsp; <span class="k">[ ]</span> minPts &nbsp; <span class="k">M</span> moons/blobs &nbsp; <span class="k">R</span> reseed &nbsp; <span class="k">SPACE</span> pause</div>
+  <div class="row" id="s1">eps = 40 px · minPts = 4</div>
+  <div class="row" id="s2">scanned 0 / 0</div>
+  <div class="row" id="s3">clusters 0 · noise 0</div>
+  <div class="row" id="s4">dataset: blobs</div>
+  <div class="row" id="s5">state: seeding</div>
+  <a href="index.html">← gallery</a>
+</div>
+<script>
+(function(){
+"use strict";
+var cv=document.getElementById('c'),ctx=cv.getContext('2d');
+var W=0,H=0,DPR=1;
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  W=window.innerWidth;H=window.innerHeight;
+  cv.width=Math.floor(W*DPR);cv.height=Math.floor(H*DPR);
+  cv.style.width=W+'px';cv.style.height=H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  build();
+}
+window.addEventListener('resize',resize);
+
+// ---- params ----
+var eps=44, minPts=4, moons=false, paused=false;
+var UNVISITED=0, NOISE=-1;
+var pts=[];
+
+function gauss(){var u=0,v=0;while(u===0)u=Math.random();while(v===0)v=Math.random();
+  return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+
+function build(){
+  pts=[];
+  var cxm=W/2, cym=H/2, S=Math.min(W,H)/900;
+  if(moons){
+    var R=Math.min(W,H)*0.30, n=210;
+    for(var i=0;i<n;i++){
+      var t=Math.PI*(i/n);
+      var jr=gauss()*R*0.055;
+      pts.push({x:cxm-R*0.35+Math.cos(t)*(R+jr), y:cym+R*0.30-Math.sin(t)*(R+jr)*0.85});
+      var t2=Math.PI*(i/n);
+      pts.push({x:cxm+R*0.35-Math.cos(t2)*(R+gauss()*R*0.055),
+                y:cym-R*0.30+Math.sin(t2)*(R+gauss()*R*0.055)*0.85});
+    }
+    for(i=0;i<70;i++) pts.push({x:Math.random()*W*0.86+W*0.07, y:Math.random()*H*0.82+H*0.09});
+  } else {
+    var K=4+Math.floor(Math.random()*2);
+    for(var k=0;k<K;k++){
+      var bx=W*(0.18+0.64*Math.random()), by=H*(0.20+0.60*Math.random());
+      var sd=(38+Math.random()*46)*Math.max(0.7,S*1.4), cnt=60+Math.floor(Math.random()*70);
+      for(i=0;i<cnt;i++) pts.push({x:bx+gauss()*sd, y:by+gauss()*sd*(0.55+Math.random()*0.8)});
+    }
+    for(i=0;i<90;i++) pts.push({x:Math.random()*W*0.9+W*0.05, y:Math.random()*H*0.86+H*0.07});
+  }
+  for(i=0;i<pts.length;i++){
+    var p=pts[i];
+    p.x=Math.max(24,Math.min(W-24,p.x));
+    p.y=Math.max(24,Math.min(H-24,p.y));
+    p.i=i;
+  }
+  reset();
+}
+
+// ---- spatial grid for neighbour queries ----
+var grid=null, cell=0, gw=0, gh=0;
+function buildGrid(){
+  cell=Math.max(12,eps);
+  gw=Math.ceil(W/cell)+1; gh=Math.ceil(H/cell)+1;
+  grid=new Array(gw*gh);
+  for(var i=0;i<grid.length;i++)grid[i]=[];
+  for(i=0;i<pts.length;i++){
+    var gx=Math.floor(pts[i].x/cell), gy=Math.floor(pts[i].y/cell);
+    grid[gy*gw+gx].push(i);
+  }
+}
+function neighbours(i){
+  var p=pts[i], out=[], e2=eps*eps;
+  var gx=Math.floor(p.x/cell), gy=Math.floor(p.y/cell);
+  for(var dy=-1;dy<=1;dy++)for(var dx=-1;dx<=1;dx++){
+    var X=gx+dx, Y=gy+dy;
+    if(X<0||Y<0||X>=gw||Y>=gh)continue;
+    var b=grid[Y*gw+X];
+    for(var k=0;k<b.length;k++){
+      var j=b[k], q=pts[j];
+      var ddx=q.x-p.x, ddy=q.y-p.y;
+      if(ddx*ddx+ddy*ddy<=e2) out.push(j);
+    }
+  }
+  return out;
+}
+
+// ---- DBSCAN incremental state machine ----
+var label, isCore, ign, order=[], oi=0, queue=[], cid=0, cur=-1, probe=-1;
+var phase='scan';
+var COLS=['#00e5ff','#ff7ad9','#7dffb0','#ffd166','#b28dff','#ff8a5c','#5cffe0','#ff5c8a','#9dff5c','#5c9dff'];
+
+function reset(){
+  buildGrid();
+  var n=pts.length;
+  label=new Int32Array(n);   // 0 unvisited, -1 noise, >0 cluster id
+  isCore=new Uint8Array(n);
+  ign=new Float32Array(n);   // ignition animation 0..1
+  order=[];
+  for(var i=0;i<n;i++){order.push(i);pts[i].r0=0;}
+  // scan in a sweeping left-to-right order so the eps circle reads as a sweep
+  order.sort(function(a,b){return (pts[a].x+pts[a].y*0.25)-(pts[b].x+pts[b].y*0.25);});
+  oi=0;queue=[];cid=0;cur=-1;probe=-1;phase='scan';
+  stats.clusters=0;stats.noise=0;
+}
+var stats={clusters:0,noise:0};
+
+function step(){
+  if(phase==='done')return;
+  if(queue.length){
+    // expanding current cluster
+    var j=queue.shift();
+    probe=j;
+    if(label[j]===NOISE){label[j]=cur;ign[j]=0.001;stats.noise--;}   // border point joins
+    if(label[j]!==UNVISITED && label[j]!==cur) return;
+    if(label[j]===UNVISITED){label[j]=cur;ign[j]=0.001;}
+    var nb=neighbours(j);
+    if(nb.length>=minPts){
+      isCore[j]=1;
+      for(var k=0;k<nb.length;k++){
+        var q=nb[k];
+        if(label[q]===UNVISITED || label[q]===NOISE) queue.push(q);
+      }
+    }
+    return;
+  }
+  // find next unvisited seed
+  while(oi<order.length && label[order[oi]]!==UNVISITED) oi++;
+  if(oi>=order.length){phase='done';probe=-1;return;}
+  var i=order[oi];probe=i;
+  var nbs=neighbours(i);
+  if(nbs.length<minPts){
+    label[i]=NOISE;stats.noise++;
+    oi++;
+    return;
+  }
+  cid++;stats.clusters=cid;cur=cid;
+  isCore[i]=1;label[i]=cur;ign[i]=0.001;
+  for(var m=0;m<nbs.length;m++){
+    var q2=nbs[m];
+    if(label[q2]===UNVISITED||label[q2]===NOISE) queue.push(q2);
+  }
+  oi++;
+}
+
+// ---- input ----
+window.addEventListener('wheel',function(e){
+  e.preventDefault();
+  eps=Math.max(12,Math.min(160, eps*(e.deltaY>0?0.94:1.064)));
+  reset();
+},{passive:false});
+window.addEventListener('keydown',function(e){
+  if(e.key===']'){minPts=Math.min(24,minPts+1);reset();}
+  else if(e.key==='['){minPts=Math.max(1,minPts-1);reset();}
+  else if(e.key==='m'||e.key==='M'){moons=!moons;build();}
+  else if(e.key==='r'||e.key==='R'){build();}
+  else if(e.code==='Space'){e.preventDefault();paused=!paused;}
+});
+
+var els={s1:document.getElementById('s1'),s2:document.getElementById('s2'),
+  s3:document.getElementById('s3'),s4:document.getElementById('s4'),s5:document.getElementById('s5')};
+
+resize();
+
+var last=0, uiAcc=0, doneHold=0;
+function frame(ts){
+  var dt=Math.min(0.05,(ts-last)/1000||0.016);last=ts;
+
+  if(!paused){
+    var budget = phase==='done'?0 : Math.max(2, Math.round(pts.length/220)+2);
+    for(var s=0;s<budget;s++) step();
+  }
+  if(phase==='done'){
+    doneHold+=dt;
+    if(doneHold>4.2){doneHold=0;reset();}
+  } else doneHold=0;
+
+  ctx.fillStyle='#04060a';ctx.fillRect(0,0,W,H);
+  // faint grid
+  ctx.save();ctx.strokeStyle='rgba(60,110,90,.07)';ctx.lineWidth=1;
+  for(var x=0;x<W;x+=56){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
+  for(var y=0;y<H;y+=56){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+  ctx.restore();
+
+  // cluster link web (cores within eps of each other) — cheap: draw from ignition wave
+  ctx.save();
+  ctx.lineWidth=1;
+  for(var i=0;i<pts.length;i++){
+    if(!isCore[i]||label[i]<=0)continue;
+    if(i%2)continue;
+    var p=pts[i], col=COLS[(label[i]-1)%COLS.length];
+    var nb=neighbours(i);
+    ctx.strokeStyle=col.replace(')',')');
+    ctx.globalAlpha=0.10;
+    ctx.beginPath();
+    for(var k=0;k<nb.length;k+=3){
+      var q=pts[nb[k]];
+      if(label[nb[k]]!==label[i])continue;
+      ctx.moveTo(p.x,p.y);ctx.lineTo(q.x,q.y);
+    }
+    ctx.strokeStyle=col;ctx.stroke();
+  }
+  ctx.restore();
+  ctx.globalAlpha=1;
+
+  // points
+  for(i=0;i<pts.length;i++){
+    var pt=pts[i], L=label[i];
+    if(ign[i]>0&&ign[i]<1) ign[i]=Math.min(1,ign[i]+dt*2.2);
+    var r=2.6, col2, glow=0, alpha=1;
+    if(L===UNVISITED){ col2='rgba(110,130,150,.42)'; r=2.2; }
+    else if(L===NOISE){ col2='rgba(150,160,170,.55)'; r=2.4; }
+    else {
+      var base=COLS[(L-1)%COLS.length];
+      if(isCore[i]){ col2=base; r=3.6+1.6*(1-ign[i]); glow=12; }
+      else { col2=base; alpha=0.5; r=2.6; glow=4; }
+    }
+    ctx.globalAlpha=alpha;
+    ctx.fillStyle=col2;
+    if(glow){ctx.shadowColor=col2;ctx.shadowBlur=glow;}
+    ctx.beginPath();ctx.arc(pt.x,pt.y,r,0,6.2832);ctx.fill();
+    ctx.shadowBlur=0;
+    // ignition ring
+    if(L>0&&ign[i]>0&&ign[i]<1){
+      ctx.strokeStyle=col2;ctx.globalAlpha=(1-ign[i])*0.7;ctx.lineWidth=1.6;
+      ctx.beginPath();ctx.arc(pt.x,pt.y,4+ign[i]*eps*0.55,0,6.2832);ctx.stroke();
+    }
+    // noise flag
+    if(L===NOISE){
+      ctx.globalAlpha=0.35;ctx.strokeStyle='#98a2ad';ctx.lineWidth=1;
+      ctx.beginPath();ctx.moveTo(pt.x-3,pt.y-3);ctx.lineTo(pt.x+3,pt.y+3);
+      ctx.moveTo(pt.x+3,pt.y-3);ctx.lineTo(pt.x-3,pt.y+3);ctx.stroke();
+    }
+    ctx.globalAlpha=1;
+  }
+
+  // eps neighbourhood circle on the probe point
+  if(probe>=0 && probe<pts.length && phase!=='done'){
+    var pp=pts[probe];
+    var lc = label[probe]>0?COLS[(label[probe]-1)%COLS.length]:'#ffe066';
+    ctx.save();
+    ctx.strokeStyle=lc;ctx.lineWidth=1.8;ctx.shadowColor=lc;ctx.shadowBlur=16;
+    ctx.globalAlpha=0.9;
+    ctx.beginPath();ctx.arc(pp.x,pp.y,eps,0,6.2832);ctx.stroke();
+    ctx.globalAlpha=0.08;ctx.fillStyle=lc;ctx.fill();
+    ctx.globalAlpha=0.55;ctx.setLineDash([3,5]);ctx.lineWidth=1;
+    ctx.beginPath();ctx.arc(pp.x,pp.y,eps*(0.5+0.5*Math.abs(Math.sin(ts/400))),0,6.2832);ctx.stroke();
+    ctx.restore();
+    // count badge
+    var nn=neighbours(probe).length;
+    ctx.save();
+    ctx.font='bold 12px ui-monospace,monospace';
+    ctx.fillStyle=nn>=minPts?'#7dffb0':'#98a2ad';
+    ctx.shadowColor=ctx.fillStyle;ctx.shadowBlur=8;
+    ctx.fillText(nn+' / '+minPts+(nn>=minPts?'  CORE':'  not core'), pp.x+eps+8, pp.y-4);
+    ctx.restore();
+  }
+
+  // eps ruler legend bottom-left of canvas
+  ctx.save();
+  var rx=28, ry=H-40;
+  ctx.strokeStyle='rgba(200,255,228,.5)';ctx.lineWidth=1.4;
+  ctx.beginPath();ctx.moveTo(rx,ry);ctx.lineTo(rx+eps,ry);
+  ctx.moveTo(rx,ry-5);ctx.lineTo(rx,ry+5);
+  ctx.moveTo(rx+eps,ry-5);ctx.lineTo(rx+eps,ry+5);ctx.stroke();
+  ctx.font='11px ui-monospace,monospace';ctx.fillStyle='rgba(200,255,228,.7)';
+  ctx.fillText('eps = '+eps.toFixed(0)+'px',rx,ry-12);
+  ctx.restore();
+
+  // cluster tally chips (top-right)
+  ctx.save();
+  ctx.font='12px ui-monospace,monospace';
+  var counts={};
+  for(i=0;i<pts.length;i++) if(label[i]>0) counts[label[i]]=(counts[label[i]]||0)+1;
+  var keys=Object.keys(counts), yy=34;
+  ctx.textAlign='right';
+  ctx.fillStyle='rgba(220,240,255,.7)';
+  ctx.fillText('clusters',W-24,yy);yy+=18;
+  for(k=0;k<keys.length && k<10;k++){
+    var cc=COLS[(keys[k]-1)%COLS.length];
+    ctx.fillStyle=cc;ctx.shadowColor=cc;ctx.shadowBlur=8;
+    ctx.fillText('■ C'+keys[k]+'  n='+counts[keys[k]],W-24,yy);yy+=17;
+  }
+  ctx.shadowBlur=0;
+  ctx.fillStyle='rgba(160,170,180,.8)';
+  ctx.fillText('✕ noise  n='+stats.noise,W-24,yy);
+  ctx.restore();
+
+  if(phase==='done'){
+    ctx.save();
+    ctx.font='bold 15px ui-monospace,monospace';
+    ctx.textAlign='center';
+    ctx.fillStyle='rgba(108,255,192,'+(0.55+0.35*Math.sin(ts/300))+')';
+    ctx.shadowColor='#6cffc0';ctx.shadowBlur=14;
+    ctx.fillText('scan complete — '+stats.clusters+' clusters, '+stats.noise+' noise points'+
+      (moons?'  ·  k-means could not do this':''), W/2, H-26);
+    ctx.restore();
+  }
+
+  uiAcc+=dt;
+  if(uiAcc>0.12){
+    uiAcc=0;
+    els.s1.textContent='eps = '+eps.toFixed(0)+' px · minPts = '+minPts;
+    els.s2.textContent='scanned '+Math.min(oi,order.length)+' / '+order.length+' · frontier '+queue.length;
+    els.s3.textContent='clusters '+stats.clusters+' · noise '+Math.max(0,stats.noise);
+    els.s4.textContent='dataset: '+(moons?'two moons (non-convex)':'gaussian blobs')+' · n='+pts.length;
+    els.s5.textContent='state: '+(paused?'PAUSED':(phase==='done'?'done (restarting…)':(queue.length?'flood-filling C'+cur:'seeking seed')));
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+})();
+</script>

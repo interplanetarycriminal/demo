@@ -1,0 +1,259 @@
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<title>Entropy &amp; Optimal Coding</title>
+<style>
+html,body{margin:0;padding:0;background:#04070a;overflow:hidden;height:100%}
+canvas{display:block;cursor:ns-resize}
+#ui{position:fixed;top:0;left:0;margin:12px;padding:10px 12px;background:rgba(6,14,18,.64);
+  border:1px solid rgba(100,255,220,.25);border-radius:6px;color:#bff7ea;
+  font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;max-width:340px;pointer-events:none;
+  text-shadow:0 0 8px rgba(60,240,200,.35)}
+#ui h1{margin:0 0 4px;font-size:14px;letter-spacing:.11em;color:#5cffd6}
+#ui .e{color:#8aa8a2}
+#ui .k{color:#ffd76a}
+#ui .s{color:#9fd8ff}
+#ui a{color:#ff8ad8;pointer-events:auto;text-decoration:none}
+</style>
+<div id="ui">
+  <h1>ENTROPY &amp; OPTIMAL CODING</h1>
+  <div class="e">Rare symbols cost more bits, so the flatter you make the bars the longer every message gets.</div>
+  <div class="k">[drag bars] reshape &nbsp; [1] uniform [2] skewed [3] near-deterministic &nbsp; [R] random</div>
+  <div class="s" id="stats"></div>
+  <a href="index.html">&larr; gallery</a>
+</div>
+<canvas id="c"></canvas>
+<script>
+(function(){
+var c=document.getElementById('c'),g=c.getContext('2d'),stats=document.getElementById('stats');
+var W=0,H=0,DPR=1;
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  W=window.innerWidth;H=window.innerHeight;
+  c.width=Math.floor(W*DPR);c.height=Math.floor(H*DPR);
+  c.style.width=W+'px';c.style.height=H+'px';
+  g.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize',resize);resize();
+
+var K=6,NAMES=['A','B','C','D','E','F'],HUES=[168,196,224,286,330,42];
+var raw=[1,1,1,1,1,1], p=[], disp=[];
+var stream=[],emitted=0,totalBits=0,avg=0,drag=-1,t=0,autoT=0,autoMode=0;
+
+function normalize(){
+  var s=0,i;
+  for(i=0;i<K;i++){raw[i]=Math.max(0.002,raw[i]);s+=raw[i];}
+  p=[];for(i=0;i<K;i++)p.push(raw[i]/s);
+  if(disp.length!==K){disp=p.slice();}
+}
+function entropy(){var h=0;for(var i=0;i<K;i++)if(p[i]>0)h-=p[i]*Math.log2(p[i]);return h;}
+function bits(i){return -Math.log2(p[i]);}
+function preset(m){
+  autoMode=m;autoT=0;
+  if(m===0)raw=[1,1,1,1,1,1];
+  else if(m===1)raw=[8,5,3,1.6,0.8,0.4];
+  else if(m===2)raw=[60,1.2,0.5,0.25,0.12,0.06];
+  else {raw=[];for(var i=0;i<K;i++)raw.push(0.15+Math.pow(Math.random(),1.6)*6);}
+  normalize();resetStream();
+}
+function resetStream(){stream=[];emitted=0;totalBits=0;avg=0;}
+function sample(){
+  var r=Math.random(),a=0;
+  for(var i=0;i<K;i++){a+=p[i];if(r<=a)return i;}
+  return K-1;
+}
+normalize();
+
+function layout(){
+  var pad=Math.min(W,H)*0.05;
+  var topY=Math.max(110,H*0.16);
+  var barsH=Math.max(120,(H-topY-pad)*0.50);
+  var barsX=pad+10, barsW=W-pad*2-20;
+  return {pad:pad,topY:topY,barsH:barsH,barsX:barsX,barsW:barsW,
+          baseY:topY+barsH, streamY:topY+barsH+Math.max(70,(H-topY-barsH-pad)*0.42)};
+}
+
+function barRect(i,L){
+  var slot=L.barsW/K, w=slot*0.62;
+  var x=L.barsX+slot*i+(slot-w)/2;
+  var h=disp[i]*L.barsH*1.55;
+  if(h>L.barsH)h=L.barsH;
+  return {x:x,w:w,h:h,y:L.baseY-h,cx:x+w/2};
+}
+
+function draw(){
+  var L=layout();
+  g.clearRect(0,0,W,H);
+  var bg=g.createLinearGradient(0,0,0,H);
+  bg.addColorStop(0,'#071620');bg.addColorStop(0.55,'#050b12');bg.addColorStop(1,'#04070a');
+  g.fillStyle=bg;g.fillRect(0,0,W,H);
+
+  var Hh=entropy(), Hmax=Math.log2(K);
+
+  // ---- big H readout ----
+  g.textAlign='right';g.textBaseline='alphabetic';
+  var big=Math.max(34,Math.min(88,W*0.062));
+  g.font='bold '+big+'px ui-monospace,monospace';
+  var f=Hh/Hmax;
+  var col='hsl('+(180-120*(1-f))+',95%,'+(58+10*f)+'%)';
+  g.fillStyle=col;g.shadowColor=col;g.shadowBlur=28;
+  g.fillText('H = '+Hh.toFixed(3)+' bits',W-L.pad,L.topY-46);
+  g.shadowBlur=0;
+  g.font='12px ui-monospace,monospace';g.fillStyle='#8aa8a2';
+  g.fillText('H = -Σ p·log₂p     max for 6 symbols = '+Hmax.toFixed(3),W-L.pad,L.topY-24);
+
+  // entropy meter
+  var mw=Math.min(360,W*0.34), mx=W-L.pad-mw, my=L.topY-16;
+  g.fillStyle='rgba(255,255,255,.07)';g.fillRect(mx,my,mw,8);
+  g.fillStyle=col;g.shadowColor=col;g.shadowBlur=14;
+  g.fillRect(mx,my,mw*f,8);g.shadowBlur=0;
+  g.textAlign='left';
+
+  // ---- bars ----
+  for(var i=0;i<K;i++){
+    var b=barRect(i,L), hue=HUES[i];
+    var grd=g.createLinearGradient(0,b.y,0,L.baseY);
+    grd.addColorStop(0,'hsla('+hue+',95%,64%,0.95)');
+    grd.addColorStop(1,'hsla('+hue+',90%,34%,0.55)');
+    g.fillStyle=grd;
+    if(drag===i){g.shadowColor='hsl('+hue+',95%,62%)';g.shadowBlur=26;}
+    g.fillRect(b.x,b.y,b.w,b.h);g.shadowBlur=0;
+    g.strokeStyle='hsla('+hue+',95%,72%,.85)';g.lineWidth=2;
+    g.beginPath();g.moveTo(b.x,b.y+.5);g.lineTo(b.x+b.w,b.y+.5);g.stroke();
+
+    g.textAlign='center';
+    g.font='bold 15px ui-monospace,monospace';
+    g.fillStyle='hsl('+hue+',95%,74%)';
+    g.fillText(NAMES[i],b.cx,L.baseY+22);
+    g.font='11px ui-monospace,monospace';
+    g.fillStyle='#cfe9e4';
+    g.fillText('p '+p[i].toFixed(3),b.cx,L.baseY+38);
+    // surprise label
+    var sb=bits(i);
+    g.font='11px ui-monospace,monospace';
+    g.fillStyle='#ffd76a';
+    g.fillText('−log₂p = '+sb.toFixed(2)+' b',b.cx,b.y-20);
+    // mini code word
+    var nb=Math.max(1,Math.min(12,Math.round(sb)));
+    var uw=Math.min(9,b.w/13);
+    for(var k=0;k<nb;k++){
+      g.fillStyle='rgba(255,215,106,'+(0.35+0.5*(k/nb))+')';
+      g.fillRect(b.cx-(nb*uw)/2+k*uw+1,b.y-14,uw-2,5);
+    }
+  }
+  // baseline
+  g.strokeStyle='rgba(160,220,255,.28)';g.lineWidth=1;
+  g.beginPath();g.moveTo(L.barsX,L.baseY+.5);g.lineTo(L.barsX+L.barsW,L.baseY+.5);g.stroke();
+  g.textAlign='left';g.font='11px ui-monospace,monospace';g.fillStyle='#5f8f88';
+  g.fillText('drag a bar ↕ to change its probability (auto-normalized)',L.barsX,L.topY-4);
+
+  // ---- symbol stream ----
+  var sy=L.streamY;
+  g.strokeStyle='rgba(255,255,255,.08)';
+  g.beginPath();g.moveTo(0,sy-46);g.lineTo(W,sy-46);g.stroke();
+  g.fillStyle='#8aa8a2';g.font='11px ui-monospace,monospace';
+  g.fillText('sampled stream — each symbol drawn as its −log₂p bit cost',L.pad,sy-28);
+
+  for(var s=0;s<stream.length;s++){
+    var e=stream[s];
+    if(e.x>W+80||e.x<-260)continue;
+    var hu=HUES[e.i], nbb=e.nb, uw2=Math.max(4,Math.min(11,W/170));
+    var wtot=nbb*uw2;
+    var pulse=0.55+0.45*Math.sin(t*0.12-s*0.5);
+    // bit run
+    for(var k2=0;k2<nbb;k2++){
+      var a=(nbb<=2?0.95:0.42+0.5*(k2/nbb));
+      g.fillStyle='hsla('+hu+',95%,'+(nbb<=2?66:52)+'%,'+a+')';
+      if(nbb<=2){g.shadowColor='hsl('+hu+',95%,65%)';g.shadowBlur=14*pulse;}
+      g.fillRect(e.x+k2*uw2,sy-14,uw2-2,28);
+      g.shadowBlur=0;
+    }
+    // label
+    g.textAlign='center';g.font='bold 12px ui-monospace,monospace';
+    g.fillStyle='hsl('+hu+',95%,80%)';
+    g.fillText(NAMES[e.i],e.x+wtot/2,sy-22);
+    g.font='10px ui-monospace,monospace';g.fillStyle='rgba(255,215,106,.8)';
+    g.fillText(e.b.toFixed(2)+'b',e.x+wtot/2,sy+30);
+    g.textAlign='left';
+  }
+
+  // ---- convergence readout ----
+  var ry=H-Math.max(74,H*0.11);
+  g.font='12px ui-monospace,monospace';g.fillStyle='#8aa8a2';
+  g.fillText('average bits / symbol  (converges to H)',L.pad,ry-24);
+  var barW=Math.min(W-L.pad*2,W*0.86);
+  var scale=Math.max(Hmax,avg,1)*1.08;
+  g.fillStyle='rgba(255,255,255,.06)';g.fillRect(L.pad,ry-14,barW,20);
+  g.fillStyle='rgba(92,255,214,.55)';
+  g.fillRect(L.pad,ry-14,barW*Math.min(1,avg/scale),20);
+  // H marker
+  var hx=L.pad+barW*Math.min(1,Hh/scale);
+  g.strokeStyle='#ffd76a';g.lineWidth=2;g.shadowColor='#ffd76a';g.shadowBlur=12;
+  g.beginPath();g.moveTo(hx,ry-20);g.lineTo(hx,ry+12);g.stroke();g.shadowBlur=0;
+  g.fillStyle='#ffd76a';g.font='10px ui-monospace,monospace';
+  g.fillText('H',hx+4,ry-22);
+  g.font='bold 15px ui-monospace,monospace';g.fillStyle='#5cffd6';
+  g.fillText(avg.toFixed(3)+' b/sym',L.pad+barW+10>W-90?L.pad:L.pad+Math.min(barW+12,W-L.pad-140),ry+2);
+}
+
+var spawn=0;
+function loop(){
+  requestAnimationFrame(loop);
+  t++;
+  // smooth display heights
+  for(var i=0;i<K;i++)disp[i]+=(p[i]-disp[i])*0.14;
+
+  // stream
+  spawn++;
+  if(spawn>=7){
+    spawn=0;
+    var si=sample(), b=bits(si), nb=Math.max(1,Math.min(14,Math.round(b)));
+    var last=stream.length?stream[stream.length-1]:null;
+    var startX=W+20;
+    if(last){var lw=Math.max(4,Math.min(11,W/170))*last.nb; if(last.x+lw+24>startX)startX=last.x+lw+24;}
+    stream.push({i:si,b:b,nb:nb,x:startX});
+    emitted++;totalBits+=b;avg=totalBits/emitted;
+  }
+  var sp=Math.max(1.2,W/620);
+  for(var s=stream.length-1;s>=0;s--){stream[s].x-=sp;if(stream[s].x<-300)stream.splice(s,1);}
+
+  // gentle auto-cycle of presets so it loops forever with new inputs
+  autoT++;
+  if(autoT>1000&&drag<0){preset((autoMode+1)%4);}
+
+  draw();
+  var Hh=entropy();
+  stats.textContent='H = '+Hh.toFixed(4)+' bits   (max '+Math.log2(K).toFixed(3)+')'+
+    '\nsymbols '+emitted+'   avg '+avg.toFixed(4)+' b/sym'+
+    '\nΔ from H '+(avg-Hh>=0?'+':'')+(avg-Hh).toFixed(4)+'   redundancy '+(100*(1-Hh/Math.log2(K))).toFixed(1)+'%';
+}
+
+// ---- dragging ----
+function hit(mx,my){
+  var L=layout();
+  for(var i=0;i<K;i++){
+    var b=barRect(i,L);
+    if(mx>=b.x-6&&mx<=b.x+b.w+6&&my>=L.topY-30&&my<=L.baseY+10)return i;
+  }
+  return -1;
+}
+function setFromY(i,my){
+  var L=layout();
+  var h=Math.max(2,L.baseY-my);
+  if(h>L.barsH)h=L.barsH;
+  raw[i]=Math.max(0.004,(h/(L.barsH*1.55)));
+  normalize();resetStream();autoT=0;
+}
+c.addEventListener('mousedown',function(e){drag=hit(e.clientX,e.clientY);if(drag>=0)setFromY(drag,e.clientY);});
+window.addEventListener('mousemove',function(e){if(drag>=0)setFromY(drag,e.clientY);});
+window.addEventListener('mouseup',function(){drag=-1;autoT=0;});
+c.addEventListener('touchstart',function(e){var tp=e.touches[0];drag=hit(tp.clientX,tp.clientY);if(drag>=0){setFromY(drag,tp.clientY);e.preventDefault();}},{passive:false});
+c.addEventListener('touchmove',function(e){if(drag>=0){setFromY(drag,e.touches[0].clientY);e.preventDefault();}},{passive:false});
+window.addEventListener('touchend',function(){drag=-1;});
+window.addEventListener('keydown',function(e){
+  if(e.key==='1')preset(0);
+  else if(e.key==='2')preset(1);
+  else if(e.key==='3')preset(2);
+  else if(e.key==='r'||e.key==='R')preset(3);
+});
+loop();
+})();
+</script>

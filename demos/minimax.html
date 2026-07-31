@@ -1,0 +1,495 @@
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<title>Minimax + Alpha-Beta</title>
+<style>
+  html,body{margin:0;height:100%;background:#04060a;overflow:hidden}
+  canvas{display:block;position:fixed;inset:0}
+  #ui{position:fixed;top:0;left:0;margin:12px;padding:10px 12px;background:rgba(6,12,18,.75);
+      border:1px solid rgba(90,240,200,.26);border-radius:8px;color:#c9f6e8;
+      font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;max-width:330px;z-index:10;
+      backdrop-filter:blur(6px);text-shadow:0 0 8px rgba(90,240,200,.3)}
+  #ui h1{margin:0 0 4px;font-size:14px;letter-spacing:.11em;color:#5fe;text-transform:uppercase}
+  #ui .e{color:#8db6ab;margin:0 0 7px}
+  #ui .k{color:#5d857a}
+  #ui b{color:#fff;font-weight:600}
+  #ui a{color:#ff7bd5;text-decoration:none;display:inline-block;margin-top:7px}
+  #ui a:hover{text-decoration:underline}
+  #ui hr{border:0;border-top:1px solid rgba(90,240,200,.16);margin:7px 0}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>Minimax + Alpha-Beta</h1>
+  <p class="e">The AI searches every future of the game and alpha-beta lets it skip branches that can't change the answer.</p>
+  <div class="k">click to play X &middot; P toggle pruning &middot; R restart &middot; Space pause search</div>
+  <hr>
+  <div id="stats"></div>
+  <a href="index.html">&larr; gallery</a>
+</div>
+<script>
+'use strict';
+var cv = document.getElementById('c'), ctx = cv.getContext('2d');
+var statsEl = document.getElementById('stats');
+
+var EMPTY=0, X=1, O=2;
+var board = new Uint8Array(9);
+var turn = X;                 // human is X
+var gameOver = false, winner = 0, winLine = null;
+var pruningOn = true, paused = false;
+var lastNodes = 0, lastPruned = 0, prevNodesNoPrune = 0, prevNodesPrune = 0;
+var aiMove = -1, thinking = false;
+var status = 'your move — you are X';
+
+// ---- search visualisation state ----
+var nodes = [];               // {id,parent,depth,order,val,state,alpha,beta,move,maximizing,born,prunedAt}
+var events = [];              // timeline of {type,node}
+var evIdx = 0, evTimer = 0, EV_MS = 26;
+var maxDepthSeen = 0, depthCount = [];
+
+function lines(){ return [
+  [0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]
+];}
+function checkWin(b){
+  var L = lines();
+  for (var i=0;i<L.length;i++){
+    var a=L[i][0],c=L[i][1],d=L[i][2];
+    if (b[a] && b[a]===b[c] && b[a]===b[d]) return {p:b[a], line:L[i]};
+  }
+  for (var j=0;j<9;j++) if (!b[j]) return null;
+  return {p:0, line:null};   // draw
+}
+
+// ---------- minimax with alpha-beta, recording a tree ----------
+function buildSearch(){
+  nodes = []; events = []; evIdx = 0; evTimer = 0;
+  maxDepthSeen = 0; depthCount = [];
+  lastNodes = 0; lastPruned = 0;
+
+  var root = addNode(-1, 0, -1, false, -Infinity, Infinity);
+  var res = search(root, 0, -Infinity, Infinity, false);  // AI is O = minimizer
+  nodes[root].val = res.v;
+  events.push({type:'value', n:root});
+  aiMove = res.m;
+  return res;
+}
+
+function addNode(parent, depth, move, maximizing, alpha, beta){
+  var id = nodes.length;
+  nodes.push({
+    id:id, parent:parent, depth:depth, move:move, maximizing:maximizing,
+    val:null, alpha:alpha, beta:beta, pruned:false, leaf:false,
+    born:-1, x:0, y:0, appear:0
+  });
+  if (depth > maxDepthSeen) maxDepthSeen = depth;
+  depthCount[depth] = (depthCount[depth]||0) + 1;
+  lastNodes++;
+  events.push({type:'open', n:id});
+  return id;
+}
+
+function markSubtreePruned(id){
+  // count the nodes we did NOT create because of the cut
+  var free = 0;
+  for (var i=0;i<9;i++) if (!board[i]) free++;
+  var f = 1, tot = 0;
+  for (var d=free; d>0; d--){ f *= d; tot += f; }
+  return tot;
+}
+
+function search(id, depth, alpha, beta, maximizing){
+  var w = checkWin(board);
+  if (w){
+    var v = (w.p === X) ? (10 - depth) : (w.p === O ? (depth - 10) : 0);
+    nodes[id].val = v; nodes[id].leaf = true;
+    events.push({type:'value', n:id});
+    return {v:v, m:-1};
+  }
+  var bestM = -1;
+  var bestV = maximizing ? -Infinity : Infinity;
+  for (var i=0;i<9;i++){
+    if (board[i]) continue;
+    board[i] = maximizing ? X : O;
+    var child = addNode(id, depth+1, i, !maximizing, alpha, beta);
+    var r = search(child, depth+1, alpha, beta, !maximizing);
+    board[i] = EMPTY;
+    if (maximizing){
+      if (r.v > bestV){ bestV = r.v; bestM = i; }
+      if (bestV > alpha) alpha = bestV;
+    } else {
+      if (r.v < bestV){ bestV = r.v; bestM = i; }
+      if (bestV < beta) beta = bestV;
+    }
+    nodes[id].val = bestV;
+    nodes[id].alpha = alpha; nodes[id].beta = beta;
+    events.push({type:'update', n:id});
+    if (pruningOn && beta <= alpha){
+      // remaining siblings are cut
+      var cut = 0;
+      for (var k=i+1;k<9;k++) if (!board[k]) cut++;
+      if (cut > 0){
+        var ghost = nodes.length;
+        for (var q=0;q<cut;q++){
+          var gid = nodes.length;
+          nodes.push({id:gid, parent:id, depth:depth+1, move:-2, maximizing:!maximizing,
+                      val:null, alpha:alpha, beta:beta, pruned:true, leaf:true,
+                      born:-1, x:0, y:0, appear:0});
+          depthCount[depth+1] = (depthCount[depth+1]||0) + 1;
+          if (depth+1 > maxDepthSeen) maxDepthSeen = depth+1;
+          events.push({type:'prune', n:gid});
+        }
+        lastPruned += cut + markSubtreePruned(cut);
+      }
+      break;
+    }
+  }
+  events.push({type:'value', n:id});
+  return {v:bestV, m:bestM};
+}
+
+// ---------- layout the tree ----------
+var layoutDone = false, levelX = [], levelSlot = [];
+function layoutTree(){
+  levelSlot = [];
+  for (var i=0;i<nodes.length;i++){
+    var n = nodes[i];
+    levelSlot[n.depth] = (levelSlot[n.depth]||0);
+    n.slot = levelSlot[n.depth]++;
+  }
+  layoutDone = true;
+}
+
+// ---------- game flow ----------
+function restart(){
+  board = new Uint8Array(9);
+  turn = X; gameOver = false; winner = 0; winLine = null;
+  nodes = []; events = []; evIdx = 0; aiMove = -1; thinking = false;
+  status = 'your move — you are X';
+  lastNodes = 0; lastPruned = 0;
+}
+
+function playerMove(i){
+  if (gameOver || thinking || turn !== X || board[i]) return;
+  board[i] = X;
+  var w = checkWin(board);
+  if (w){ finish(w); return; }
+  turn = O;
+  startThinking();
+}
+
+function startThinking(){
+  thinking = true;
+  status = 'AI thinking…';
+  buildSearch();
+  layoutTree();
+  evIdx = 0; evTimer = 0;
+}
+
+function commitAI(){
+  thinking = false;
+  if (aiMove >= 0 && !board[aiMove]) board[aiMove] = O;
+  var w = checkWin(board);
+  if (w){ finish(w); return; }
+  turn = X;
+  status = 'your move — you are X';
+}
+
+function finish(w){
+  gameOver = true; winner = w.p; winLine = w.line;
+  thinking = false;
+  status = w.p === X ? 'you win?! (impossible)' : (w.p === O ? 'AI wins — press R' : 'draw — perfect play, press R');
+}
+
+// ---------- rendering ----------
+var dpr=1, cw=0, ch=0, BS=0, BX=0, BY=0, treeTop=0;
+function resize(){
+  dpr = Math.min(2, window.devicePixelRatio || 1);
+  cw = window.innerWidth; ch = window.innerHeight;
+  cv.width = Math.floor(cw*dpr); cv.height = Math.floor(ch*dpr);
+  cv.style.width = cw+'px'; cv.style.height = ch+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  BS = Math.min(ch*0.30, cw*0.26, 300);
+  BS = Math.max(150, BS);
+  BX = cw/2 - BS/2;
+  BY = 34;
+  treeTop = BY + BS + 44;
+}
+window.addEventListener('resize', resize);
+
+function drawBoard(time){
+  var cs = BS/3;
+  // glow frame
+  ctx.save();
+  ctx.shadowColor = 'rgba(90,240,200,.7)';
+  ctx.shadowBlur = 26 + 8*Math.sin(time*2);
+  ctx.strokeStyle = 'rgba(90,240,200,.55)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(BX-4, BY-4, BS+8, BS+8);
+  ctx.restore();
+
+  ctx.strokeStyle = 'rgba(130,220,255,.28)';
+  ctx.lineWidth = 1.5;
+  for (var i=1;i<3;i++){
+    ctx.beginPath(); ctx.moveTo(BX+i*cs, BY+6); ctx.lineTo(BX+i*cs, BY+BS-6); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(BX+6, BY+i*cs); ctx.lineTo(BX+BS-6, BY+i*cs); ctx.stroke();
+  }
+  for (var k=0;k<9;k++){
+    var x = BX + (k%3)*cs, y = BY + ((k/3)|0)*cs;
+    if (!board[k]){
+      if (!gameOver && !thinking && k === hoverCell){
+        ctx.fillStyle = 'rgba(255,255,255,.06)';
+        ctx.fillRect(x+3,y+3,cs-6,cs-6);
+      }
+      // show AI's candidate as it searches (root children)
+      continue;
+    }
+    var p = cs*0.24;
+    if (board[k] === X){
+      ctx.save();
+      ctx.strokeStyle = '#6ff'; ctx.lineWidth = Math.max(3, cs*0.075);
+      ctx.shadowColor = '#6ff'; ctx.shadowBlur = 14; ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(x+p, y+p); ctx.lineTo(x+cs-p, y+cs-p);
+      ctx.moveTo(x+cs-p, y+p); ctx.lineTo(x+p, y+cs-p);
+      ctx.stroke(); ctx.restore();
+    } else {
+      ctx.save();
+      ctx.strokeStyle = '#ff6fd0'; ctx.lineWidth = Math.max(3, cs*0.075);
+      ctx.shadowColor = '#ff6fd0'; ctx.shadowBlur = 14;
+      ctx.beginPath();
+      ctx.arc(x+cs/2, y+cs/2, cs/2 - p, 0, 6.2832);
+      ctx.stroke(); ctx.restore();
+    }
+  }
+  if (winLine){
+    var a = winLine[0], b = winLine[2];
+    var ax = BX + (a%3)*cs + cs/2, ay = BY + ((a/3)|0)*cs + cs/2;
+    var bx = BX + (b%3)*cs + cs/2, by = BY + ((b/3)|0)*cs + cs/2;
+    ctx.save();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 4;
+    ctx.shadowColor = '#fff'; ctx.shadowBlur = 20;
+    ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by); ctx.stroke();
+    ctx.restore();
+  }
+  // status line
+  ctx.fillStyle = 'rgba(220,245,240,.9)';
+  ctx.font = '13px ui-monospace,monospace';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.fillText(status, cw/2, BY + BS + 12);
+}
+
+function valColor(v, maximizing){
+  if (v === null) return 'rgba(150,170,190,.55)';
+  if (v > 0) return '#5ff0c8';       // good for X
+  if (v < 0) return '#ff6fa8';       // good for O
+  return '#9fb6ff';
+}
+
+function drawTree(){
+  var visible = Math.min(evIdx, events.length);
+  if (!nodes.length) return;
+  var h = ch - treeTop - 14;
+  if (h < 60) return;
+  var depths = maxDepthSeen + 1;
+  var rowH = h / Math.max(1, depths);
+  var wpad = 30;
+
+  // which nodes are revealed so far
+  var shown = {};
+  var order = [];
+  for (var e=0;e<visible;e++){
+    var ev = events[e];
+    if (ev.type === 'open' || ev.type === 'prune'){
+      if (!shown[ev.n]){ shown[ev.n] = true; order.push(ev.n); }
+    }
+  }
+  // node positions per depth, spread by slot among revealed siblings
+  var perDepth = [];
+  for (var i=0;i<order.length;i++){
+    var n = nodes[order[i]];
+    perDepth[n.depth] = perDepth[n.depth] || [];
+    n.col = perDepth[n.depth].length;
+    perDepth[n.depth].push(n);
+  }
+  for (var d=0; d<perDepth.length; d++){
+    var row = perDepth[d];
+    if (!row) continue;
+    var cnt = row.length;
+    var span = cw - wpad*2;
+    for (var j=0;j<cnt;j++){
+      var nn = row[j];
+      nn.x = wpad + (cnt === 1 ? span/2 : (j/(cnt-1))*span);
+      nn.y = treeTop + d*rowH + rowH*0.5;
+    }
+  }
+
+  // edges
+  ctx.lineWidth = 1;
+  for (i=0;i<order.length;i++){
+    var nd = nodes[order[i]];
+    if (nd.parent < 0) continue;
+    var p = nodes[nd.parent];
+    if (p.x === undefined) continue;
+    ctx.strokeStyle = nd.pruned ? 'rgba(120,120,130,.20)' : 'rgba(120,200,230,.18)';
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y + 5);
+    ctx.bezierCurveTo(p.x, (p.y+nd.y)/2, nd.x, (p.y+nd.y)/2, nd.x, nd.y - 5);
+    ctx.stroke();
+  }
+
+  // nodes
+  var r = Math.max(3.2, Math.min(9, rowH*0.20));
+  for (i=0;i<order.length;i++){
+    var nq = nodes[order[i]];
+    var isNew = (order.length - i) < 6;
+    if (nq.pruned){
+      ctx.save();
+      ctx.globalAlpha = 0.55;
+      ctx.strokeStyle = '#8a8a95';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(nq.x-r, nq.y-r); ctx.lineTo(nq.x+r, nq.y+r);
+      ctx.moveTo(nq.x+r, nq.y-r); ctx.lineTo(nq.x-r, nq.y+r);
+      ctx.stroke();
+      if (isNew){
+        ctx.globalAlpha = 0.9;
+        ctx.shadowColor = '#fff'; ctx.shadowBlur = 16;
+        ctx.strokeStyle = '#ddd';
+        ctx.beginPath(); ctx.arc(nq.x, nq.y, r*1.6, 0, 6.2832); ctx.stroke();
+      }
+      ctx.restore();
+      continue;
+    }
+    var col = valColor(nq.val, nq.maximizing);
+    ctx.save();
+    if (isNew){ ctx.shadowColor = col; ctx.shadowBlur = 16; }
+    // maximizing nodes = up triangle, minimizing = down triangle
+    ctx.fillStyle = (nq.val === null) ? 'rgba(40,55,70,.9)' : col;
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    if (nq.maximizing){
+      ctx.moveTo(nq.x, nq.y - r); ctx.lineTo(nq.x + r, nq.y + r*0.8); ctx.lineTo(nq.x - r, nq.y + r*0.8);
+    } else {
+      ctx.moveTo(nq.x, nq.y + r); ctx.lineTo(nq.x + r, nq.y - r*0.8); ctx.lineTo(nq.x - r, nq.y - r*0.8);
+    }
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    ctx.restore();
+    // leaf values
+    if (nq.leaf && nq.val !== null && r > 4.5){
+      ctx.fillStyle = 'rgba(255,255,255,.75)';
+      ctx.font = Math.round(r*1.25)+'px ui-monospace,monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      var lab = nq.val > 0 ? '+1' : (nq.val < 0 ? '-1' : '0');
+      ctx.fillText(lab, nq.x, nq.y + r + 1);
+    }
+  }
+
+  // depth labels
+  ctx.fillStyle = 'rgba(150,190,210,.35)';
+  ctx.font = '10px ui-monospace,monospace';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  for (d=0; d<perDepth.length; d++){
+    if (!perDepth[d]) continue;
+    ctx.fillText('d'+d+(d%2===0?' MIN':' MAX'), 6, treeTop + d*rowH + rowH*0.5);
+  }
+}
+
+function drawHUD(){
+  var lx = cw - 236, ly = 14;
+  ctx.fillStyle = 'rgba(6,12,18,.72)';
+  ctx.fillRect(lx, ly, 222, 108);
+  ctx.strokeStyle = 'rgba(90,240,200,.22)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(lx+.5, ly+.5, 221, 107);
+  ctx.font = '11px ui-monospace,monospace';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  var y = ly + 8;
+  ctx.fillStyle = 'rgba(200,235,228,.85)';
+  ctx.fillText('search tree legend', lx+10, y); y += 16;
+  // max triangle
+  ctx.fillStyle = '#5ff0c8';
+  ctx.beginPath(); ctx.moveTo(lx+16, y+1); ctx.lineTo(lx+22, y+10); ctx.lineTo(lx+10, y+10); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = 'rgba(200,220,220,.75)';
+  ctx.fillText('MAX node (X to move)', lx+30, y); y += 16;
+  ctx.fillStyle = '#ff6fa8';
+  ctx.beginPath(); ctx.moveTo(lx+16, y+11); ctx.lineTo(lx+22, y+2); ctx.lineTo(lx+10, y+2); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = 'rgba(200,220,220,.75)';
+  ctx.fillText('MIN node (AI to move)', lx+30, y); y += 16;
+  ctx.strokeStyle = '#8a8a95'; ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(lx+11, y+2); ctx.lineTo(lx+21, y+11);
+  ctx.moveTo(lx+21, y+2); ctx.lineTo(lx+11, y+11);
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(200,220,220,.75)';
+  ctx.fillText('pruned (never evaluated)', lx+30, y); y += 18;
+  ctx.fillStyle = 'rgba(160,200,195,.7)';
+  ctx.fillText('green = good for X, pink = for O', lx+10, y);
+}
+
+function updateStats(){
+  var prog = events.length ? Math.min(100, (evIdx/events.length)*100) : 0;
+  var cmp = '';
+  if (prevNodesPrune && prevNodesNoPrune){
+    cmp = 'compare: on '+prevNodesPrune+' vs off '+prevNodesNoPrune+'<br>';
+  }
+  statsEl.innerHTML =
+    'alpha-beta: <b>'+(pruningOn?'ON':'OFF')+'</b> (P)<br>'+
+    'nodes evaluated <b>'+lastNodes+'</b><br>'+
+    'pruned <b>'+lastPruned+'</b> nodes skipped<br>'+
+    'tree depth <b>'+(maxDepthSeen)+'</b> &nbsp; search <b>'+prog.toFixed(0)+'%</b><br>'+
+    cmp +
+    (thinking ? 'state: <b>searching</b>' : (gameOver ? 'state: <b>game over</b>' : 'state: <b>waiting for you</b>'))+
+    (paused?' &nbsp; <b>PAUSED</b>':'');
+}
+
+var last = 0, hoverCell = -1, frame = 0;
+function loop(now){
+  var dt = Math.min(64, now - last); last = now;
+  if (thinking && !paused){
+    evTimer += dt;
+    var speed = events.length > 3000 ? 0.6 : (events.length > 900 ? 2.2 : 8);
+    var step = Math.max(1, Math.round(speed));
+    while (evTimer >= EV_MS && evIdx < events.length){
+      evTimer -= EV_MS;
+      evIdx = Math.min(events.length, evIdx + step);
+    }
+    if (evIdx >= events.length){
+      if (pruningOn) prevNodesPrune = lastNodes; else prevNodesNoPrune = lastNodes;
+      commitAI();
+    }
+  }
+  ctx.fillStyle = '#04060a';
+  ctx.fillRect(0,0,cw,ch);
+  drawTree();
+  drawBoard(now*0.001);
+  drawHUD();
+  if ((frame++ % 4) === 0) updateStats();
+  requestAnimationFrame(loop);
+}
+
+cv.addEventListener('mousemove', function(ev){
+  var cs = BS/3;
+  var x = Math.floor((ev.clientX - BX)/cs), y = Math.floor((ev.clientY - BY)/cs);
+  hoverCell = (x>=0&&y>=0&&x<3&&y<3) ? y*3+x : -1;
+});
+cv.addEventListener('mousedown', function(ev){
+  var cs = BS/3;
+  var x = Math.floor((ev.clientX - BX)/cs), y = Math.floor((ev.clientY - BY)/cs);
+  if (x>=0&&y>=0&&x<3&&y<3) playerMove(y*3+x);
+});
+window.addEventListener('keydown', function(ev){
+  var k = ev.key.toLowerCase();
+  if (k === 'r') restart();
+  else if (k === 'p'){
+    pruningOn = !pruningOn;
+    if (thinking) startThinking();
+  }
+  else if (k === ' ' || ev.code === 'Space'){ paused = !paused; ev.preventDefault(); }
+});
+
+resize();
+restart();
+requestAnimationFrame(loop);
+</script>
+</body>

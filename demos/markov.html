@@ -1,0 +1,336 @@
+<meta charset="utf-8">
+<title>Markov Chain — Stationary Distribution</title>
+<style>
+  html,body{margin:0;height:100%;background:#06060e;overflow:hidden}
+  canvas{display:block;position:fixed;inset:0}
+  #ui{position:fixed;top:12px;left:12px;z-index:10;max-width:340px;
+      font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#d7d2ff;
+      background:rgba(8,8,20,.62);border:1px solid rgba(170,140,255,.24);
+      border-radius:8px;padding:10px 12px;backdrop-filter:blur(4px)}
+  #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.14em;color:#c7a6ff;text-transform:uppercase}
+  #ui p{margin:0 0 7px;color:#8a86ad}
+  #ui .k{color:#ffd36e}
+  #ui .s{color:#8affc1}
+  #ui a{color:#c7a6ff;text-decoration:none;border-bottom:1px solid rgba(199,166,255,.35)}
+  #ui table{border-collapse:collapse;margin:2px 0 6px}
+  #ui td{padding:0 8px 0 0;color:#7e7a9d}
+  #ui td.v{color:#f0edff}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>Markov Chain</h1>
+  <p>A token hops between weather states by the real transition probabilities, and its visit frequencies converge to the chain's stationary distribution.</p>
+  <table>
+    <tr><td>steps</td><td class="v" id="steps">0</td></tr>
+    <tr><td>state</td><td class="v s" id="state">SUN</td></tr>
+    <tr><td>total variation</td><td class="v" id="tv">—</td></tr>
+    <tr><td>beat</td><td class="v" id="spd">3.0 /s</td></tr>
+    <tr><td>mixing</td><td class="v" id="mix">—</td></tr>
+  </table>
+  <p><span class="k">M</span> randomize matrix · <span class="k">click node</span> teleport · <span class="k">← →</span> speed · <span class="k">R</span> reset counts</p>
+  <a href="index.html">← gallery</a>
+</div>
+<script>
+(function(){
+"use strict";
+var cv=document.getElementById('c'),ctx=cv.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  W=window.innerWidth;H=window.innerHeight;
+  cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);
+  cv.style.width=W+'px';cv.style.height=H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  place();
+}
+window.addEventListener('resize',resize);
+
+var NAMES=['SUN','CLOUD','RAIN','STORM','SNOW','FOG'];
+var COLS=['#ffd36e','#9fb6d6','#5cc8ff','#c77dff','#e9f4ff','#8affc1'];
+var N=NAMES.length;
+var P=[], pi=[], counts=new Float64Array(N), steps=0;
+var nodes=[], cur=0, prev=0, hop=1, speed=3.0, trail=[];
+var R=0, CX=0, CY=0;
+
+function place(){
+  CX=W*0.5; CY=H*0.46;
+  R=Math.min(W,H)*0.29;
+  if(R<90)R=90;
+  nodes=[];
+  for(var i=0;i<N;i++){
+    var a=-Math.PI/2+i*6.2832/N;
+    nodes.push({x:CX+Math.cos(a)*R, y:CY+Math.sin(a)*R, r:Math.max(20,Math.min(34,R*0.15)), a:a});
+  }
+}
+
+function normRow(row){
+  var s=0,i;for(i=0;i<N;i++)s+=row[i];
+  if(s<=0){for(i=0;i<N;i++)row[i]=1/N;return row;}
+  for(i=0;i<N;i++)row[i]/=s;
+  return row;
+}
+function weatherMatrix(){
+  // plausible, sticky weather dynamics: SUN CLOUD RAIN STORM SNOW FOG
+  var M=[
+    [0.62,0.22,0.05,0.01,0.02,0.08],
+    [0.24,0.38,0.20,0.05,0.04,0.09],
+    [0.08,0.28,0.36,0.16,0.04,0.08],
+    [0.04,0.20,0.34,0.30,0.08,0.04],
+    [0.06,0.18,0.10,0.06,0.48,0.12],
+    [0.26,0.28,0.10,0.02,0.06,0.28]
+  ];
+  for(var i=0;i<N;i++) normRow(M[i]);
+  return M;
+}
+function randomMatrix(){
+  var M=[];
+  for(var i=0;i<N;i++){
+    var row=[];
+    for(var j=0;j<N;j++){
+      var v=Math.pow(Math.random(),2.2)+0.02;
+      if(i===j) v+=Math.random()*0.5;
+      row.push(v);
+    }
+    M.push(normRow(row));
+  }
+  return M;
+}
+// stationary distribution by power iteration on the row-stochastic matrix
+function stationary(M){
+  var v=new Float64Array(N);
+  for(var i=0;i<N;i++) v[i]=1/N;
+  for(var it=0;it<4000;it++){
+    var nx=new Float64Array(N),s=0,j;
+    for(i=0;i<N;i++) for(j=0;j<N;j++) nx[j]+=v[i]*M[i][j];
+    for(j=0;j<N;j++) s+=nx[j];
+    for(j=0;j<N;j++) nx[j]/=(s||1);
+    var d=0;for(j=0;j<N;j++) d+=Math.abs(nx[j]-v[j]);
+    v=nx;
+    if(d<1e-12) break;
+  }
+  return v;
+}
+// second-largest eigenvalue magnitude ~ mixing speed, estimated by
+// tracking the decay of a zero-sum perturbation
+function slem(M){
+  var d=new Float64Array(N),i,j;
+  for(i=0;i<N;i++) d[i]=(i===0?1:0)-pi[i];
+  var norm=function(a){var s=0;for(var k=0;k<N;k++)s+=Math.abs(a[k]);return s;};
+  var prevN=norm(d),ratio=0.5;
+  for(var it=0;it<60;it++){
+    var nx=new Float64Array(N);
+    for(i=0;i<N;i++) for(j=0;j<N;j++) nx[j]+=d[i]*M[i][j];
+    var n2=norm(nx);
+    if(prevN>1e-14) ratio=n2/prevN;
+    if(n2<1e-13) break;
+    prevN=n2; d=nx;
+  }
+  return Math.min(0.999,Math.max(0,ratio));
+}
+
+function setMatrix(M){
+  P=M; pi=stationary(P);
+  counts=new Float64Array(N); steps=0; trail=[];
+}
+function sampleNext(i){
+  var r=Math.random(),acc=0;
+  for(var j=0;j<N;j++){acc+=P[i][j]; if(r<=acc) return j;}
+  return N-1;
+}
+function doHop(){
+  prev=cur;
+  cur=sampleNext(cur);
+  counts[cur]+=1; steps++;
+  trail.push(cur);
+  if(trail.length>120) trail.shift();
+  hop=0;
+}
+
+// ---- drawing ----------------------------------------------------------
+function edgePath(i,j){
+  var a=nodes[i],b=nodes[j];
+  var mx=(a.x+b.x)/2,my=(a.y+b.y)/2;
+  var dx=b.x-a.x,dy=b.y-a.y,len=Math.sqrt(dx*dx+dy*dy)||1;
+  // bow outward-consistently so i->j and j->i are separate arcs
+  var bow=len*0.20+18;
+  var cxp=mx-(dy/len)*bow, cyp=my+(dx/len)*bow;
+  return {x0:a.x,y0:a.y,x1:b.x,y1:b.y,cx:cxp,cy:cyp};
+}
+function qpt(e,t){
+  var u=1-t;
+  return {x:u*u*e.x0+2*u*t*e.cx+t*t*e.x1, y:u*u*e.y0+2*u*t*e.cy+t*t*e.y1};
+}
+function drawEdges(){
+  for(var i=0;i<N;i++)for(var j=0;j<N;j++){
+    var p=P[i][j];
+    if(p<0.012) continue;
+    if(i===j){ drawSelf(i,p); continue; }
+    var e=edgePath(i,j);
+    var lw=0.5+p*11;
+    var hot=(i===prev&&j===cur);
+    ctx.beginPath();
+    ctx.moveTo(e.x0,e.y0);ctx.quadraticCurveTo(e.cx,e.cy,e.x1,e.y1);
+    ctx.strokeStyle=hot?'rgba(255,235,150,0.95)':'rgba(150,120,255,'+(0.10+p*0.62).toFixed(3)+')';
+    ctx.lineWidth=hot?lw+1.4:lw;
+    ctx.lineCap='round';
+    if(hot){ctx.shadowBlur=14;ctx.shadowColor='rgba(255,220,120,0.9)';}
+    ctx.stroke();ctx.shadowBlur=0;
+    // arrowhead near target
+    var t1=1-(nodes[j].r+8)/Math.hypot(e.x1-e.cx,e.y1-e.cy)*0.55;
+    t1=Math.max(0.55,Math.min(0.9,t1));
+    var pa=qpt(e,t1),pb=qpt(e,Math.min(0.97,t1+0.05));
+    var ang=Math.atan2(pb.y-pa.y,pb.x-pa.x);
+    var hs=4+p*7;
+    ctx.beginPath();
+    ctx.moveTo(pb.x,pb.y);
+    ctx.lineTo(pb.x-Math.cos(ang-0.42)*hs,pb.y-Math.sin(ang-0.42)*hs);
+    ctx.lineTo(pb.x-Math.cos(ang+0.42)*hs,pb.y-Math.sin(ang+0.42)*hs);
+    ctx.closePath();
+    ctx.fillStyle=hot?'rgba(255,235,150,0.95)':'rgba(170,140,255,'+(0.20+p*0.6).toFixed(3)+')';
+    ctx.fill();
+  }
+}
+function drawSelf(i,p){
+  var n=nodes[i];
+  var ox=Math.cos(n.a)*(n.r+16), oy=Math.sin(n.a)*(n.r+16);
+  ctx.beginPath();
+  ctx.arc(n.x+ox,n.y+oy,10+p*16,0,6.2832);
+  ctx.strokeStyle=(i===cur&&i===prev)?'rgba(255,235,150,0.9)':'rgba(150,120,255,'+(0.15+p*0.6).toFixed(3)+')';
+  ctx.lineWidth=0.6+p*7;ctx.stroke();
+}
+function drawNodes(){
+  for(var i=0;i<N;i++){
+    var n=nodes[i],act=(i===cur);
+    var pulse=act?(1+0.10*Math.sin(performance.now()/180)):1;
+    ctx.beginPath();ctx.arc(n.x,n.y,n.r*pulse,0,6.2832);
+    ctx.fillStyle=act?COLS[i]:'rgba(20,18,40,0.92)';
+    ctx.shadowBlur=act?26:10;ctx.shadowColor=COLS[i];
+    ctx.fill();ctx.shadowBlur=0;
+    ctx.beginPath();ctx.arc(n.x,n.y,n.r*pulse,0,6.2832);
+    ctx.strokeStyle=COLS[i];ctx.lineWidth=act?2.4:1.3;
+    ctx.globalAlpha=act?1:0.65;ctx.stroke();ctx.globalAlpha=1;
+    ctx.fillStyle=act?'#0b0714':COLS[i];
+    ctx.font='bold 11px ui-monospace,monospace';
+    ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(NAMES[i],n.x,n.y);
+    ctx.textAlign='left';ctx.textBaseline='alphabetic';
+  }
+}
+function drawToken(){
+  var x,y;
+  if(prev===cur){ x=nodes[cur].x; y=nodes[cur].y-nodes[cur].r-16; }
+  else{
+    var e=edgePath(prev,cur);
+    var t=Math.min(1,hop);
+    var s=t*t*(3-2*t);
+    var q=qpt(e,s); x=q.x;y=q.y;
+  }
+  ctx.beginPath();ctx.arc(x,y,7,0,6.2832);
+  ctx.fillStyle='#fff';ctx.shadowBlur=22;ctx.shadowColor='#fff';ctx.fill();
+  ctx.shadowBlur=0;
+  ctx.beginPath();ctx.arc(x,y,13,0,6.2832);
+  ctx.strokeStyle='rgba(255,255,255,0.35)';ctx.lineWidth=1;ctx.stroke();
+}
+function drawBars(){
+  var w=Math.min(330,W*0.30), h=Math.min(190,H*0.30);
+  var x0=W-w-26, y0=26;
+  ctx.fillStyle='rgba(8,8,20,0.62)';ctx.strokeStyle='rgba(170,140,255,0.22)';ctx.lineWidth=1;
+  ctx.beginPath();ctx.rect(x0-10,y0-10,w+20,h+56);ctx.fill();ctx.stroke();
+  ctx.fillStyle='rgba(170,160,210,0.9)';ctx.font='10px ui-monospace,monospace';
+  ctx.fillText('visit frequency  vs  stationary π (outline)',x0-4,y0+4);
+  var bw=w/N, maxV=0.01,i;
+  for(i=0;i<N;i++){ if(pi[i]>maxV)maxV=pi[i]; var f=steps?counts[i]/steps:0; if(f>maxV)maxV=f; }
+  maxV*=1.15;
+  var base=y0+h+16;
+  for(i=0;i<N;i++){
+    var f=steps?counts[i]/steps:0;
+    var bx=x0+i*bw+3, bwid=bw-6;
+    var fh=(f/maxV)*h, sh=(pi[i]/maxV)*h;
+    ctx.fillStyle=COLS[i];ctx.globalAlpha=0.72;
+    ctx.fillRect(bx,base-fh,bwid,fh);ctx.globalAlpha=1;
+    ctx.strokeStyle='rgba(255,255,255,0.85)';ctx.lineWidth=1.4;
+    ctx.setLineDash([3,3]);
+    ctx.strokeRect(bx,base-sh,bwid,sh);
+    ctx.setLineDash([]);
+    ctx.fillStyle='rgba(200,195,235,0.85)';ctx.font='9px ui-monospace,monospace';
+    ctx.textAlign='center';
+    ctx.fillText(NAMES[i].slice(0,4),bx+bwid/2,base+11);
+    ctx.fillStyle=COLS[i];
+    ctx.fillText((f*100).toFixed(0)+'%',bx+bwid/2,base-fh-4);
+    ctx.textAlign='left';
+  }
+  ctx.strokeStyle='rgba(170,140,255,0.3)';ctx.beginPath();
+  ctx.moveTo(x0,base);ctx.lineTo(x0+w,base);ctx.stroke();
+}
+function drawStrip(){
+  var y=H-38, cw=22, n=Math.min(trail.length,Math.floor((W-40)/cw));
+  ctx.fillStyle='rgba(8,8,20,0.6)';ctx.fillRect(0,H-58,W,58);
+  ctx.strokeStyle='rgba(170,140,255,0.18)';ctx.beginPath();
+  ctx.moveTo(0,H-58);ctx.lineTo(W,H-58);ctx.stroke();
+  ctx.font='9px ui-monospace,monospace';ctx.textAlign='center';
+  for(var k=0;k<n;k++){
+    var s=trail[trail.length-n+k];
+    var x=20+k*cw;
+    var fresh=(k===n-1);
+    ctx.globalAlpha=0.28+0.72*(k/Math.max(1,n-1));
+    ctx.fillStyle=COLS[s];
+    ctx.fillRect(x,y-9,cw-4,18);
+    ctx.globalAlpha=1;
+    if(fresh){ctx.strokeStyle='#fff';ctx.lineWidth=1.4;ctx.strokeRect(x,y-9,cw-4,18);}
+    ctx.fillStyle='rgba(10,8,20,0.9)';
+    ctx.fillText(NAMES[s][0],x+(cw-4)/2,y+3);
+  }
+  ctx.textAlign='left';
+  ctx.fillStyle='rgba(150,145,190,0.8)';
+  ctx.fillText('sequence →',W-92,H-46);
+}
+
+function tvDistance(){
+  if(!steps)return null;
+  var d=0;for(var i=0;i<N;i++) d+=Math.abs(counts[i]/steps-pi[i]);
+  return d/2;
+}
+
+var last=performance.now(),acc=0;
+function frame(now){
+  var dt=Math.min(0.05,(now-last)/1000);last=now;
+  var interval=1/speed;
+  acc+=dt;
+  var guard=0;
+  while(acc>=interval && guard<40){acc-=interval;doHop();guard++;}
+  hop=Math.min(1,hop+dt/Math.min(0.42,interval*0.85));
+
+  ctx.fillStyle='rgba(6,6,14,0.34)';ctx.fillRect(0,0,W,H);
+  drawEdges();drawNodes();drawToken();drawBars();drawStrip();
+
+  document.getElementById('steps').textContent=steps;
+  document.getElementById('state').textContent=NAMES[cur];
+  var tv=tvDistance();
+  document.getElementById('tv').textContent=tv===null?'—':tv.toFixed(4);
+  document.getElementById('spd').textContent=speed.toFixed(1)+' /s';
+  requestAnimationFrame(frame);
+}
+
+cv.addEventListener('click',function(e){
+  for(var i=0;i<N;i++){
+    var n=nodes[i],dx=e.clientX-n.x,dy=e.clientY-n.y;
+    if(dx*dx+dy*dy<=(n.r+10)*(n.r+10)){ prev=cur; cur=i; hop=1; return; }
+  }
+});
+window.addEventListener('keydown',function(e){
+  var k=e.key.toLowerCase();
+  if(k==='m'){ setMatrix(randomMatrix()); document.getElementById('mix').textContent='λ₂≈'+slem(P).toFixed(3); }
+  else if(k==='r'){ counts=new Float64Array(N); steps=0; trail=[]; }
+  else if(e.key==='ArrowRight'){ speed=Math.min(40,speed*1.35); }
+  else if(e.key==='ArrowLeft'){ speed=Math.max(0.4,speed/1.35); }
+});
+
+resize();
+setMatrix(weatherMatrix());
+document.getElementById('mix').textContent='λ₂≈'+slem(P).toFixed(3);
+counts[cur]+=1;steps=1;trail.push(cur);
+ctx.fillStyle='#06060e';ctx.fillRect(0,0,W,H);
+requestAnimationFrame(frame);
+})();
+</script>
