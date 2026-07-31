@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Eigenvectors — a matrix is a transformation of space</title>
+<style>
+  html,body{margin:0;height:100%;background:#04050d;overflow:hidden;
+    font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#dfe6ff}
+  canvas{display:block;position:fixed;inset:0}
+  .pane{position:fixed;background:rgba(8,10,24,.62);border:1px solid rgba(120,150,255,.22);
+    border-radius:10px;backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);
+    box-shadow:0 10px 40px -14px #000;z-index:5}
+  #ui{top:14px;left:14px;padding:12px 14px;max-width:390px}
+  #ui h1{margin:0 0 6px;font-size:13px;letter-spacing:.16em;font-weight:700;
+    background:linear-gradient(92deg,#3ce0ff,#b48cff 55%,#ff58d8);
+    -webkit-background-clip:text;background-clip:text;color:transparent}
+  #ui p{margin:0 0 8px;color:#9fabd6}
+  #ui .keys{color:#6f7ba6;line-height:1.7}
+  #ui kbd{background:rgba(120,150,255,.14);border:1px solid rgba(140,170,255,.28);
+    border-radius:4px;padding:1px 5px;color:#cfe0ff}
+  #ui a{color:#3ce0ff;text-decoration:none;border-bottom:1px dotted rgba(60,224,255,.5)}
+  #ui a:hover{color:#fff}
+  #panel{top:14px;right:14px;padding:12px 14px;width:236px}
+  #pname{color:#ffd24a;letter-spacing:.1em;margin-bottom:9px;font-size:11px}
+  .mgrid{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+  .hd{text-align:center;font-size:10px;letter-spacing:.1em;opacity:.85}
+  .mgrid input{width:100%;box-sizing:border-box;background:rgba(0,4,16,.75);color:#eaf0ff;
+    border:1px solid rgba(120,150,255,.3);border-radius:5px;padding:4px 5px;text-align:center;
+    font:12px ui-monospace,monospace;outline:none}
+  .mgrid input:focus{border-color:#3ce0ff;box-shadow:0 0 0 2px rgba(60,224,255,.18)}
+  .mgrid input.j{border-color:rgba(255,88,216,.32)}
+  .mgrid input.j:focus{border-color:#ff58d8;box-shadow:0 0 0 2px rgba(255,88,216,.18)}
+  #stats{margin-top:10px;border-top:1px solid rgba(120,150,255,.16);padding-top:8px;
+    font-size:11px;line-height:1.65;color:#93a0cc}
+  #stats b{color:#eaf0ff;font-weight:600}
+  .note{margin-top:7px;padding:6px 7px;border-radius:6px;font-size:10.5px;line-height:1.5}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="cv"></canvas>
+
+<div id="ui" class="pane">
+  <h1>EIGENVECTORS — THE AXES SPACE CANNOT SHAKE OFF</h1>
+  <p>A matrix isn't a table of numbers, it's a warping of all of space — and eigenvectors are the rare directions
+     that only get stretched by <b>λ</b> instead of knocked off their own line.</p>
+  <div class="keys">
+    <kbd>1</kbd>–<kbd>7</kbd> presets &nbsp; <kbd>R</kbd> replay &nbsp; <kbd>Space</kbd> loop &nbsp; <kbd>S</kbd> swarm<br>
+    <b style="color:#8fa">drag the î / ĵ arrowheads</b> — or type into the matrix →<br>
+    <a href="index.html">← gallery</a>
+  </div>
+</div>
+
+<div id="panel" class="pane">
+  <div id="pname">1 · IDENTITY</div>
+  <div class="mgrid">
+    <div class="hd" style="color:#3ce0ff">î = col 1</div>
+    <div class="hd" style="color:#ff58d8">ĵ = col 2</div>
+    <input id="m00"><input id="m01" class="j">
+    <input id="m10"><input id="m11" class="j">
+  </div>
+  <div id="stats"></div>
+</div>
+
+<script>
+"use strict";
+(function(){
+/* ------------------------------------------------------------------ canvas */
+var cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+var W = 0, H = 0, DPR = 1;
+function resize(){
+  DPR = Math.min(2, window.devicePixelRatio || 1);
+  W = window.innerWidth; H = window.innerHeight;
+  cv.width = Math.round(W*DPR); cv.height = Math.round(H*DPR);
+  cv.style.width = W+'px'; cv.style.height = H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize', resize); resize();
+
+/* ------------------------------------------------------------------ colours */
+var C_I='#3ce0ff', C_J='#ff58d8', C_E1='#ffd24a', C_E2='#7cff8a', C_OFF='#ff7a45', C_SHAPE='#b48cff';
+
+/* ------------------------------------------------------------------ presets */
+var R60=Math.PI/3;
+var PRESETS = [
+  {n:'IDENTITY',                    m:[1,0,0,1]},
+  {n:'SCALE  (2× and ½×)',          m:[2,0,0,0.5]},
+  {n:'SHEAR  (repeated λ=1)',       m:[1,1,0,1]},
+  {n:'ROTATION 60°  (complex)',     m:[Math.cos(R60),-Math.sin(R60),Math.sin(R60),Math.cos(R60)]},
+  {n:'REFLECTION  (det < 0)',       m:[0,1,1,0]},
+  {n:'PROJECTION  (det = 0)',       m:[0.5,0.5,0.5,0.5]},
+  {n:'GENERAL  (λ = 4 and −1)',     m:[1,2,3,2]}
+];
+
+/* ------------------------------------------------------------------ state */
+var M = {a:1,b:0,c:0,d:1};          // target matrix, row-major [[a,b],[c,d]]
+var presetName = '1 · IDENTITY';
+var phase = 1, loop = false, showSwarm = true, drag = null, t = 1;
+var SWARM = 40, swarmAng = [];
+for (var i=0;i<SWARM;i++) swarmAng.push(i/SWARM*Math.PI*2);
+
+/* ------------------------------------------------------------------ math */
+function ap(m,x,y){ return [m.a*x+m.b*y, m.c*x+m.d*y]; }
+function lerpM(t){ return {a:(1-t)+t*M.a, b:t*M.b, c:t*M.c, d:(1-t)+t*M.d}; }
+function detOf(m){ return m.a*m.d - m.b*m.c; }
+
+function evec(m,l){
+  var v1=[m.b, l-m.a], v2=[l-m.d, m.c];
+  var n1=Math.hypot(v1[0],v1[1]), n2=Math.hypot(v2[0],v2[1]);
+  var v = n1>=n2 ? v1 : v2, n = Math.max(n1,n2);
+  if (!(n>1e-12)) return [1,0];                    // A = λI : every direction works
+  v = [v[0]/n, v[1]/n];
+  if (v[0] < -1e-12 || (Math.abs(v[0])<1e-12 && v[1]<0)) v=[-v[0],-v[1]];
+  return v;
+}
+function eigen(m){
+  var T=m.a+m.d, D=detOf(m), disc=T*T-4*D, sc=1+T*T+Math.abs(D);
+  var r={trace:T,det:D,complex:false,repeated:false,isotropic:false,vals:[],vecs:[],re:0,im:0};
+  if (disc < -1e-9*sc){ r.complex=true; r.re=T/2; r.im=Math.sqrt(-disc)/2; return r; }
+  var s=Math.sqrt(disc>0?disc:0), l1=(T+s)/2, l2=(T-s)/2;
+  r.vals=[l1,l2];
+  r.repeated = Math.abs(l1-l2) <= 1e-7*Math.max(1,Math.abs(l1));
+  if (r.repeated && Math.abs(m.b)<1e-12 && Math.abs(m.c)<1e-12 && Math.abs(m.a-m.d)<1e-12) r.isotropic=true;
+  r.vecs=[evec(m,l1), evec(m,l2)];
+  return r;
+}
+function fmt(x){ if(Math.abs(x)<5e-4) x=0; var s=x.toFixed(2); return s==='-0.00'?'0.00':s; }
+
+/* ------------------------------------------------------------------ view */
+var ox=0, oy=0, S=60;
+function setView(){ ox=W*0.5; oy=H*0.5; S=Math.max(30, Math.min(105, Math.min(W,H)/9.5)); }
+function px(x,y){ return [ox+x*S, oy-y*S]; }
+
+/* ------------------------------------------------------------------ drawing helpers */
+function glow(col,amt){ ctx.shadowColor=col; ctx.shadowBlur=amt; }
+function noGlow(){ ctx.shadowBlur=0; }
+function line(x0,y0,x1,y1,col,w,g){
+  var p=px(x0,y0), q=px(x1,y1);
+  ctx.strokeStyle=col; ctx.lineWidth=w; if(g) glow(col,g);
+  ctx.beginPath(); ctx.moveTo(p[0],p[1]); ctx.lineTo(q[0],q[1]); ctx.stroke(); noGlow();
+}
+function arrow(x,y,col,w,label,g){
+  var p=px(0,0), q=px(x,y);
+  var dx=q[0]-p[0], dy=q[1]-p[1], L=Math.hypot(dx,dy);
+  ctx.strokeStyle=col; ctx.fillStyle=col; ctx.lineWidth=w; ctx.lineCap='round';
+  glow(col, g===undefined?14:g);
+  if (L<1.5){ ctx.beginPath(); ctx.arc(q[0],q[1],w*1.4,0,6.284); ctx.fill(); noGlow(); return q; }
+  var ux=dx/L, uy=dy/L, hl=Math.min(15, L*0.42), hw=hl*0.55;
+  ctx.beginPath(); ctx.moveTo(p[0],p[1]); ctx.lineTo(q[0]-ux*hl*0.85, q[1]-uy*hl*0.85); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(q[0],q[1]);
+  ctx.lineTo(q[0]-ux*hl+ -uy*hw, q[1]-uy*hl+ ux*hw);
+  ctx.lineTo(q[0]-ux*hl - -uy*hw, q[1]-uy*hl - ux*hw);
+  ctx.closePath(); ctx.fill();
+  noGlow();
+  if (label){
+    ctx.font='bold 13px ui-monospace,monospace'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    glow('#000',6); ctx.fillStyle=col;
+    ctx.fillText(label, q[0]+ux*17+ -uy*13, q[1]+uy*17+ ux*13);
+    noGlow();
+  }
+  return q;
+}
+function text(s,X,Y,col,align,size,weight){
+  ctx.font=(weight||'')+' '+(size||11)+'px ui-monospace,monospace';
+  ctx.textAlign=align||'left'; ctx.textBaseline='middle';
+  ctx.fillStyle='rgba(2,3,10,.82)'; ctx.shadowColor='rgba(2,3,10,.9)'; ctx.shadowBlur=7;
+  ctx.fillText(s,X,Y); ctx.fillText(s,X,Y);
+  ctx.shadowBlur=0; ctx.fillStyle=col; ctx.fillText(s,X,Y);
+}
+
+/* ------------------------------------------------------------------ scene */
+function draw(now){
+  setView();
+  var m = lerpM(t), E = eigen(M), det = detOf(m), dtar = E.det;
+  var maxR = Math.hypot(W,H)/S;                       // world radius covering the screen
+  var N = Math.min(34, Math.ceil(maxR)+3);
+
+  /* background */
+  ctx.fillStyle='#04050d'; ctx.fillRect(0,0,W,H);
+  var g=ctx.createRadialGradient(ox,oy,0,ox,oy,Math.max(W,H)*0.72);
+  g.addColorStop(0,'rgba(40,60,150,.20)'); g.addColorStop(1,'rgba(4,5,13,0)');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+
+  /* untransformed reference grid (ghost of where space started) */
+  ctx.lineWidth=1; ctx.strokeStyle='rgba(120,150,255,.055)';
+  ctx.beginPath();
+  for (var k=-N;k<=N;k++){
+    var p1=px(k,-N), p2=px(k,N), p3=px(-N,k), p4=px(N,k);
+    ctx.moveTo(p1[0],p1[1]); ctx.lineTo(p2[0],p2[1]);
+    ctx.moveTo(p3[0],p3[1]); ctx.lineTo(p4[0],p4[1]);
+  }
+  ctx.stroke();
+
+  /* the transformed grid — every line of space, warped by m */
+  for (var pass=0; pass<2; pass++){
+    ctx.beginPath();
+    for (var k2=-N;k2<=N;k2++){
+      if ((k2===0) !== (pass===1)) continue;          // pass 1 draws the two image-axes brighter
+      var A1=ap(m,k2,-N), A2=ap(m,k2,N), B1=ap(m,-N,k2), B2=ap(m,N,k2);
+      var q1=px(A1[0],A1[1]), q2=px(A2[0],A2[1]), q3=px(B1[0],B1[1]), q4=px(B2[0],B2[1]);
+      ctx.moveTo(q1[0],q1[1]); ctx.lineTo(q2[0],q2[1]);
+      ctx.moveTo(q3[0],q3[1]); ctx.lineTo(q4[0],q4[1]);
+    }
+    ctx.strokeStyle = pass ? 'rgba(150,185,255,.55)' : 'rgba(90,130,235,.26)';
+    ctx.lineWidth  = pass ? 1.6 : 1;
+    if (pass) glow('#5a8cff',10);
+    ctx.stroke(); noGlow();
+  }
+
+  /* -------- determinant: the unit square becomes a parallelogram */
+  var O=px(0,0), Ci=ap(m,1,0), Cj=ap(m,0,1), Cs=ap(m,1,1);
+  var Pi=px(Ci[0],Ci[1]), Pj=px(Cj[0],Cj[1]), Ps=px(Cs[0],Cs[1]);
+  var flipped = det < -1e-6, squashed = Math.abs(det) < 1e-6;
+  ctx.beginPath(); ctx.moveTo(O[0],O[1]); ctx.lineTo(Pi[0],Pi[1]); ctx.lineTo(Ps[0],Ps[1]); ctx.lineTo(Pj[0],Pj[1]); ctx.closePath();
+  ctx.fillStyle = flipped ? 'rgba(255,90,60,.20)' : 'rgba(90,255,190,.14)';
+  ctx.fill();
+  if (flipped){                                        // hatch the mirrored region
+    ctx.save(); ctx.clip();
+    ctx.strokeStyle='rgba(255,140,90,.45)'; ctx.lineWidth=1;
+    ctx.beginPath();
+    for (var h=-Math.max(W,H); h<Math.max(W,H)*2; h+=9){ ctx.moveTo(h,0); ctx.lineTo(h+H,H); }
+    ctx.stroke(); ctx.restore();
+  }
+  ctx.strokeStyle = flipped ? 'rgba(255,140,90,.85)' : 'rgba(110,255,200,.6)';
+  ctx.lineWidth=1.6; ctx.stroke();
+
+  /* -------- eigen-lines: invariant for every step of the interpolation */
+  var lineDirs = [];
+  if (!E.complex){
+    if (E.isotropic){
+      for (var s8=0;s8<8;s8++) lineDirs.push({u:[Math.cos(s8*Math.PI/8),Math.sin(s8*Math.PI/8)],l:E.vals[0],col:C_E1,idx:-1});
+    } else {
+      lineDirs.push({u:E.vecs[0], l:E.vals[0], col:C_E1, idx:0});
+      var sep = Math.abs(E.vecs[0][0]*E.vecs[1][1]-E.vecs[0][1]*E.vecs[1][0]);
+      if (sep > 1e-6) lineDirs.push({u:E.vecs[1], l:E.vals[1], col:C_E2, idx:1});
+    }
+  }
+  for (var li=0; li<lineDirs.length; li++){
+    var L=lineDirs[li], u=L.u, ext=maxR*1.2;
+    ctx.setLineDash([]);
+    line(-u[0]*ext,-u[1]*ext, u[0]*ext,u[1]*ext, L.col, L.idx<0?1:2.2, L.idx<0?6:20);
+    if (L.idx>=0){
+      var lp = px(u[0]*maxR*0.62, u[1]*maxR*0.62);
+      var lab = 'λ'+(L.idx+1)+' = '+fmt(L.l)+'   ('+(Math.abs(L.l)<1e-6?'collapses to 0':
+                 Math.abs(L.l)<1 ? 'squeezes ×'+fmt(Math.abs(L.l)) : 'stretches ×'+fmt(Math.abs(L.l)))+
+                 (L.l<0?', flips':'')+')';
+      text(lab, lp[0], lp[1]-13, L.col, 'center', 11.5, 'bold');
+    }
+  }
+
+  /* -------- the reference shape: unit circle -> ellipse (hue shows the flip) */
+  ctx.beginPath();
+  for (var ci=0; ci<=96; ci++){
+    var a=ci/96*Math.PI*2, P=ap(m,Math.cos(a),Math.sin(a)), q=px(P[0],P[1]);
+    if(ci===0) ctx.moveTo(q[0],q[1]); else ctx.lineTo(q[0],q[1]);
+  }
+  ctx.strokeStyle=C_SHAPE; ctx.lineWidth=1.8; glow(C_SHAPE,14); ctx.stroke(); noGlow();
+  for (var ci2=0; ci2<36; ci2++){
+    var a2=ci2/36*Math.PI*2, P2=ap(m,Math.cos(a2),Math.sin(a2)), q2=px(P2[0],P2[1]);
+    ctx.fillStyle='hsl('+(ci2/36*360)+',95%,66%)';
+    ctx.beginPath(); ctx.arc(q2[0],q2[1],2.3,0,6.284); ctx.fill();
+  }
+
+  /* -------- the swarm: 40 directions flowing through the transform */
+  if (showSwarm){
+    for (var si=0; si<SWARM; si++){
+      var an=swarmAng[si], v=[Math.cos(an)*2.7, Math.sin(an)*2.7];
+      var Tv=ap(m,v[0],v[1]);
+      var swing = Math.abs(Math.atan2(Tv[1],Tv[0]) - an);
+      while (swing > Math.PI) swing = Math.abs(swing - Math.PI*2);
+      if (!isFinite(swing)) swing = 0;
+      var hue = 145 - Math.min(1, swing/(Math.PI*0.55))*145;
+      var col='hsl('+hue+',95%,62%)';
+      var a0=px(v[0],v[1]), a1=px(Tv[0],Tv[1]);
+      ctx.strokeStyle='hsla('+hue+',95%,62%,.30)'; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(a0[0],a0[1]); ctx.lineTo(a1[0],a1[1]); ctx.stroke();
+      ctx.fillStyle=col; glow(col,7);
+      ctx.beginPath(); ctx.arc(a1[0],a1[1],2.6,0,6.284); ctx.fill(); noGlow();
+    }
+  }
+
+  /* -------- the lesson: on-eigenline vs just-off-eigenline */
+  if (!E.complex && !E.isotropic && lineDirs.length){
+    var best = lineDirs[0];
+    for (var bi=1;bi<lineDirs.length;bi++) if (Math.abs(lineDirs[bi].l) > Math.abs(best.l)) best = lineDirs[bi];
+    var r0=2.15, ue=best.u;
+    var ve=[ue[0]*r0, ue[1]*r0];
+    var ca=Math.cos(0.56), sa=Math.sin(0.56);
+    var vn=[ (ue[0]*ca-ue[1]*sa)*r0, (ue[0]*sa+ue[1]*ca)*r0 ];
+    var Te=ap(m,ve[0],ve[1]), Tn=ap(m,vn[0],vn[1]);
+    /* ghost of where the off-line vector's span used to be */
+    ctx.setLineDash([5,5]);
+    line(0,0, vn[0]*1.9, vn[1]*1.9, 'rgba(255,255,255,.22)', 1.2, 0);
+    ctx.setLineDash([]);
+    arrow(Te[0],Te[1], best.col, 4.5, null, 20);
+    arrow(Tn[0],Tn[1], C_OFF, 3.2, null, 16);
+    var pe=px(Te[0],Te[1]), pn=px(Tn[0],Tn[1]);
+    text('✓ stayed on its line — only scaled by '+fmt(best.l), pe[0], pe[1]-24, best.col, 'center', 11, 'bold');
+    text('✗ swung off its span', pn[0], pn[1]+22, C_OFF, 'center', 11, 'bold');
+  }
+
+  /* -------- î and ĵ: literally the two columns of the matrix */
+  var Qi = arrow(Ci[0],Ci[1], C_I, 5, 'î', 22);
+  var Qj = arrow(Cj[0],Cj[1], C_J, 5, 'ĵ', 22);
+  ctx.lineWidth=2;
+  ctx.strokeStyle='rgba(255,255,255,'+(drag?0.85:0.35)+')';
+  ctx.beginPath(); ctx.arc(Qi[0],Qi[1],10,0,6.284); ctx.stroke();
+  ctx.beginPath(); ctx.arc(Qj[0],Qj[1],10,0,6.284); ctx.stroke();
+
+  /* -------- floor captions */
+  var cy = H - 30;
+  var area = Math.abs(det);
+  var dmsg, dcol;
+  if (squashed){ dmsg='det = 0 — space is squashed into one dimension. Information destroyed: no way back.'; dcol='#ff7a45'; }
+  else if (flipped){ dmsg='det = '+fmt(det)+' — NEGATIVE: space has been flipped / mirrored. Area = '+fmt(area); dcol='#ff9a5a'; }
+  else { dmsg='det = '+fmt(det)+' — the unit square now has area '+fmt(area); dcol='#7cffc4'; }
+  text(dmsg, W/2, cy, dcol, 'center', 12.5, 'bold');
+  if (E.complex){
+    text('no real eigenvectors — this transformation rotates every direction   (λ = '+fmt(E.re)+' ± '+fmt(E.im)+'i)',
+         W/2, cy-20, '#ff58d8', 'center', 12.5, 'bold');
+  } else if (E.isotropic){
+    text('λ = '+fmt(E.vals[0])+' twice, and A = λI — every direction is an eigenvector',
+         W/2, cy-20, C_E1, 'center', 12.5, 'bold');
+  } else if (E.repeated && lineDirs.length===1){
+    text('repeated λ = '+fmt(E.vals[0])+' — but only ONE eigen-direction (defective matrix)',
+         W/2, cy-20, C_E1, 'center', 12.5, 'bold');
+  }
+  text('t = '+t.toFixed(2)+'   identity ——▶ A'+(loop?'   [looping]':''), W/2, cy+19, '#7c88b4', 'center', 11);
+
+  updatePanel(E, det);
+}
+
+/* ------------------------------------------------------------------ panel */
+var IN = ['m00','m01','m10','m11'].map(function(id){ return document.getElementById(id); });
+var KEY = ['a','b','c','d'], typing = false;
+function syncInputs(){
+  if (typing) return;
+  for (var i=0;i<4;i++){ var v=(Math.round(M[KEY[i]]*1000)/1000).toString(); if (IN[i].value!==v) IN[i].value=v; }
+}
+for (var ii=0; ii<4; ii++) (function(i){
+  IN[i].addEventListener('focus', function(){ typing=true; });
+  IN[i].addEventListener('blur',  function(){ typing=false; syncInputs(); });
+  IN[i].addEventListener('input', function(){
+    var v=parseFloat(IN[i].value);
+    if (isFinite(v)){ M[KEY[i]]=Math.max(-6,Math.min(6,v)); presetName='CUSTOM'; phase=1; loop=false; }
+  });
+})(ii);
+
+var statsEl = document.getElementById('stats'), nameEl = document.getElementById('pname');
+var lastStats = '';
+function updatePanel(E, detNow){
+  nameEl.textContent = presetName;
+  var h = 'det A = <b>'+fmt(E.det)+'</b> &nbsp; tr A = <b>'+fmt(E.trace)+'</b><br>';
+  if (E.complex){
+    h += 'λ = <b>'+fmt(E.re)+' ± '+fmt(E.im)+'i</b>';
+    h += '<div class="note" style="background:rgba(255,88,216,.13);color:#ffb0ec">Complex pair → <b>no real eigenvectors</b>. Every single direction is rotated off its own span.</div>';
+  } else {
+    h += '<span style="color:'+C_E1+'">λ₁ = <b style="color:'+C_E1+'">'+fmt(E.vals[0])+'</b> &nbsp; v₁ = ('+fmt(E.vecs[0][0])+', '+fmt(E.vecs[0][1])+')</span><br>';
+    if (E.isotropic){
+      h += '<span style="color:'+C_E2+'">λ₂ = <b style="color:'+C_E2+'">'+fmt(E.vals[1])+'</b> &nbsp; v₂ = anything</span>';
+      h += '<div class="note" style="background:rgba(255,210,74,.12);color:#ffe9a8">A is a pure scaling — <b>every</b> vector is an eigenvector.</div>';
+    } else if (E.repeated){
+      h += '<span style="color:#8e9ac8">λ₂ = '+fmt(E.vals[1])+' (repeated) — the two eigen-directions collapsed into one</span>';
+      h += '<div class="note" style="background:rgba(255,210,74,.12);color:#ffe9a8">Defective: only <b>one</b> eigen-direction survives.</div>';
+    } else {
+      h += '<span style="color:'+C_E2+'">λ₂ = <b style="color:'+C_E2+'">'+fmt(E.vals[1])+'</b> &nbsp; v₂ = ('+fmt(E.vecs[1][0])+', '+fmt(E.vecs[1][1])+')</span>';
+    }
+    if (Math.abs(E.det) < 1e-6)
+      h += '<div class="note" style="background:rgba(255,122,69,.14);color:#ffb894">det = 0 → one λ is 0. All of space is crushed onto a single line.</div>';
+    else if (E.det < 0)
+      h += '<div class="note" style="background:rgba(255,122,69,.14);color:#ffb894">det &lt; 0 → orientation reversed. Space is mirrored.</div>';
+  }
+  if (h !== lastStats){ statsEl.innerHTML = h; lastStats = h; }
+  syncInputs();
+}
+
+/* ------------------------------------------------------------------ input */
+function applyPreset(i){
+  var p = PRESETS[i];
+  M.a=p.m[0]; M.b=p.m[1]; M.c=p.m[2]; M.d=p.m[3];
+  presetName = (i+1)+' · '+p.n;
+  phase = 0; loop = false; syncInputs();
+}
+window.addEventListener('keydown', function(e){
+  if (e.target && e.target.tagName==='INPUT') return;
+  var k = e.key;
+  if (k>='1' && k<='7'){ applyPreset(parseInt(k,10)-1); }
+  else if (k==='r'||k==='R'){ phase=0; loop=false; }
+  else if (k===' '){ e.preventDefault(); loop=!loop; phase = loop?0:1; }
+  else if (k==='s'||k==='S'){ showSwarm=!showSwarm; }
+});
+
+function mouse(e){
+  var r=cv.getBoundingClientRect();
+  var cx=(e.touches?e.touches[0].clientX:e.clientX)-r.left;
+  var cyy=(e.touches?e.touches[0].clientY:e.clientY)-r.top;
+  return [cx,cyy];
+}
+function down(e){
+  var p=mouse(e);
+  var Pi=px(M.a,M.c), Pj=px(M.b,M.d);
+  var di=Math.hypot(p[0]-Pi[0],p[1]-Pi[1]), dj=Math.hypot(p[0]-Pj[0],p[1]-Pj[1]);
+  if (Math.min(di,dj) < 22){ drag = di<=dj ? 'i' : 'j'; phase=1; loop=false; e.preventDefault(); }
+}
+function move(e){
+  var p=mouse(e);
+  if (!drag){
+    var Pi=px(M.a,M.c), Pj=px(M.b,M.d);
+    var near = Math.min(Math.hypot(p[0]-Pi[0],p[1]-Pi[1]), Math.hypot(p[0]-Pj[0],p[1]-Pj[1])) < 22;
+    cv.style.cursor = near ? 'grab' : 'default';
+    return;
+  }
+  e.preventDefault();
+  var x=(p[0]-ox)/S, y=(oy-p[1])/S;
+  var step = e.shiftKey ? 0.25 : 0.05;
+  x=Math.max(-6,Math.min(6, Math.round(x/step)*step));
+  y=Math.max(-6,Math.min(6, Math.round(y/step)*step));
+  if (drag==='i'){ M.a=x; M.c=y; } else { M.b=x; M.d=y; }
+  presetName='CUSTOM (dragged)'; syncInputs();
+}
+function up(){ if(drag){ drag=null; cv.style.cursor='grab'; } }
+cv.addEventListener('mousedown',down); window.addEventListener('mousemove',move); window.addEventListener('mouseup',up);
+cv.addEventListener('touchstart',down,{passive:false}); window.addEventListener('touchmove',move,{passive:false}); window.addEventListener('touchend',up);
+
+/* ------------------------------------------------------------------ loop */
+var last = 0;
+function frame(now){
+  var dt = last ? Math.min(0.05,(now-last)/1000) : 0.016; last = now;
+  if (drag) { phase = 1; }
+  else if (loop) phase += dt*0.34;
+  else phase = Math.min(1, phase + dt*0.6);
+  if (loop) t = 0.5 - 0.5*Math.cos(phase*Math.PI);
+  else { var u=Math.max(0,Math.min(1,phase)); t = u*u*(3-2*u); }
+  draw(now);
+  requestAnimationFrame(frame);
+}
+applyPreset(6); phase = 0;
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
