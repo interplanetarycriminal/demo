@@ -447,9 +447,10 @@ function item(it,t,hot,last){
   ctx.shadowBlur=0; ctx.globalAlpha=1;
 }
 
-function track(s,x,y,sp,ctr){
+function track(s,x,y,sp,al){                        // letterspaced text; al 0=left 1=centre 2=right
   var i,w=0; for(i=0;i<s.length;i++)w+=ctx.measureText(s[i]).width+sp; w-=sp;
-  var px=ctr?x-w/2:x;
+  ctx.textAlign='left';
+  var px=al===1?x-w/2:al===2?x-w:x;
   for(i=0;i<s.length;i++){ctx.fillText(s[i],px,y);px+=ctx.measureText(s[i]).width+sp;}
   return w;
 }
