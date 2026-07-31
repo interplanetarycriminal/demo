@@ -361,7 +361,7 @@ function scene5(){
 
 // ---------- side panel ----------
 function panel(rows){
-  if(PW<40)return;
+  if(PW<40||H-PY<70)return;
   var i,j,r,w, fs=PW<300?11.5:12.5, avail=H-PY-38, mw=0;
   for(i=0;i<rows.length;i++){ r=rows[i];                       // shrink to the widest row
     if(!r||r==='-'||r[0]==='CHK'||r[0]==='NOTE')continue;
