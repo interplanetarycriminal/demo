@@ -334,8 +334,9 @@ function fit(nl,mx,my){
   TOPY=HY+Math.round(24*US)+nl*Math.round(25*US)+Math.round(14*US);
   var ah=Math.max(70,BOTY-TOPY-14);
   CY=(TOPY+BOTY)*0.5;
-  var base=Math.min((W-70)/3.15,ah/2.32);
-  var need=Math.min((W-70)*.5/Math.max(mx,.1),ah*.5/Math.max(my,.1));
+  var hw=Math.max(60,Math.min(CX-18,W-18-CX));     // the figure is nudged right of centre
+  var base=Math.min(hw/1.58,ah/2.32);
+  var need=Math.min(hw/Math.max(mx,.1),ah*.5/Math.max(my,.1));
   var tgt=Math.max(26,Math.min(base,need));        // shrink to hold a dragged-out figure
   Scur=Scur<0?tgt:Scur+(tgt-Scur)*.14;
   S=Scur;
@@ -463,21 +464,20 @@ function wrapT(txt,maxw){
 function rrect(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);
   ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
 
-function chrome(){
-  var st=sc.steps[step], i;
+function chrome(hl){
+  var st=sc.steps[step], i, hx=(W<776&&H>520)?W/2:CX, lh=Math.round(25*US);
   /* ---- heading ---- */
-  ctx.textBaseline='alphabetic'; ctx.textAlign='left';
+  ctx.textBaseline='alphabetic';
   ctx.font=Math.round(11*US)+'px ui-monospace,Menlo,Consolas,monospace';
   ctx.fillStyle='rgba('+C_GOLD+',.85)';
-  track('PROPOSITION '+sc.n,CX,TOPY-Math.round(44*US),3.4*US,1);
+  track('PROPOSITION '+sc.n,hx,HY+Math.round(11*US),3.4*US,1);
   ctx.font='italic '+Math.round(21*US)+'px '+SER;
   ctx.textAlign='center'; ctx.fillStyle='rgba('+C_IVORY+',.93)';
-  var hl=wrapT(sc.st,Math.min(W-60,760));
-  for(i=0;i<hl.length;i++)ctx.fillText(hl[i],CX,TOPY-Math.round(20*US)+i*Math.round(25*US));
+  var hy=HY+Math.round(36*US);
+  for(i=0;i<hl.length;i++)ctx.fillText(hl[i],hx,hy+i*lh);
   ctx.strokeStyle='rgba('+C_GOLD+',.28)';ctx.lineWidth=1;
-  var uw=Math.min(W*.34,300);
-  ctx.beginPath();ctx.moveTo(CX-uw/2,TOPY+(hl.length-1)*25*US+8);
-  ctx.lineTo(CX+uw/2,TOPY+(hl.length-1)*25*US+8);ctx.stroke();
+  var uw=Math.min(HW*.5,300),uy=hy+(hl.length-1)*lh+Math.round(11*US);
+  ctx.beginPath();ctx.moveTo(hx-uw/2,uy);ctx.lineTo(hx+uw/2,uy);ctx.stroke();
   /* ---- step pips ---- */
   var n=sc.steps.length, gap=Math.min(19,(Math.min(W-40,520))/n), x0=W/2-(n-1)*gap/2;
   for(i=0;i<n;i++){
@@ -501,21 +501,23 @@ function chrome(){
     if(noteA>.01){
       ctx.textAlign='left';ctx.font='italic '+Math.round(11.5*US)+'px '+SER;
       ctx.fillStyle='rgba('+C_GOLD+','+(noteA*.72)+')';
-      var gl=wrapT(sc.note,GW-pad*1.6),lh=Math.round(14.2*US);
-      for(i=0;i<gl.length&&i<7;i++)ctx.fillText(gl[i],bx+pad,BANDY+pad+8+i*lh);
+      var gl=wrapT(sc.note,GW-pad*1.6),glh=Math.round(14.2*US);
+      var gmax=Math.max(1,Math.floor((BANDH-pad-10)/glh));
+      for(i=0;i<gl.length&&i<gmax;i++)ctx.fillText(gl[i],bx+pad,BANDY+pad+8+i*glh);
     }
   }
-  ctx.textAlign='left';
   ctx.font=Math.round(9.8*US)+'px ui-monospace,Menlo,Consolas,monospace';
   ctx.fillStyle='rgba('+C_GOLD+',.9)';
-  track(st.c.toUpperCase(),tx,BANDY+pad+4,1.5*US,0);
-  ctx.textAlign='right';ctx.fillStyle='rgba('+C_GOLD+',.55)';
-  track('STEP '+(step+1)+' / '+sc.steps.length,bx+bw-pad,BANDY+pad+4,1.5*US,0);
+  var cw=track(st.c.toUpperCase(),tx,BANDY+pad+4,1.5*US,0);
+  ctx.fillStyle='rgba('+C_GOLD+',.55)';
+  if(tx+cw<bx+bw-pad-72*US)
+    track('STEP '+(step+1)+' / '+sc.steps.length,bx+bw-pad,BANDY+pad+4,1.5*US,2);
   ctx.textAlign='left';
   ctx.font=Math.round(15*US)+'px '+SER;
   ctx.fillStyle='rgba('+C_IVORY+',.94)';
   var ln=wrapT(st.say,tw),lh2=Math.round(20.5*US),y0=BANDY+pad+Math.round(24*US);
-  for(i=0;i<ln.length&&i<4;i++)ctx.fillText(ln[i],tx,y0+i*lh2);
+  var lmax=Math.max(1,Math.floor((BANDY+BANDH-6-y0)/lh2)+1);
+  for(i=0;i<ln.length&&i<lmax;i++)ctx.fillText(ln[i],tx,y0+i*lh2);
 }
 
 function frame(dt){
@@ -526,6 +528,8 @@ function frame(dt){
     if(hold>620){if(step<sc.steps.length-1){step++;tt=0;hold=0;}else{play=false;ui();}}}
   ctx.setTransform(DPR,0,0,DPR,0,0);
   if(bg)ctx.drawImage(bg,0,0,W,H); else{ctx.fillStyle='#0a0807';ctx.fillRect(0,0,W,H);}
+  ctx.font='italic '+Math.round(21*US)+'px '+SER;
+  var hl=wrapT(sc.st,HW); fit(hl.length,sc.mx,sc.my);
   var order={f:0,c:1,L:2,s:3,q:4,a:5,t:6,p:7},draw=[],i,j;
   for(i=0;i<=step;i++){
     var s=sc.steps[i],hot=(i===step);
@@ -535,7 +539,7 @@ function frame(dt){
   }
   draw.sort(function(a,b){return a.z-b.z;});
   for(i=0;i<draw.length;i++)item(draw[i].it,draw[i].t,draw[i].h,draw[i].last);
-  chrome();
+  chrome(hl);
 }
 
 /* ============================ input ============================ */

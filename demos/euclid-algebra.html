@@ -125,8 +125,8 @@ function tline(x,y,toks,fs){var cx=x,i,t;
     cx+=ctx.measureText(t[0]).width;} return cx-x;}
 function caption(s){if(FH<160)return;txtF(s,FX+FW/2,FY+FH-2,M(12),DIM,.76,'center',FW);}
 function rule(x,y,w,a){ctx.strokeStyle=rgba(DIM,a==null?.4:a);ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x,y+.5);ctx.lineTo(x+w,y+.5);ctx.stroke();}
-function okmark(x,y,r,lbl){var good=Math.abs(r)<1e-9;
-  txt(good?'✓ exact':'Δ '+r.toExponential(1),x,y,M(11.5),good?VERD:VERM,.95);
+function okmark(x,y,r,lbl){var good=Math.abs(r)<1e-9;   // live floating-point residual
+  txt((good?'✓ ':'Δ ')+r.toExponential(1),x,y,M(11.5),good?VERD:VERM,.95);
   if(lbl)txt(lbl,x-8,y,M(11.5),DIM,.7,'right');}
 
 // ---------- scene 1 : II.4 ----------
