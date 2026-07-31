@@ -113,7 +113,7 @@ function recSearch(id, depth, alpha, beta, maximizing){
     else { if (r.v < bestV){ bestV = r.v; bestM = i; } if (bestV < beta) beta = bestV; }
     if (id >= 0){ nodes[id].val = bestV; events.push({type:'update', n:id}); }
     if (pruningOn && beta <= alpha){
-      if (id >= 0 && nodes.length < MAX_VIS){
+      if (id >= 0 && depth+1 <= VIS_DEPTH && nodes.length < MAX_VIS){
         for (var k=i+1;k<9;k++){
           if (board[k]) continue;
           if (nodes.length >= MAX_VIS) break;
@@ -377,7 +377,7 @@ function updateStats(){
   statsEl.innerHTML =
     'alpha-beta: <b>'+(pruningOn?'ON':'OFF')+'</b> &nbsp;(P toggles)<br>'+
     'nodes visited <b>'+(pruningOn?nodesPrune:nodesFull)+'</b><br>'+
-    'pruned <b>'+prunedCount+'</b> nodes skipped<br>'+
+    'pruned <b>'+(pruningOn?prunedCount:0)+'</b> nodes skipped<br>'+
     (lastFullCmp ? 'full '+lastFullCmp+' vs pruned '+lastPruneCmp+' &rarr; <b>'+save.toFixed(0)+'%</b> saved<br>' : '')+
     'tree shown: <b>'+nodes.length+'</b> nodes / ply &le;'+VIS_DEPTH+'<br>'+
     'reveal <b>'+prog.toFixed(0)+'%</b> &nbsp; '+
