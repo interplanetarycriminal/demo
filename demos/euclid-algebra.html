@@ -168,7 +168,7 @@ function scene2(){
   var sh =es(ph,.58,.70)-es(ph,.76,.83);
   var d=a-b;
   fit(12.4,13.4);
-  outline(o,o,a,a,PARCH,.16+.2*(1-cut),[5,7]);
+  outline(o,o,a,a,GOLD,.22+.3*(1-cut),[5,7]);       // the square on a, now only an outline
   // the excised corner square b^2
   rectW(o+a-b+.45*cut, o+a-b+1.85*cut, b,b, LAPIS,.95-.35*cut,'b²',f(b*b));
   // gnomon piece 1 : stays
@@ -245,7 +245,7 @@ function scene3(){
   caption('same figure, twice: a square with a corner square removed');
   var res=(a*b+d*d)-m*m, res6=((a+b)*b+m2*m2)-(m2+n)*(m2+n);
   panel([
-   [[' ab + d²',PARCH,1],['  =  ',DIM],['m²',VERD,1],['       (II.5)',DIM,0,.55]],
+   [[' ab',VERD,1],[' + ',DIM],['d²',LAPIS,1],['  =  ',DIM],['m²',BONE,1],['     (II.5)',DIM,0,.55]],
    null,
    [['m = (a+b)/2 = ',DIM],[f(m,4),PARCH]],
    [['d = |a−b|/2 = ',DIM],[f(d,4),LAPIS]],
