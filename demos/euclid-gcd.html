@@ -240,9 +240,20 @@ function setPreset(i){
   build();
 }
 
-/* ---------- layout ---------- */
-var frozen = null;
-function layout(){
+/* ---------- layout (smoothed, so nothing ever jumps) ---------- */
+var frozen = null, LAY = null, DT = 0;
+function cp(t){ return { x:t.x, y:t.y, w:t.w, h:t.h, sc:t.sc, ox:t.ox, oy:t.oy }; }
+function stepLayout(){
+  var t = target();
+  if (frozen || !LAY){ LAY = cp(t); return LAY; }
+  var k = Math.min(1, DT * 9);
+  LAY.x += (t.x-LAY.x)*k; LAY.y += (t.y-LAY.y)*k; LAY.w += (t.w-LAY.w)*k;
+  LAY.h += (t.h-LAY.h)*k; LAY.sc += (t.sc-LAY.sc)*k;
+  LAY.ox += (t.ox-LAY.ox)*k; LAY.oy += (t.oy-LAY.oy)*k;
+  return LAY;
+}
+function layout(){ return LAY || cp(target()); }
+function target(){
   if (frozen) return frozen;
   var uiB = document.getElementById('ui').getBoundingClientRect();
   var pB  = document.getElementById('panel').getBoundingClientRect();
@@ -262,7 +273,7 @@ function layout(){
 function ease(p){ return 1 - Math.pow(1 - p, 3); }
 
 function draw(){
-  var L = layout();
+  var L = stepLayout();
   // zoom: once an endless tiling has finished laying out, fall inward forever
   var z = 1, zAlpha = 1, zooming = false;
   if (IRR && doneAt > 0){
@@ -287,13 +298,15 @@ function draw(){
 
   var x0 = PX(0), y0 = PY(0), ww = A * S, hh = B * S;
 
-  // ---- the parent rectangle ----
-  ctx.save();
-  ctx.shadowColor = 'rgba(255,190,110,.32)'; ctx.shadowBlur = 26;
-  ctx.strokeStyle = 'rgba(232,192,122,.78)'; ctx.lineWidth = 1.6;
-  ctx.strokeRect(x0, y0, ww, hh);
-  ctx.restore();
-  ctx.fillStyle = 'rgba(255,214,150,.028)'; ctx.fillRect(x0, y0, ww, hh);
+  // ---- the parent rectangle (skipped once the zoom has swallowed it) ----
+  if (ww < W * 3 && hh < H * 3){
+    ctx.save();
+    ctx.shadowColor = 'rgba(255,190,110,.32)'; ctx.shadowBlur = 26;
+    ctx.strokeStyle = 'rgba(232,192,122,.78)'; ctx.lineWidth = 1.6;
+    ctx.strokeRect(x0, y0, ww, hh);
+    ctx.restore();
+    ctx.fillStyle = 'rgba(255,214,150,.028)'; ctx.fillRect(x0, y0, ww, hh);
+  }
 
   // ---- squares, popping in one at a time ----
   var curGen = -1, laid = 0, lastVisible = null;
@@ -346,7 +359,7 @@ function draw(){
     for (var si = 0; si < M.squares.length; si++){
       var sq = M.squares[si];
       if (T < sq.t0) break;
-      var sd = sq.s * S; if (sd < 1.2) continue;
+      var sd = sq.s * S; if (sd < 1.2 || sd > 4 * Math.max(W, H)) continue;
       var pp = Math.min(1, (T - sq.t0) / 0.32);
       var ax = PX(sq.x) + (sq.dir === 0 || sq.dir === 3 ? sd : 0);
       var ay = PY(sq.y) + (sq.dir === 0 || sq.dir === 1 ? sd : 0);
@@ -505,7 +518,7 @@ function finish(){
 /* ---------- loop ---------- */
 function frame(ms){
   var dt = lastMs ? Math.min(0.05, (ms - lastMs) / 1000) : 0;
-  lastMs = ms;
+  lastMs = ms; DT = dt;
   if (!paused) T += dt;
   draw();
   requestAnimationFrame(frame);

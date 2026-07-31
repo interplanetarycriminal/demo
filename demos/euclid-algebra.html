@@ -1,0 +1,511 @@
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<title>Euclid, Book II — Algebra Drawn as Areas</title>
+<style>
+  html,body{margin:0;padding:0;background:#07060a;overflow:hidden;height:100%}
+  canvas{display:block;position:fixed;inset:0}
+  #ui{position:fixed;top:0;left:0;margin:12px;padding:11px 13px;background:rgba(12,10,8,.62);
+      border:1px solid rgba(226,190,120,.26);border-radius:8px;color:#e2d3b0;
+      font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;width:296px;
+      backdrop-filter:blur(7px);z-index:10}
+  #ui h1{margin:0 0 5px;font-size:13px;letter-spacing:.14em;color:#f4b942;text-transform:uppercase}
+  #ui .exp{color:#9d9078;margin-bottom:9px}
+  #ui .hint{color:#7c7059;margin-top:9px;font-size:11px;line-height:1.6}
+  #ui a{color:#47c9a2;text-decoration:none}
+  #ui a:hover{text-decoration:underline}
+  #ui .tabs{display:flex;flex-wrap:wrap;gap:4px}
+  #ui .tab{cursor:pointer;padding:2px 6px;border:1px solid rgba(226,190,120,.22);border-radius:4px;
+      font-size:10.5px;letter-spacing:.05em;color:#93876f;user-select:none}
+  #ui .tab:hover{border-color:rgba(244,185,66,.55);color:#e2d3b0}
+  #ui .tab.on{background:rgba(244,185,66,.16);border-color:#f4b942;color:#f4d79a}
+  #ui b{color:#e2d3b0;font-weight:normal}
+</style>
+
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>Euclid &middot; Book II</h1>
+  <div class="exp">Before symbols existed, algebra was done with areas &mdash; every identity you know as symbol-pushing was, for two thousand years, a picture you could cut apart and reassemble.</div>
+  <div class="tabs">
+    <span class="tab on" data-s="1">1 &middot; II.4</span><span class="tab" data-s="2">2 &middot; gnomon</span><span class="tab" data-s="3">3 &middot; II.5 / II.6</span><span class="tab" data-s="4">4 &middot; complete</span><span class="tab" data-s="5">5 &middot; why</span>
+  </div>
+  <div class="hint">
+    <b>drag the cut point</b> on the segment below &middot; <b>[1&ndash;5]</b> scene &middot; <b>[&larr;&rarr;]</b> nudge &middot; <b>[space]</b> pause &middot; <b>[r]</b> replay &middot; <b>[k]</b> al-Khw&#257;rizm&#299;<br><a href="index.html">&larr; gallery</a>
+  </div>
+</div>
+<script>
+(function(){
+"use strict";
+var cv=document.getElementById('c'), ctx=cv.getContext('2d'), W=0,H=0,DPR=1;
+var MONO='ui-monospace,Menlo,Consolas,monospace', SER='Georgia,"Times New Roman",serif';
+var GOLD=[244,185,66], VERM=[224,101,60], LAPIS=[110,164,255], VERD=[71,201,162],
+    PARCH=[233,220,189], DIM=[142,128,102], BONE=[247,240,222];
+function rgba(c,a){return 'rgba('+c[0]+','+c[1]+','+c[2]+','+(a<0?0:a>1?1:a)+')';}
+function M(s){return Math.round(s)+'px '+MONO;} function S(s,i){return (i?'italic ':'')+Math.round(s)+'px '+SER;}
+function f(v,n){return (isFinite(v)?v:0).toFixed(n==null?4:n);}
+function ease(t){return t*t*(3-2*t);}
+function seg(p,a,b){var v=(p-a)/(b-a);return v<0?0:v>1?1:v;}
+function es(p,a,b){return ease(seg(p,a,b));}
+function cl(v,a,b){return v<a?a:v>b?b:v;}
+
+// ---------- parchment noise ----------
+var noise=document.createElement('canvas'); noise.width=noise.height=160; var pat=null;
+(function(){var n=noise.getContext('2d'),d=n.createImageData(160,160),i;
+ for(i=0;i<d.data.length;i+=4){var v=Math.random()*255;d.data[i]=v;d.data[i+1]=v*.9;d.data[i+2]=v*.66;d.data[i+3]=12;}
+ n.putImageData(d,0,0);})();
+
+// ---------- state ----------
+var scene=1, paused=false, T=0, last=0, ph=0;
+var LEN=10, sa=6;              // segment AB of length LEN, cut at C: a=sa, b=LEN-sa
+var qb=6, qc=16;               // scene 4:  x^2 + qb*x = qc
+var smW=13, smH=13;            // smoothed world extents (scene 4 zoom)
+var CYC=[0,8.5,12,9,15,20];
+var SX=0,SY=0,SC=1, FX=0,FY=0,FW=1,FH=1, PX=0,PY=0,PW=1, CX0=0,CX1=0,CY0=0;
+var rails=[], drag=null;
+
+var HEAD=[null,
+ ['PROPOSITION II.4','If a straight line be cut at random, the square on the whole is equal to the squares on the segments and twice the rectangle contained by the segments.'],
+ ['BOOK II, DEFINITION 2 · THE GNOMON','In any parallelogrammic area let any one whatever of the parallelograms about its diameter with the two complements be called a gnomon. — i.e. the L-shape left when a corner square is removed from a square.'],
+ ['PROPOSITION II.5 (with II.6)','If a straight line be cut into equal and unequal segments, the rectangle contained by the unequal segments of the whole together with the square on the straight line between the points of section is equal to the square on the half.'],
+ ['COMPLETING THE SQUARE · II.4 & II.6, and al-Khwārizmī, c. 820','Halve the number of roots, and multiply the half by itself; add this to the number; take the root of the sum, and subtract from it the half of the roots. That is the root you sought.'],
+ ['BOOK II · WHY ANY OF THIS MATTERS','Fourteen propositions. No equations anywhere in them.']];
+
+// ---------- primitives ----------
+function txt(s,x,y,fo,c,a,al){ctx.font=fo;ctx.fillStyle=rgba(c,a==null?.9:a);ctx.textAlign=al||'left';ctx.textBaseline='alphabetic';ctx.fillText(s,x,y);}
+function X(x){return SX+x*SC;} function Y(y){return SY+y*SC;}
+function fit(we,he){SC=Math.min(FW/we,FH/he);SX=FX+(FW-we*SC)/2;SY=FY+(FH-he*SC)/2;}
+function label(cx,cy,sz,col,sym,val){
+  if(sz<15)return; var fs=cl(sz*.21,11,25), two=sz>=48&&val!=null;
+  ctx.textAlign='center'; ctx.fillStyle=rgba(col,1); ctx.font=S(fs,1);
+  ctx.fillText(sym,cx,cy+(two?-1:fs*.36));
+  if(two){ctx.fillStyle=rgba(PARCH,.7);ctx.font=M(fs*.6);ctx.fillText(val,cx,cy+fs*.95);}
+}
+function pieceR(cx,cy,w,h,ang,col,al,sym,val,glow){
+  var wp=Math.abs(w*SC), hp=Math.abs(h*SC), px=X(cx), py=Y(cy);
+  if(!isFinite(px)||!isFinite(py)||wp<.01||hp<.01)return;
+  ctx.save(); ctx.translate(px,py); ctx.rotate(ang);
+  ctx.fillStyle=rgba(col,al*.19); ctx.fillRect(-wp/2,-hp/2,wp,hp);
+  ctx.shadowColor=rgba(col,.8); ctx.shadowBlur=glow==null?11:glow;
+  ctx.strokeStyle=rgba(col,al); ctx.lineWidth=1.5; ctx.strokeRect(-wp/2,-hp/2,wp,hp);
+  ctx.restore();
+  if(sym&&al>.25) label(px,py,Math.min(wp,hp),col,sym,val);
+}
+function rectW(x,y,w,h,col,al,sym,val,glow){pieceR(x+w/2,y+h/2,w,h,0,col,al,sym,val,glow);}
+function outline(x,y,w,h,col,al,dash){
+  ctx.save(); if(dash)ctx.setLineDash(dash);
+  ctx.strokeStyle=rgba(col,al); ctx.lineWidth=1.2;
+  ctx.strokeRect(X(x),Y(y),w*SC,h*SC); ctx.restore();
+}
+function ahead(x,y,ux,uy,col,a){var nx=-uy,ny=ux,s=6.5;ctx.fillStyle=rgba(col,.6*a);ctx.beginPath();
+  ctx.moveTo(x,y);ctx.lineTo(x+ux*s+nx*3,y+uy*s+ny*3);ctx.lineTo(x+ux*s-nx*3,y+uy*s-ny*3);ctx.closePath();ctx.fill();}
+function dimA(x1,y1,x2,y2,off,t,col,a){
+  if(a<=.02)return; var dx=x2-x1,dy=y2-y1,len=Math.hypot(dx,dy); if(len<6)return;
+  var ux=dx/len,uy=dy/len,nx=-uy,ny=ux, ax=x1+nx*off,ay=y1+ny*off,bx=x2+nx*off,by=y2+ny*off;
+  ctx.strokeStyle=rgba(col,.45*a); ctx.lineWidth=1; ctx.beginPath();
+  ctx.moveTo(x1,y1);ctx.lineTo(ax+nx*5,ay+ny*5); ctx.moveTo(x2,y2);ctx.lineTo(bx+nx*5,by+ny*5);
+  ctx.moveTo(ax,ay);ctx.lineTo(bx,by); ctx.stroke();
+  ahead(ax,ay,ux,uy,col,a); ahead(bx,by,-ux,-uy,col,a);
+  var an=Math.atan2(dy,dx); if(an>Math.PI/2||an<-Math.PI/2)an+=Math.PI;
+  ctx.save(); ctx.translate((ax+bx)/2,(ay+by)/2); ctx.rotate(an);
+  ctx.font=S(13.5,1); ctx.textAlign='center'; var w=ctx.measureText(t).width;
+  ctx.fillStyle='rgba(7,6,10,.85)'; ctx.fillRect(-w/2-5,-9,w+10,18);
+  ctx.fillStyle=rgba(col,.95*a); ctx.fillText(t,0,4.5); ctx.restore();
+}
+function wrap(s,mw,fo){ctx.font=fo;var ws=s.split(' '),ls=[],cur='';
+  for(var i=0;i<ws.length;i++){var t=cur?cur+' '+ws[i]:ws[i];
+    if(ctx.measureText(t).width>mw&&cur){ls.push(cur);cur=ws[i];}else cur=t;} if(cur)ls.push(cur); return ls;}
+function tline(x,y,toks,fs){var cx=x,i,t;
+  for(i=0;i<toks.length;i++){t=toks[i];
+    ctx.font=t[2]?S(fs+2.5,1):M(fs); ctx.fillStyle=rgba(t[1]||PARCH,t[3]==null?.88:t[3]);
+    ctx.textAlign='left'; ctx.textBaseline='alphabetic'; ctx.fillText(t[0],cx,y);
+    cx+=ctx.measureText(t[0]).width;} return cx-x;}
+function rule(x,y,w,a){ctx.strokeStyle=rgba(DIM,a==null?.4:a);ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x,y+.5);ctx.lineTo(x+w,y+.5);ctx.stroke();}
+function okmark(x,y,r,lbl){var good=Math.abs(r)<1e-9;
+  txt(good?'✓ exact':'Δ '+r.toExponential(1),x,y,M(11.5),good?VERD:VERM,.95);
+  if(lbl)txt(lbl,x-8,y,M(11.5),DIM,.7,'right');}
+
+// ---------- scene 1 : II.4 ----------
+function scene1(){
+  var a=sa,b=LEN-sa, ex=es(ph,.10,.34)-es(ph,.64,.90), g=1.05*ex, o=1.15, da=1-ex;
+  fit(12.3,12.3);
+  outline(o,o,LEN,LEN,PARCH,.20+.14*da,[5,7]);
+  var P=[[o-g,o-g,a,a,GOLD,'a²',a*a],[o+a+g,o-g,b,a,VERM,'ab',a*b],
+         [o-g,o+a+g,a,b,VERM,'ab',a*b],[o+a+g,o+a+g,b,b,LAPIS,'b²',b*b]];
+  for(var i=0;i<4;i++){var p=P[i];rectW(p[0],p[1],p[2],p[3],p[4],.95,p[5],f(p[6]));}
+  var d=14+18*ex;
+  dimA(X(o-g),Y(o-g),X(o-g+a),Y(o-g),-d,'a = '+f(a,2),GOLD,1);
+  dimA(X(o+a+g),Y(o-g),X(o+a+g+b),Y(o-g),-d,'b = '+f(b,2),LAPIS,1);
+  dimA(X(o),Y(o+LEN),X(o),Y(o),-16,'a + b = '+f(LEN,2),PARCH,da);
+  txt(ex>.45?'four pieces — nothing added, nothing lost':'one square on the whole line',
+      FX+FW/2,FY+FH-2,M(12),DIM,.75,'center');
+  var res=(a+b)*(a+b)-(a*a+2*a*b+b*b);
+  panel([
+   [[' (a + b)²',PARCH,1],['  =  ',DIM],['a²',GOLD,1],['  +  ',DIM],['2ab',VERM,1],['  +  ',DIM],['b²',LAPIS,1]],
+   null,
+   [['a = ',DIM],[f(a,2),GOLD],['      b = ',DIM],[f(b,2),LAPIS]],
+   [['(a+b)²  = ',DIM],[f((a+b)*(a+b)),BONE]],
+   '-',
+   [['a²      = ',DIM],[f(a*a),GOLD]],
+   [['2ab     = ',DIM],[f(2*a*b),VERM],['   (two rectangles)',DIM,0,.55]],
+   [['b²      = ',DIM],[f(b*b),LAPIS]],
+   '-',
+   [['sum     = ',DIM],[f(a*a+2*a*b+b*b),BONE]],
+   ['CHK',res],
+   null,
+   ['NOTE','Euclid states this as a sentence about areas. He has no "+", no "=", and no exponent — only the square on the whole and the pieces it falls into.']
+  ]);
+}
+
+// ---------- scene 2 : difference of squares ----------
+function scene2(){
+  var a=sa,b=LEN-sa,o=1.2;                       // scene rail enforces a >= b
+  var cut=es(ph,.05,.17)-es(ph,.90,.99);
+  var mv =es(ph,.30,.56)-es(ph,.80,.93);
+  var sh =es(ph,.58,.70)-es(ph,.76,.83);
+  var d=a-b;
+  fit(12.4,13.4);
+  outline(o,o,a,a,PARCH,.16+.2*(1-cut),[5,7]);
+  // the excised corner square b^2
+  rectW(o+a-b+.45*cut, o+a-b+1.85*cut, b,b, LAPIS,.95-.35*cut,'b²',f(b*b));
+  // gnomon piece 1 : stays
+  rectW(o,o,a,d,VERD,.95,'a(a−b)',f(a*d));
+  // gnomon piece 2 : rotates into place
+  var sc=[o+d/2, o+d+b/2], ec=[o+a+b/2, o+d/2];
+  var arc=Math.sin(mv*Math.PI)*0.55;
+  pieceR(sc[0]+(ec[0]-sc[0])*mv, sc[1]+(ec[1]-sc[1])*mv-arc, d,b, -Math.PI/2*mv, VERD,.95,'b(a−b)',f(b*d));
+  if(cut>.5&&mv<.06){ ctx.save(); ctx.strokeStyle=rgba(BONE,.9*(1-mv/.06));ctx.lineWidth=2;
+    ctx.setLineDash([4,4]); ctx.beginPath(); ctx.moveTo(X(o),Y(o+d)); ctx.lineTo(X(o+d),Y(o+d)); ctx.stroke(); ctx.restore(); }
+  if(mv>.98)outline(o,o,a+b,d,BONE,.5*sh+.25,[3,5]);
+  dimA(X(o),Y(o),X(o+a),Y(o),-15,'a = '+f(a,2),GOLD,1-mv*.7);
+  dimA(X(o),Y(o+d),X(o),Y(o+a),14,'b = '+f(b,2),LAPIS,(1-cut)*.9);
+  dimA(X(o),Y(o+d),X(o+a+b),Y(o+d),16+18*sh,'a + b = '+f(a+b,2),BONE,sh);
+  dimA(X(o+a+b),Y(o+d),X(o+a+b),Y(o),16+16*sh,'a − b = '+f(d,2),BONE,sh);
+  txt(mv<.25?'take the square on b out of the square on a — an L remains: the gnomon'
+      :(mv<.9?'cut the gnomon and swing the arm around':'the same area, now a rectangle (a+b) by (a−b)'),
+      FX+FW/2,FY+FH-2,M(12),DIM,.75,'center');
+  var res=(a*a-b*b)-(a+b)*d;
+  panel([
+   [[' a² − b²',PARCH,1],['  =  ',DIM],['(a + b)(a − b)',VERD,1]],
+   null,
+   [['a²          = ',DIM],[f(a*a),GOLD]],
+   [['b²          = ',DIM],[f(b*b),LAPIS]],
+   [['gnomon      = ',DIM],[f(a*a-b*b),VERD],['   ← the L',DIM,0,.55]],
+   '-',
+   [['  a(a−b)    = ',DIM],[f(a*d),VERD]],
+   [['+ b(a−b)    = ',DIM],[f(b*d),VERD],['   (the swung arm)',DIM,0,.55]],
+   [['(a+b)(a−b) = ',DIM],[f((a+b)*d),BONE]],
+   ['CHK',res],
+   null,
+   [[f(a+b,2)+' × '+f(d,2)+' = '+f((a+b)*d),BONE,0,.85]],
+   ['NOTE','A gnomon is what is left of a square when a smaller square is cut from its corner. Euclid names it in Definition 2 and then uses it for the next ten propositions.']
+  ]);
+}
+
+// ---------- scene 3 : II.5 / II.6 ----------
+function gnoFig(ox,oy,sz,Sd,K,gcol,kcol,tg){
+  var k=Sd>1e-9?sz*(K/Sd):0, i;
+  ctx.save();
+  var R=[[ox,oy,sz,sz-k,gcol],[ox,oy+sz-k,sz-k,k,gcol],[ox+sz-k,oy+sz-k,k,k,kcol]];
+  for(i=0;i<3;i++){var r=R[i];
+    ctx.fillStyle=rgba(r[4],.19); ctx.fillRect(r[0],r[1],r[2],r[3]);
+    ctx.shadowColor=rgba(r[4],.8); ctx.shadowBlur=10; ctx.strokeStyle=rgba(r[4],.95); ctx.lineWidth=1.4;
+    if(r[2]>.5&&r[3]>.5)ctx.strokeRect(r[0],r[1],r[2],r[3]); ctx.shadowBlur=0;}
+  ctx.setLineDash([4,5]); ctx.strokeStyle=rgba(PARCH,.4); ctx.lineWidth=1; ctx.strokeRect(ox,oy,sz,sz);
+  ctx.restore();
+  label(ox+sz/2,oy+(sz-k)/2,Math.min(sz,sz-k),gcol,tg.g[0],tg.g[1]);
+  label(ox+sz-k/2,oy+sz-k/2,k,kcol,tg.k[0],tg.k[1]);
+  dimA(ox,oy+sz,ox+sz,oy+sz,20,tg.side,PARCH,1);
+  txt(tg.cap,ox,oy-26,M(11.5),GOLD,.95);
+  txt(tg.eq,ox,oy-9,S(14.5,1),PARCH,.85);
+  txt(tg.num,ox+sz/2,oy+sz+44,M(12),BONE,.85,'center');
+}
+function scene3(){
+  var a=sa,b=LEN-sa, m=(a+b)/2, d=Math.abs(a-b)/2, m2=a/2, n=b;
+  var lx=FX+16, lw=FW-32, ly=FY+18, u=lw/LEN;
+  // the line AB, bisected at C, cut at D
+  ctx.lineWidth=7; ctx.lineCap='butt';
+  ctx.strokeStyle=rgba(GOLD,.85); ctx.beginPath();ctx.moveTo(lx,ly);ctx.lineTo(lx+a*u,ly);ctx.stroke();
+  ctx.strokeStyle=rgba(LAPIS,.85); ctx.beginPath();ctx.moveTo(lx+a*u,ly);ctx.lineTo(lx+LEN*u,ly);ctx.stroke();
+  var pts=[[0,'A'],[m/LEN,'C'],[a/LEN,'D'],[1,'B']];
+  for(var i=0;i<4;i++){var p=pts[i],px=lx+p[0]*lw;
+    ctx.strokeStyle=rgba(BONE,.8);ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(px,ly-9);ctx.lineTo(px,ly+9);ctx.stroke();
+    txt(p[1],px,ly-14,S(14,1),BONE,.9,'center');}
+  txt('AC = CB = m = '+f(m,2)+'   ·   AD = a = '+f(a,2)+'   ·   DB = b = '+f(b,2)+'   ·   CD = d = '+f(d,2),
+      lx,ly+28,M(12),DIM,.85);
+  var top=FY+96, sz=Math.min((FW-110)/2, FH-top+FY-70);
+  if(sz<40)sz=40;
+  var x1=FX+FW/2-sz-34, x2=FX+FW/2+34;
+  gnoFig(x1,top,sz,m,d,VERD,LAPIS,{g:['ab',f(a*b)],k:['d²',f(d*d)],side:'m = '+f(m,2),
+    cap:'II.5',eq:'ab + d² = m²',num:f(a*b)+' + '+f(d*d)+' = '+f(m*m)});
+  gnoFig(x2,top,sz,m2+n,m2,VERM,GOLD,{g:['(a+b)b',f((a+b)*b)],k:['(a/2)²',f(m2*m2)],side:'a/2 + b = '+f(m2+n,2),
+    cap:'II.6',eq:'(a + b)b + (a/2)² = (a/2 + b)²',num:f((a+b)*b)+' + '+f(m2*m2)+' = '+f((m2+n)*(m2+n))});
+  txt('same figure, twice: a square with a corner square removed',FX+FW/2,FY+FH-2,M(12),DIM,.7,'center');
+  var res=(a*b+d*d)-m*m, res6=((a+b)*b+m2*m2)-(m2+n)*(m2+n);
+  panel([
+   [[' ab + d²',PARCH,1],['  =  ',DIM],['m²',VERD,1],['       (II.5)',DIM,0,.55]],
+   null,
+   [['m = (a+b)/2 = ',DIM],[f(m,4),PARCH]],
+   [['d = |a−b|/2 = ',DIM],[f(d,4),LAPIS]],
+   [['ab          = ',DIM],[f(a*b),VERD]],
+   [['ab + d²     = ',DIM],[f(a*b+d*d),BONE],['   m² = ',DIM],[f(m*m),BONE]],
+   ['CHK',res],
+   null,
+   [['THE ANCIENT QUADRATIC',GOLD,0,.95]],
+   [['given  sum s = ',DIM],[f(a+b,2),PARCH],['  product P = ',DIM],[f(a*b,2),PARCH]],
+   [['d = √((s/2)² − P) = √',DIM],[f(m*m-a*b),LAPIS],[' = ',DIM],[f(d,4),LAPIS]],
+   [['parts = s/2 ± d = ',DIM],[f(m+d,3),GOLD],[' , ',DIM],[f(m-d,3),LAPIS]],
+   ['CHK',(m+d)-Math.max(a,b)],
+   null,
+   ['NOTE','II.5 recovers two numbers from their sum and their product. That is the quadratic formula, done with a straightedge, roughly 2100 years before anyone wrote √.']
+  ]);
+}
+
+// ---------- scene 4 : completing the square ----------
+function scene4(){
+  var b=qb, c=qc, x=Math.sqrt(c+b*b/4)-b/2, hb=b/2;
+  var att=es(ph,.03,.13), spl=es(ph,.17,.27), mv=es(ph,.29,.53),
+      gh=es(ph,.56,.67), fl=es(ph,.71,.81), sol=es(ph,.83,.92);
+  var fade=Math.min(es(ph,0,.025),1-es(ph,.965,1));
+  var bw=Math.max(x+b+.55, .5), bh=Math.max(x+hb, .4), mg=.15*Math.max(bw,bh)+.2;
+  var tw=bw+2*mg, th=bh+2*mg, k=Math.min(1,.16);
+  smW+=(tw-smW)*k; smH+=(th-smH)*k;
+  if(!isFinite(smW)||smW<=0)smW=tw; if(!isFinite(smH)||smH<=0)smH=th;
+  fit(smW,smH);
+  var ox=(smW-bw)/2, oy=(smH-bh)/2;
+  ctx.globalAlpha=fade;
+  // completed square outline
+  outline(ox,oy,x+hb,x+hb,BONE,.18+.42*Math.max(gh,fl),[5,7]);
+  rectW(ox,oy,x,x,GOLD,.95,'x²',f(x*x));                                 // the square on x
+  var gap=.28*spl;
+  rectW(ox+x,oy,hb,x,VERM,.95*att,'(b/2)x',f(hb*x));                         // half that stays
+  // half that swings down
+  var s0=[ox+x+hb*1.5+gap, oy+x/2], e0=[ox+x/2, oy+x+hb/2];
+  pieceR(s0[0]+(e0[0]-s0[0])*mv, s0[1]+(e0[1]-s0[1])*mv, hb,x, -Math.PI/2*mv, VERM,.95*att,'(b/2)x',f(hb*x));
+  // the missing corner
+  if(gh>.01){ ctx.save(); if(fl<.99)ctx.setLineDash([4,5]);
+    var cx0=X(ox+x),cy0=Y(oy+x),cs=hb*SC;
+    ctx.fillStyle=rgba(LAPIS,.19*fl); if(cs>.5)ctx.fillRect(cx0,cy0,cs,cs);
+    ctx.shadowColor=rgba(LAPIS,.85);ctx.shadowBlur=13*gh;
+    ctx.strokeStyle=rgba(LAPIS,.55+.45*fl);ctx.lineWidth=1.6;
+    if(cs>.5)ctx.strokeRect(cx0,cy0,cs,cs); ctx.restore();
+    label(cx0+cs/2,cy0+cs/2,cs,LAPIS,'(b/2)²',f(hb*hb)); }
+  dimA(X(ox),Y(oy),X(ox+x),Y(oy),-14,'x = '+f(x,3),GOLD,1-sol*.55);
+  dimA(X(ox+x),Y(oy),X(ox+x+b),Y(oy),-14,'b = '+f(b,2),VERM,att*(1-mv));
+  dimA(X(ox),Y(oy+x+hb),X(ox+x+hb),Y(oy+x+hb),18,'x + b/2 = '+f(x+hb,4),BONE,sol);
+  dimA(X(ox+x+hb),Y(oy+x+hb),X(ox+x+hb),Y(oy),18,'√(c + (b/2)²) = '+f(Math.sqrt(c+hb*hb),4),BONE,sol);
+  ctx.globalAlpha=1;
+  var cap=mv<.15?'a square on x, with b·x laid alongside — together they are c'
+        :(mv<.9?'halve the b·x rectangle and lay the halves on two sides':
+         (fl<.5?'a corner is missing — exactly (b/2)²':'complete the square: the whole is c + (b/2)²'));
+  txt(cap,FX+FW/2,FY+FH-2,M(12),DIM,.78,'center');
+  var lhs=x*x+b*x, res=lhs-c, big=c+hb*hb;
+  panel([
+   [[' x² + b·x = c',PARCH,1],['      solve for x',DIM,0,.55]],
+   [['   x² + ',DIM],[f(b,2),VERM],[' x = ',DIM],[f(c,2),VERD]],
+   null,
+   [['x²          = ',DIM],[f(x*x),GOLD]],
+   [['2·(b/2)x    = ',DIM],[f(2*hb*x),VERM],['   = b·x',DIM,0,.55]],
+   [['(b/2)²      = ',DIM],[f(hb*hb),LAPIS],['   ← the completion',DIM,0,.55]],
+   '-',
+   [['(x + b/2)²  = ',DIM],[f((x+hb)*(x+hb)),BONE],['  = c + (b/2)² = ',DIM],[f(big),BONE]],
+   [['x + b/2     = √',DIM],[f(big),BONE],[' = ',DIM],[f(Math.sqrt(big)),BONE]],
+   [['x           = ',DIM],[f(Math.sqrt(big),4),BONE],[' − ',DIM],[f(hb,4),VERM],[' = ',DIM],[f(x),GOLD]],
+   '-',
+   [['x² + b·x    = ',DIM],[f(x*x),GOLD],[' + ',DIM],[f(b*x),VERM],[' = ',DIM],[f(lhs),BONE]],
+   [['c           = ',DIM],[f(c),VERD]],
+   ['CHK',res],
+   null,
+   ['NOTE','x = √(c + (b/2)²) − b/2 is the positive root of the quadratic formula — here obtained by moving two rectangles and noticing a hole.']
+  ]);
+}
+
+// ---------- scene 5 : the closing ----------
+var PARA=[
+ 'For two thousand years a² was not a symbol. It was a square — an actual square, drawn on an actual line. That is why we still say "x squared", why we still "extract" a root, and why the awkward third power is called a cube.',
+ 'Book II is not algebra written out in words. It is algebra performed in areas. Euclid may add an area to an area and never a number to a number, so every identity has to be a figure whose pieces genuinely fit. The gnomon — the L left when a corner square is taken from a square — does nearly all the work.',
+ 'With no symbols whatever, this machinery solves quadratics. II.5 turns "sum and product" into "the half, plus or minus a length". Al-Khwārizmī, around 820, laid the two halves of b·x on two sides of the square on x and asked what was missing at the corner. The missing corner is (b/2)². Completing the square is not a metaphor; it is an instruction about a picture.',
+ 'Descartes, in 1637, cut the cord: he let x·x be a number rather than an area, and the drawings became optional. They were never wrong — only slow. Everything you now push around as symbols, somebody once had to see.'];
+function scene5(){
+  var i,j,y, cx=CX0, mw=Math.min(760,Math.max(180,CX1-CX0));
+  ctx.save();                                        // drifting ghost gnomons
+  var spanX=Math.max(200,CX1-CX0+300), spanY=Math.max(160,H-CY0-160);
+  for(i=0;i<7;i++){
+    var t=T*.06+i*.9, s=90+70*Math.sin(i*2.1), gx=CX0+((i*233+T*7)%spanX)-150,
+        gy=CY0+60+(((i*167+Math.sin(t)*40)%spanY)+spanY)%spanY;
+    ctx.strokeStyle=rgba(i%2?GOLD:VERD,.055); ctx.lineWidth=1;
+    ctx.strokeRect(gx,gy,s,s); ctx.strokeRect(gx+s*.55,gy+s*.55,s*.45,s*.45);
+  } ctx.restore();
+  y=FY+16;
+  for(i=0;i<PARA.length;i++){
+    var ls=wrap(PARA[i],mw,S(17.5));
+    for(j=0;j<ls.length;j++){txt(ls[j],cx,y,S(17.5),i===2?BONE:PARCH,i===2?.95:.78);y+=27;}
+    y+=17;
+    if(i<PARA.length-1){rule(cx,y-24,mw*.18,.35);}
+  }
+  rule(cx,y-4,mw,.3); y+=26;
+  txt('EUCLID, ELEMENTS, BOOK II — FOURTEEN PROPOSITIONS, NO EQUATIONS',cx,y,M(12.5),GOLD,.9);
+  y+=22; txt('a² + 2ab + b²   ·   a² − b²   ·   ab + d² = m²   ·   x = √(c + (b/2)²) − b/2',cx,y,M(12.5),DIM,.7);
+}
+
+// ---------- side panel ----------
+function panel(rows){
+  if(PW<40)return;
+  var y=PY+16, i, r, fs=PW<300?11.5:12.5;
+  ctx.save(); ctx.beginPath(); ctx.rect(PX-10,PY-6,PW+16,H-PY-40); ctx.clip();
+  ctx.fillStyle='rgba(13,11,9,.42)'; ctx.fillRect(PX-11,PY-8,PW+18,0);
+  for(i=0;i<rows.length;i++){
+    r=rows[i];
+    if(r===null){y+=9;continue;}
+    if(r==='-'){rule(PX,y-4,PW-10,.35);y+=11;continue;}
+    if(r[0]==='CHK'){okmark(PX+PW*.42,y,r[1],'residual');y+=fs+7;continue;}
+    if(r[0]==='NOTE'){
+      rule(PX,y+1,PW-10,.3); y+=17;
+      var ls=wrap(r[1],PW-12,S(14));
+      for(var j=0;j<ls.length;j++){txt(ls[j],PX,y,S(14),DIM,.85);y+=20;}
+      continue;}
+    tline(PX,y,r,fs); y+=fs+7;
+  }
+  ctx.restore();
+}
+
+// ---------- rails ----------
+function buildRails(){
+  rails=[];
+  var y=H-46, x0=CX0+8, x1=Math.min(CX1-8,x0+760);
+  if(scene===5)return;
+  if(scene===4){
+    var w=(x1-x0-40)/2;
+    rails.push({k:'b',x0:x0,x1:x0+w,y:y,lo:0,hi:12,min:0,max:12,val:qb,col:VERM,lab:'b',split:0});
+    rails.push({k:'c',x0:x0+w+40,x1:x1,y:y,lo:0,hi:60,min:0,max:60,val:qc,col:VERD,lab:'c',split:0});
+  } else {
+    rails.push({k:'a',x0:x0,x1:x1,y:y,lo:0,hi:LEN,min:scene===2?LEN/2:1.2,max:scene===2?9.2:8.8,
+                val:sa,col:GOLD,lab:'C',split:1});
+  }
+}
+function drawRails(){
+  for(var i=0;i<rails.length;i++){
+    var r=rails[i], w=r.x1-r.x0, kx=r.x0+w*((r.val-r.lo)/(r.hi-r.lo||1)), on=drag===r.k;
+    if(r.split){
+      var mnx=r.x0+w*(r.min/r.hi);
+      ctx.strokeStyle=rgba(DIM,.25);ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(r.x0,r.y);ctx.lineTo(r.x1,r.y);ctx.stroke();
+      ctx.lineWidth=6; ctx.lineCap='butt';
+      ctx.strokeStyle=rgba(GOLD,.8);ctx.beginPath();ctx.moveTo(r.x0,r.y);ctx.lineTo(kx,r.y);ctx.stroke();
+      ctx.strokeStyle=rgba(LAPIS,.8);ctx.beginPath();ctx.moveTo(kx,r.y);ctx.lineTo(r.x1,r.y);ctx.stroke();
+      txt('A',r.x0,r.y+24,S(13,1),BONE,.8,'center'); txt('B',r.x1,r.y+24,S(13,1),BONE,.8,'center');
+      txt('a = '+f(r.val,2),(r.x0+kx)/2,r.y-13,M(12),GOLD,.95,'center');
+      txt('b = '+f(LEN-r.val,2),(kx+r.x1)/2,r.y-13,M(12),LAPIS,.95,'center');
+      if(scene===2){ ctx.strokeStyle=rgba(VERM,.3);ctx.lineWidth=1;ctx.setLineDash([3,4]);
+        ctx.beginPath();ctx.moveTo(r.x0,r.y+11);ctx.lineTo(mnx,r.y+11);ctx.stroke();ctx.setLineDash([]);
+        txt('b ≤ a required',r.x0,r.y+24,M(10.5),VERM,.55); }
+      txt('cut the line at random — drag C',r.x1+14,r.y+4,M(11),DIM,.6);
+    } else {
+      ctx.strokeStyle=rgba(DIM,.28);ctx.lineWidth=3;ctx.lineCap='round';
+      ctx.beginPath();ctx.moveTo(r.x0,r.y);ctx.lineTo(r.x1,r.y);ctx.stroke();
+      ctx.strokeStyle=rgba(r.col,.85);ctx.lineWidth=4;
+      ctx.beginPath();ctx.moveTo(r.x0,r.y);ctx.lineTo(kx,r.y);ctx.stroke();
+      txt(r.lab+' = '+f(r.val,2),r.x0,r.y-13,M(12.5),r.col,.95);
+      txt(r.k==='b'?'roots':'the given area',r.x1,r.y-13,M(11),DIM,.6,'right');
+    }
+    ctx.save(); ctx.shadowColor=rgba(r.col,.9); ctx.shadowBlur=on?18:10;
+    ctx.fillStyle=rgba(BONE,on?1:.92); ctx.beginPath(); ctx.arc(kx,r.y,on?9:7.5,0,6.2832); ctx.fill(); ctx.restore();
+    if(r.split)txt('C',kx,r.y+24,S(13,1),BONE,.95,'center');
+  }
+}
+function railSet(r,px){
+  var v=r.lo+(px-r.x0)/((r.x1-r.x0)||1)*(r.hi-r.lo);
+  v=cl(v,r.min,r.max); r.val=v;
+  if(r.k==='a')sa=v; else if(r.k==='b')qb=v; else qc=v;
+}
+function hit(px,py){
+  for(var i=0;i<rails.length;i++){var r=rails[i],w=r.x1-r.x0,
+      kx=r.x0+w*((r.val-r.lo)/(r.hi-r.lo||1));
+    if(Math.hypot(px-kx,py-r.y)<28)return r;
+    if(py>r.y-22&&py<r.y+22&&px>r.x0-14&&px<r.x1+14)return r;}
+  return null;
+}
+
+// ---------- frame ----------
+function header(){
+  var h=HEAD[scene], y=CY0+16;
+  txt(h[0],CX0,y,M(12),GOLD,.95); y+=8;
+  rule(CX0,y,Math.min(CX1-CX0,720),.35); y+=22;
+  var ls=wrap('“'+h[1]+'”',Math.min(CX1-CX0,880),S(16.5,1));
+  for(var i=0;i<ls.length&&i<3;i++){txt(ls[i],CX0,y,S(16.5,1),PARCH,.72);y+=23;}
+  return y-CY0+4;
+}
+function layout(){
+  var wide=W>=1000;
+  CX0=(wide?348:16); CX1=W-18; CY0=(wide?14:H<620?150:206);
+  var hh=header();
+  var top=CY0+hh+8, bot=H-(scene===5?18:76);
+  var stackW=CX1-CX0;
+  if(scene===5){FX=CX0;FY=top;FW=stackW;FH=bot-top;PX=0;PW=0;PY=top;return;}
+  if(stackW<700){ PW=Math.max(0,stackW); PX=CX0; FW=stackW; FX=CX0; FY=top; FH=(bot-top)*.56; PY=FY+FH+12; }
+  else { PW=cl(stackW*.33,260,400); PX=CX1-PW; FX=CX0; FW=stackW-PW-30; FY=top; FH=bot-top; PY=top+4; }
+  if(FH<80)FH=80; if(FW<80)FW=80;
+}
+function bg(){
+  ctx.fillStyle='#07060a'; ctx.fillRect(0,0,W,H);
+  var g=ctx.createRadialGradient(W*.44,H*.5,0,W*.44,H*.5,Math.max(W,H)*.72);
+  g.addColorStop(0,'rgba(58,42,20,.34)'); g.addColorStop(.55,'rgba(24,18,12,.14)'); g.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  if(pat){ctx.fillStyle=pat;ctx.fillRect(0,0,W,H);}
+  var v=ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*.3,W/2,H/2,Math.max(W,H)*.78);
+  v.addColorStop(0,'rgba(0,0,0,0)'); v.addColorStop(1,'rgba(0,0,0,.62)');
+  ctx.fillStyle=v; ctx.fillRect(0,0,W,H);
+}
+function frame(t){
+  var dt=Math.min(.05,(t-last)/1000||0); last=t;
+  if(!paused)T+=dt;
+  ph=(T%CYC[scene])/CYC[scene];
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  bg(); layout(); buildRails();
+  ctx.lineJoin='miter'; ctx.textBaseline='alphabetic';
+  if(scene===1)scene1(); else if(scene===2)scene2(); else if(scene===3)scene3();
+  else if(scene===4)scene4(); else scene5();
+  drawRails();
+  if(paused)txt('‖ paused',CX1,H-14,M(11.5),VERM,.8,'right');
+  requestAnimationFrame(frame);
+}
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  W=window.innerWidth||800; H=window.innerHeight||600;
+  cv.width=Math.round(W*DPR); cv.height=Math.round(H*DPR);
+  cv.style.width=W+'px'; cv.style.height=H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  pat=ctx.createPattern(noise,'repeat');
+}
+
+// ---------- input ----------
+function setScene(s){
+  scene=cl(s|0,1,5); T=0;
+  if(scene===2&&sa<LEN/2)sa=LEN/2+.8;
+  var ts=document.querySelectorAll('#ui .tab');
+  for(var i=0;i<ts.length;i++)ts[i].className='tab'+(+ts[i].getAttribute('data-s')===scene?' on':'');
+}
+cv.addEventListener('pointerdown',function(e){
+  var r=hit(e.clientX,e.clientY); if(!r)return;
+  drag=r.k; railSet(r,e.clientX); cv.setPointerCapture&&cv.setPointerCapture(e.pointerId); e.preventDefault();
+});
+window.addEventListener('pointermove',function(e){
+  if(!drag)return;
+  for(var i=0;i<rails.length;i++)if(rails[i].k===drag)railSet(rails[i],e.clientX);
+});
+window.addEventListener('pointerup',function(){drag=null;});
+window.addEventListener('keydown',function(e){
+  var k=e.key;
+  if(k>='1'&&k<='5'){setScene(+k);e.preventDefault();return;}
+  if(k===' '){paused=!paused;e.preventDefault();return;}
+  if(k==='r'||k==='R'){T=0;return;}
+  if(k==='k'||k==='K'){setScene(4);qb=10;qc=39;return;}
+  if(k==='ArrowLeft'||k==='ArrowRight'){
+    var d=(k==='ArrowRight'?1:-1)*(e.shiftKey?.02:.2);
+    if(scene===4)qb=cl(qb+d,0,12); else if(scene<4)sa=cl(sa+d,scene===2?LEN/2:1.2,scene===2?9.2:8.8);
+    e.preventDefault();}
+  if(k==='ArrowUp'||k==='ArrowDown'){
+    if(scene===4){qc=cl(qc+(k==='ArrowUp'?1:-1)*(e.shiftKey?.1:1),0,60);e.preventDefault();}}
+});
+(function(){var ts=document.querySelectorAll('#ui .tab');
+ for(var i=0;i<ts.length;i++)ts[i].addEventListener('click',function(){setScene(+this.getAttribute('data-s'));});})();
+window.addEventListener('resize',resize);
+resize(); requestAnimationFrame(frame);
+})();
+</script>
