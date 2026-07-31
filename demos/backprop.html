@@ -1,3 +1,4 @@
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
 <title>Backpropagation Anatomy</title>
 <style>
   html,body{margin:0;padding:0;background:#05060a;overflow:hidden;height:100%}
@@ -18,7 +19,6 @@
   .ph{color:#ffe08a}
 </style>
 
-<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
 <canvas id="c"></canvas>
 <div id="ui">
   <h1>Backpropagation</h1>
@@ -69,7 +69,7 @@ function initNet(){
     a.push(new Array(SIZES[k]).fill(0));z.push(new Array(SIZES[k]).fill(0));delta.push(new Array(SIZES[k]).fill(0));
     sa.push(new Array(SIZES[k]).fill(0));sd.push(new Array(SIZES[k]).fill(0));
   }
-  epochs=0; avgLoss=0; lossHist=[]; solvedT=0; bgAcc=0;
+  epochs=0; avgLoss=0; lossHist=[]; solvedT=0; bgAcc=0; stallRef=1; stallEp=0; restarts++;
 }
 function sig(x){return 1/(1+Math.exp(-x));}
 function forward(x){
@@ -102,7 +102,7 @@ function backward(t){
   }
   return 0.5*(out-t)*(out-t);
 }
-var LR=0.9, MOM=0.95, BG_RATE=9; // background epochs per second
+var LR=0.9, MOM=0.95, BG_RATE=14; // background epochs per second
 function applyGrads(){
   for(var l=0;l<w.length;l++)for(var j=0;j<w[l].length;j++){
     for(var i=0;i<w[l][j].length;i++){
@@ -173,6 +173,7 @@ function layout(){
 // ---------- animation state ----------
 var phase='forward', phaseT=0, curSample=0, sampleLoss=0, pred=0, epochs=0, avgLoss=0, epochAcc=0, lossHist=[];
 var speed=1.0, paused=false, hoverEdge=null, mx=-999,my=-999, tPrev=0, flash=0, solvedT=0, bgAcc=0;
+var stallRef=1, stallEp=0, restarts=-1, stalled=false;
 initNet(); resize();
 
 var spd=document.getElementById('spd');
@@ -380,8 +381,14 @@ function step(dt){
     if(solvedT<=0){initNet();forward(DATA[curSample].x);phase='forward';phaseT=0;}
     return;
   }
-  if(avgLoss>0&&avgLoss<0.004){solvedT=3.6;}          // XOR learned → celebrate, then restart
-  else if(epochs>2600&&avgLoss>0.02){initNet();forward(DATA[curSample].x);} // rare dead-sigmoid plateau
+  if(avgLoss>0&&avgLoss<0.004){solvedT=4.0;stalled=false;}   // XOR learned → celebrate, then restart
+  // the famous XOR saddle: every output sticks at 0.5. If nothing improves, reseed.
+  if(epochs-stallEp>=150){
+    var improved=(stallRef-avgLoss)>0.0008;
+    stalled=(!improved&&avgLoss>0.02);
+    if(stalled&&epochs>=300){initNet();forward(DATA[curSample].x);stalled=false;}
+    else{stallRef=avgLoss;stallEp=epochs;}
+  }
 
   phaseT+=dt*speed*(phase==='pause'?1.6:0.9);
   flash=Math.max(0,flash-dt*2.2);
@@ -409,12 +416,12 @@ function frame(t){
   uiT+=dt;
   if(uiT>0.08){
     uiT=0;
-    el.phase.textContent=paused?'paused':(solvedT>0?'solved ✓':(phase==='update'?'weight update':phase));
+    el.phase.textContent=paused?'paused':(solvedT>0?'solved ✓':(stalled?'saddle plateau…':(phase==='update'?'weight update':phase)));
     el.io.textContent='['+DATA[curSample].x.join(',')+'] → '+DATA[curSample].t;
     el.pred.textContent=a[L-1][0].toFixed(4);
     el.loss.textContent=sampleLoss.toFixed(5);
     el.avg.textContent=avgLoss?avgLoss.toFixed(5):'—';
-    el.ep.textContent=epochs;
+    el.ep.textContent=epochs+'   (run '+Math.max(1,restarts)+')';
   }
   requestAnimationFrame(frame);
 }

@@ -62,24 +62,24 @@ function randomGenome(){
     amp:rnd(0.25,1.0),      // muscle contraction amplitude (fraction of rest length)
     freq:rnd(1.0,5.0),      // Hz
     phase:rnd(0,6.2832),    // phase offset
-    rest:rnd(34,64),        // rest length px
-    lean:rnd(-0.7,0.7),     // asymmetry: forward tilt of the muscle axis
-    stiff:rnd(240,700),     // spring constant
-    fricA:rnd(0.25,0.95),   // per-blob ground friction
-    fricB:rnd(0.25,0.95)
+    rest:rnd(38,72),        // rest length px
+    lean:rnd(-0.9,0.9),     // asymmetry: forward tilt of the muscle axis
+    stiff:rnd(400,1500),    // spring constant
+    fricA:rnd(0.01,0.35),   // per-blob ground friction (asymmetry = ratcheting)
+    fricB:rnd(0.01,0.35)
   };
 }
 function mutate(g){
   function j(v,s,lo,hi){v+=gauss()*s*MUT;return v<lo?lo:(v>hi?hi:v);}
   return {
-    amp:j(g.amp,0.35,0.05,1.15),
+    amp:j(g.amp,0.35,0.05,1.0),
     freq:j(g.freq,1.6,0.4,7.0),
     phase:(g.phase+gauss()*1.4*MUT+6.2832)%6.2832,
-    rest:j(g.rest,16,20,80),
-    lean:j(g.lean,0.4,-1.2,1.2),
-    stiff:j(g.stiff,180,120,900),
-    fricA:j(g.fricA,0.3,0.05,1),
-    fricB:j(g.fricB,0.3,0.05,1)
+    rest:j(g.rest,18,22,92),
+    lean:j(g.lean,0.45,-1.4,1.4),
+    stiff:j(g.stiff,420,150,2000),
+    fricA:j(g.fricA,0.16,0.005,0.5),
+    fricB:j(g.fricB,0.16,0.005,0.5)
   };
 }
 function makeCreature(g){
@@ -109,7 +109,7 @@ function resetBodies(){
 function integrate(c,time){
   var g=c.g,a=c.a,b=c.b;
   // target muscle length on a sinusoid — the genome
-  var L=g.rest*(1-g.amp*0.45*(1+Math.sin(time*6.2832*g.freq+g.phase))*0.5);
+  var L=Math.max(12,g.rest*(1-g.amp*0.5*(1+Math.sin(time*6.2832*g.freq+g.phase))));
   var dx=b.x-a.x, dy=b.y-a.y;
   var d=Math.sqrt(dx*dx+dy*dy)||1e-6;
   var nx=dx/d, ny=dy/d;
@@ -117,12 +117,14 @@ function integrate(c,time){
   var cs=Math.cos(g.lean),sn=Math.sin(g.lean);
   var ax=nx*cs-ny*sn, ay=nx*sn+ny*cs;
   var f=g.stiff*(d-L);
-  var damp=6.0*((b.vx-a.vx)*nx+(b.vy-a.vy)*ny);
+  var damp=3.5*((b.vx-a.vx)*nx+(b.vy-a.vy)*ny);
   var fx=(f+damp)*ax, fy=(f+damp)*ay;
+  if(fx>4000)fx=4000; if(fx<-4000)fx=-4000;
+  if(fy>4000)fy=4000; if(fy<-4000)fy=-4000;
   a.vx+=fx/a.m*DT; a.vy+=fy/a.m*DT;
   b.vx-=fx/b.m*DT; b.vy-=fy/b.m*DT;
   a.vy+=G*DT; b.vy+=G*DT;
-  a.vx*=0.999;b.vx*=0.999;
+  a.vx*=0.9995;b.vx*=0.9995;
   step(a,g.fricA);step(b,g.fricB);
 }
 function step(p,fric){
@@ -130,9 +132,11 @@ function step(p,fric){
   var fl=groundY-p.r;
   if(p.y>fl){
     p.y=fl;
-    if(p.vy>0) p.vy*=-0.22;
-    p.vx*=(1-fric*0.5);
+    if(p.vy>0) p.vy*=-0.15;
+    p.vx*=(1-fric);     // asymmetric friction is what converts wiggling into travel
   }
+  if(p.vx>1800)p.vx=1800; if(p.vx<-1800)p.vx=-1800;
+  if(p.vy<-2200)p.vy=-2200;
 }
 
 function simStep(){

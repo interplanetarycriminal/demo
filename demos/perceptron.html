@@ -1,3 +1,4 @@
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
 <title>Perceptron Learning Rule</title>
 <style>
   html,body{margin:0;padding:0;background:#04050a;overflow:hidden;height:100%}
@@ -17,7 +18,6 @@
   .ok{color:#ffd166}.bad{color:#ff6b8a}
 </style>
 
-<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
 <canvas id="c"></canvas>
 <div id="ui">
   <h1>Perceptron</h1>
@@ -29,8 +29,8 @@
   <div class="row"><span class="k">updates</span><span class="v" id="s-upd">0</span></div>
   <div class="row"><span class="k">errors this pass</span><span class="v" id="s-err">-</span></div>
   <div class="row"><span class="k">status</span><span class="v" id="s-status">learning…</span></div>
-  <label class="k">speed <span class="v" id="s-spd">1.0x</span></label>
-  <input type="range" id="spd" min="15" max="400" value="100">
+  <label class="k">speed <span class="v" id="s-spd">1.5x</span></label>
+  <input type="range" id="spd" min="15" max="400" value="150">
   <div class="hint">[r] reseed · [space] pause · [n] toggle separable/not · <a href="index.html">← gallery</a></div>
 </div>
 <script>
@@ -57,7 +57,7 @@ function makeData(sep){
     // random true separator, margin gap
     var ang=Math.random()*Math.PI*2, tw=[Math.cos(ang),Math.sin(ang)], tb=(Math.random()*2-1)*0.6;
     var n=0,guard=0;
-    while(n<44&&guard<6000){
+    while(n<34&&guard<6000){
       guard++;
       var x=(Math.random()*2-1)*2.4, y=(Math.random()*2-1)*2.0;
       var s=tw[0]*x+tw[1]*y+tb;
@@ -67,7 +67,7 @@ function makeData(sep){
   }else{
     // XOR-ish: two interleaved blobs, provably not linearly separable
     var centers=[[-1.35,1.0,1],[1.35,-1.0,1],[-1.35,-1.0,-1],[1.35,1.0,-1]];
-    for(var c=0;c<centers.length;c++)for(var i=0;i<11;i++){
+    for(var c=0;c<centers.length;c++)for(var i=0;i<8;i++){
       pts.push({x:centers[c][0]+(Math.random()*2-1)*0.62,
                 y:centers[c][1]+(Math.random()*2-1)*0.62,
                 l:centers[c][2]});
@@ -84,7 +84,7 @@ function predict(p){return (w[0]*p.x+w[1]*p.y+bias)>=0?1:-1;}
 
 // ---------- state ----------
 var idx=0,updates=0,errThisPass=0,lastErrs=-1,converged=false,goldFlash=0,cur=null,order=[];
-var phase='pick',phaseT=0,prevW=[0,0,0],speed=1,paused=false,oscHist=[],passCount=0,wasWrong=false,tPrev=0;
+var phase='pick',phaseT=0,prevW=[0,0,0],speed=1.5,paused=false,oscHist=[],passCount=0,wasWrong=false,tPrev=0;
 resize();makeData(true);
 
 var spd=document.getElementById('spd');
@@ -105,9 +105,9 @@ function stepLogic(){
       if(errThisPass===0&&separable){converged=true;goldFlash=1;}
       errThisPass=0;idx=0;shuffle(order);
       // sit on the solution a while, then reseed with the non-separable set
-      if(converged&&passCount>4){separable=false;makeData(false);return;}
+      if(converged&&passCount>2){separable=false;makeData(false);return;}
       // after showing the endless oscillation, cycle back to a separable set
-      if(!separable&&passCount>22){separable=true;makeData(true);return;}
+      if(!separable&&passCount>8){separable=true;makeData(true);return;}
     }
     cur=pts[order[idx]];
     var pr=predict(cur);
@@ -130,7 +130,8 @@ function stepLogic(){
 function tick(dt){
   if(paused)return;
   goldFlash=Math.max(0,goldFlash-dt*0.9);
-  phaseT+=dt*speed*(phase==='judge'?3.2:(phase==='update'?2.0:5.0));
+  // linger on mistakes, skim past points the neuron already gets right
+  phaseT+=dt*speed*(phase==='judge'?(wasWrong?2.2:6.5):(phase==='update'?2.0:11.0));
   var guard=0;
   while(phaseT>=1&&guard<40){phaseT-=1;stepLogic();guard++;}
 }

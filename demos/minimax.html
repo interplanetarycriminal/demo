@@ -45,6 +45,7 @@ var VIS_DEPTH = 4, MAX_VIS = 700;
 var nodes = [], events = [], evIdx = 0, evStep = 1;
 var revealed = [], revIdx = 0, maxDepthSeen = 0;
 
+// allocating version — only used by the UI / game flow, never inside the search
 function checkWin(b){
   for (var i=0;i<8;i++){
     var a=LINES[i][0],c=LINES[i][1],d=LINES[i][2];
@@ -54,11 +55,22 @@ function checkWin(b){
   return {p:0, line:null};
 }
 
+// hot path: no allocation. -1 = keep playing, 0 = draw, 1 = X won, 2 = O won
+var L0=[0,3,6,0,1,2,0,2], L1=[1,4,7,3,4,5,4,4], L2=[2,5,8,6,7,8,8,6];
+function winnerOf(b){
+  for (var i=0;i<8;i++){
+    var v = b[L0[i]];
+    if (v && v === b[L1[i]] && v === b[L2[i]]) return v;
+  }
+  for (var j=0;j<9;j++) if (!b[j]) return -1;
+  return 0;
+}
+
 // ---------- pure counting search (for the honest node-count comparison) ----------
 function countSearch(depth, alpha, beta, maximizing, prune, box){
   box.n++;
-  var w = checkWin(board);
-  if (w) return (w.p === X) ? (10-depth) : (w.p === O ? (depth-10) : 0);
+  var w = winnerOf(board);
+  if (w >= 0) return (w === X) ? (10-depth) : (w === O ? (depth-10) : 0);
   var bestV = maximizing ? -Infinity : Infinity;
   for (var i=0;i<9;i++){
     if (board[i]) continue;
@@ -83,9 +95,9 @@ function addNode(parent, depth, move, maximizing){
 }
 
 function recSearch(id, depth, alpha, beta, maximizing){
-  var w = checkWin(board);
-  if (w){
-    var tv = (w.p === X) ? (10-depth) : (w.p === O ? (depth-10) : 0);
+  var w = winnerOf(board);
+  if (w >= 0){
+    var tv = (w === X) ? (10-depth) : (w === O ? (depth-10) : 0);
     if (id >= 0){ nodes[id].val = tv; nodes[id].leaf = true; events.push({type:'value', n:id}); }
     return {v:tv, m:-1};
   }
