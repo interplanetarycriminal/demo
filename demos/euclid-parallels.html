@@ -43,9 +43,10 @@ function angEuc(a,b,c){var ux=b[0]-a[0],uy=b[1]-a[1],vx=c[0]-a[0],vy=c[1]-a[1];
   if(Math.hypot(ux,uy)<1e-13||Math.hypot(vx,vy)<1e-13)return 0;
   return Math.atan2(Math.abs(ux*vy-uy*vx),ux*vx+uy*vy);}
 function dot3(a,b){return a[0]*b[0]+a[1]*b[1]+a[2]*b[2];}
-function cr3(a,b){return[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];}
 function ln3(a){return Math.hypot(a[0],a[1],a[2]);}
+function cr3(a,b){return[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];}
 function nr3(a){var l=ln3(a);return l<1e-13?[0,0,1]:[a[0]/l,a[1]/l,a[2]/l];}
+function nA(a){a%=TAU;return a<0?a+TAU:a;}
 function tanSph(A,B){var d=dot3(A,B),t=[B[0]-d*A[0],B[1]-d*A[1],B[2]-d*A[2]],l=ln3(t);
   return l<1e-11?null:[t[0]/l,t[1]/l,t[2]/l];}
 function angSph(A,B,C){var u=tanSph(A,B),v=tanSph(A,C);if(!u||!v)return 0;
@@ -74,8 +75,7 @@ function geoInt(g1,g2){if(g1.lam===0&&g2.lam===0)return[0,0];
   if(g1.lam===0){var t=g1;g1=g2;g2=t;}
   var wx=g2.lam*g1.vx-g1.lam*g2.vx,wy=g2.lam*g1.vy-g1.lam*g2.vy,L=Math.hypot(wx,wy);
   if(L<1e-12)return null;
-  var dx=-wy/L,dy=wx/L,k=dx*g1.vx+dy*g1.vy;
-  if(Math.abs(k)<=1)return null;
+  var dx=-wy/L,dy=wx/L,k=dx*g1.vx+dy*g1.vy;  if(Math.abs(k)<=1)return null;
   var s=k-(k<0?-1:1)*Math.sqrt(k*k-1);return[s*dx,s*dy];}
 function tanGeo(g,a,b){var tx,ty;
   if(g.line){tx=g.ux;ty=g.uy;}else{tx=-(a[1]-g.cy);ty=a[0]-g.cx;}
@@ -83,7 +83,6 @@ function tanGeo(g,a,b){var tx,ty;
   var l=Math.hypot(tx,ty);return l<1e-13?[1,0]:[tx/l,ty/l];}
 function angHyp(a,b,c){var t1=tanGeo(geoPP(a,b),a,b),t2=tanGeo(geoPP(a,c),a,c);
   return Math.atan2(Math.abs(t1[0]*t2[1]-t1[1]*t2[0]),t1[0]*t2[0]+t1[1]*t2[1]);}
-function nA(a){a%=TAU;return a<0?a+TAU:a;}
 function inArc(b,a1,a2){var d=nA(b-a1),s=nA(a2-a1);return d>1e-12&&d<s-1e-12;}
 
 /* ======================= STATE ======================= */
@@ -113,8 +112,7 @@ function layout(){
     if(y1-y0>=300||head.hs<=.4)break;
     head.hs*=.88; if(head.hs<.62*S)head.note=false;
   }
-  var gp=13, pw=(W-2*PAD-2*gp)/3;
-  pans=[];
+  var gp=13, pw=(W-2*PAD-2*gp)/3; pans=[];
   for(var i=0;i<3;i++){
     var x=PAD+i*(pw+gp), ph=Math.max(160,y1-y0), th=44*S, rh=76*S;
     var cyy=y0+th+(ph-th-rh)/2, R=Math.max(40,Math.min(pw*.44,(ph-th-rh)*.45));
@@ -135,25 +133,21 @@ function wrap(s,x,y,mw,lh,f,c,al,ms){ctx.font=f;if(!ms){ctx.fillStyle=c;ctx.text
 function frame(p,col){
   ctx.save();ctx.globalAlpha=.2;ctx.strokeStyle=col;ctx.lineWidth=1;
   ctx.strokeRect(p.x+.5,p.y+.5,p.w-1,p.h-1);
-  ctx.globalAlpha=.75;ctx.lineWidth=1.6;var k=15;
+  ctx.globalAlpha=.75;ctx.lineWidth=1.6;var k=15;ctx.beginPath();
   var C=[[p.x,p.y,1,1],[p.x+p.w,p.y,-1,1],[p.x,p.y+p.h,1,-1],[p.x+p.w,p.y+p.h,-1,-1]];
-  ctx.beginPath();
   for(var i=0;i<4;i++){var q=C[i];ctx.moveTo(q[0]+q[2]*k,q[1]);ctx.lineTo(q[0],q[1]);ctx.lineTo(q[0],q[1]+q[3]*k);}
-  ctx.stroke();ctx.restore();
-}
+  ctx.stroke();ctx.restore();}
 function plate(p,col){
   var g=ctx.createRadialGradient(p.cx,p.cy,0,p.cx,p.cy,p.R*1.35);
   g.addColorStop(0,'rgba(255,235,190,.055)');g.addColorStop(.62,'rgba(255,220,160,.022)');
   g.addColorStop(1,'rgba(0,0,0,0)');
   ctx.fillStyle=g;ctx.beginPath();ctx.arc(p.cx,p.cy,p.R*1.35,0,TAU);ctx.fill();
   ctx.save();ctx.globalAlpha=.34;ctx.strokeStyle=col;ctx.lineWidth=1;
-  ctx.beginPath();ctx.arc(p.cx,p.cy,p.R,0,TAU);ctx.stroke();
-  ctx.globalAlpha=.5;ctx.lineWidth=1.2;
+  ctx.beginPath();ctx.arc(p.cx,p.cy,p.R,0,TAU);ctx.stroke();ctx.globalAlpha=.5;ctx.lineWidth=1.2;
   for(var i=0;i<48;i++){var a=i*TAU/48,l=(i%4?4:8);
     ctx.beginPath();ctx.moveTo(p.cx+Math.cos(a)*p.R,p.cy+Math.sin(a)*p.R);
     ctx.lineTo(p.cx+Math.cos(a)*(p.R+l),p.cy+Math.sin(a)*(p.R+l));ctx.stroke();}
-  ctx.restore();
-}
+  ctx.restore();}
 function px(p,u){return[p.cx+u[0]*p.R,p.cy-u[1]*p.R];}
 function dotm(x,y,r,c,fill){ctx.beginPath();ctx.arc(x,y,r,0,TAU);
   if(fill){ctx.fillStyle=c;ctx.fill();}else{ctx.strokeStyle=c;ctx.lineWidth=1.4;ctx.stroke();}}
@@ -170,8 +164,12 @@ function angArc(x,y,rad,t1,t2,col,lab){
   ctx.globalAlpha=.9;ctx.beginPath();ctx.arc(x,y,rad,sa,sa+sw,sw<0);
   ctx.strokeStyle=col;ctx.lineWidth=1.8;ctx.stroke();ctx.restore();
   var m=sa+sw/2,lx=x+Math.cos(m)*(rad+15),ly=y+Math.sin(m)*(rad+15);
-  ctx.textBaseline='middle';txt(lab,lx,ly,'bold 11px '+MONO,col,'center');ctx.textBaseline='alphabetic';
-}
+  ctx.textBaseline='middle';txt(lab,lx,ly,'bold 11px '+MONO,col,'center');ctx.textBaseline='alphabetic';}
+function status(p,s,c){                       // live verdict on the sweeping line
+  var y=p.cy+p.R*.86; ctx.font='10.5px '+MONO;
+  var w=Math.min(ctx.measureText(s).width,p.w-28)+16;
+  ctx.fillStyle='rgba(5,6,11,.78)';ctx.beginPath();ctx.rect(p.cx-w/2,y-11.5,w,16);ctx.fill();
+  txtFit(s,p.cx,y,p.w-28,10.5,MONO,c,'center');}
 function geoPath(p,g,a,b){
   if(g.line){var A=px(p,a),B=px(p,b);ctx.moveTo(A[0],A[1]);ctx.lineTo(B[0],B[1]);return;}
   var a1=Math.atan2(a[1]-g.cy,a[0]-g.cx),a2=Math.atan2(b[1]-g.cy,b[0]-g.cx),d=a2-a1;
@@ -187,8 +185,7 @@ function sphLine(p,pts,col,w,aF,aB){
     if(sd!==prev){if(on){ctx.lineTo(X,Y);ctx.stroke();}
       ctx.beginPath();ctx.globalAlpha=sd?aF:aB;ctx.moveTo(X,Y);on=true;prev=sd;}
     else ctx.lineTo(X,Y);}
-  if(on)ctx.stroke();ctx.globalAlpha=1;
-}
+  if(on)ctx.stroke();ctx.globalAlpha=1;}
 function gcPts(n,t0,t1,N){
   var a=Math.abs(n[0])<.9?[1,0,0]:[0,1,0], u=nr3(cr3(n,a)), v=cr3(n,u), o=[];
   for(var i=0;i<=N;i++){var t=t0+(t1-t0)*i/N;
@@ -215,7 +212,7 @@ function drawEuclid(p){
     for(var k=-NF;k<=NF;k++){                       // fan of lines through P
       if(k===0)continue;
       var a=(k/(NF+.6))*(PI/2), dx=Math.sin(a), dy=-Math.cos(a);
-      ctx.globalAlpha=.3;ctx.strokeStyle=GOLD;ctx.lineWidth=1;ctx.beginPath();
+      ctx.globalAlpha=.28;ctx.strokeStyle=MEET;ctx.lineWidth=1;ctx.beginPath();
       ctx.moveTo(p.cx+(eP[0]-dx*3)*p.R,p.cy-(eP[1]-dy*3)*p.R);
       ctx.lineTo(p.cx+(eP[0]+dx*3)*p.R,p.cy-(eP[1]+dy*3)*p.R);ctx.stroke();
       var X=[eP[0]+h*Math.tan(a),ELY], q=px(p,X);
@@ -226,17 +223,25 @@ function drawEuclid(p){
     ctx.strokeStyle=par?A:MEET;ctx.lineWidth=2;ctx.globalAlpha=.95;ctx.beginPath();
     ctx.moveTo(p.cx+(eP[0]-dx*3)*p.R,p.cy-(eP[1]-dy*3)*p.R);
     ctx.lineTo(p.cx+(eP[0]+dx*3)*p.R,p.cy-(eP[1]+dy*3)*p.R);ctx.stroke();
-    if(!par){var t=-h/Math.sin(s),X2=[eP[0]+t*dx,ELY],q2=px(p,X2);
-      ctx.save();ctx.shadowColor=MEET;ctx.shadowBlur=10;dotm(q2[0],q2[1],4,MEET,1);ctx.restore();}
+    var far=0;
+    if(!par){var t=-h/Math.sin(s),X2=[eP[0]+t*dx,ELY],dX=Math.hypot(X2[0],X2[1]);
+      far=Math.abs(t);
+      if(dX<=1){var q2=px(p,X2);
+        ctx.save();ctx.shadowColor=MEET;ctx.shadowBlur=10;dotm(q2[0],q2[1],4,MEET,1);ctx.restore();}
+      else{var q3=px(p,[X2[0]/dX*.95,X2[1]/dX*.95]);   // it meets, but off the plate
+        ctx.globalAlpha=.9;dotm(q3[0],q3[1],3.4,MEET,0);
+        dotm(q3[0],q3[1],6.5,MEET,0);}}
     ctx.globalAlpha=1;
     ctx.strokeStyle=A;ctx.lineWidth=2.4;ctx.save();ctx.shadowColor=A;ctx.shadowBlur=12;
     ctx.beginPath();ctx.moveTo(p.cx-p.R*1.1,p.cy-eP[1]*p.R);ctx.lineTo(p.cx+p.R*1.1,p.cy-eP[1]*p.R);
     ctx.stroke();ctx.restore();
     ctx.strokeStyle=PARCH;ctx.lineWidth=2;ctx.beginPath();
     ctx.moveTo(p.cx-p.R*1.1,p.cy-ELY*p.R);ctx.lineTo(p.cx+p.R*1.1,p.cy-ELY*p.R);ctx.stroke();
-    var q3=px(p,eP);handle(q3[0],q3[1],A,'P');
+    var qP=px(p,eP);handle(qP[0],qP[1],A,'P');
     txt('L',p.cx+p.R*.78,p.cy-ELY*p.R-8,'12px '+MONO,PARCH);
     txt('the one parallel',p.cx-p.R*.95,p.cy-eP[1]*p.R-9,'10px '+MONO,A);
+    status(p,par?'sweep is PARALLEL — it never meets L'
+               :'sweep meets L '+(far>99?'>99':far.toFixed(1))+' plate-radii from P',par?A:MEET);
   }else{
     var g=[angEuc(eT[0],eT[1],eT[2]),angEuc(eT[1],eT[2],eT[0]),angEuc(eT[2],eT[0],eT[1])];
     var S0=px(p,eT[0]),S1=px(p,eT[1]),S2=px(p,eT[2]);
@@ -269,7 +274,7 @@ function drawSphere(p){
       var th=i*PI/13, t=[e1[0]*Math.cos(th)+e2[0]*Math.sin(th),e1[1]*Math.cos(th)+e2[1]*Math.sin(th),
                          e1[2]*Math.cos(th)+e2[2]*Math.sin(th)];
       var n=nr3(cr3(sP,t));
-      sphLine(p,gcPts(n,0,TAU,72),A,1,.34,.11);
+      sphLine(p,gcPts(n,0,TAU,72),MEET,1,.32,.1);   // orange = meets L, in every panel
       var X=nr3(cr3(n,[0,0,1]));
       for(j=-1;j<=1;j+=2){var q=sphPt(p,[X[0]*j,X[1]*j,X[2]*j]);
         ctx.globalAlpha=q[2]>=0?.9:.28;dotm(q[0],q[1],2.6,MEET,1);ctx.globalAlpha=1;}
@@ -288,6 +293,7 @@ function drawSphere(p){
     for(i=0;i<40;i++){var a2=i*TAU/40,qe=sphPt(p,[Math.cos(a2),Math.sin(a2),0]);
       if(qe[2]>=.15&&(!best||qe[0]<best[0]))best=qe;}
     if(best)txt('L',best[0]+7,best[1]+15,'12px '+MONO,PARCH);
+    status(p,'sweep meets L at 2 antipodal points — always',MEET);
   }else{
     var an=[angSph(sT[0],sT[1],sT[2]),angSph(sT[1],sT[2],sT[0]),angSph(sT[2],sT[0],sT[1])];
     for(i=0;i<3;i++)sphLine(p,arcPts(sT[i],sT[(i+1)%3],48),A,2.4,.95,.22);
@@ -315,16 +321,15 @@ function drawSphere(p){
     }
   }
   ctx.save();ctx.globalAlpha=.5;ctx.strokeStyle=A;ctx.lineWidth=1.4;
-  ctx.beginPath();ctx.arc(p.cx,p.cy,p.R,0,TAU);ctx.stroke();ctx.restore();
-}
+  ctx.beginPath();ctx.arc(p.cx,p.cy,p.R,0,TAU);ctx.stroke();ctx.restore();}
 /* ======================= PANEL 2 : HYPERBOLIC ======================= */
 function drawHyper(p){
   var A=ACC[2], i;
   ctx.save();ctx.beginPath();ctx.arc(p.cx,p.cy,p.R,0,TAU);ctx.clip();
   if(tiling){                                  // faint web of ideal geodesics
     ctx.globalAlpha=.075;ctx.strokeStyle=GOLD;ctx.lineWidth=1;
-    var N=36,st=[13,17];
-    for(var s=0;s<2;s++)for(i=0;i<N;i++){
+    var N=30,st=[4,7,11];                      // three depths of ideal chords = layered lace
+    for(var s=0;s<st.length;s++)for(i=0;i<N;i++){
       var a1=i*TAU/N,a2=(i+st[s])*TAU/N;
       var g=geoPP([Math.cos(a1),Math.sin(a1)],[Math.cos(a2),Math.sin(a2)]);
       ctx.beginPath();fullGeo(p,g);ctx.stroke();}
@@ -336,7 +341,7 @@ function drawHyper(p){
     for(i=0;i<NF;i++){
       var th=i*PI/NF, G=geoPD(hP,Math.cos(th),Math.sin(th)), ge=geoEnds(G);
       var hit=(inArc(ge[0],le[0],le[1])!==inArc(ge[1],le[0],le[1]));
-      ctx.globalAlpha=hit?.28:.55;ctx.strokeStyle=hit?GOLD:A;ctx.lineWidth=hit?1:1.4;
+      ctx.globalAlpha=hit?.34:.62;ctx.strokeStyle=hit?MEET:A;ctx.lineWidth=hit?1:1.5;
       ctx.beginPath();fullGeo(p,G);ctx.stroke();
       if(hit){var X=geoInt(gL,G);if(X){var q=px(p,X);ctx.globalAlpha=.85;dotm(q[0],q[1],2.6,MEET,1);}}
       else npar++;
@@ -355,6 +360,7 @@ function drawHyper(p){
     ctx.strokeStyle=PARCH;ctx.lineWidth=2.4;ctx.beginPath();fullGeo(p,gL);ctx.stroke();
     var qp=px(p,hP);handle(qp[0],qp[1],A,'P');
     var lm=px(p,[.42,-.30]);txt('L',lm[0],lm[1]+15,'12px '+MONO,PARCH);
+    status(p,hits?'sweep meets L':'sweep MISSES L — one of infinitely many parallels',hits?MEET:A);
   }else{
     var an=[angHyp(hT[0],hT[1],hT[2]),angHyp(hT[1],hT[2],hT[0]),angHyp(hT[2],hT[0],hT[1])];
     ctx.beginPath();
@@ -374,15 +380,14 @@ function drawHyper(p){
   }
   ctx.restore();
   ctx.save();ctx.globalAlpha=.62;ctx.strokeStyle=A;ctx.lineWidth=1.6;
-  ctx.beginPath();ctx.arc(p.cx,p.cy,p.R,0,TAU);ctx.stroke();ctx.restore();
-}
+  ctx.beginPath();ctx.arc(p.cx,p.cy,p.R,0,TAU);ctx.stroke();ctx.restore();}
 /* ======================= READOUTS ======================= */
 var TITLES=[['I. EUCLIDEAN','the flat plane — curvature K = 0'],
             ['II. SPHERICAL','the sphere — curvature K > 0'],
             ['III. HYPERBOLIC','the Poincaré disk — curvature K < 0']];
-var CAPS=[['every other line through P cuts L; exactly one never does',
-           'every great circle through P cuts L — twice, at antipodes',
-           'a whole fan through P never reaches L (dashed = limiting parallels)'],
+var CAPS=[['orange meets L — exactly one gold line never does',
+           'every great circle meets L, twice, at antipodes — orange, all of them',
+           'magenta never reaches L; dashed = the two limiting parallels'],
           ['α+β+γ = 180° for every triangle, always',
            'excess = area / R² — bigger triangle, bigger sum',
            'defect = area — push vertices out and the sum falls to 0°']];
@@ -530,17 +535,13 @@ function tick(ts){
   drawHead(false);
   var sm=sums();
   for(var i=0;i<3;i++)drawPanel(i,pans[i],sm);
-  drawFoot();
-  requestAnimationFrame(tick);
-}
+  drawFoot();requestAnimationFrame(tick);}
 function resize(){
   DPR=Math.min(2,window.devicePixelRatio||1);
   W=window.innerWidth;H=window.innerHeight;
   cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);
   cv.style.width=W+'px';cv.style.height=H+'px';
-  ctx.setTransform(DPR,0,0,DPR,0,0);
-  layout();
-}
+  ctx.setTransform(DPR,0,0,DPR,0,0);layout();}
 window.addEventListener('resize',resize);
 resize();
 requestAnimationFrame(tick);

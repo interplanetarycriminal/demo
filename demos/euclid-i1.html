@@ -44,7 +44,7 @@
 "use strict";
 var cv=document.getElementById('c'), ctx=cv.getContext('2d'), W=0,H=0,DPR=1,bg=null;
 var TAU=Math.PI*2, US=1, S=200, Scur=-1, CX=0, CY=0, TOPY=0, BOTY=0, HY=0, HW=600;
-var BANDY=0, BANDH=0, PIPY=0, GW=0;
+var BANDY=0, BANDH=0, PIPY=0, GW=0, HX=0;
 var SER='"Iowan Old Style","Palatino Linotype","Book Antiqua",Palatino,Georgia,"Times New Roman",serif';
 var C_GOLD='201,163,92', C_IVORY='238,227,203', C_HOT='140,231,255', C_PT='255,212,140';
 
@@ -120,7 +120,7 @@ function sI1(){
    c:'POST. 3 — the compass may be opened to any radius, anywhere',
    items:[CIR(B,r,{comp:1,a0:Math.atan2(A.y-B.y,A.x-B.x)})]},
   {d:900,say:'And from the point C, in which the circles cut one another, …',
-   c:'DEF. 15 — a circle: all lines from its centre to it are equal',items:[PT(C,'C',{big:1})]},
+   c:'THE POINT OF SECTION — granted by no postulate; see the gloss',items:[PT(C,'C',{big:1})]},
   {d:1300,say:'… to the points A, B let the straight lines CA, CB be joined.',
    c:'POST. 1 — to draw a straight line from any point to any point',
    items:[SEG(A,C,{c:'i',t1:.55}),SEG(B,C,{c:'i',t0:.45}),FIL([A,B,C],{t0:.6})]},
@@ -312,6 +312,8 @@ function build(){
 function setCur(k){cur=k;step=0;tt=0;hold=0;play=true;noteA=0;build();ui();}
 function ui(){for(var i=0;i<pts.length;i++)pts[i].className=(i===cur?'on':'');
   PSTAT.textContent=play?'playing':'paused';}
+function next(){if(tt<1)tt=1;else if(step<sc.steps.length-1){step++;tt=0;hold=0;}}
+function prev(){if(step>0){step--;tt=1;hold=0;}else tt=1;}
 
 /* ============================ layout & background ============================ */
 function resize(){
@@ -324,8 +326,11 @@ function resize(){
   BANDH=Math.round(114*US); BANDY=H-BANDH-13; PIPY=BANDY-15; BOTY=PIPY-12;
   GW=W>=720?Math.round(Math.min(240,W*0.26)):0;
   CX=W*0.5+Math.min(64,W*0.05);
-  HY=(W<776&&H>520)?232:Math.round(30*US);         // clear the overlay panel when narrow
-  HW=(W<776&&H>520)?W-40:Math.max(260,Math.min(760,W-40,2*(CX-322)));
+  var nar=(W<776&&H>=700);                         // no room beside the overlay panel
+  HY=nar?300:Math.round(30*US);
+  HW=nar?W-40:Math.max(240,Math.min(760,W-40,2*(CX-338)));
+  HX=nar?W*0.5:Math.min(Math.max(CX,338+HW*0.5),W-16-HW*0.5);
+  if(!(HX>0))HX=W*0.5;
   TOPY=HY+Math.round(38*US); Scur=-1;
   makeBG();
 }
@@ -335,8 +340,9 @@ function fit(nl,mx,my){
   var ah=Math.max(70,BOTY-TOPY-14);
   CY=(TOPY+BOTY)*0.5;
   var hw=Math.max(60,Math.min(CX-18,W-18-CX));     // the figure is nudged right of centre
-  var base=Math.min(hw/1.58,ah/2.32);
-  var need=Math.min(hw/Math.max(mx,.1),ah*.5/Math.max(my,.1));
+  var base=Math.min(hw/1.58,ah/2.15);
+  var lab=26*US;                                   // room for each point's letter
+  var need=Math.min(Math.max(30,hw-lab)/Math.max(mx,.1),Math.max(30,ah*.5-lab)/Math.max(my,.1));
   var tgt=Math.max(26,Math.min(base,need));        // shrink to hold a dragged-out figure
   Scur=Scur<0?tgt:Scur+(tgt-Scur)*.14;
   S=Scur;
@@ -347,28 +353,27 @@ function makeBG(){
   var g=b.createRadialGradient(W*.52,H*.42,0,W*.52,H*.42,Math.max(W,H)*.82);
   g.addColorStop(0,'#151009'); g.addColorStop(.42,'#0d0a08'); g.addColorStop(1,'#050406');
   b.fillStyle=g; b.fillRect(0,0,W,H);
-  var i,n=Math.round(W*H/380);
-  for(i=0;i<n;i++){                                   // parchment grain
-    var x=Math.random()*W,y=Math.random()*H,s=Math.random()<.12?1.7:.9;
+  for(var i=0,n=Math.round(W*H/380);i<n;i++){         // parchment grain
     b.globalAlpha=.012+Math.random()*.045;
     b.fillStyle=Math.random()<.62?'#e6cf9c':'#3a2c1a';
-    b.fillRect(x,y,s,s);
+    b.fillRect(Math.random()*W,Math.random()*H,Math.random()<.12?1.7:.9,.9);
   }
   b.globalAlpha=1;
   var v=b.createRadialGradient(W*.52,H*.45,Math.min(W,H)*.28,W*.52,H*.45,Math.max(W,H)*.78);
   v.addColorStop(0,'rgba(0,0,0,0)'); v.addColorStop(1,'rgba(0,0,0,.62)');
   b.fillStyle=v; b.fillRect(0,0,W,H);
 }
-function sx(p){return CX+p.x*S;}
-function sy(p){return CY-p.y*S;}
+function sx(p){return CX+p.x*S;} function sy(p){return CY-p.y*S;}
 function w2(x,y){return {x:(x-CX)/S,y:(CY-y)/S};}
 
 /* ============================ drawing ============================ */
-function eq(t){return t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;}
-function es(t){return .5-.5*Math.cos(Math.PI*t);}
+function eq(t){return t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;}          // straightedge stroke
+function es(t){return .5-.5*Math.cos(Math.PI*t);}                  // compass sweep
 function cl01(t){return t<0?0:t>1?1:t;}
 function pen(rgb,a,w,bl){ctx.strokeStyle='rgba('+rgb+','+a+')';ctx.lineWidth=w;
   ctx.shadowBlur=bl||0;ctx.shadowColor='rgba('+rgb+',.8)';}
+function dot(x,y,r,f,bl){ctx.fillStyle=f;ctx.shadowBlur=bl||0;
+  ctx.beginPath();ctx.arc(x,y,r,0,TAU);ctx.fill();}
 
 function item(it,t,hot,last){
   var e,a,rgb,lw,bl,pulse=1;
@@ -386,8 +391,7 @@ function item(it,t,hot,last){
                    p1={x:it.a.x+it.u.x*it.e1*e,y:it.a.y+it.u.y*it.e1*e};}
     else{p0=it.a;p1={x:it.a.x+(it.b.x-it.a.x)*e,y:it.a.y+(it.b.y-it.a.y)*e};}
     ctx.beginPath();ctx.moveTo(sx(p0),sy(p0));ctx.lineTo(sx(p1),sy(p1));ctx.stroke();
-    if(loc<1&&hot){ctx.fillStyle='rgba('+C_HOT+',.95)';ctx.shadowBlur=14;
-      ctx.beginPath();ctx.arc(sx(p1),sy(p1),2.6,0,TAU);ctx.fill();}
+    if(loc<1&&hot)dot(sx(p1),sy(p1),2.6,'rgba('+C_HOT+',.95)',14);
   }else if(it.k==='c'){
     e=es(loc); a=(hot?.95:.30)*pulse; lw=hot?1.7:1.1;
     pen(rgb,a,lw,bl);
@@ -396,10 +400,8 @@ function item(it,t,hot,last){
       var th=it.a0+it.sp*e, tp={x:it.c.x+Math.cos(th)*it.r,y:it.c.y+Math.sin(th)*it.r};
       pen(C_GOLD,.42,1,0);
       ctx.beginPath();ctx.moveTo(sx(it.c),sy(it.c));ctx.lineTo(sx(tp),sy(tp));ctx.stroke();
-      ctx.shadowBlur=0;ctx.fillStyle='rgba('+C_GOLD+',.6)';
-      ctx.beginPath();ctx.arc(sx(it.c),sy(it.c),2.4,0,TAU);ctx.fill();
-      ctx.fillStyle='rgba('+C_HOT+',1)';ctx.shadowBlur=16;ctx.shadowColor='rgba('+C_HOT+',.9)';
-      ctx.beginPath();ctx.arc(sx(tp),sy(tp),3,0,TAU);ctx.fill();
+      dot(sx(it.c),sy(it.c),2.4,'rgba('+C_GOLD+',.6)',0);
+      ctx.shadowColor='rgba('+C_HOT+',.9)'; dot(sx(tp),sy(tp),3,'rgba('+C_HOT+',1)',16);
     }
   }else if(it.k==='f'){
     e=eq(loc); ctx.shadowBlur=0;
@@ -430,11 +432,9 @@ function item(it,t,hot,last){
     ctx.lineTo(ox+bx2,oy+by2);ctx.stroke();
   }else if(it.k==='p'){
     e=cl01(loc); var R=(it.big?5.2:4.3)*(1+(1-e)*1.6), X=sx(it.p), Y=sy(it.p);
-    ctx.shadowBlur=hot?18:8; ctx.shadowColor='rgba('+C_PT+',.9)';
-    ctx.fillStyle='rgba('+C_PT+','+(.55+.45*e)*pulse+')';
-    ctx.beginPath();ctx.arc(X,Y,R,0,TAU);ctx.fill();
-    ctx.shadowBlur=0; ctx.fillStyle='rgba(8,6,4,.85)';
-    ctx.beginPath();ctx.arc(X,Y,R*.42,0,TAU);ctx.fill();
+    ctx.shadowColor='rgba('+C_PT+',.9)';
+    dot(X,Y,R,'rgba('+C_PT+','+(.55+.45*e)*pulse+')',hot?18:8);
+    dot(X,Y,R*.42,'rgba(8,6,4,.85)',0);
     if(e<1&&hot){pen(C_HOT,(1-e)*.9,1.4,10);
       ctx.beginPath();ctx.arc(X,Y,6+34*e,0,TAU);ctx.stroke();}
     if(e>.25){                                           // classical letter
@@ -465,7 +465,7 @@ function rrect(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,
   ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
 
 function chrome(hl){
-  var st=sc.steps[step], i, hx=(W<776&&H>520)?W/2:CX, lh=Math.round(25*US);
+  var st=sc.steps[step], i, hx=HX, lh=Math.round(25*US);
   /* ---- heading ---- */
   ctx.textBaseline='alphabetic';
   ctx.font=Math.round(11*US)+'px ui-monospace,Menlo,Consolas,monospace';
@@ -481,11 +481,10 @@ function chrome(hl){
   /* ---- step pips ---- */
   var n=sc.steps.length, gap=Math.min(19,(Math.min(W-40,520))/n), x0=W/2-(n-1)*gap/2;
   for(i=0;i<n;i++){
-    var X=x0+i*gap, on=i<step, now=i===step;
-    ctx.beginPath();ctx.arc(X,PIPY,now?4.2:2.5,0,TAU);
-    if(now){ctx.fillStyle='rgba('+C_HOT+',.95)';ctx.shadowBlur=11;ctx.shadowColor='rgba('+C_HOT+',.8)';ctx.fill();}
-    else if(on){ctx.fillStyle='rgba('+C_GOLD+',.72)';ctx.shadowBlur=0;ctx.fill();}
-    else{ctx.strokeStyle='rgba('+C_GOLD+',.34)';ctx.lineWidth=1;ctx.shadowBlur=0;ctx.stroke();}
+    var X=x0+i*gap, now=i===step;
+    if(now){ctx.shadowColor='rgba('+C_HOT+',.8)';dot(X,PIPY,4.2,'rgba('+C_HOT+',.95)',11);}
+    else if(i<step)dot(X,PIPY,2.5,'rgba('+C_GOLD+',.72)',0);
+    else{pen(C_GOLD,.34,1,0);ctx.beginPath();ctx.arc(X,PIPY,2.5,0,TAU);ctx.stroke();}
   }
   ctx.shadowBlur=0;
   /* ---- band ---- */
@@ -543,20 +542,18 @@ function frame(dt){
 }
 
 /* ============================ input ============================ */
-function next(){if(tt<1){tt=1;}else if(step<sc.steps.length-1){step++;tt=0;hold=0;}}
-function prev(){if(step>0){step--;tt=1;hold=0;}else tt=1;}
 window.addEventListener('keydown',function(e){
   var k=e.key;
   if(k==='ArrowRight'||k==='n'){play=false;next();ui();e.preventDefault();}
   else if(k==='ArrowLeft'||k==='p'){play=false;prev();ui();e.preventDefault();}
   else if(k===' '){play=!play;if(play&&step===sc.steps.length-1&&tt>=1){step=0;tt=0;hold=0;}ui();e.preventDefault();}
   else if(k==='r'||k==='R'){step=0;tt=0;hold=0;play=true;noteA=0;ui();}
-  else if(k>='1'&&k<='5')setCur(+k-1);
+  else if(k>='1'&&k<='5'&&!e.ctrlKey&&!e.metaKey&&!e.altKey)setCur(+k-1);
 });
 for(var q=0;q<pts.length;q++)pts[q].addEventListener('click',function(e){
   setCur(+e.currentTarget.getAttribute('data-k'));});
 
-var grab=null,gt=0,gm=0;
+var grab=null,gt=0,gm=0,gx=0,gy=0;
 function hit(x,y){
   var names=DRAGS[cur],P=PS[cur],best=null,bd=22*22;
   for(var i=0;i<names.length;i++){var p=P[names[i]];if(!fin(p))continue;
@@ -566,13 +563,13 @@ function hit(x,y){
 }
 cv.addEventListener('pointerdown',function(e){
   var r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;
-  grab=hit(x,y); gt=performance.now(); gm=0;
+  grab=hit(x,y); gt=performance.now(); gm=0; gx=x; gy=y;
   if(grab){cv.setPointerCapture(e.pointerId);cv.style.cursor='grabbing';}
 });
 cv.addEventListener('pointermove',function(e){
   var r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;
   if(grab){
-    gm+=Math.abs(e.movementX||0)+Math.abs(e.movementY||0);
+    gm=Math.max(gm,Math.abs(x-gx)+Math.abs(y-gy));   // works for touch too
     var w=w2(x,y);
     PS[cur][grab].x=Math.max(-1.55,Math.min(1.55,w.x));
     PS[cur][grab].y=Math.max(-1.12,Math.min(1.12,w.y));
@@ -580,7 +577,7 @@ cv.addEventListener('pointermove',function(e){
 });
 cv.addEventListener('pointerup',function(e){
   if(grab)cv.style.cursor='grab';
-  if((!grab||gm<4)&&performance.now()-gt<420){play=false;next();ui();}
+  if((!grab||gm<5)&&performance.now()-gt<420){play=false;next();ui();}
   grab=null;
 });
 cv.addEventListener('pointercancel',function(){grab=null;});

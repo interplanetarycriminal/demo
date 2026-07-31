@@ -20,6 +20,19 @@
          border:1px solid rgba(212,176,110,.3);border-radius:5px;padding:4px 7px;cursor:pointer}
   button:hover{background:rgba(88,70,40,.95);color:#fff}
   button.hi{border-color:#ffd98a;color:#ffd98a}
+  @media (max-width:1100px){ #ui{width:258px} }
+  @media (max-width:700px){
+    #ui{margin:8px;padding:8px 9px;width:min(300px,calc(100vw - 34px));font-size:11px;line-height:1.45}
+    #ui .exp{margin-bottom:6px}
+    #ui .hint{margin-top:6px}
+    .btns{gap:4px;margin-top:6px}
+    button{padding:3px 5px}
+  }
+  @media (max-width:420px){
+    #ui{font-size:10px;line-height:1.4;padding:7px 8px}
+    #ui h1{font-size:12px;margin-bottom:2px}
+    button{font-size:10px;padding:2px 4px}
+  }
 </style>
 
 <canvas id="c"></canvas>
@@ -152,7 +165,7 @@ var DS=[
 var PA=3, PB=4, G=geom(PA,PB);
 var scene=0, si=0, sp=0, run=true, auto=true, labels=true;
 var view={s:40,ox:0,oy:0}, tgt={s:40,ox:0,oy:0}, first=true, frozen=false;
-var drag=-1, moved=false, grain=null;
+var drag=-1, moved=false, grain=null, capH=124;   // caption height, measured each frame
 function setAB(a,b){PA=clamp(a,.12,60); PB=clamp(b,.12,60); G=geom(PA,PB);
   document.getElementById('n-a').textContent='a = '+fmt(PA);
   document.getElementById('n-b').textContent='b = '+fmt(PB);
@@ -173,7 +186,12 @@ function fit(){
   var x0=1e9,x1=-1e9,y0=1e9,y1=-1e9;
   for(var i=0;i<P.length;i++){var p=P[i];
     if(p.x<x0)x0=p.x; if(p.x>x1)x1=p.x; if(p.y<y0)y0=p.y; if(p.y>y1)y1=p.y;}
-  var padL=(W>880?348:16), padR=(W>880?272:16), padT=(W>880?22:150), padB=136;
+  /* keep the figure clear of the panel (left), the area ledger (right) and the caption
+     (bottom); on narrow screens the panel and ledger sit above the figure instead. */
+  var uiEl=document.getElementById('ui'), uh=((uiEl&&uiEl.offsetHeight)||248)+(W<420?10:22);
+  var wide=W>880, padL,padR,padT, padB=capH+26;
+  if(wide){ padL=W<1100?300:348; padR=LW()+24; padT=22; }
+  else { padL=16; padR=16; padT=Math.max(uh, W>=620?198:0); }
   var aw=Math.max(80,W-padL-padR), ah=Math.max(80,H-padT-padB);
   var bw=Math.max(1e-6,x1-x0), bh=Math.max(1e-6,y1-y0);
   var s=clamp(Math.min(aw/bw,ah/bh)*0.94,.05,4000);
@@ -185,7 +203,7 @@ function resize(){
   W=window.innerWidth; H=window.innerHeight;
   cv.width=Math.max(1,Math.round(W*DPR)); cv.height=Math.max(1,Math.round(H*DPR));
   cv.style.width=W+'px'; cv.style.height=H+'px';
-  ctx.setTransform(DPR,0,0,DPR,0,0); first=true; fit();
+  ctx.setTransform(DPR,0,0,DPR,0,0); first=true; measureCaps(); fit();
 }
 
 /* ================= drawing primitives ================= */
@@ -217,10 +235,16 @@ function wrap(s,mw){var ws=s.split(' '),L=[],cur='';
   if(cur)L.push(cur);return L;}
 function rrect(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);
   ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+/* area caption at a shape's centroid, suppressed when the shape is too small to hold it */
 function areaLabel(P,v,col,al,sz){
-  if(al<=.01)return; var c=cen(P), A=shoe(P)*view.s*view.s;
-  if(A<520*(sz/13))return;
-  txt(v,SX(c),SY(c),(sz|0)+'px ui-monospace,Menlo,monospace',col,al,true);}
+  if(al<=.01)return;
+  var x0=1e9,x1=-1e9,y0=1e9,y1=-1e9,i,sx,sy;
+  for(i=0;i<P.length;i++){sx=SX(P[i]);sy=SY(P[i]);
+    if(sx<x0)x0=sx; if(sx>x1)x1=sx; if(sy<y0)y0=sy; if(sy>y1)y1=sy;}
+  var f=(sz|0)+'px ui-monospace,Menlo,monospace';
+  ctx.font=f; var tw=ctx.measureText(v).width;
+  if(x1-x0<tw+12||y1-y0<sz+10)return;
+  var c=cen(P); txt(v,SX(c),SY(c),f,col,al,true);}
 
 function backdrop(){
   var g=ctx.createRadialGradient(W*.52,H*.44,0,W*.52,H*.44,Math.max(W,H)*.78);
@@ -236,14 +260,14 @@ function backdrop(){
 }
 
 /* ================= Euclid scene ================= */
-var LAB=[['A','A'],['B','B'],['C','C'],['D','D'],['E','E'],['F','F'],['G','G'],['H','H'],['K','K'],['L','L'],['M','M']];
+var LAB='ABCDEFGHKLM'.split('');
 function drawLabels(st,al){
   if(!labels||al<=.02)return; var o=cen([G.A,G.B,G.C,G.D,G.E]);
-  var show={A:1,B:1,C:1,D:st.pv||si>0?1:0,E:st.pv||si>0?1:0,L:st.pv,M:st.pv,
+  var show={A:1,B:1,C:1,D:1,E:1,L:st.pv,M:st.pv,
             F:st.hi===1||si<8?1:0,G:st.hi===1?1:0,H:st.hi===2?1:0,K:st.hi===2||si>=8?1:0};
-  for(var i=0;i<LAB.length;i++){var k=LAB[i][0]; if(!show[k])continue;
+  for(var i=0;i<LAB.length;i++){var k=LAB[i]; if(!show[k])continue;
     var p=G[k], dx=SX(p)-SX(o), dy=SY(p)-SY(o), L=Math.hypot(dx,dy)||1;
-    txt(LAB[i][1],SX(p)+dx/L*15,SY(p)+dy/L*15,'12px ui-monospace,Menlo,monospace',INK,al*.82,true);
+    txt(k,SX(p)+dx/L*15,SY(p)+dy/L*15,'12px ui-monospace,Menlo,monospace',INK,al*.82,true);
     dot(p,2.2,[233,220,187],al*.55);}
 }
 function drawEuclid(){
@@ -253,7 +277,8 @@ function drawEuclid(){
   var fl=st.fl?Math.sin(Math.min(1,sp*1.15)*Math.PI):0;
 
   /* hypotenuse square + the two rectangles */
-  var sqc=shape({q:[G.B,G.D,G.E,G.C],d1:{x:0,y:0},pv:G.B,ang:0,d2:{x:0,y:0}},0,0,grow);
+  /* ordered B,C,E,D so the growth animation unfurls the square downward off the base BC */
+  var sqc=shape({q:[G.B,G.C,G.E,G.D],d1:{x:0,y:0},pv:G.B,ang:0,d2:{x:0,y:0}},0,0,grow);
   fp(sqc,CC,.10); op(sqc,CC,.55,2);
   if(pv>0.01){
     fp(G.r1,CA,r1a*pv*(1+fl*(st.fl===1?.7:0)));
@@ -264,8 +289,7 @@ function drawEuclid(){
     seg(G.A,G.M,CF,.75*pv,1.7);
     dot(G.M,3,CF,.8*pv); dot(G.L,3,CF,.6*pv);
   }
-  /* guides for the stage in play */
-  var gA=(st.l1[1]?e:0), gB=(st.l2[1]?e:0);
+  /* the parallels / arcs that justify the move now in play */
   if(st.l1[1]){
     if(st.l1[0]===1){ ray(G.F,G.B,CF,.30,1); ray(G.G,G.C,CF,.30,1); seg(G.F,G.B,CF,.55,2.4); }
     if(st.l1[0]===2){ arcW(G.B,G.F,-Math.PI/2*e,CF,.4,1.2); arcW(G.B,G.C,-Math.PI/2*e,CF,.4,1.2); }
@@ -295,10 +319,11 @@ function drawEuclid(){
   op([{x:G.A.x+ua.x*rr,y:G.A.y+ua.y*rr},
       {x:G.A.x+(ua.x+ub.x)*rr,y:G.A.y+(ua.y+ub.y)*rr},
       {x:G.A.x+ub.x*rr,y:G.A.y+ub.y*rr}],[240,214,160],.7,1.4);
-  /* rectangle area readouts */
+  /* rectangle area readouts — skipped once a leg has landed on its rectangle and is
+     already carrying that very caption itself, so the text is never drawn twice */
   if(pv>.5&&st.fl!==3){
-    areaLabel(G.r1,'a² = '+fmt(PA*PA),rgba(CA,.9),Math.min(1,r1a*3),st.fl===1?15+fl*7:12);
-    areaLabel(G.r2,'b² = '+fmt(PB*PB),rgba(CB,.9),Math.min(1,r2a*3),st.fl===2?15+fl*7:12);
+    if(st.l1[0]<3) areaLabel(G.r1,'a² = '+fmt(PA*PA),rgba(CA,.9),Math.min(1,r1a*3),st.fl===1?15+fl*7:12);
+    if(st.l2[0]<3) areaLabel(G.r2,'b² = '+fmt(PB*PB),rgba(CB,.9),Math.min(1,r2a*3),st.fl===2?15+fl*7:12);
   }
   drawLabels(st,1);
   if(st.fl===3&&fl>0){
@@ -346,9 +371,10 @@ function drawDissect(){
 }
 
 /* ================= HUD ================= */
+function LW(){return W<1100?204:248;}            // area-ledger width, incl. its 20px margin
 function ledger(){
   if(W<620)return;
-  var PW=248, x0=W-20-PW, y0=22, a2=PA*PA, b2=PB*PB, c2=G.c*G.c;
+  var PW=LW()-20, x0=W-20-PW, y0=22, a2=PA*PA, b2=PB*PB, c2=G.c*G.c;
   ctx.save();
   rrect(x0,y0,PW,152,8); ctx.fillStyle='rgba(14,11,7,.72)'; ctx.fill();
   ctx.strokeStyle='rgba(212,176,110,.24)'; ctx.lineWidth=1; ctx.stroke();
@@ -367,26 +393,33 @@ function ledger(){
   ctx.fillStyle=rgba(CC,.85); ctx.fillRect(bx,by+34,c2*sc,11);
   ctx.strokeStyle='rgba(255,233,168,.5)'; ctx.lineWidth=1;
   ctx.strokeRect(bx+.5,by+.5,bw-1,11); ctx.strokeRect(bx+.5,by+34.5,bw-1,11);
-  txt(fmt(a2+b2),bx+bw,by+5,'10px ui-monospace,Menlo,monospace','#e9dcbb',.9,true);
+  txt(fmt(a2+b2),bx+bw-24,by-10,'10px ui-monospace,Menlo,monospace','#e9dcbb',.9,true);
+  txt(fmt(c2),bx+bw-24,by+24,'10px ui-monospace,Menlo,monospace','#e9dcbb',.9,true);
 }
+function capMetrics(){ return W<700
+  ? {bw:Math.min(760,W-24),pad:11,f:'12px ui-monospace,Menlo,monospace',lh:16,cf:'10px ui-monospace,Menlo,monospace',clh:13}
+  : {bw:Math.min(760,W-32),pad:15,f:'13px ui-monospace,Menlo,monospace',lh:18,cf:'11px ui-monospace,Menlo,monospace',clh:15};}
+function capBox(st,M){
+  ctx.font=M.f; var cl=wrap(st.cp,M.bw-2*M.pad);
+  ctx.font=M.cf; var tl=st.ct?wrap('— '+st.ct,M.bw-2*M.pad):[];
+  if(W<700&&tl.length>2) tl=[tl[0],tl[1].slice(0,Math.max(0,tl[1].length-1))+'…'];  // bound the height
+  return {cl:cl,tl:tl,h:M.pad+16+cl.length*M.lh+(tl.length?6+tl.length*M.clh:0)+M.pad+10};
+}
+/* reserve the TALLEST caption of the scene, so the figure never shifts as captions change */
+function measureCaps(){ var A=scene?DS:ST, M=capMetrics(), mx=0;
+  for(var i=0;i<A.length;i++){var h=capBox(A[i],M).h; if(h>mx)mx=h;} capH=mx;}
 function caption(){
-  var A=scene?DS:ST, st=A[si];
-  var bw=Math.min(760,W-32), x0=(W-bw)/2, pad=15;
-  ctx.font='13px ui-monospace,Menlo,monospace';
-  var cl=wrap(st.cp,bw-2*pad);
-  ctx.font='11px ui-monospace,Menlo,monospace';
-  var tl=st.ct?wrap('— '+st.ct,bw-2*pad):[];
-  var bh=pad+16+cl.length*18+(tl.length?6+tl.length*15:0)+pad+10;
-  var y0=H-16-bh;
+  var A=scene?DS:ST, st=A[si], M=capMetrics(), B=capBox(st,M);
+  var bw=M.bw, pad=M.pad, x0=(W-bw)/2, cl=B.cl, tl=B.tl, bh=B.h, y0=H-16-bh;
   ctx.save(); rrect(x0,y0,bw,bh,9);
   ctx.fillStyle='rgba(12,10,7,.86)'; ctx.fill();
   ctx.strokeStyle='rgba(212,176,110,.26)'; ctx.lineWidth=1; ctx.stroke(); ctx.restore();
-  txt((scene?'':'')+(si+1)+'/'+A.length,x0+pad,y0+pad+5,'10px ui-monospace,Menlo,monospace','#8a7346',1);
+  txt((si+1)+'/'+A.length,x0+pad,y0+pad+5,'10px ui-monospace,Menlo,monospace','#8a7346',1);
   txt(st.ti.toUpperCase(),x0+pad+44,y0+pad+5,'700 12px ui-monospace,Menlo,monospace','#f0d49a',1);
   for(var i=0;i<cl.length;i++)
-    txt(cl[i],x0+pad,y0+pad+26+i*18,'13px ui-monospace,Menlo,monospace',INK,.92);
+    txt(cl[i],x0+pad,y0+pad+26+i*M.lh,M.f,INK,.92);
   for(i=0;i<tl.length;i++)
-    txt(tl[i],x0+pad,y0+pad+32+cl.length*18+i*15,'11px ui-monospace,Menlo,monospace','#8a7346',1);
+    txt(tl[i],x0+pad,y0+pad+32+cl.length*M.lh+i*M.clh,M.cf,'#8a7346',1);
   var dw=Math.min(9,(bw-2*pad)/A.length);
   for(i=0;i<A.length;i++){
     ctx.fillStyle=i===si?'rgba(255,226,160,.95)':(i<si?'rgba(212,176,110,.4)':'rgba(212,176,110,.16)');
@@ -420,7 +453,7 @@ function prev(){if(si>0){si--;sp=1;run=false;}else{sp=0;run=true;}}
 function replay(){si=0;sp=0;run=true;auto=true;pbtn();}
 function play(){auto=!auto; if(auto){var A=scene?DS:ST;
   if(si===A.length-1&&sp>=1){si=0;sp=0;} run=true;} pbtn();}
-function toggleScene(){scene=scene?0:1; si=0; sp=0; run=true; auto=true; first=true; fit(); pbtn();}
+function toggleScene(){scene=scene?0:1; si=0; sp=0; run=true; auto=true; first=true; measureCaps(); fit(); pbtn();}
 
 cv.addEventListener('pointerdown',function(ev){
   if(scene)return; var hs=handles(), best=-1, bd=20;
