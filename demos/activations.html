@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Activation Explorer</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#05010f}
+canvas{display:block;position:fixed;inset:0}
+#ui{position:fixed;top:12px;left:12px;z-index:10;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#cfe9ff;background:rgba(5,8,22,.74);border:1px solid rgba(80,220,255,.25);border-radius:10px;padding:10px 14px;max-width:360px}
+#ui h1{margin:0 0 2px;font-size:14px;color:#ffd166;text-shadow:0 0 8px #fa0}
+#ui .ex{color:#9fb4d8}
+#ui .hint{color:#6ee7a0;margin-top:4px}
+#ui a{color:#ff7ad9;text-decoration:none}
+#stats{margin-top:6px;color:#e8f6ff;white-space:pre-wrap}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div id="ui">
+<h1>∿ Activation Explorer</h1>
+<div class="ex">Each activation squashes its input differently — see f(x), its derivative, saturation/dead zones, and how a tiny 2-layer net using it warps space.</div>
+<div class="hint">1 tanh · 2 sigmoid · 3 ReLU · 4 leaky · 5 GELU · 6 swish · mouse x = input</div>
+<div id="stats"></div>
+<div style="margin-top:4px"><a href="index.html">← gallery</a></div>
+</div>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+const cv=document.getElementById('c'),ctx=cv.getContext('2d'),statsEl=document.getElementById('stats');
+let W=0,H=0,DPR=1,time=0,frame=0;
+let LX0=60,LX1=700,LY0=200,LY1=600,NY=100,RX0=760,RX1=1200,RY0=180,RY1=620;
+const FNS=[
+  {name:'tanh',form:'tanh(x)',f:x=>Math.tanh(x)},
+  {name:'sigmoid',form:'1/(1+e⁻ˣ)',f:x=>1/(1+Math.exp(-x))},
+  {name:'ReLU',form:'max(0,x)',f:x=>Math.max(0,x)},
+  {name:'Leaky ReLU',form:'max(0.1x,x)',f:x=>x>0?x:0.1*x},
+  {name:'GELU',form:'x·Φ(x)',f:x=>0.5*x*(1+Math.tanh(0.7978845608*(x+0.044715*x*x*x)))},
+  {name:'Swish',form:'x·σ(x)',f:x=>x/(1+Math.exp(-x))}
+];
+let fi=0,F=FNS[0].f,ymin=-1.5,ymax=1.5,fmin2=-1,fmax2=1;
+const dF=x=>(F(x+1e-3)-F(x-1e-3))/2e-3;
+const G=13,GC=[];for(let i=0;i<G;i++)GC.push(-1.5+3*i/(G-1));
+let TP=[],bx0=-1.5,bx1=1.5,by0=-1.5,by1=1.5;
+function net(x,y){
+  const h1=F(1.3*x-0.8*y+0.4),h2=F(0.9*x+1.2*y-0.3);
+  return[F(1.2*h1+0.6*h2-0.2),F(-0.7*h1+1.1*h2+0.3)];
+}
+function computeWarp(){
+  TP=[];bx0=-1.5;bx1=1.5;by0=-1.5;by1=1.5;
+  for(let i=0;i<G;i++){const row=[];
+    for(let j=0;j<G;j++){const q=net(GC[i],GC[j]);row.push(q);
+      if(q[0]<bx0)bx0=q[0];if(q[0]>bx1)bx1=q[0];
+      if(q[1]<by0)by0=q[1];if(q[1]>by1)by1=q[1];}
+    TP.push(row);}
+}
+function setFn(i){
+  fi=i;F=FNS[i].f;
+  ymin=1e9;ymax=-1e9;
+  for(let x=-3.2;x<=3.2;x+=0.05){const a=F(x),b=dF(x);
+    ymin=Math.min(ymin,a,b);ymax=Math.max(ymax,a,b);}
+  ymin=Math.min(ymin,-0.4)-0.25;ymax=Math.max(ymax,1.1)+0.25;
+  fmin2=1e9;fmax2=-1e9;
+  for(let x=-5.5;x<=5.5;x+=0.1){const a=F(x);fmin2=Math.min(fmin2,a);fmax2=Math.max(fmax2,a);}
+  if(fmax2-fmin2<1e-6)fmax2=fmin2+1;
+  computeWarp();
+}
+function resize(){
+  DPR=Math.min(window.devicePixelRatio||1,2);W=innerWidth;H=innerHeight;
+  cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);
+  cv.style.width=W+'px';cv.style.height=H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  LX0=Math.max(48,W*0.04);LX1=W*0.56;LY0=H*0.27;LY1=H-64;NY=H*0.16;
+  RX0=W*0.60;RX1=W-30;RY0=H*0.26;RY1=H-64;
+}
+const wx2s=x=>LX0+(x+3)/6*(LX1-LX0),sx2w=px=>(px-LX0)/(LX1-LX0)*6-3;
+const my=y=>LY1-(y-ymin)/(ymax-ymin)*(LY1-LY0);
+function drawPlot(curX){
+  ctx.fillStyle='rgba(8,12,30,.55)';ctx.fillRect(LX0,LY0,LX1-LX0,LY1-LY0);
+  let bandStart=null;
+  for(let px=LX0;px<=LX1+2;px+=2){
+    const sat=px<=LX1&&Math.abs(dF(sx2w(px)))<0.06;
+    if(sat&&bandStart===null)bandStart=px;
+    if(!sat&&bandStart!==null){
+      const bw=px-bandStart;
+      ctx.fillStyle='rgba(255,64,96,.10)';ctx.fillRect(bandStart,LY0,bw,LY1-LY0);
+      if(bw>60){ctx.fillStyle='rgba(255,120,140,.8)';ctx.font='10px ui-monospace,monospace';ctx.textAlign='center';
+        ctx.fillText('f′≈0 dead/saturated',bandStart+bw/2,LY1-10);ctx.textAlign='left';}
+      bandStart=null;}
+  }
+  ctx.lineWidth=1;ctx.font='10px ui-monospace,monospace';
+  for(let gx=-3;gx<=3;gx++){
+    ctx.strokeStyle=gx===0?'rgba(140,190,255,.4)':'rgba(90,140,255,.12)';
+    ctx.beginPath();ctx.moveTo(wx2s(gx),LY0);ctx.lineTo(wx2s(gx),LY1);ctx.stroke();
+    ctx.fillStyle='#5f7fa8';ctx.fillText(String(gx),wx2s(gx)+3,LY1-4);
+  }
+  if(0>ymin&&0<ymax){ctx.strokeStyle='rgba(140,190,255,.4)';ctx.beginPath();ctx.moveTo(LX0,my(0));ctx.lineTo(LX1,my(0));ctx.stroke();}
+  ctx.setLineDash([6,5]);ctx.strokeStyle='rgba(255,204,80,.6)';ctx.lineWidth=1.6;ctx.beginPath();
+  for(let px=LX0;px<=LX1;px+=2){const Y=my(dF(sx2w(px)));px===LX0?ctx.moveTo(px,Y):ctx.lineTo(px,Y);}
+  ctx.stroke();ctx.setLineDash([]);
+  ctx.lineJoin='round';
+  for(const pass of[[8,0.14],[2.4,1]]){
+    ctx.strokeStyle='#3dffd4';ctx.globalAlpha=pass[1];ctx.lineWidth=pass[0];ctx.beginPath();
+    for(let px=LX0;px<=LX1;px+=2){const Y=my(F(sx2w(px)));px===LX0?ctx.moveTo(px,Y):ctx.lineTo(px,Y);}
+    ctx.stroke();}
+  ctx.globalAlpha=1;
+  const mxp=wx2s(curX);
+  ctx.strokeStyle='rgba(120,230,255,.55)';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(mxp,LY0);ctx.lineTo(mxp,LY1);ctx.stroke();
+  ctx.fillStyle='#ffcc50';ctx.beginPath();ctx.arc(mxp,my(dF(curX)),3.5,0,6.283);ctx.fill();
+  ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(mxp,my(F(curX)),4.5,0,6.283);ctx.fill();
+  ctx.strokeStyle='#3dffd4';ctx.beginPath();ctx.arc(mxp,my(F(curX)),7.5,0,6.283);ctx.stroke();
+  ctx.strokeStyle='rgba(120,220,255,.35)';ctx.strokeRect(LX0,LY0,LX1-LX0,LY1-LY0);
+  ctx.font='11px ui-monospace,monospace';
+  ctx.fillStyle='#3dffd4';ctx.fillText('— f(x)  '+FNS[fi].name,LX0,LY0-8);
+  ctx.fillStyle='rgba(255,204,80,.9)';ctx.fillText('┄ f′(x) derivative',LX0+170,LY0-8);
+  ctx.fillStyle='rgba(255,120,140,.9)';ctx.fillText('▨ |f′|<0.06 zone',LX0+330,LY0-8);
+}
+function drawNeurons(curX){
+  const n=9,y=NY;
+  ctx.strokeStyle='rgba(120,200,255,.25)';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(LX0,y);ctx.lineTo(LX1,y);ctx.stroke();
+  for(let k=0;k<n;k++){
+    const cx=LX0+(k+0.5)/n*(LX1-LX0),off=(k-(n-1)/2)*0.6,val=F(curX+off);
+    let nv=(val-fmin2)/(fmax2-fmin2);nv=Math.max(0,Math.min(1,nv));
+    ctx.beginPath();ctx.arc(cx,y,13,0,6.283);
+    ctx.fillStyle='hsla('+(195+nv*115)+',100%,'+(30+nv*35)+'%,'+(0.2+0.75*nv)+')';ctx.fill();
+    ctx.strokeStyle='hsla('+(195+nv*115)+',100%,70%,.8)';ctx.stroke();
+    ctx.fillStyle='rgba(200,230,255,.6)';ctx.font='9px ui-monospace,monospace';ctx.textAlign='center';
+    ctx.fillText(val.toFixed(1),cx,y+28);ctx.textAlign='left';
+  }
+  const sx=LX0+(curX+3)/6*(LX1-LX0);
+  ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(sx,y,3.5,0,6.283);ctx.fill();
+  ctx.strokeStyle='rgba(255,255,255,.5)';ctx.beginPath();ctx.arc(sx,y,7+2*Math.sin(time*6),0,6.283);ctx.stroke();
+  ctx.fillStyle='#7fa8cf';ctx.font='10px ui-monospace,monospace';
+  ctx.fillText('neuron row: brightness = f(x+Δ) as signal x sweeps −3..3',LX0,y-24);
+}
+function drawWarp(){
+  const side=Math.min(RX1-RX0,RY1-RY0),rcx=(RX0+RX1)/2,rcy=(RY0+RY1)/2;
+  ctx.fillStyle='rgba(12,10,30,.55)';ctx.fillRect(rcx-side/2,rcy-side/2,side,side);
+  ctx.strokeStyle='rgba(160,130,255,.35)';ctx.lineWidth=1;ctx.strokeRect(rcx-side/2,rcy-side/2,side,side);
+  const u=(time*0.3)%2;let m=u<1?u:2-u;m=m*m*(3-2*m);
+  const sc=Math.min(side/(bx1-bx0),side/(by1-by0))*0.88,ccx=(bx0+bx1)/2,ccy=(by0+by1)/2;
+  const P=(x,y)=>[rcx+(x-ccx)*sc,rcy-(y-ccy)*sc];
+  ctx.lineWidth=1;
+  for(let i=0;i<G;i++){
+    ctx.strokeStyle='hsla('+(185+i*9)+',100%,65%,.7)';ctx.beginPath();
+    for(let j=0;j<G;j++){
+      const t=TP[i][j],X=GC[i]+(t[0]-GC[i])*m,Y=GC[j]+(t[1]-GC[j])*m,q=P(X,Y);
+      j?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]);}
+    ctx.stroke();}
+  for(let j=0;j<G;j++){
+    ctx.strokeStyle='hsla('+(300+j*5)+',100%,70%,.55)';ctx.beginPath();
+    for(let i=0;i<G;i++){
+      const t=TP[i][j],X=GC[i]+(t[0]-GC[i])*m,Y=GC[j]+(t[1]-GC[j])*m,q=P(X,Y);
+      i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]);}
+    ctx.stroke();}
+  ctx.fillStyle='#b9a8ff';ctx.font='11px ui-monospace,monospace';
+  ctx.fillText('2-layer net  y = f(W₂·f(W₁x+b₁)+b₂)',rcx-side/2,rcy-side/2-10);
+  ctx.fillText('morph '+Math.round(m*100)+'%  input grid ⇄ warped output',rcx-side/2,rcy+side/2+16);
+}
+let mouseX=-1,haveMouse=false;
+cv.addEventListener('mousemove',e=>{mouseX=e.clientX;haveMouse=true;});
+cv.addEventListener('mouseleave',()=>{haveMouse=false;});
+addEventListener('keydown',e=>{if(e.key>='1'&&e.key<='6')setFn(+e.key-1);});
+addEventListener('resize',resize);
+function stats(curX){
+  statsEl.innerHTML='f = <span style="color:#3dffd4">'+FNS[fi].name+'</span>   ('+FNS[fi].form+')\n'
+    +'x = '+curX.toFixed(2)+'   f(x) = '+F(curX).toFixed(3)+'   f′(x) = '+dF(curX).toFixed(3)
+    +(Math.abs(dF(curX))<0.06?'\n<span style="color:#ff7890">gradient ≈ 0 here → learning stalls</span>':'');
+}
+function loop(ts){
+  time=ts/1000;
+  ctx.fillStyle='#05010f';ctx.fillRect(0,0,W,H);
+  const p=(time*0.22)%2,tri=p<1?p:2-p,sweep=-3+6*tri;
+  let curX=sweep;
+  if(haveMouse&&mouseX>=LX0&&mouseX<=LX1)curX=sx2w(mouseX);
+  drawPlot(curX);
+  drawNeurons(curX);
+  drawWarp();
+  frame++;if(frame%4===0)stats(curX);
+  requestAnimationFrame(loop);
+}
+resize();setFn(0);
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Prime Sieve × Ulam Spiral</title>
+<style>
+html,body{margin:0;height:100%;background:#04060b;overflow:hidden}
+#c{position:fixed;inset:0;display:block}
+#ui{position:fixed;top:12px;left:12px;z-index:10;font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#bfe9ff;background:rgba(4,8,16,.75);border:1px solid rgba(0,255,213,.25);border-radius:10px;padding:10px 14px;max-width:335px}
+#ui h1{margin:0 0 3px;font-size:13px;letter-spacing:2px;color:#00ffd5;text-shadow:0 0 10px rgba(0,255,213,.6)}
+#ui .ex{color:#8fa8c0}
+#ui .hint{color:#647c95;margin-top:5px}
+#ui .st{color:#ffd76b;margin-top:5px;white-space:pre}
+#ui a{color:#ff6bd6;text-decoration:none;display:inline-block;margin-top:5px}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div id="ui">
+  <h1>PRIME SIEVE × ULAM SPIRAL</h1>
+  <div class="ex">The sieve crosses out every prime's multiples; the survivors, plotted on a square spiral, line up on mysterious diagonals.</div>
+  <div class="hint">←/→ speed · R restart bigger · shift+R smaller</div>
+  <div class="st" id="st"></div>
+  <a href="index.html">← gallery</a>
+</div>
+<canvas id="c"></canvas>
+<script>
+"use strict";
+var cv=document.getElementById('c'),ctx=cv.getContext('2d'),stEl=document.getElementById('st');
+var W=0,H=0;
+function resize(){var d=Math.min(window.devicePixelRatio||1,2);W=window.innerWidth;H=window.innerHeight;cv.width=Math.round(W*d);cv.height=Math.round(H*d);cv.style.width=W+'px';cv.style.height=H+'px';ctx.setTransform(d,0,0,d,0,0)}
+window.addEventListener('resize',resize);resize();
+
+var SIZES=[196,400,784,1296],sizeIdx=1;
+var N,side,state,hue,sx,sy,pulses,phase,cand,curP,curM,primes,acc,clock;
+var stepsPerSec=45;
+function restart(){
+  N=SIZES[sizeIdx];side=Math.round(Math.sqrt(N));
+  state=new Array(N+1).fill(0);hue=new Array(N+1).fill(0);state[1]=3;
+  sx=new Array(N+1);sy=new Array(N+1);
+  var x=0,y=0,dx=1,dy=0,run=1,stp=0,turns=0;
+  for(var k=1;k<=N;k++){sx[k]=x;sy[k]=y;x+=dx;y+=dy;stp++;if(stp===run){stp=0;turns++;var t=dx;dx=dy;dy=-t;if(turns%2===0)run++}}
+  pulses=[];phase='scan';cand=2;curP=0;curM=0;primes=0;acc=0;clock=0;
+}
+restart();
+function push(n,pr){pulses.push({n:n,t:0,prime:pr});if(pulses.length>400)pulses.shift()}
+function stepOnce(){
+  if(phase==='scan'){
+    while(cand<=N&&state[cand]!==0)cand++;
+    if(cand>N){phase='done';return}
+    state[cand]=1;primes++;hue[cand]=(primes*47+160)%360;
+    push(cand,true);
+    curP=cand;curM=cand*cand;
+    if(curM<=N){phase='mark'}else{cand++}
+  }else if(phase==='mark'){
+    if(state[curM]===0){state[curM]=2;hue[curM]=hue[curP];push(curM,false)}
+    curM+=curP;
+    if(curM>N){phase='scan';cand=curP+1}
+  }
+}
+window.addEventListener('keydown',function(e){
+  if(e.key==='ArrowRight'){stepsPerSec=Math.min(2400,Math.round(stepsPerSec*1.6));e.preventDefault()}
+  else if(e.key==='ArrowLeft'){stepsPerSec=Math.max(3,Math.round(stepsPerSec/1.6));e.preventDefault()}
+  else if(e.key==='r'||e.key==='R'){sizeIdx=e.shiftKey?(sizeIdx+SIZES.length-1)%SIZES.length:(sizeIdx+1)%SIZES.length;restart()}
+});
+function cellCenter(n,gx,gy,cell){var c=(n-1)%side,r=Math.floor((n-1)/side);return[gx+c*cell+cell/2,gy+r*cell+cell/2]}
+var last=0;
+function frame(ts){
+  var dt=Math.min(.05,(ts-last)/1000||0);last=ts;clock+=dt;
+  if(phase!=='done'){acc+=dt*stepsPerSec;var L=Math.min(600,Math.floor(acc));acc-=L;while(L-->0&&phase!=='done')stepOnce()}
+  ctx.fillStyle='#04060b';ctx.fillRect(0,0,W,H);
+  var pad=16,top=64,halfW=W/2;
+  ctx.strokeStyle='rgba(0,255,213,.12)';ctx.beginPath();ctx.moveTo(halfW,top);ctx.lineTo(halfW,H-pad);ctx.stroke();
+  // ---- left: sieve grid ----
+  var gw=halfW-pad*2,gh=H-top-pad-18;
+  var cell=Math.max(4,Math.min(gw/side,gh/side));
+  var gx=pad+(gw-cell*side)/2,gy=top+(gh-cell*side)/2;
+  var showNum=cell>=15;
+  ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.font=Math.floor(cell*.38)+'px ui-monospace,Menlo,monospace';
+  for(var n=1;n<=N;n++){
+    var c=(n-1)%side,r=Math.floor((n-1)/side);
+    var x=gx+c*cell,y=gy+r*cell,s=state[n];
+    if(s===1){
+      var gl=phase==='done'?.22+.1*Math.sin(clock*2+n*.7):.25;
+      ctx.fillStyle='hsla('+hue[n]+',100%,60%,'+gl+')';
+      ctx.fillRect(x+1,y+1,cell-2,cell-2);
+      ctx.strokeStyle='hsla('+hue[n]+',100%,65%,.85)';
+      ctx.strokeRect(x+1.5,y+1.5,cell-3,cell-3);
+      if(showNum){ctx.fillStyle='hsla('+hue[n]+',100%,84%,1)';ctx.fillText(n,x+cell/2,y+cell/2+1)}
+    }else if(s===2){
+      ctx.fillStyle='hsla('+hue[n]+',70%,50%,.05)';
+      ctx.fillRect(x+1,y+1,cell-2,cell-2);
+      if(showNum){ctx.fillStyle='rgba(90,120,150,.28)';ctx.fillText(n,x+cell/2,y+cell/2+1)}
+      ctx.strokeStyle='hsla('+hue[n]+',85%,60%,.4)';
+      ctx.beginPath();ctx.moveTo(x+cell*.25,y+cell*.75);ctx.lineTo(x+cell*.75,y+cell*.25);ctx.stroke();
+    }else{
+      ctx.fillStyle='rgba(120,160,200,.06)';
+      ctx.fillRect(x+1,y+1,cell-2,cell-2);
+      if(showNum){ctx.fillStyle='rgba(140,175,205,.55)';ctx.fillText(n,x+cell/2,y+cell/2+1)}
+    }
+  }
+  // ---- right: Ulam spiral ----
+  var uw=halfW-pad*2,uh=H-top-pad-18;
+  var scale=Math.min(uw,uh)/side;
+  var ucx=halfW+pad+uw/2,ucy=top+uh/2;
+  ctx.save();ctx.globalCompositeOperation='lighter';
+  for(n=1;n<=N;n++){
+    var px=ucx+sx[n]*scale,py=ucy+sy[n]*scale;
+    if(state[n]===1){
+      var a=phase==='done'?.55+.35*Math.sin(clock*2.2+n):.8;
+      ctx.fillStyle='hsla('+hue[n]+',100%,65%,'+(a*.28)+')';
+      ctx.beginPath();ctx.arc(px,py,Math.max(2.6,scale*.85),0,6.2832);ctx.fill();
+      ctx.fillStyle='hsla('+hue[n]+',100%,78%,'+a+')';
+      ctx.beginPath();ctx.arc(px,py,Math.max(1.3,scale*.34),0,6.2832);ctx.fill();
+    }else if(state[n]===2){
+      ctx.fillStyle='rgba(80,110,150,.10)';
+      ctx.beginPath();ctx.arc(px,py,Math.max(.6,scale*.12),0,6.2832);ctx.fill();
+    }
+  }
+  ctx.restore();
+  // ---- pulses on both views ----
+  for(var i=pulses.length-1;i>=0;i--){
+    var p=pulses[i];p.t+=dt;var k=p.t/.9;
+    if(k>=1){pulses.splice(i,1);continue}
+    var rad=(p.prime?6:3)+k*(p.prime?26:12);
+    ctx.strokeStyle='hsla('+hue[p.n]+',100%,'+(p.prime?70:60)+'%,'+(1-k)+')';
+    ctx.lineWidth=p.prime?2:1;
+    var cc=cellCenter(p.n,gx,gy,cell);
+    ctx.beginPath();ctx.arc(cc[0],cc[1],rad,0,6.2832);ctx.stroke();
+    ctx.beginPath();ctx.arc(ucx+sx[p.n]*scale,ucy+sy[p.n]*scale,rad,0,6.2832);ctx.stroke();
+  }
+  ctx.lineWidth=1;
+  ctx.textAlign='center';ctx.font='11px ui-monospace,Menlo,monospace';
+  ctx.fillStyle='rgba(120,160,200,.5)';
+  ctx.fillText('SIEVE OF ERATOSTHENES · 1–'+N,pad+gw/2,H-8);
+  ctx.fillText('ULAM SPIRAL · primes glow',halfW+pad+uw/2,H-8);
+  stEl.textContent='n ≤ '+N+'  ('+side+'×'+side+')\nprimes: '+primes+'   density: '+(100*primes/N).toFixed(1)+'%\n'+(phase==='done'?'sieve complete ✓':(phase==='mark'?'crossing out multiples of '+curP:'scanning '+Math.min(cand,N)))+'\nspeed: '+stepsPerSec+' steps/s';
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

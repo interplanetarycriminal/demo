@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Minimum Spanning Tree — Kruskal vs Prim</title>
+<style>
+html,body{margin:0;height:100%;background:#04060c;overflow:hidden}
+canvas{display:block;cursor:crosshair}
+#ui{position:fixed;top:10px;left:10px;z-index:10;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#9fd8ff;background:rgba(4,10,22,.76);border:1px solid rgba(57,255,139,.3);border-radius:8px;padding:10px 12px;max-width:330px}
+#ui h1{margin:0;font-size:13px;color:#39ff8b;letter-spacing:.5px}
+#ui p{margin:5px 0;color:#8fa9c4}
+#ui .hint{color:#5e7a92}
+#ui a{color:#ffd54a;text-decoration:none}
+#stats{margin-top:6px;white-space:pre;color:#cfe9ff}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div id="ui">
+<h1>MINIMUM SPANNING TREE</h1>
+<p>Both algorithms find the cheapest wiring that connects every node: Kruskal tries edges cheapest-first and rejects any that would close a cycle (<span style="color:#ff3b5c">red flash</span>), while Prim grows one tree outward from a single node (<span style="color:#00e5ff">cyan</span>) — they always land on the same minimum weight.</p>
+<p class="hint">K kruskal · P prim · click add node · R reseed · Space replay · <a href="index.html">← gallery</a></p>
+<div id="stats"></div>
+</div>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+var cv=document.getElementById('c'),ctx=cv.getContext('2d'),statsEl=document.getElementById('stats'),W=0,H=0,inited=false;
+function resizeCanvas(){var d=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;cv.width=W*d;cv.height=H*d;cv.style.width=W+'px';cv.style.height=H+'px';ctx.setTransform(d,0,0,d,0,0)}
+addEventListener('resize',function(){resizeCanvas();if(inited){rebuild();if(phase==='kruskal'||phase==='kdone')startK();else startP()}});
+resizeCanvas();
+
+var nodes=[],edges=[],phase='kruskal',kr=null,pm=null,results={k:null,p:null},hold=0,time=0;
+function P(i){return{x:60+nodes[i].x*(W-120),y:80+nodes[i].y*(H-160)}}
+function dist(i,j){var a=P(i),b=P(j);return Math.hypot(a.x-b.x,a.y-b.y)}
+function u(x){return (x/10).toFixed(1)}
+function reseed(n){nodes=[];for(var i=0;i<n;i++)nodes.push({x:Math.random(),y:Math.random()});rebuild()}
+function rebuild(){
+  edges=[];
+  for(var a=0;a<nodes.length;a++)for(var b=a+1;b<nodes.length;b++)edges.push({a:a,b:b,w:dist(a,b)});
+  edges.sort(function(x,y){return x.w-y.w})}
+
+function startK(){
+  phase='kruskal';results.k=null;
+  kr={uf:[],deg:new Uint8Array(nodes.length),i:0,acc:0,considered:0,accepted:[],rejects:[],cand:null,total:0};
+  for(var i=0;i<nodes.length;i++)kr.uf[i]=i}
+function find(uf,x){while(uf[x]!==x){uf[x]=uf[uf[x]];x=uf[x]}return x}
+function stepK(){
+  if(kr.accepted.length>=nodes.length-1||kr.i>=edges.length){results.k=kr.total;phase='kdone';hold=160;return}
+  var e=edges[kr.i++];kr.considered++;kr.cand={e:e,t:10};
+  var ra=find(kr.uf,e.a),rb=find(kr.uf,e.b);
+  if(ra===rb)kr.rejects.push({e:e,t:1});
+  else{kr.uf[ra]=rb;kr.deg[e.a]++;kr.deg[e.b]++;kr.accepted.push({e:e,t:0});kr.total+=e.w}}
+
+function startP(){
+  phase='prim';results.p=null;var n=nodes.length;
+  pm={intree:new Uint8Array(n),key:new Float64Array(n).fill(Infinity),from:new Int32Array(n).fill(-1),
+    accepted:[],total:0,considered:0,added:1,acc:0};
+  pm.intree[0]=1;relax(0)}
+function relax(uu){
+  for(var v=0;v<nodes.length;v++){if(pm.intree[v])continue;
+    var dd=dist(uu,v);pm.considered++;
+    if(dd<pm.key[v]){pm.key[v]=dd;pm.from[v]=uu}}}
+function stepP(){
+  var n=nodes.length;
+  if(pm.added>=n){results.p=pm.total;phase='pdone';return}
+  var best=-1;
+  for(var v=0;v<n;v++)if(!pm.intree[v]&&(best<0||pm.key[v]<pm.key[best]))best=v;
+  if(best<0||pm.key[best]===Infinity){results.p=pm.total;phase='pdone';return}
+  pm.intree[best]=1;pm.added++;pm.total+=pm.key[best];
+  pm.accepted.push({e:{a:pm.from[best],b:best,w:pm.key[best]},t:0});
+  relax(best)}
+
+function update(){
+  if(phase==='kruskal'){
+    kr.acc+=kr.considered<12?0.22:(kr.considered<80?0.7:5);
+    while(kr.acc>=1&&phase==='kruskal'){kr.acc--;stepK()}}
+  else if(phase==='kdone'){if(--hold<=0)startP()}
+  else if(phase==='prim'){
+    pm.acc+=pm.added<6?0.2:0.55;
+    while(pm.acc>=1&&phase==='prim'){pm.acc--;stepP()}}
+  if(kr){
+    for(var i=0;i<kr.accepted.length;i++)if(kr.accepted[i].t<1)kr.accepted[i].t=Math.min(1,kr.accepted[i].t+0.1);
+    for(var j=kr.rejects.length-1;j>=0;j--){kr.rejects[j].t-=0.02;if(kr.rejects[j].t<=0)kr.rejects.splice(j,1)}
+    if(kr.cand){kr.cand.t--;if(kr.cand.t<=0)kr.cand=null}}
+  if(pm)for(var k=0;k<pm.accepted.length;k++)if(pm.accepted[k].t<1)pm.accepted[k].t=Math.min(1,pm.accepted[k].t+0.08)}
+
+function seg(a,b){ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke()}
+function lineE(e){seg(P(e.a),P(e.b))}
+function banner(txt,sub){
+  ctx.textAlign='center';
+  ctx.font='16px ui-monospace,Menlo,monospace';ctx.fillStyle='rgba(255,213,74,.95)';
+  ctx.fillText(txt,W/2,H-56);
+  if(sub){ctx.font='12px ui-monospace,Menlo,monospace';ctx.fillStyle='rgba(160,190,220,.85)';ctx.fillText(sub,W/2,H-36)}
+  ctx.textAlign='left'}
+function draw(){
+  ctx.fillStyle='#04060c';ctx.fillRect(0,0,W,H);
+  var showK=(phase==='kruskal'||phase==='kdone');
+  if(!showK&&pm){
+    ctx.lineWidth=1;ctx.strokeStyle='rgba(120,160,255,.10)';
+    for(var v0=0;v0<nodes.length;v0++)if(!pm.intree[v0]&&pm.from[v0]>=0)seg(P(v0),P(pm.from[v0]))}
+  if(showK&&kr)for(var r0=0;r0<kr.rejects.length;r0++){var R=kr.rejects[r0];
+    ctx.strokeStyle='rgba(255,59,92,'+(R.t*0.7)+')';ctx.lineWidth=1.5;lineE(R.e)}
+  var S=showK?kr:pm,acc=S?S.accepted:[];
+  for(var i=0;i<acc.length;i++){
+    var E=acc[i],a=P(E.e.a),b=P(E.e.b),t=E.t;
+    var m={x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t};
+    ctx.strokeStyle=showK?'rgba(57,255,139,.18)':'rgba(0,229,255,.18)';ctx.lineWidth=6;seg(a,m);
+    ctx.strokeStyle=showK?'#39ff8b':'#00e5ff';ctx.lineWidth=2;seg(a,m)}
+  if(showK&&kr&&kr.cand){
+    ctx.strokeStyle='rgba(255,255,255,'+(kr.cand.t/10*0.9)+')';ctx.lineWidth=2;lineE(kr.cand.e)}
+  for(var v=0;v<nodes.length;v++){
+    var p=P(v),lit=showK?(kr&&kr.deg[v]>0):(pm&&pm.intree[v]);
+    var glow=lit?0.16+0.08*Math.sin(time*5+v):0.05;
+    ctx.fillStyle=showK?'rgba(57,255,139,'+glow+')':'rgba(0,229,255,'+glow+')';
+    ctx.beginPath();ctx.arc(p.x,p.y,8,0,6.2832);ctx.fill();
+    ctx.fillStyle=lit?'#d8fff0':'#33415c';
+    ctx.beginPath();ctx.arc(p.x,p.y,3,0,6.2832);ctx.fill()}
+  if(phase==='kdone')banner('Kruskal complete — total weight '+u(kr.total),
+    'checked '+kr.considered+' of '+edges.length+' sorted edges · starting Prim…');
+  if(phase==='pdone')banner('Prim complete — total weight '+u(pm.total),
+    results.k!=null?('Kruskal found '+u(results.k)+' too — same minimum tree, different route to it'):'')}
+function updateStats(){
+  var showK=(phase==='kruskal'||phase==='kdone'),S=showK?kr:pm,s='';
+  s+='alg      '+(showK?'KRUSKAL — sort edges, skip cycles':'PRIM — grow tree outward')+'\n';
+  s+='nodes    '+nodes.length+'\n';
+  if(showK&&kr){
+    s+='checked  '+kr.considered+' / '+edges.length+'\n';
+    s+='tree     '+kr.accepted.length+' / '+(nodes.length-1)+' edges\n';
+    s+='weight   '+u(kr.total)}
+  else if(pm){
+    s+='examined '+pm.considered+' candidate edges\n';
+    s+='tree     '+(pm.added-1)+' / '+(nodes.length-1)+' edges\n';
+    s+='weight   '+u(pm.total)}
+  if(results.k!=null&&results.p!=null)s+='\nkruskal '+u(results.k)+' = prim '+u(results.p)+' ✓';
+  statsEl.textContent=s}
+function frame(){time+=0.016;update();draw();updateStats();requestAnimationFrame(frame)}
+
+cv.addEventListener('click',function(e){
+  var nx=(e.clientX-60)/(W-120),ny=(e.clientY-80)/(H-160);
+  nodes.push({x:Math.min(1,Math.max(0,nx)),y:Math.min(1,Math.max(0,ny))});
+  rebuild();
+  if(phase==='kruskal'||phase==='kdone')startK();else startP()});
+addEventListener('keydown',function(e){
+  var k=e.key;
+  if(k==='k'||k==='K')startK();
+  else if(k==='p'||k==='P')startP();
+  else if(k==='r'||k==='R'){reseed(60);startK()}
+  else if(k===' '){e.preventDefault();
+    if(phase==='kruskal'||phase==='kdone')startK();else startP()}});
+
+reseed(60);startK();inited=true;
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

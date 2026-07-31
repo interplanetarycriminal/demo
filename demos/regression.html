@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Least Squares Lab — Live Regression</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#05010f}
+canvas{display:block;position:fixed;inset:0;cursor:crosshair}
+#ui{position:fixed;top:12px;left:12px;z-index:10;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#cfe9ff;background:rgba(5,8,22,.74);border:1px solid rgba(80,220,255,.25);border-radius:10px;padding:10px 14px;max-width:360px}
+#ui h1{margin:0 0 2px;font-size:14px;color:#59ffc8;text-shadow:0 0 8px #0f8}
+#ui .ex{color:#9fb4d8}
+#ui .hint{color:#6ee7a0;margin-top:4px}
+#ui a{color:#ff7ad9;text-decoration:none}
+#stats{margin-top:6px;color:#e8f6ff;white-space:pre-wrap}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div id="ui">
+<h1>◢ Least Squares Lab</h1>
+<div class="ex">Click to drop data points and watch gradient descent fit a polynomial live by shrinking the sum of squared residuals (red segments &amp; boxes).</div>
+<div class="hint">click: add point · P: degree 1-7 · D: preset data · C: clear · B: error boxes</div>
+<div id="stats"></div>
+<div style="margin-top:4px"><a href="index.html">← gallery</a></div>
+</div>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+const cv=document.getElementById('c'),ctx=cv.getContext('2d'),statsEl=document.getElementById('stats');
+let W=0,H=0,DPR=1,time=0,frame=0;
+let PX0=60,PX1=600,PY0=70,PY1=400;
+let pts=[],D=1,w=[],vel=[],mse=0,hist=[],boxes=true,presetIdx=0,presetName='linear';
+const SUP=['','','²','³','⁴','⁵','⁶','⁷'];
+const PRESETS=['linear','curved','outlier'];
+function resize(){
+  DPR=Math.min(window.devicePixelRatio||1,2);W=innerWidth;H=innerHeight;
+  cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);
+  cv.style.width=W+'px';cv.style.height=H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  PX0=Math.max(56,W*0.06);PX1=W-Math.max(40,W*0.05);
+  PY0=Math.max(70,H*0.10);PY1=H-Math.max(56,H*0.09);
+}
+const w2x=x=>PX0+(x+1)/2*(PX1-PX0),w2y=y=>PY1-(y+1)/2*(PY1-PY0);
+const x2w=px=>(px-PX0)/(PX1-PX0)*2-1,y2w=py=>(PY1-py)/(PY1-PY0)*2-1;
+function resetFit(){w=new Array(D+1).fill(0);vel=new Array(D+1).fill(0);hist=[];mse=0;}
+function predict(x){let v=0;for(let j=D;j>=0;j--)v=v*x+w[j];return v;}
+const pw_=new Array(8);
+function stepFit(iters){
+  const n=pts.length;if(!n)return;
+  const lr=0.7/(D+1);
+  for(let it=0;it<iters;it++){
+    const g=new Array(D+1).fill(0);let L=0;
+    for(const p of pts){
+      let pred=0,xp=1;
+      for(let j=0;j<=D;j++){pw_[j]=xp;pred+=w[j]*xp;xp*=p.x;}
+      const e=pred-p.y;L+=e*e;
+      for(let j=0;j<=D;j++)g[j]+=2*e*pw_[j];
+    }
+    L/=n;
+    for(let j=0;j<=D;j++){g[j]/=n;vel[j]=0.9*vel[j]-lr*g[j];w[j]+=vel[j];}
+    mse=L;
+  }
+  if(!isFinite(mse))resetFit();
+}
+function loadPreset(k){
+  pts=[];const N=15,rnd=()=>(Math.random()*2-1);
+  for(let i=0;i<N;i++){
+    const x=-0.9+1.8*i/(N-1)+rnd()*0.03;let y;
+    if(k===0)y=0.6*x+0.05+rnd()*0.08;
+    else if(k===1)y=0.75*Math.sin(2.5*x)+rnd()*0.07;
+    else y=0.5*x+rnd()*0.06;
+    pts.push({x:x,y:Math.max(-0.95,Math.min(0.95,y))});
+  }
+  if(k===2)pts.push({x:0.15,y:-0.85});
+  presetName=PRESETS[k];resetFit();
+}
+function drawGrid(){
+  ctx.fillStyle='#05010f';ctx.fillRect(0,0,W,H);
+  ctx.lineWidth=1;
+  for(let g=-1;g<=1.001;g+=0.25){
+    const major=Math.abs(g)<1e-9;
+    ctx.strokeStyle=major?'rgba(120,180,255,.35)':'rgba(90,140,255,.10)';
+    ctx.beginPath();ctx.moveTo(w2x(g),PY0);ctx.lineTo(w2x(g),PY1);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(PX0,w2y(g));ctx.lineTo(PX1,w2y(g));ctx.stroke();
+  }
+  ctx.strokeStyle='rgba(120,220,255,.35)';ctx.strokeRect(PX0,PY0,PX1-PX0,PY1-PY0);
+}
+function draw(){
+  drawGrid();
+  const syn=(PY1-PY0)/2;
+  pts.forEach((p,i)=>{
+    const yc=predict(p.x),sx=w2x(p.x),sy=w2y(p.y);
+    const syC=w2y(Math.max(-1.8,Math.min(1.8,yc)));
+    ctx.strokeStyle='rgba(255,120,120,.6)';ctx.lineWidth=1.2;
+    ctx.beginPath();ctx.moveTo(sx,sy);ctx.lineTo(sx,syC);ctx.stroke();
+    if(boxes){
+      let hpx=Math.min(Math.abs(sy-syC),200);
+      const dir=(sx+hpx>PX1)?-1:1,rx=dir>0?sx:sx-hpx,yTop=Math.min(sy,syC);
+      const al=0.05+0.05*(0.5+0.5*Math.sin(time*2.5+i*1.7));
+      ctx.fillStyle='rgba(255,90,140,'+al.toFixed(3)+')';ctx.fillRect(rx,yTop,hpx,hpx);
+      ctx.strokeStyle='rgba(255,90,140,.25)';ctx.strokeRect(rx,yTop,hpx,hpx);
+    }
+  });
+  if(pts.length){
+    ctx.save();ctx.beginPath();ctx.rect(PX0,PY0,PX1-PX0,PY1-PY0);ctx.clip();
+    ctx.lineJoin='round';ctx.lineCap='round';
+    for(const pass of[[7,0.15],[2.2,0.95]]){
+      ctx.strokeStyle='#28f7c9';ctx.globalAlpha=pass[1];ctx.lineWidth=pass[0];
+      ctx.beginPath();let first=true;
+      for(let x=-1.02;x<=1.021;x+=0.008){
+        let y=predict(x);if(!isFinite(y))continue;
+        y=Math.max(-60,Math.min(60,y));
+        const X=w2x(x),Y=w2y(y);
+        if(first){ctx.moveTo(X,Y);first=false;}else ctx.lineTo(X,Y);
+      }
+      ctx.stroke();
+    }
+    ctx.globalAlpha=1;ctx.restore();
+  }
+  for(const p of pts){
+    const sx=w2x(p.x),sy=w2y(p.y);
+    ctx.fillStyle='rgba(90,200,255,.25)';ctx.beginPath();ctx.arc(sx,sy,7,0,6.283);ctx.fill();
+    ctx.fillStyle='#6ee7ff';ctx.beginPath();ctx.arc(sx,sy,3.5,0,6.283);ctx.fill();
+  }
+  drawSpark();
+}
+function drawSpark(){
+  if(hist.length<2)return;
+  const pw=240,ph=90,px=W-pw-14,py=H-ph-14;
+  ctx.fillStyle='rgba(4,7,20,.78)';ctx.fillRect(px,py,pw,ph);
+  ctx.strokeStyle='rgba(255,120,160,.3)';ctx.lineWidth=1;ctx.strokeRect(px,py,pw,ph);
+  ctx.fillStyle='#ff9bbd';ctx.font='10px ui-monospace,monospace';ctx.fillText('log₁₀ MSE',px+8,py+14);
+  let mn=1e9,mx=-1e9;
+  for(const v of hist){const lv=Math.log10(v+1e-9);if(lv<mn)mn=lv;if(lv>mx)mx=lv;}
+  const rng=(mx-mn)||1;
+  ctx.strokeStyle='#ff5a8c';ctx.lineWidth=1.4;ctx.beginPath();
+  for(let j=0;j<hist.length;j++){
+    const lv=Math.log10(hist[j]+1e-9);
+    const X=px+4+j/(hist.length-1)*(pw-8),Y=py+ph-8-((lv-mn)/rng)*(ph-28);
+    if(j)ctx.lineTo(X,Y);else ctx.moveTo(X,Y);
+  }
+  ctx.stroke();
+}
+function eqStr(){
+  if(!w.length)return'';
+  let s='ŷ = '+w[0].toFixed(2);
+  for(let j=1;j<=D;j++)s+=(w[j]<0?' − ':' + ')+Math.abs(w[j]).toFixed(2)+'x'+SUP[j];
+  return s;
+}
+function stats(){
+  let s='degree '+D+' · '+pts.length+' pts ('+presetName+') · 120 GD iters/frame\n';
+  s+='MSE = '+(pts.length?mse.toExponential(3):'—')+'\n'+eqStr();
+  if(D>=5)s+='\n<span style="color:#ffb054">high degree → wiggly curve = overfitting</span>';
+  statsEl.innerHTML=s;
+}
+function loop(ts){
+  time=ts/1000;
+  stepFit(120);
+  if(pts.length){hist.push(mse);if(hist.length>240)hist.shift();}
+  draw();frame++;if(frame%5===0)stats();
+  requestAnimationFrame(loop);
+}
+cv.addEventListener('click',e=>{
+  const x=x2w(e.clientX),y=y2w(e.clientY);
+  if(x>=-1.05&&x<=1.05&&y>=-1.05&&y<=1.05){pts.push({x:x,y:y});presetName='custom';}
+});
+addEventListener('keydown',e=>{
+  const k=e.key.toLowerCase();
+  if(k==='p'){D=D%7+1;resetFit();}
+  else if(k==='d'){presetIdx=(presetIdx+1)%3;loadPreset(presetIdx);}
+  else if(k==='c'){pts=[];presetName='empty';resetFit();}
+  else if(k==='b'){boxes=!boxes;}
+});
+addEventListener('resize',resize);
+resize();loadPreset(0);
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

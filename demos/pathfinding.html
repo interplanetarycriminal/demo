@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pathfinding Race — BFS · Dijkstra · Greedy · A*</title>
+<style>
+html,body{margin:0;height:100%;background:#04060c;overflow:hidden}
+canvas{display:block;cursor:crosshair}
+#ui{position:fixed;top:10px;left:10px;z-index:10;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#9fd8ff;background:rgba(4,10,22,.76);border:1px solid rgba(0,229,255,.28);border-radius:8px;padding:10px 12px;max-width:330px}
+#ui h1{margin:0;font-size:13px;color:#00e5ff;letter-spacing:.5px}
+#ui p{margin:5px 0;color:#8fa9c4}
+#ui .hint{color:#5e7a92}
+#ui a{color:#ffd54a;text-decoration:none}
+#stats{margin-top:6px;white-space:pre;color:#cfe9ff}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div id="ui">
+<h1>PATHFINDING RACE</h1>
+<p>Four search strategies race over the same maze from the <span style="color:#39ff8b">green start</span> to the <span style="color:#ffd54a">gold goal</span> — watch each glowing frontier flood outward (dark-green marsh costs 3.5× to cross) and compare how much they explore to find a path.</p>
+<p class="hint">drag: draw/erase walls · drag start/goal · R new maze · Space rerun · 1-4 focus one · 0 all · <a href="index.html">← gallery</a></p>
+<div id="stats"></div>
+</div>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+var cv=document.getElementById('c'),ctx=cv.getContext('2d'),statsEl=document.getElementById('stats'),W=0,H=0;
+function resize(){var d=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;cv.width=W*d;cv.height=H*d;cv.style.width=W+'px';cv.style.height=H+'px';ctx.setTransform(d,0,0,d,0,0)}
+addEventListener('resize',resize);resize();
+
+var COLS=46,ROWS=30,N=COLS*ROWS;
+var walls=new Uint8Array(N),cost=new Float32Array(N);
+var start={x:2,y:2},goal={x:COLS-3,y:ROWS-3},goalIdx=0;
+var DIRS=[[1,0],[-1,0],[0,1],[0,-1]];
+function id(x,y){return y*COLS+x}
+
+function genOnce(){
+  walls.fill(0);cost.fill(1);
+  for(var i=0;i<N;i++)if(Math.random()<0.24)walls[i]=1;
+  for(var b=0;b<7;b++){var cx=Math.random()*COLS,cy=Math.random()*ROWS,r=3+Math.random()*5;
+    for(var y=0;y<ROWS;y++)for(var x=0;x<COLS;x++)if(Math.hypot(x-cx,y-cy)<r)cost[id(x,y)]=3.5}
+  start={x:2,y:2};goal={x:COLS-3,y:ROWS-3};
+  clearAround(start);clearAround(goal);
+}
+function clearAround(p){for(var dy=-1;dy<=1;dy++)for(var dx=-1;dx<=1;dx++){var x=p.x+dx,y=p.y+dy;if(x>=0&&y>=0&&x<COLS&&y<ROWS)walls[id(x,y)]=0}}
+function reachable(){
+  var q=[id(start.x,start.y)],seen=new Uint8Array(N);seen[q[0]]=1;var h=0,g=id(goal.x,goal.y);
+  while(h<q.length){var n=q[h++];if(n===g)return true;var x=n%COLS,y=(n/COLS)|0;
+    for(var k=0;k<4;k++){var nx=x+DIRS[k][0],ny=y+DIRS[k][1];
+      if(nx<0||ny<0||nx>=COLS||ny>=ROWS)continue;var ni=id(nx,ny);
+      if(walls[ni]||seen[ni])continue;seen[ni]=1;q.push(ni)}}
+  return false}
+function regen(){
+  for(var t=0;t<300;t++){genOnce();if(reachable()){resetAlgos();return}}
+  for(var x=start.x;x<=goal.x;x++)walls[id(x,start.y)]=0;
+  for(var y=start.y;y<=goal.y;y++)walls[id(goal.x,y)]=0;
+  resetAlgos()}
+
+function Heap(){this.a=[]}
+Heap.prototype.push=function(p,n){var a=this.a;a.push([p,n]);var i=a.length-1;
+  while(i>0){var j=(i-1)>>1;if(a[j][0]<=a[i][0])break;var t=a[j];a[j]=a[i];a[i]=t;i=j}};
+Heap.prototype.pop=function(){var a=this.a;if(!a.length)return null;var top=a[0],last=a.pop();
+  if(a.length){a[0]=last;var i=0;
+    while(1){var l=2*i+1,r=l+1,m=i;
+      if(l<a.length&&a[l][0]<a[m][0])m=l;
+      if(r<a.length&&a[r][0]<a[m][0])m=r;
+      if(m===i)break;var t=a[m];a[m]=a[i];a[i]=t;i=m}}
+  return top};
+
+var algos=[
+  {name:'BFS',sub:'blind flood, ignores cost',hue:190,mode:'bfs'},
+  {name:'DIJKSTRA',sub:'cheapest-cost first',hue:285,mode:'dij'},
+  {name:'GREEDY',sub:'heuristic only',hue:25,mode:'greedy'},
+  {name:'A*',sub:'cost + heuristic',hue:135,mode:'astar'}
+];
+function resetAlgos(){
+  goalIdx=id(goal.x,goal.y);
+  for(var q=0;q<4;q++){var A=algos[q];
+    A.g=new Float64Array(N).fill(Infinity);A.closed=new Uint8Array(N);A.inq=new Uint8Array(N);
+    A.parent=new Int32Array(N).fill(-1);A.visited=0;A.done=false;A.found=false;
+    A.path=null;A.pathAnim=0;A.maxg=1;A.pathCost=0;
+    var s=id(start.x,start.y);A.g[s]=0;A.inq[s]=1;
+    if(A.mode==='bfs'){A.queue=[s];A.head=0}else{A.heap=new Heap();A.heap.push(0,s)}}}
+function hFn(x,y){return Math.abs(x-goal.x)+Math.abs(y-goal.y)}
+function stepAlgo(A){
+  if(A.done)return;
+  var node=-1;
+  if(A.mode==='bfs'){while(A.head<A.queue.length){var n0=A.queue[A.head++];if(!A.closed[n0]){node=n0;break}}}
+  else{while(1){var t=A.heap.pop();if(!t)break;if(!A.closed[t[1]]){node=t[1];break}}}
+  if(node<0){A.done=true;return}
+  A.closed[node]=1;A.visited++;if(A.g[node]>A.maxg)A.maxg=A.g[node];
+  if(node===goalIdx){A.done=true;A.found=true;buildPath(A);return}
+  var x=node%COLS,y=(node/COLS)|0;
+  for(var k=0;k<4;k++){var nx=x+DIRS[k][0],ny=y+DIRS[k][1];
+    if(nx<0||ny<0||nx>=COLS||ny>=ROWS)continue;var ni=id(nx,ny);
+    if(walls[ni]||A.closed[ni])continue;
+    var w=A.mode==='bfs'?1:cost[ni],ng=A.g[node]+w;
+    if(ng<A.g[ni]){A.g[ni]=ng;A.parent[ni]=node;A.inq[ni]=1;
+      if(A.mode==='bfs')A.queue.push(ni);
+      else{var h=hFn(nx,ny),p=A.mode==='dij'?ng:(A.mode==='greedy'?h:ng+h);A.heap.push(p,ni)}}}}
+function buildPath(A){
+  var p=[],n=goalIdx,c=0;
+  while(n>=0){p.push(n);n=A.parent[n]}
+  p.reverse();
+  for(var i=1;i<p.length;i++)c+=cost[p[i]];
+  A.path=p;A.pathCost=c}
+
+var focus=-1,views=[],time=0;
+function frame(){
+  time+=0.016;
+  for(var q=0;q<4;q++){var A=algos[q];
+    for(var s=0;s<3;s++)stepAlgo(A);
+    if(A.found&&A.pathAnim<A.path.length)A.pathAnim+=2}
+  draw();updateStats();requestAnimationFrame(frame)}
+function draw(){
+  ctx.fillStyle='#04060c';ctx.fillRect(0,0,W,H);
+  views=[];
+  if(focus<0){var hw=W/2,hh=H/2;
+    drawAlgo(algos[0],0,0,hw,hh);drawAlgo(algos[1],hw,0,hw,hh);
+    drawAlgo(algos[2],0,hh,hw,hh);drawAlgo(algos[3],hw,hh,hw,hh)}
+  else drawAlgo(algos[focus],0,0,W,H)}
+function drawAlgo(A,vx,vy,vw,vh){
+  var s=Math.min((vw-18)/COLS,(vh-32)/ROWS);
+  var ox=vx+(vw-s*COLS)/2,oy=vy+(vh-32-s*ROWS)/2+8;
+  views.push({ox:ox,oy:oy,s:s});
+  ctx.strokeStyle='hsla('+A.hue+',100%,60%,.3)';ctx.lineWidth=1;
+  ctx.strokeRect(ox-4,oy-4,s*COLS+8,s*ROWS+8);
+  var cs=Math.max(1,s-1);
+  for(var y=0;y<ROWS;y++)for(var x=0;x<COLS;x++){
+    var i=y*COLS+x,px=ox+x*s,py=oy+y*s;
+    if(walls[i]){ctx.fillStyle='#232b3e';ctx.fillRect(px,py,cs,cs);continue}
+    if(A.closed[i]){var t=Math.min(1,A.g[i]/A.maxg);
+      ctx.fillStyle='hsl('+(A.hue-30*t)+',100%,'+(14+40*t)+'%)';ctx.fillRect(px,py,cs,cs)}
+    else if(A.inq[i]){ctx.fillStyle='hsla('+A.hue+',100%,78%,'+(0.7+0.3*Math.sin(time*8))+')';ctx.fillRect(px,py,cs,cs)}
+    else if(cost[i]>1){ctx.fillStyle='rgba(70,135,60,.22)';ctx.fillRect(px,py,cs,cs)}
+    else{ctx.fillStyle='#0a0e18';ctx.fillRect(px,py,cs,cs)}}
+  if(A.found){
+    var m=Math.min(A.pathAnim,A.path.length);
+    ctx.beginPath();
+    for(var k=0;k<m;k++){var n=A.path[k],xx=ox+(n%COLS)*s+s/2,yy=oy+((n/COLS)|0)*s+s/2;
+      if(k)ctx.lineTo(xx,yy);else ctx.moveTo(xx,yy)}
+    ctx.lineJoin='round';ctx.lineCap='round';
+    ctx.strokeStyle='rgba(255,213,74,'+(0.3+0.18*Math.sin(time*6))+')';ctx.lineWidth=Math.max(3,s*.85);ctx.stroke();
+    ctx.strokeStyle='#ffd54a';ctx.lineWidth=Math.max(1.5,s*.35);ctx.stroke()}
+  mark(start,'#39ff8b',ox,oy,s);mark(goal,'#ffd54a',ox,oy,s);
+  ctx.font='11px ui-monospace,Menlo,monospace';ctx.fillStyle='hsl('+A.hue+',100%,70%)';
+  var st=A.found?('cost '+A.pathCost.toFixed(1)+' · '+(A.path.length-1)+' steps'):(A.done?'✕ no path':'searching…');
+  ctx.fillText(A.name+' — '+A.sub+'    visited '+A.visited+'    '+st,ox,oy+s*ROWS+16)}
+function mark(p,col,ox,oy,s){
+  var px=ox+p.x*s,py=oy+p.y*s;
+  ctx.fillStyle=col;ctx.fillRect(px-1,py-1,s+1,s+1);
+  ctx.strokeStyle=col;ctx.lineWidth=2;
+  var r=s*(1.15+0.25*Math.sin(time*5));
+  ctx.strokeRect(px+s/2-r/2,py+s/2-r/2,r,r)}
+function updateStats(){
+  var s='';
+  for(var q=0;q<4;q++){var A=algos[q];
+    s+=(focus===q?'▶':' ')+A.name.padEnd(9)+' visited '+String(A.visited).padStart(4)+
+      (A.found?'  cost '+A.pathCost.toFixed(1):(A.done?'  no path':'  …'))+'\n'}
+  statsEl.textContent=s}
+
+var drag=null;
+function cellAt(mx,my){
+  for(var v=0;v<views.length;v++){var vw=views[v];
+    var gx=Math.floor((mx-vw.ox)/vw.s),gy=Math.floor((my-vw.oy)/vw.s);
+    if(gx>=0&&gy>=0&&gx<COLS&&gy<ROWS)return{x:gx,y:gy}}
+  return null}
+function paint(c){
+  if((c.x===start.x&&c.y===start.y)||(c.x===goal.x&&c.y===goal.y))return;
+  var v=drag==='draw'?1:0,i=id(c.x,c.y);
+  if(walls[i]!==v){walls[i]=v;resetAlgos()}}
+cv.addEventListener('mousedown',function(e){
+  var c=cellAt(e.clientX,e.clientY);if(!c)return;
+  if(c.x===start.x&&c.y===start.y)drag='start';
+  else if(c.x===goal.x&&c.y===goal.y)drag='goal';
+  else{drag=walls[id(c.x,c.y)]?'erase':'draw';paint(c)}});
+addEventListener('mousemove',function(e){
+  if(!drag)return;var c=cellAt(e.clientX,e.clientY);if(!c)return;
+  if(drag==='start'){if(!walls[id(c.x,c.y)]&&(c.x!==goal.x||c.y!==goal.y)){start={x:c.x,y:c.y};resetAlgos()}}
+  else if(drag==='goal'){if(!walls[id(c.x,c.y)]&&(c.x!==start.x||c.y!==start.y)){goal={x:c.x,y:c.y};resetAlgos()}}
+  else paint(c)});
+addEventListener('mouseup',function(){drag=null});
+addEventListener('keydown',function(e){
+  var k=e.key;
+  if(k===' '){e.preventDefault();resetAlgos()}
+  else if(k==='r'||k==='R')regen();
+  else if(k>='1'&&k<='4')focus=+k-1;
+  else if(k==='0'||k==='Escape')focus=-1});
+
+regen();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

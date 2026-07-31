@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Optimizer Race — Gradient Descent</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#05010f}
+canvas{display:block;position:fixed;inset:0}
+#ui{position:fixed;top:12px;left:12px;z-index:10;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#cfe9ff;background:rgba(5,8,22,.74);border:1px solid rgba(80,220,255,.25);border-radius:10px;padding:10px 14px;max-width:350px}
+#ui h1{margin:0 0 2px;font-size:14px;color:#7df9ff;text-shadow:0 0 8px #0ff}
+#ui .ex{color:#9fb4d8}
+#ui .hint{color:#6ee7a0;margin-top:4px}
+#ui a{color:#ff7ad9;text-decoration:none}
+#stats{margin-top:6px;color:#e8f6ff;white-space:pre-wrap}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div id="ui">
+<h1>⚡ Optimizer Race</h1>
+<div class="ex">Four optimizers run their real update rules down the same bumpy loss surface f(x,y) — adaptive step sizes escape ravines and local minima differently.</div>
+<div class="hint">click: restart from there · ←/→: learning rate · R: new landscape</div>
+<div id="stats"></div>
+<div style="margin-top:4px"><a href="index.html">← gallery</a></div>
+</div>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+const cv=document.getElementById('c'),ctx=cv.getContext('2d'),statsEl=document.getElementById('stats');
+let W=0,H=0,DPR=1,scale=1,field=null,fmin=0,fmax=1;
+let wells=[],sA=0,sF=0,sP1=0,sP2=0;
+let lrScale=1,stepCount=0,minL=1e9,maxL=-1e9,time=0,frame=0;
+const BASE_LR=0.02,MAXHIST=700;
+const rr=(a,b)=>a+Math.random()*(b-a);
+function f(x,y){
+  let v=0.06*(x*x+y*y)+sA*Math.sin(sF*x+sP1)*Math.sin(sF*y+sP2);
+  for(let i=0;i<wells.length;i++){const w=wells[i],dx=x-w.x,dy=y-w.y;v-=w.a*Math.exp(-(dx*dx+dy*dy)/(2*w.s*w.s));}
+  return v;
+}
+function grad(x,y){const h=1e-3;return[(f(x+h,y)-f(x-h,y))/(2*h),(f(x,y+h)-f(x,y-h))/(2*h)];}
+function newLandscape(){
+  wells=[];for(let i=0;i<5;i++)wells.push({x:rr(-2.3,2.3),y:rr(-2.3,2.3),a:rr(0.7,1.8),s:rr(0.45,0.85)});
+  sA=rr(0.15,0.3);sF=rr(2,3);sP1=rr(0,6.283);sP2=rr(0,6.283);
+}
+const w2sx=x=>W/2+x*scale,w2sy=y=>H/2+y*scale,s2wx=px=>(px-W/2)/scale,s2wy=py=>(py-H/2)/scale;
+const PAL=[[8,6,38],[42,16,110],[24,62,180],[0,148,196],[16,205,150],[168,222,66],[255,160,48],[255,72,72]];
+function pal(t){t=Math.max(0,Math.min(1,t));const q=t*(PAL.length-1),i=Math.min(PAL.length-2,q|0),fr=q-i,a=PAL[i],b=PAL[i+1];
+  return[a[0]+(b[0]-a[0])*fr,a[1]+(b[1]-a[1])*fr,a[2]+(b[2]-a[2])*fr];}
+function renderField(){
+  fmin=1e9;fmax=-1e9;
+  for(let i=0;i<=64;i++)for(let j=0;j<=64;j++){const v=f(s2wx(i/64*W),s2wy(j/64*H));if(v<fmin)fmin=v;if(v>fmax)fmax=v;}
+  const ow=Math.max(2,Math.ceil(W/3)),oh=Math.max(2,Math.ceil(H/3));
+  field=document.createElement('canvas');field.width=ow;field.height=oh;
+  const fc=field.getContext('2d'),img=fc.createImageData(ow,oh),d=img.data;
+  for(let py=0;py<oh;py++)for(let px=0;px<ow;px++){
+    const x=s2wx((px+0.5)*W/ow),y=s2wy((py+0.5)*H/oh);
+    const t=(f(x,y)-fmin)/(fmax-fmin),c=pal(t);
+    const q=t*15,frq=q-Math.floor(q),m=frq<0.09?0.5:1;
+    const k=(py*ow+px)*4;d[k]=c[0]*m;d[k+1]=c[1]*m;d[k+2]=c[2]*m;d[k+3]=255;
+  }
+  fc.putImageData(img,0,0);
+}
+const opts=[
+  {name:'SGD',col:'#26d9ff'},
+  {name:'Momentum',col:'#ff4df2'},
+  {name:'RMSProp',col:'#ffc233'},
+  {name:'Adam',col:'#51ff9e'}
+];
+let start=[-2.3,-1.8];
+function restart(pt){
+  start=[pt[0],pt[1]];stepCount=0;minL=1e9;maxL=-1e9;
+  for(const o of opts){o.p=[start[0],start[1]];o.v=[0,0];o.s=[0,0];o.m=[0,0];o.v2=[0,0];o.t=0;o.trail=[[start[0],start[1]]];o.hist=[];o.stuck=false;}
+}
+function stepOpt(o,idx){
+  const g=grad(o.p[0],o.p[1]),lr=BASE_LR*lrScale;
+  if(idx===0){o.p[0]-=lr*g[0];o.p[1]-=lr*g[1];}
+  else if(idx===1){for(let k=0;k<2;k++){o.v[k]=0.9*o.v[k]+g[k];o.p[k]-=lr*o.v[k];}}
+  else if(idx===2){for(let k=0;k<2;k++){o.s[k]=0.9*o.s[k]+0.1*g[k]*g[k];o.p[k]-=lr*g[k]/(Math.sqrt(o.s[k])+1e-8);}}
+  else{o.t++;for(let k=0;k<2;k++){
+    o.m[k]=0.9*o.m[k]+0.1*g[k];o.v2[k]=0.999*o.v2[k]+0.001*g[k]*g[k];
+    const mh=o.m[k]/(1-Math.pow(0.9,o.t)),vh=o.v2[k]/(1-Math.pow(0.999,o.t));
+    o.p[k]-=lr*mh/(Math.sqrt(vh)+1e-8);}}
+  o.p[0]=Math.max(-3.4,Math.min(3.4,o.p[0]));o.p[1]=Math.max(-3.4,Math.min(3.4,o.p[1]));
+  o.trail.push([o.p[0],o.p[1]]);if(o.trail.length>500)o.trail.shift();
+  if(o.hist.length<MAXHIST){const L=f(o.p[0],o.p[1]);o.hist.push(L);if(L<minL)minL=L;if(L>maxL)maxL=L;}
+  const tl=o.trail,n=tl.length;
+  if(n>40){const a=tl[n-1],b=tl[n-41];o.stuck=Math.hypot(a[0]-b[0],a[1]-b[1])<0.02;}else o.stuck=false;
+}
+function drawChart(){
+  const pw=Math.min(300,W*0.34),ph=110,px=W-pw-14,py=H-ph-14;
+  ctx.fillStyle='rgba(4,7,20,.75)';ctx.fillRect(px,py,pw,ph);
+  ctx.strokeStyle='rgba(120,220,255,.3)';ctx.lineWidth=1;ctx.strokeRect(px,py,pw,ph);
+  ctx.fillStyle='#9fd8ff';ctx.font='10px ui-monospace,monospace';ctx.fillText('loss vs step',px+8,py+14);
+  const rng=(maxL-minL)||1;
+  for(const o of opts){const h=o.hist;if(!h||h.length<2)continue;
+    ctx.strokeStyle=o.col;ctx.globalAlpha=.95;ctx.lineWidth=1.3;ctx.beginPath();
+    for(let j=0;j<h.length;j++){
+      const X=px+4+(j/(MAXHIST-1))*(pw-8),Y=py+ph-6-((h[j]-minL)/rng)*(ph-24);
+      if(j)ctx.lineTo(X,Y);else ctx.moveTo(X,Y);}
+    ctx.stroke();}
+  ctx.globalAlpha=1;
+}
+function draw(){
+  ctx.drawImage(field,0,0,W,H);
+  ctx.strokeStyle='rgba(255,255,255,.8)';ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.arc(w2sx(start[0]),w2sy(start[1]),7,0,6.283);ctx.stroke();
+  ctx.lineJoin='round';ctx.lineCap='round';
+  for(let i=0;i<4;i++){const o=opts[i],tl=o.trail;
+    for(const pass of[[6,0.13],[1.8,0.85]]){
+      ctx.strokeStyle=o.col;ctx.globalAlpha=pass[1];ctx.lineWidth=pass[0];ctx.beginPath();
+      ctx.moveTo(w2sx(tl[0][0]),w2sy(tl[0][1]));
+      for(let j=1;j<tl.length;j++)ctx.lineTo(w2sx(tl[j][0]),w2sy(tl[j][1]));
+      ctx.stroke();}
+    ctx.globalAlpha=1;
+    const pulse=o.stuck?2.5+2*Math.sin(time*9+i*1.3):0;
+    const bx=w2sx(o.p[0]),by=w2sy(o.p[1]);
+    ctx.fillStyle=o.col;ctx.beginPath();ctx.arc(bx,by,5.5+pulse,0,6.283);ctx.fill();
+    ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(bx,by,2,0,6.283);ctx.fill();
+    if(o.stuck){ctx.strokeStyle=o.col;ctx.globalAlpha=.5;ctx.beginPath();ctx.arc(bx,by,10+pulse*1.6,0,6.283);ctx.stroke();ctx.globalAlpha=1;}
+    ctx.font='11px ui-monospace,monospace';ctx.fillStyle=o.col;ctx.fillText(o.name,bx+9,by-8);
+  }
+  drawChart();
+}
+function stats(){
+  let s='lr = '+(BASE_LR*lrScale).toFixed(4)+'  (×'+lrScale.toFixed(2)+')   step '+stepCount+'\n';
+  for(const o of opts)
+    s+='<span style="color:'+o.col+'">■ '+o.name.padEnd(9)+' L='+f(o.p[0],o.p[1]).toFixed(3)+(o.stuck?'  · stuck (pulsing)':'')+'</span>\n';
+  statsEl.innerHTML=s;
+}
+function loop(ts){
+  time=ts/1000;
+  for(let s=0;s<2;s++){for(let i=0;i<4;i++)stepOpt(opts[i],i);stepCount++;}
+  draw();frame++;if(frame%6===0)stats();
+  requestAnimationFrame(loop);
+}
+function sizeOnly(){
+  DPR=Math.min(window.devicePixelRatio||1,2);W=innerWidth;H=innerHeight;
+  cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);
+  cv.style.width=W+'px';cv.style.height=H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);scale=Math.min(W,H)/6.8;
+}
+addEventListener('resize',()=>{sizeOnly();renderField();});
+cv.addEventListener('click',e=>{restart([s2wx(e.clientX),s2wy(e.clientY)]);});
+addEventListener('keydown',e=>{
+  if(e.key==='ArrowLeft'){lrScale=Math.max(0.05,lrScale/1.25);e.preventDefault();}
+  else if(e.key==='ArrowRight'){lrScale=Math.min(30,lrScale*1.25);e.preventDefault();}
+  else if(e.key==='r'||e.key==='R'){newLandscape();renderField();restart(start);}
+});
+newLandscape();sizeOnly();renderField();restart([-2.3,-1.8]);
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
