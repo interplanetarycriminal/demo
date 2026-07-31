@@ -1,0 +1,438 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Simpson's Paradox — The Reversal</title>
+<style>
+  html,body{margin:0;height:100%;background:#04060d;overflow:hidden}
+  canvas{display:block;position:fixed;inset:0}
+  #ui{position:fixed;top:14px;left:14px;z-index:10;background:rgba(6,10,20,.62);
+      border:1px solid rgba(255,80,140,.28);border-radius:9px;padding:12px 14px;
+      font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#ffd9e6;
+      max-width:352px;backdrop-filter:blur(7px)}
+  #ui h1{margin:0 0 6px;font-size:14px;letter-spacing:.15em;color:#ff4d8d;text-transform:uppercase}
+  #ui p{margin:0 0 8px;color:#9aa6c8}
+  #ui .k{color:#ffd166}
+  #ui .row{color:#dfe8ff;margin-top:4px}
+  #ui a{color:#39c7ff;text-decoration:none}
+  #ui a:hover{text-decoration:underline}
+  #ctl{position:fixed;left:50%;transform:translateX(-50%);bottom:52px;z-index:10;width:min(560px,84vw);
+       background:rgba(6,10,20,.66);border:1px solid rgba(255,176,46,.3);border-radius:9px;
+       padding:9px 14px 12px;font:11px/1.5 ui-monospace,monospace;color:#ffd9a8;backdrop-filter:blur(7px)}
+  #ctl.off{opacity:.22;pointer-events:none}
+  #ctl .hd{display:flex;justify-content:space-between;letter-spacing:.1em}
+  #ctl .hd b{color:#fff;font-weight:400}
+  #wrap{position:relative;height:24px;margin-top:3px}
+  #sl{-webkit-appearance:none;appearance:none;width:100%;height:5px;margin:9px 0 0;border-radius:3px;
+      background:linear-gradient(90deg,#39c7ff,#8c7bff,#ff4d8d);outline:none}
+  #sl::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;
+      background:#fff;box-shadow:0 0 10px #ffb02e,0 0 3px #000;cursor:pointer}
+  #sl::-moz-range-thumb{width:15px;height:15px;border:0;border-radius:50%;background:#fff;
+      box-shadow:0 0 10px #ffb02e;cursor:pointer}
+  #flip{position:absolute;top:2px;width:2px;height:20px;background:#fff;box-shadow:0 0 8px #fff;pointer-events:none}
+  #fliplab{position:absolute;top:-12px;font-size:9px;color:#fff;letter-spacing:.08em;
+      transform:translateX(-50%);pointer-events:none;white-space:nowrap;text-shadow:0 0 6px #000}
+  #take{position:fixed;left:0;right:0;bottom:12px;z-index:10;text-align:center;
+      font:12px/1.4 ui-monospace,monospace;color:#8fa0c8;letter-spacing:.06em}
+  #take b{color:#ffd166;font-weight:400}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>Simpson's Paradox</h1>
+  <p>A trend that holds inside every single subgroup can reverse its sign the moment you pool the groups together.</p>
+  <div class="row"><span class="k">1-4</span> real cases &nbsp; <span class="k">R</span> replay reveal &nbsp; <span class="k">←→</span> confounder &nbsp; <span class="k">A</span> autoloop</div>
+  <div class="row" id="cap">1 · synthetic — five groups, one lurking confounder</div>
+  <div class="row"><a href="index.html">← gallery</a></div>
+</div>
+<div id="ctl">
+  <div class="hd"><span>CONFOUNDER STRENGTH</span><b id="sval">1.00</b></div>
+  <div id="wrap"><input id="sl" type="range" min="0" max="1000" value="667"><div id="flip"></div><div id="fliplab">sign flip</div></div>
+</div>
+<div id="take">aggregate statistics can lie — <b>always ask what you are averaging over</b></div>
+<script>
+"use strict";
+var cv=document.getElementById('c'),ctx=cv.getContext('2d'),W=0,H=0;
+function resize(){var d=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
+  cv.width=Math.round(W*d);cv.height=Math.round(H*d);cv.style.width=W+'px';cv.style.height=H+'px';
+  ctx.setTransform(d,0,0,d,0,0);}
+window.addEventListener('resize',resize);resize();
+
+/* ---------- math: prng, gaussian, genuine least squares ---------- */
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);
+  t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function gauss(r){var u=0,v=0;while(u===0)u=r();while(v===0)v=r();
+  return Math.sqrt(-2*Math.log(u))*Math.cos(6.283185307*v)}
+function fit(pts){var n=pts.length;if(n<2)return null;var sx=0,sy=0,i;
+  for(i=0;i<n;i++){sx+=pts[i][0];sy+=pts[i][1]}
+  var mx=sx/n,my=sy/n,Sxx=0,Syy=0,Sxy=0,a,b;
+  for(i=0;i<n;i++){a=pts[i][0]-mx;b=pts[i][1]-my;Sxx+=a*a;Syy+=b*b;Sxy+=a*b}
+  return {m:Sxy/Sxx,b:my-(Sxy/Sxx)*mx,r:Sxy/Math.sqrt(Sxx*Syy),mx:mx,my:my};}
+
+/* ---------- presets ---------- */
+var HUES=['#ff3d81','#ffb02e','#3dffa8','#39c7ff','#b47cff'];
+var SCATTER={
+ synth:{key:'1',name:'synthetic — five groups, one lurking confounder',
+   xlab:'X  (treatment dose)',ylab:'Y  (recovery score)',
+   glab:['group A','group B','group C','group D','group E'],
+   dag:{c:'GROUP',x:'DOSE',y:'RECOVERY'},
+   story:'Five hospitals. Inside each one, more dose → worse recovery. But the healthiest hospitals also dose highest, so the pooled cloud slopes the other way.',
+   n:26,G:5,MW:-0.55,SDX:1.4,NOISE:0.45,SEPX:1.1,BASEY:0.3,SEPY:1.5,CX:5,CY:5,
+   SMAX:1.5,S0:1.0,XD:[-1.5,12.5],YD:[-3,13],xf:1,yf:1},
+ chol:{key:'4',name:'exercise vs cholesterol, confounded by age',
+   xlab:'exercise  (hours / week)',ylab:'LDL cholesterol  (mg/dL)',
+   glab:['age 25-39','age 40-54','age 55-69','age 70+'],
+   dag:{c:'AGE',x:'EXERCISE',y:'CHOLESTEROL'},
+   story:'Within every age band, more exercise lowers cholesterol. But older people here both exercise more and run higher cholesterol — pooled, exercise looks harmful. Stylized illustrative data.',
+   n:30,G:4,MW:-6,SDX:1.4,NOISE:8,SEPX:1.3,BASEY:5,SEPY:22,CX:6,CY:190,
+   SMAX:1.6,S0:1.0,XD:[0,13],YD:[100,285],xf:1,yf:0}
+};
+var RATE={
+ berk:{key:'2',name:'UC Berkeley graduate admissions, fall 1973',
+   dag:{c:'DEPARTMENT',x:'GENDER',y:'ADMISSION'},
+   armA:{lab:'MEN',col:'#39c7ff'},armB:{lab:'WOMEN',col:'#ff3d81'},
+   unit:'admitted',
+   story:'Men were admitted at a far higher overall rate — yet in most individual departments women did as well or better. Women applied disproportionately to the departments that admitted almost nobody.',
+   note:'counts reconstructed from Bickel, Hammel & O’Connell (1975): applicant totals × published admission rates, six largest departments.',
+   rows:[['Dept A',512,825,89,108],['Dept B',353,560,17,25],['Dept C',120,325,202,593],
+         ['Dept D',138,417,131,375],['Dept E',53,191,94,393],['Dept F',22,373,24,341]],
+   verdict:'MEN win overall — WOMEN win in 4 of 6 departments'},
+ stone:{key:'3',name:'kidney stone treatment (Charig et al. 1986)',
+   dag:{c:'STONE SIZE',x:'TREATMENT',y:'SUCCESS'},
+   armA:{lab:'TREATMENT A',col:'#3dffa8'},armB:{lab:'TREATMENT B',col:'#b47cff'},
+   unit:'successes',
+   story:'Open surgery (A) beats the less invasive procedure (B) on small stones AND on large stones — but B wins overall. Doctors sent the easy small-stone cases to B.',
+   note:'A = open surgery, B = percutaneous nephrolithotomy; 350 patients per arm.',
+   rows:[['Small stones',81,87,234,270],['Large stones',192,263,55,80]],
+   verdict:'A wins BOTH subgroups — B wins the pooled total'}
+};
+
+/* ---------- data build ---------- */
+function makeSeeds(P){var seeds=[],g,j;
+  for(g=0;g<P.G;g++){var r=mulberry32(1337+g*7919),pts=[];
+    for(j=0;j<P.n;j++){var dx=gauss(r)*P.SDX;pts.push([dx,P.MW*dx+gauss(r)*P.NOISE])}
+    seeds.push(pts)}
+  return seeds;}
+function build(P,seeds,s){var out=[],mid=(P.G-1)/2,g;
+  for(g=0;g<P.G;g++){var cx=P.CX+s*P.SEPX*(g-mid),cy=P.CY+(P.BASEY+s*P.SEPY)*(g-mid);
+    out.push(seeds[g].map(function(d){return [cx+d[0],cy+d[1]]}))}
+  return out;}
+function pooledOf(gs){var all=[];for(var i=0;i<gs.length;i++)all=all.concat(gs[i]);return fit(all)}
+function findFlip(P,seeds){var prev=pooledOf(build(P,seeds,0)).m,i,s,m;
+  for(i=1;i<=400;i++){s=P.SMAX*i/400;m=pooledOf(build(P,seeds,s)).m;
+    if((prev<0)!==(m<0))return s;prev=m}
+  return null;}
+
+/* ---------- state ---------- */
+var mode='scatter',P=SCATTER.synth,seeds=makeSeeds(P),S=P.S0,flipS=findFlip(P,seeds);
+var groups=build(P,seeds,S),wfits=groups.map(fit),pfit=pooledOf(groups);
+var RC=null,t0=performance.now(),now=0,loop=true,userTouch=0,modeT=0;
+var el={sl:document.getElementById('sl'),sv:document.getElementById('sval'),cap:document.getElementById('cap'),
+        ctl:document.getElementById('ctl'),flip:document.getElementById('flip'),fl:document.getElementById('fliplab')};
+
+function recompute(){groups=build(P,seeds,S);wfits=groups.map(fit);pfit=pooledOf(groups);}
+function setPreset(k){
+  if(SCATTER[k]){mode='scatter';P=SCATTER[k];seeds=makeSeeds(P);S=P.S0;flipS=findFlip(P,seeds);
+    el.sl.value=Math.round(1000*S/P.SMAX);el.ctl.className='';syncFlip();recompute();}
+  else{mode='rate';RC=RATE[k];el.ctl.className='off';}
+  el.cap.textContent=(SCATTER[k]||RATE[k]).key+' · '+(SCATTER[k]||RATE[k]).name;
+  t0=performance.now();modeT=0;}
+function syncFlip(){
+  if(flipS==null){el.flip.style.display='none';el.fl.style.display='none';return}
+  el.flip.style.display='';el.fl.style.display='';
+  var p=(flipS/P.SMAX*100);el.flip.style.left='calc('+p+'% - 1px)';el.fl.style.left=p+'%';}
+syncFlip();
+el.sl.addEventListener('input',function(){S=P.SMAX*(+el.sl.value)/1000;recompute();
+  userTouch=performance.now();if(now<REV.END)t0=performance.now()-REV.END-1;});
+window.addEventListener('keydown',function(e){var k=e.key.toLowerCase();
+  if(k==='1')setPreset('synth');else if(k==='2')setPreset('berk');
+  else if(k==='3')setPreset('stone');else if(k==='4')setPreset('chol');
+  else if(k==='r'){t0=performance.now();userTouch=0}
+  else if(k==='a')loop=!loop;
+  else if((k==='arrowleft'||k==='arrowright')&&mode==='scatter'){
+    el.sl.value=Math.max(0,Math.min(1000,(+el.sl.value)+(k==='arrowright'?25:-25)));
+    S=P.SMAX*(+el.sl.value)/1000;recompute();userTouch=performance.now();
+    if(now<REV.END)t0=performance.now()-REV.END-1;}
+});
+
+/* ---------- reveal timeline (ms) ---------- */
+var REV={POOL:700,POOLD:1000,HOLD:3100,WAVE:900,LINES:3950,LSTAG:170,LDUR:520,
+         FLASH:5500,FEND:8200,END:8600,LOOPAT:16000};
+function ease(t){return t<0?0:t>1?1:1-Math.pow(1-t,3)}
+function eio(t){return t<0?0:t>1?1:t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2}
+function clamp01(t){return t<0?0:t>1?1:t}
+
+/* ---------- drawing helpers ---------- */
+function rr(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+function glowLine(x1,y1,x2,y2,col,w,a){
+  ctx.globalAlpha=a*0.22;ctx.strokeStyle=col;ctx.lineWidth=w*4.5;
+  ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+  ctx.globalAlpha=a;ctx.lineWidth=w;ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+  ctx.globalAlpha=1;}
+function txt(s,x,y,col,size,align,weight){ctx.fillStyle=col;
+  ctx.font=(weight?weight+' ':'')+size+'px ui-monospace,Menlo,Consolas,monospace';
+  ctx.textAlign=align||'left';ctx.textBaseline='alphabetic';ctx.fillText(s,x,y);}
+function fnum(v,d){return (v>=0?'+':'−')+Math.abs(v).toFixed(d)}
+function wrapTxt(s,x,y,maxw,lh,col,size){ctx.fillStyle=col;
+  ctx.font=size+'px ui-monospace,Menlo,Consolas,monospace';ctx.textAlign='left';
+  var words=s.split(' '),line='',n=0;
+  for(var i=0;i<words.length;i++){var test=line+words[i]+' ';
+    if(ctx.measureText(test).width>maxw&&line){ctx.fillText(line,x,y+n*lh);line=words[i]+' ';n++}
+    else line=test;}
+  ctx.fillText(line,x,y+n*lh);return (n+1)*lh;}
+
+function plotRect(){var pw=Math.max(210,Math.min(300,W*0.24));
+  var lx=Math.max(24,Math.min(392,W*0.30));
+  return {x:lx,y:104,w:Math.max(160,W-pw-40-lx),h:Math.max(140,H-104-160),pw:pw};}
+
+/* ---------- SCATTER VIEW ---------- */
+function drawScatter(rc){
+  var xd=P.XD,yd=P.YD;
+  function sx(v){return rc.x+(v-xd[0])/(xd[1]-xd[0])*rc.w}
+  function sy(v){return rc.y+rc.h-(v-yd[0])/(yd[1]-yd[0])*rc.h}
+  var t=now,settled=t>=REV.END;
+
+  /* frame + grid */
+  ctx.strokeStyle='#131b33';ctx.lineWidth=1;
+  for(var i=0;i<=8;i++){var gx=rc.x+rc.w*i/8,gy=rc.y+rc.h*i/8;
+    ctx.globalAlpha=.55;ctx.beginPath();ctx.moveTo(gx,rc.y);ctx.lineTo(gx,rc.y+rc.h);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(rc.x,gy);ctx.lineTo(rc.x+rc.w,gy);ctx.stroke();}
+  ctx.globalAlpha=1;ctx.strokeStyle='#2a3556';ctx.strokeRect(rc.x,rc.y,rc.w,rc.h);
+  txt(P.xlab,rc.x+rc.w/2,rc.y+rc.h+30,'#6b7ba5',11,'center');
+  ctx.save();ctx.translate(rc.x-16,rc.y+rc.h/2);ctx.rotate(-Math.PI/2);
+  txt(P.ylab,0,0,'#6b7ba5',11,'center');ctx.restore();
+
+  /* colour-resolve shockwave */
+  var wt=clamp01((t-REV.HOLD)/REV.WAVE), cxp=sx(pfit.mx), cyp=sy(pfit.my);
+  var maxR=Math.hypot(rc.w,rc.h);
+  var waveR=eio(wt)*(maxR*1.05+260);
+  if(wt>0&&wt<1){
+    ctx.save();ctx.beginPath();ctx.rect(rc.x,rc.y,rc.w,rc.h);ctx.clip();
+    var gr=ctx.createRadialGradient(cxp,cyp,Math.max(1,waveR*0.72),cxp,cyp,waveR);
+    gr.addColorStop(0,'rgba(255,255,255,0)');gr.addColorStop(0.75,'rgba(180,124,255,0.16)');
+    gr.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle=gr;ctx.fillRect(rc.x,rc.y,rc.w,rc.h);
+    ctx.globalAlpha=(1-wt)*0.85;ctx.strokeStyle='#fff';ctx.lineWidth=2;
+    ctx.beginPath();ctx.arc(cxp,cyp,waveR,0,6.284);ctx.stroke();ctx.globalAlpha=1;ctx.restore();}
+
+  /* points */
+  ctx.save();ctx.beginPath();ctx.rect(rc.x-2,rc.y-2,rc.w+4,rc.h+4);ctx.clip();
+  var fadeIn=ease(t/650);
+  for(var g=0;g<groups.length;g++){
+    var col=HUES[g%HUES.length];
+    for(var j=0;j<groups[g].length;j++){
+      var px=sx(groups[g][j][0]),py=sy(groups[g][j][1]);
+      var d=Math.hypot(px-cxp,py-cyp);
+      var lit=settled?1:clamp01((waveR-d)/110);
+      var pop=lit>0&&lit<1?1+Math.sin(lit*Math.PI)*0.9:1;
+      var rad=(3.3+pop*0.9)*fadeIn;
+      if(lit>0.02){ctx.globalAlpha=lit*0.30;ctx.fillStyle=col;
+        ctx.beginPath();ctx.arc(px,py,rad*3.1,0,6.284);ctx.fill();}
+      ctx.globalAlpha=fadeIn;
+      ctx.fillStyle=lit>0.5?col:'#69769a';
+      if(lit>0.02&&lit<=0.5){ctx.fillStyle='#98a3c4'}
+      ctx.beginPath();ctx.arc(px,py,rad,0,6.284);ctx.fill();
+    }}
+  ctx.globalAlpha=1;
+
+  /* pooled regression line — genuinely fitted */
+  var pp=ease((t-REV.POOL)/REV.POOLD);
+  if(pp>0){
+    var x1=xd[0],x2=xd[0]+(xd[1]-xd[0])*pp;
+    var contra=(pfit.m>0)!==(wfits[0].m>0);
+    var pc=contra?'#ffffff':'#ffd166';
+    var dim=t>REV.HOLD+400?0.82:1;
+    glowLine(sx(x1),sy(pfit.m*x1+pfit.b),sx(x2),sy(pfit.m*x2+pfit.b),pc,3.2,dim);
+    if(pp>=1){var lx=sx(xd[1])-8,ly=sy(pfit.m*xd[1]+pfit.b);
+      ly=Math.max(rc.y+14,Math.min(rc.y+rc.h-8,ly));
+      txt('POOLED  r = '+fnum(pfit.r,2),lx,ly-9,pc,12,'right','bold');}
+  }
+
+  /* per-group regression lines — genuinely fitted, staggered draw */
+  for(g=0;g<groups.length;g++){
+    var lp=ease((t-REV.LINES-g*REV.LSTAG)/REV.LDUR);
+    if(lp<=0)continue;
+    var xs=groups[g].map(function(p){return p[0]});
+    var a=Math.min.apply(null,xs),b=Math.max.apply(null,xs);
+    var bb=a+(b-a)*lp,f=wfits[g];
+    glowLine(sx(a),sy(f.m*a+f.b),sx(bb),sy(f.m*bb+f.b),HUES[g%HUES.length],2.4,1);
+  }
+  ctx.restore();
+
+  /* contradiction flash */
+  var fa=Math.min(clamp01((t-REV.FLASH)/420),clamp01((REV.FEND-t)/500));
+  if(fa>0){
+    var bw=Math.min(rc.w*0.92,560),bh=142,bx=rc.x+(rc.w-bw)/2,by=rc.y+rc.h*0.5-bh/2;
+    ctx.globalAlpha=fa;
+    ctx.fillStyle='rgba(6,9,20,.90)';rr(bx,by,bw,bh,10);ctx.fill();
+    ctx.strokeStyle='#ff3d81';ctx.lineWidth=1.5;ctx.stroke();
+    txt('POOLED',bx+22,by+34,'#8fa0c8',11,'left');
+    txt(fnum(pfit.r,2)+'  '+(pfit.m>0?'▲ rising':'▼ falling'),bx+22,by+62,'#ffffff',22,'left','bold');
+    txt('EVERY GROUP',bx+22,by+92,'#8fa0c8',11,'left');
+    var rs=wfits.map(function(f){return fnum(f.r,2)}).join('  ');
+    txt(rs,bx+22,by+116,'#3dffa8',15,'left','bold');
+    txt((wfits[0].m>0?'▲':'▼'),bx+bw-26,by+116,'#3dffa8',15,'right','bold');
+    txt('SIMPSON’S PARADOX — the sign flips',bx+bw-22,by+34,'#ff3d81',12,'right','bold');
+    ctx.globalAlpha=1;
+  }
+  /* white pulse at the resolve moment */
+  if(wt>0&&wt<0.5){ctx.globalAlpha=(0.5-wt)*0.30;ctx.fillStyle='#c9b6ff';
+    ctx.fillRect(rc.x,rc.y,rc.w,rc.h);ctx.globalAlpha=1;}
+}
+
+/* ---------- RATE VIEW (real 2x2-style cases) ---------- */
+function drawRates(rc){
+  var C=RC,t=now,rows=C.rows,nr=rows.length;
+  var ta=0,tb=0,pa=0,pb=0,i;
+  for(i=0;i<nr;i++){ta+=rows[i][1];tb+=rows[i][2];pa+=rows[i][3];pb+=rows[i][4]}
+  var pooled=['ALL',ta,tb,pa,pb];
+  var all=rows.concat([pooled]);
+  var rowH=Math.max(34,Math.min(58,(rc.h-138)/(nr+1)));
+  var labW=Math.min(180,rc.w*0.26), barX=rc.x+labW+14, barW=rc.w-labW-120;
+  var y=rc.y+38;
+
+  txt(C.armA.lab,barX,rc.y+16,C.armA.col,12,'left','bold');
+  txt(C.armB.lab,barX+120,rc.y+16,C.armB.col,12,'left','bold');
+  txt('rate',rc.x+rc.w-4,rc.y+16,'#6b7ba5',11,'right');
+
+  for(i=0;i<all.length;i++){
+    var isP=(i===nr), r=all[i];
+    var ra=r[1]/r[2], rb=r[3]/r[4];
+    var app=ease((t-300-i*140)/620);
+    var yy=y+i*rowH+(isP?18:0);
+    if(isP){ctx.strokeStyle='#2a3556';ctx.lineWidth=1;ctx.beginPath();
+      ctx.moveTo(rc.x,yy-14);ctx.lineTo(rc.x+rc.w,yy-14);ctx.stroke();}
+    var win=isP?(rb>ra?'b':'a'):(ra>rb?'a':'b');
+    txt(r[0],rc.x,yy+15,isP?'#ffffff':'#c8d4f0',isP?14:12,'left',isP?'bold':'');
+    if(!isP)txt('n = '+r[2]+' vs '+r[4],rc.x,yy+29,'#5d6b93',10,'left');
+    else txt(r[1]+'/'+r[2]+' · '+r[3]+'/'+r[4]+' '+C.unit,rc.x,yy+30,'#5d6b93',10,'left');
+    var bh=isP?12:9;
+    /* arm A */
+    ctx.globalAlpha=app;ctx.fillStyle=C.armA.col;
+    ctx.globalAlpha=app*(win==='a'?1:0.42);
+    rr(barX,yy+2,Math.max(1,barW*ra*app),bh,2);ctx.fill();
+    ctx.globalAlpha=app;txt((ra*100).toFixed(1)+'%',barX+barW*ra*app+7,yy+2+bh-1,C.armA.col,11,'left',win==='a'?'bold':'');
+    /* arm B */
+    ctx.fillStyle=C.armB.col;ctx.globalAlpha=app*(win==='b'?1:0.42);
+    rr(barX,yy+6+bh,Math.max(1,barW*rb*app),bh,2);ctx.fill();
+    ctx.globalAlpha=app;txt((rb*100).toFixed(1)+'%',barX+barW*rb*app+7,yy+6+bh+bh-1,C.armB.col,11,'left',win==='b'?'bold':'');
+    ctx.globalAlpha=1;
+    /* winner tick */
+    if(app>0.9){var wc=win==='a'?C.armA.col:C.armB.col;
+      txt(win==='a'?'◀ A':'◀ B',rc.x+rc.w-4,yy+16,wc,11,'right','bold');}
+  }
+  /* verdict flash */
+  var vy=y+(nr+1)*rowH+30, va=ease((t-1900)/700);
+  if(va>0){ctx.globalAlpha=va;
+    var pulse=0.72+0.28*Math.sin(t/260);
+    ctx.strokeStyle='#ff3d81';ctx.lineWidth=1.5;ctx.globalAlpha=va*pulse;
+    rr(rc.x,vy-20,rc.w,30,7);ctx.stroke();ctx.globalAlpha=va;
+    txt('REVERSAL · '+C.verdict,rc.x+rc.w/2,vy,'#ffffff',12.5,'center','bold');
+    ctx.globalAlpha=va*0.9;
+    var used=wrapTxt(C.story,rc.x,vy+34,rc.w,16,'#9aa6c8',12);
+    wrapTxt(C.note,rc.x,vy+40+used,rc.w,14,'#5d6b93',10.5);
+    ctx.globalAlpha=1;}
+}
+
+/* ---------- RIGHT PANEL ---------- */
+function drawPanel(rc){
+  var px=rc.x+rc.w+22,pw=rc.pw,py=rc.y,t=now;
+  ctx.fillStyle='rgba(9,13,26,.62)';rr(px,py,pw,rc.h,9);ctx.fill();
+  ctx.strokeStyle='#1e2a4a';ctx.lineWidth=1;ctx.stroke();
+  var x=px+14,y=py+26,mw=pw-28;
+
+  if(mode==='scatter'){
+    var contra=(pfit.m>0)!==(wfits[0].m>0);
+    txt('POOLED  (all points)',x,y,'#6b7ba5',10);y+=26;
+    txt('r = '+fnum(pfit.r,3),x,y,contra?'#ffffff':'#ffd166',19,'left','bold');
+    txt(pfit.m>0?'▲':'▼',x+mw,y,pfit.m>0?'#3dffa8':'#ff3d81',18,'right','bold');y+=18;
+    txt('slope '+fnum(pfit.m,3),x,y,'#8fa0c8',11);y+=22;
+    ctx.strokeStyle='#1e2a4a';ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+mw,y);ctx.stroke();y+=20;
+    txt('WITHIN EACH GROUP',x,y,'#6b7ba5',10);y+=16;
+    for(var g=0;g<wfits.length;g++){
+      var col=HUES[g%HUES.length],a=now<REV.HOLD?0.18:1;
+      ctx.globalAlpha=a;ctx.fillStyle=col;rr(x,y-7,8,8,2);ctx.fill();
+      txt(P.glab[g],x+14,y,'#c8d4f0',10.5);
+      txt('r '+fnum(wfits[g].r,2),x+mw,y,col,11,'right');y+=15;
+      txt('slope '+fnum(wfits[g].m,2),x+mw,y,'#5d6b93',9.5,'right');y+=15;
+      ctx.globalAlpha=1;}
+    y+=8;
+    var vc=contra?'#ff3d81':'#3dffa8';
+    ctx.strokeStyle=vc;ctx.globalAlpha=contra?0.75+0.25*Math.sin(t/300):0.5;
+    rr(x,y-13,mw,24,6);ctx.stroke();ctx.globalAlpha=1;
+    txt(contra?'SIGN REVERSED':'SIGNS AGREE',x+mw/2,y+4,vc,11.5,'center','bold');
+    y+=34;
+    if(flipS!=null){txt('flip at strength '+flipS.toFixed(2)+' / '+P.SMAX.toFixed(1),x,y,'#5d6b93',10);y+=18;}
+    drawDAG(x,y,mw,Math.min(150,py+rc.h-y-18),clamp01(S/(P.SMAX*0.55)),P.dag,contra);
+    var sy2=py+rc.h-14;
+    wrapTxt(P.story,x,sy2-40,mw,13,'#7c88ad',10);
+  } else {
+    txt('CONFOUNDER',x,y,'#6b7ba5',10);y+=8;
+    drawDAG(x,y,mw,150,Math.min(1,now/900),RC.dag,true);y+=168;
+    txt('Each subgroup answers one question;',x,y,'#8fa0c8',10);y+=14;
+    txt('the pooled table answers another.',x,y,'#8fa0c8',10);y+=24;
+    txt('The groups have wildly unequal sizes,',x,y,'#5d6b93',10);y+=13;
+    txt('so the pooled average is dominated',x,y,'#5d6b93',10);y+=13;
+    txt('by whichever group each arm sits in.',x,y,'#5d6b93',10);y+=26;
+    txt('press 1 for the live scatter version',x,y,'#ffd166',10);
+  }
+}
+
+/* ---------- CAUSAL DAG INSET ---------- */
+function drawDAG(x,y,w,h,strength,L,active){
+  var cx=x+w/2, cy=y+24, xx=x+22, yy=y+h-22, xr=x+w-22;
+  var a=clamp01(strength);
+  /* C -> X and C -> Y : the confounding path */
+  function arrow(x1,y1,x2,y2,col,al,wd){
+    var dx=x2-x1,dy=y2-y1,L2=Math.hypot(dx,dy),ux=dx/L2,uy=dy/L2;
+    x1+=ux*13;y1+=uy*13;x2-=ux*15;y2-=uy*15;
+    ctx.globalAlpha=al*0.25;ctx.strokeStyle=col;ctx.lineWidth=wd*4;
+    ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+    ctx.globalAlpha=al;ctx.lineWidth=wd;
+    ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(x2,y2);
+    ctx.lineTo(x2-ux*8+uy*4.5,y2-uy*8-ux*4.5);
+    ctx.lineTo(x2-ux*8-uy*4.5,y2-uy*8+ux*4.5);ctx.closePath();
+    ctx.fillStyle=col;ctx.fill();ctx.globalAlpha=1;}
+  function node(nx,ny,lab,col,al,r){
+    ctx.globalAlpha=al*0.30;ctx.fillStyle=col;
+    ctx.beginPath();ctx.arc(nx,ny,r*2.1,0,6.284);ctx.fill();
+    ctx.globalAlpha=al;ctx.fillStyle='#080c18';
+    ctx.beginPath();ctx.arc(nx,ny,r,0,6.284);ctx.fill();
+    ctx.strokeStyle=col;ctx.lineWidth=1.5;ctx.stroke();ctx.globalAlpha=1;
+    ctx.globalAlpha=al;txt(lab,nx,ny+r+13,col,9,'center','bold');ctx.globalAlpha=1;}
+  var pulse=0.7+0.3*Math.sin(now/300);
+  arrow(cx,cy,xx,yy,'#ffb02e',a*(active?pulse:0.5),2.2);
+  arrow(cx,cy,xr,yy,'#ffb02e',a*(active?pulse:0.5),2.2);
+  arrow(xx,yy,xr,yy,'#39c7ff',1,2);
+  node(xx,yy,L.x,'#39c7ff',1,12);
+  node(xr,yy,L.y,'#3dffa8',1,12);
+  node(cx,cy,L.c,'#ffb02e',a,13);
+  ctx.globalAlpha=a*0.8;
+  txt('confounding path',cx,cy-24,'#ffb02e',9,'center');ctx.globalAlpha=1;
+}
+
+/* ---------- main loop ---------- */
+function frame(){
+  now=performance.now()-t0;
+  if(loop&&now>REV.LOOPAT&&(performance.now()-userTouch>7000)){t0=performance.now();now=0}
+  ctx.fillStyle='#04060d';ctx.fillRect(0,0,W,H);
+  /* subtle backdrop wash */
+  var bg=ctx.createRadialGradient(W*0.55,H*0.45,0,W*0.55,H*0.45,Math.max(W,H)*0.75);
+  bg.addColorStop(0,'rgba(30,20,60,0.55)');bg.addColorStop(1,'rgba(4,6,13,0)');
+  ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
+  var rc=plotRect();
+  if(mode==='scatter')drawScatter(rc);else drawRates(rc);
+  drawPanel(rc);
+  /* header strip */
+  txt(mode==='scatter'?'THE REVERSAL':'REAL CASE',rc.x,72,'#ff4d8d',15,'left','bold');
+  txt(mode==='scatter'
+      ? (now<REV.HOLD?'pool everything → one grey cloud, one trend line'
+        :'split by group → every subgroup runs the other way')
+      : RC.name,
+      rc.x+ (mode==='scatter'?150:130),72,'#7c88ad',12,'left');
+  el.sv.textContent=S.toFixed(2);
+  requestAnimationFrame(frame);
+}
+frame();
+</script>

@@ -1,0 +1,584 @@
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<title>The Curse of Dimensionality</title>
+<style>
+  html,body{margin:0;padding:0;background:#04050a;overflow:hidden;height:100%}
+  canvas{display:block;position:fixed;inset:0}
+  #ui{position:fixed;top:0;left:0;margin:12px;padding:10px 13px;background:rgba(8,10,18,.66);
+      border:1px solid rgba(120,200,255,.22);border-radius:9px;color:#bfe6ff;
+      font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;width:300px;
+      backdrop-filter:blur(6px);z-index:10}
+  #ui h1{margin:0 0 4px;font-size:14px;letter-spacing:.09em;color:#7df9ff;text-transform:uppercase}
+  #ui .exp{color:#8fa8bd;margin-bottom:9px}
+  #ui .hint{color:#63798c;margin-top:8px;font-size:11px;line-height:1.5}
+  #ui a{color:#ff7bd5;text-decoration:none}
+  #ui a:hover{text-decoration:underline}
+  .dlab{display:flex;align-items:baseline;gap:8px;color:#63798c;letter-spacing:.06em}
+  .dval{color:#ffe08a;font-size:26px;font-weight:bold;line-height:1}
+  input[type=range]{width:100%;accent-color:#7df9ff;margin:5px 0 0;height:18px}
+  .tag{color:#7dffb0}.tag.off{color:#556}
+</style>
+
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>Curse of Dimensionality</h1>
+  <div class="exp">As the number of dimensions grows, every random point drifts to the same distance from every other, all the volume flees into the shell and the corners, and sampling the space becomes hopeless.</div>
+  <div class="dlab">dimensions&nbsp; <span class="dval" id="dv">1</span></div>
+  <input type="range" id="dsl" min="1" max="200" value="1">
+  <div class="hint">
+    <span class="tag" id="t-auto">auto-sweep ON</span> · <span class="tag off" id="t-dist">uniform cube</span><br>
+    drag <b>d</b> · [a] auto-sweep · [g] gaussian/uniform · [r] resample · [space] pause · <a href="index.html">← gallery</a>
+  </div>
+</div>
+<script>
+(function(){
+"use strict";
+var cv=document.getElementById('c'), ctx=cv.getContext('2d'), W=0,H=0,DPR=1;
+var UI=document.getElementById('ui'), DV=document.getElementById('dv'), SL=document.getElementById('dsl');
+var TA=document.getElementById('t-auto'), TD=document.getElementById('t-dist');
+
+// ---------------- seeded rng ----------------
+var _s=0x9e3779b9;
+function rnd(){ _s|=0; _s=_s+0x6D2B79F5|0; var t=Math.imul(_s^_s>>>15,1|_s); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }
+function grnd(){ var u=rnd()||1e-9, v=rnd(); return Math.sqrt(-2*Math.log(u))*Math.cos(6.283185307*v); }
+
+// ---------------- data ----------------
+var DMAX=200, N=800, NREF=3, NB=96;
+var ptsU=new Float32Array(N*DMAX), ptsG=new Float32Array(N*DMAX);
+var refU=new Float32Array(NREF*DMAX), refG=new Float32Array(NREF*DMAX);
+var barsT=new Float32Array(NB), barsC=new Float32Array(NB);
+var projX=new Float32Array(N), projY=new Float32Array(N);
+var bu=new Float32Array(DMAX), bv=new Float32Array(DMAX), bw=new Float32Array(DMAX);
+var ringU=new Float32Array(460), ringA=new Float32Array(460);
+var NPAIR=500, pairI=new Int16Array(NPAIR), pairJ=new Int16Array(NPAIR);
+var hi=[[0,0,0],[0,0,0],[0,0,0]], medTrue=0;
+
+function resample(){
+  var i;
+  for(i=0;i<N*DMAX;i++){ ptsU[i]=rnd(); ptsG[i]=grnd(); }
+  for(i=0;i<NREF*DMAX;i++){ refU[i]=rnd(); refG[i]=grnd(); }
+  for(i=0;i<DMAX;i++){ bu[i]=grnd(); bv[i]=grnd(); bw[i]=grnd(); }
+  for(i=0;i<ringU.length;i++){ ringU[i]=rnd(); ringA[i]=rnd()*6.283185307; }
+  for(i=0;i<NPAIR;i++){ pairI[i]=(rnd()*N)|0; pairJ[i]=(rnd()*N)|0; if(pairJ[i]===pairI[i]) pairJ[i]=(pairI[i]+1)%N; }
+  lastD=-1;
+}
+
+// ---------------- closed forms (verified in node) ----------------
+var LG=[676.5203681218851,-1259.1392167224028,771.32342877765313,-176.61502916214059,
+        12.507343278686905,-0.13857109526572012,9.9843695780195716e-6,1.5056327351493116e-7];
+function lgamma(z){
+  if(z<0.5) return Math.log(Math.PI/Math.sin(Math.PI*z))-lgamma(1-z);
+  z-=1; var x=0.99999999999980993;
+  for(var i=0;i<8;i++) x+=LG[i]/(z+i+1);
+  var t=z+7.5;
+  return 0.9189385332046727+(z+0.5)*Math.log(t)-t+Math.log(x);
+}
+// log10 of V_ball(d, r=1/2) / V_cube(d, side=1)
+function log10BallFrac(d){ return ((d/2)*Math.log(Math.PI)-lgamma(d/2+1)-d*Math.log(2))/Math.LN10; }
+function shellFrac(d){ return 1-Math.pow(0.9,d); }
+
+// ---------------- state ----------------
+var dCont=1, dInt=1, lastD=-1, auto=true, paused=false, gauss=false, sweep=0.02, tPrev=0, clock=0;
+var st={mn:0,mx:0,mean:0,sd:0,rel:0,ratio:0,axis:1};
+
+function computeStats(){
+  var d=dInt, pts=gauss?ptsG:ptsU, refs=gauss?refG:refU;
+  var axis=gauss? Math.sqrt(2*d)*1.6 : Math.sqrt(d);
+  st.axis=axis;
+  var b,i,j,r,o,ro,s,t,dist;
+  for(b=0;b<NB;b++) barsT[b]=0;
+  var amn=0,amx=0,arel=0,arat=0,asum=0,asum2=0;
+  for(r=0;r<NREF;r++){
+    ro=r*DMAX; var mn=Infinity,mx=0,sum=0,sum2=0;
+    for(i=0;i<N;i++){
+      o=i*DMAX; s=0;
+      for(j=0;j<d;j++){ t=pts[o+j]-refs[ro+j]; s+=t*t; }
+      dist=Math.sqrt(s);
+      if(dist<mn)mn=dist; if(dist>mx)mx=dist;
+      sum+=dist; sum2+=dist*dist;
+      b=(dist/axis*NB)|0; if(b<0)b=0; if(b>=NB)b=NB-1; barsT[b]++;
+    }
+    if(mn<1e-9) mn=1e-9;
+    amn+=mn; amx+=mx; arel+=(mx-mn)/mn; arat+=mn/mx;
+    asum+=sum/N; asum2+=sum2/N;
+  }
+  st.mn=amn/NREF; st.mx=amx/NREF; st.rel=arel/NREF; st.ratio=arat/NREF;
+  st.mean=asum/NREF; st.sd=Math.sqrt(Math.max(0,asum2/NREF-st.mean*st.mean));
+  var pk=0; for(b=0;b<NB;b++) if(barsT[b]>pk) pk=barsT[b];
+  if(pk>0) for(b=0;b<NB;b++) barsT[b]/=pk;
+}
+
+// Gram-Schmidt an orthonormal triple over the first d components
+function orth(vec,others,d){
+  var i,k,dot,n=0;
+  for(k=0;k<others.length;k++){
+    dot=0; for(i=0;i<d;i++) dot+=vec[i]*others[k][i];
+    for(i=0;i<d;i++) vec[i]-=dot*others[k][i];
+  }
+  for(i=0;i<d;i++) n+=vec[i]*vec[i];
+  n=Math.sqrt(n);
+  if(n<1e-6){ for(i=0;i<d;i++) vec[i]=0; return false; }
+  for(i=0;i<d;i++) vec[i]/=n;
+  return true;
+}
+var U=new Float32Array(DMAX), V=new Float32Array(DMAX), Wv=new Float32Array(DMAX);
+function buildBasis(){
+  var d=dInt,i;
+  for(i=0;i<d;i++){ U[i]=bu[i]; V[i]=bv[i]; Wv[i]=bw[i]; }
+  orth(U,[],d); orth(V,[U],d); orth(Wv,[U,V],d);
+}
+function project(theta){
+  var d=dInt, pts=gauss?ptsG:ptsU, i,j,o,x,y,ax,c=Math.cos(theta),sn=Math.sin(theta);
+  var k=gauss?1:Math.sqrt(12), c0=gauss?0:0.5;
+  for(i=0;i<N;i++){
+    o=i*DMAX; x=0; y=0;
+    for(j=0;j<d;j++){ ax=pts[o+j]-c0; x+=ax*(U[j]*c+Wv[j]*sn); y+=ax*V[j]; }
+    projX[i]=x*k; projY[i]=y*k;
+  }
+}
+function trueDist(i,j){
+  var d=dInt, pts=gauss?ptsG:ptsU, a=i*DMAX, b=j*DMAX, s=0, k, t;
+  for(k=0;k<d;k++){ t=pts[a+k]-pts[b+k]; s+=t*t; }
+  return Math.sqrt(s);
+}
+// pick the pairs that LOOK closest in the 2D projection, report their true distance
+function findPairs(){
+  var i,best=[],all=[];
+  for(i=0;i<NPAIR;i++){
+    var a=pairI[i], b=pairJ[i];
+    var dx=projX[a]-projX[b], dy=projY[a]-projY[b];
+    var td=trueDist(a,b);
+    all.push(td);
+    best.push([dx*dx+dy*dy,a,b,td]);
+  }
+  all.sort(function(p,q){return p-q;});
+  medTrue=all[all.length>>1];
+  best.sort(function(p,q){return p[0]-q[0];});
+  for(i=0;i<3;i++) hi[i]=[best[i][1],best[i][2],best[i][3]];
+}
+
+// ---------------- layout ----------------
+var head=null, P={};
+function layout(){
+  var uiH=UI.offsetHeight, wide=W>=1000;
+  var x0=wide?348:14, y0=wide?14:uiH+22;
+  var cw=Math.max(220,W-x0-14), ch=Math.max(200,H-y0-14), g=10;
+  var hh=(ch>430)?58:0;
+  head=hh?{x:x0,y:y0,w:cw,h:hh}:null;
+  var gy=y0+(hh?hh+g:0), gh=ch-(hh?hh+g:0);
+  function R(a,b,c,d){return {x:a,y:b,w:c,h:d};}
+  if(cw>=880&&gh>=400){
+    var r1=Math.round(gh*0.54)-g/2, r2=gh-r1-g;
+    var c1=Math.round(cw*0.615)-g/2, c2=cw-c1-g, t3=(cw-2*g)/3;
+    P.dist=R(x0,gy,c1,r1); P.proj=R(x0+c1+g,gy,c2,r1);
+    P.shell=R(x0,gy+r1+g,t3,r2);
+    P.sphere=R(x0+t3+g,gy+r1+g,t3,r2);
+    P.samp=R(x0+2*(t3+g),gy+r1+g,t3,r2);
+  } else if(cw>=540&&gh>=380){
+    var a=Math.round(gh*0.36)-g*0.67, b=(gh-a-2*g)/2, hw=(cw-g)/2;
+    P.dist=R(x0,gy,cw,a);
+    P.proj=R(x0,gy+a+g,hw,b); P.shell=R(x0+hw+g,gy+a+g,hw,b);
+    P.sphere=R(x0,gy+a+b+2*g,hw,b); P.samp=R(x0+hw+g,gy+a+b+2*g,hw,b);
+  } else {
+    var rh=(gh-4*g)/5, i=0;
+    var ord=['dist','proj','shell','sphere','samp'];
+    for(;i<5;i++) P[ord[i]]=R(x0,gy+i*(rh+g),cw,rh);
+  }
+}
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  W=window.innerWidth; H=window.innerHeight;
+  cv.width=Math.round(W*DPR); cv.height=Math.round(H*DPR);
+  cv.style.width=W+'px'; cv.style.height=H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  layout();
+}
+window.addEventListener('resize',resize);
+
+// ---------------- draw helpers ----------------
+var MONO='ui-monospace,Menlo,Consolas,monospace';
+function F(s,b){ return (b?'bold ':'')+Math.round(s)+'px '+MONO; }
+function rr(x,y,w,h,r){ r=Math.min(r,w/2,h/2); ctx.beginPath(); ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); }
+function box(p,title,sub,accent){
+  ctx.save();
+  rr(p.x,p.y,p.w,p.h,10);
+  ctx.fillStyle='rgba(9,12,21,0.58)'; ctx.fill();
+  ctx.strokeStyle='rgba(120,200,255,0.15)'; ctx.lineWidth=1; ctx.stroke();
+  ctx.clip();
+  ctx.textAlign='left'; ctx.textBaseline='top';
+  ctx.font=F(11,1); ctx.fillStyle=accent; ctx.fillText(title,p.x+12,p.y+10);
+  ctx.font=F(10.5); ctx.fillStyle='#6b8096';
+  ctx.fillText(sub,p.x+12,p.y+25);
+  return {x:p.x+12,y:p.y+44,w:p.w-24,h:p.h-56};
+}
+// "3.46 × 10^-169"
+function sci(x,y,l10,fs,col,align){
+  var e=Math.floor(l10), m=Math.pow(10,l10-e);
+  if(m>=9.995){m/=10;e++;}
+  var s=m.toFixed(2)+' × 10', es=(e<0?'−':'')+Math.abs(e);
+  ctx.textBaseline='alphabetic';
+  ctx.font=F(fs,1); var w1=ctx.measureText(s).width;
+  ctx.font=F(fs*0.64,1); var w2=ctx.measureText(es).width;
+  if(align==='center') x-=(w1+w2)/2; else if(align==='right') x-=(w1+w2);
+  ctx.fillStyle=col; ctx.font=F(fs,1); ctx.fillText(s,x,y);
+  ctx.font=F(fs*0.64,1); ctx.fillText(es,x+w1,y-fs*0.42);
+  return w1+w2;
+}
+function pow10(x,y,e,fs,col,align){
+  var s='10', es=''+e;
+  ctx.textBaseline='alphabetic';
+  ctx.font=F(fs,1); var w1=ctx.measureText(s).width;
+  ctx.font=F(fs*0.64,1); var w2=ctx.measureText(es).width;
+  if(align==='center') x-=(w1+w2)/2; else if(align==='right') x-=(w1+w2);
+  ctx.fillStyle=col; ctx.font=F(fs,1); ctx.fillText(s,x,y);
+  ctx.font=F(fs*0.64,1); ctx.fillText(es,x+w1,y-fs*0.42);
+  return w1+w2;
+}
+function lab(x,y,k,v,fs,cv2){
+  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+  ctx.font=F(fs); ctx.fillStyle='#63798c'; ctx.fillText(k,x,y);
+  ctx.font=F(fs,1); ctx.fillStyle=cv2||'#eaf6ff'; ctx.fillText(v,x+ctx.measureText(k).width+0,y);
+}
+function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
+function smoothstep(a,b,x){ x=clamp((x-a)/(b-a),0,1); return x*x*(3-2*x); }
+
+// ---------------- header ----------------
+function drawHead(){
+  if(!head) return;
+  var p=head;
+  ctx.save();
+  ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+  ctx.font=F(Math.min(42,p.h*0.78),1);
+  ctx.fillStyle='#ffe08a'; ctx.shadowColor='rgba(255,224,138,.55)'; ctx.shadowBlur=18;
+  var ds='d = '+dInt;
+  ctx.fillText(ds,p.x,p.y+p.h*0.72);
+  ctx.shadowBlur=0;
+  var tw=ctx.measureText(ds).width;
+  ctx.font=F(11); ctx.fillStyle='#63798c';
+  ctx.fillText('dimensions',p.x+tw+14,p.y+p.h*0.72);
+  // d track
+  var tx=p.x+tw+14, ty=p.y+p.h*0.30, twd=Math.max(60,p.w-tw-30);
+  ctx.fillStyle='rgba(120,200,255,.12)'; ctx.fillRect(tx,ty,twd,3);
+  var fr=(dCont-1)/199;
+  var gr=ctx.createLinearGradient(tx,0,tx+twd,0);
+  gr.addColorStop(0,'#7df9ff'); gr.addColorStop(0.55,'#ff7bd5'); gr.addColorStop(1,'#ff6b6b');
+  ctx.fillStyle=gr; ctx.fillRect(tx,ty,twd*fr,3);
+  ctx.beginPath(); ctx.arc(tx+twd*fr,ty+1.5,4.5,0,6.2832);
+  ctx.fillStyle='#fff'; ctx.shadowColor='#ff7bd5'; ctx.shadowBlur=12; ctx.fill(); ctx.shadowBlur=0;
+  ctx.restore();
+}
+
+// ---------------- panel 1: distance concentration ----------------
+function drawDist(){
+  var p=P.dist, in0=box(p,'1 · DISTANCE CONCENTRATION',
+    N+' sampled points · histogram of distance to '+NREF+' random query points (measured, not modelled)','#7df9ff');
+  var srow=Math.min(56,in0.h*0.34), ph=in0.h-srow-8;
+  var px=in0.x, py=in0.y, pw=in0.w;
+  if(ph<40){ ctx.restore(); return; }
+  // axis
+  var base=py+ph-16;
+  ctx.textBaseline='alphabetic';
+  ctx.strokeStyle='rgba(120,200,255,.18)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(px,base+0.5); ctx.lineTo(px+pw,base+0.5); ctx.stroke();
+  var k,tx2;
+  ctx.font=F(9.5); ctx.textAlign='center'; ctx.fillStyle='#5b7285';
+  for(k=0;k<=4;k++){
+    tx2=px+pw*k/4;
+    ctx.beginPath(); ctx.moveTo(tx2,base); ctx.lineTo(tx2,base+4); ctx.stroke();
+    ctx.fillText((st.axis*k/4).toFixed(2),tx2,base+14);
+  }
+  ctx.textAlign='left';
+  ctx.fillStyle='#4d6376'; ctx.font=F(9.5);
+  ctx.fillText('euclidean distance →  (axis spans 0 … '+st.axis.toFixed(2)+', it grows with d)',px,py+9);
+  // bars (one path, one glow)
+  var bw2=pw/NB, top=py+16, hgt=base-top-4;
+  ctx.beginPath();
+  for(k=0;k<NB;k++){
+    var h2=barsC[k]*hgt;
+    if(h2<0.4) continue;
+    ctx.rect(px+k*bw2+0.6,base-h2,bw2-1.2,h2);
+  }
+  var gr=ctx.createLinearGradient(0,top,0,base);
+  gr.addColorStop(0,'#ff7bd5'); gr.addColorStop(0.5,'#9d8bff'); gr.addColorStop(1,'#7df9ff');
+  ctx.fillStyle=gr; ctx.shadowColor='rgba(157,139,255,.75)'; ctx.shadowBlur=16; ctx.fill(); ctx.shadowBlur=0;
+  // min / max markers
+  function mark(v,col,txt,side){
+    var x=px+clamp(v/st.axis,0,1)*pw;
+    ctx.strokeStyle=col; ctx.setLineDash([3,3]); ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(x,top-2); ctx.lineTo(x,base); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle=col; ctx.font=F(9.5,1); ctx.textAlign=side;
+    ctx.fillText(txt,x+(side==='right'?-4:4),top+8);
+    ctx.textAlign='left';
+  }
+  mark(st.mn,'#7dffb0','nearest '+st.mn.toFixed(3),'right');
+  mark(st.mx,'#ff6b6b','farthest '+st.mx.toFixed(3),'left');
+  // stats row
+  var sy=py+ph+4, cwd=in0.w/4, fs=clamp(cwd/7.5,11,22);
+  var items=[
+    ['(max−min)/min', st.rel<0.001?st.rel.toExponential(1):st.rel.toFixed(3), st.rel<0.5?'#ff6b6b':'#eaf6ff'],
+    ['nearest / farthest', st.ratio.toFixed(3), st.ratio>0.5?'#ff6b6b':'#eaf6ff'],
+    ['mean distance', st.mean.toFixed(3), '#7df9ff'],
+    ['std dev', st.sd.toFixed(3), '#9d8bff']
+  ];
+  for(k=0;k<4;k++){
+    var cx=in0.x+cwd*k;
+    ctx.font=F(9.5); ctx.fillStyle='#5b7285'; ctx.textAlign='left';
+    ctx.fillText(items[k][0],cx,sy+12);
+    ctx.font=F(fs,1); ctx.fillStyle=items[k][2];
+    ctx.fillText(items[k][1],cx,sy+14+fs);
+  }
+  // punchline
+  var a=smoothstep(0.15,0.6,st.ratio);
+  ctx.textAlign='right'; ctx.font=F(11,1);
+  ctx.fillStyle='rgba(255,224,138,'+(0.22+0.78*a)+')';
+  ctx.fillText('→ 0  and  → 1 : nearest and farthest neighbours become indistinguishable',in0.x+in0.w,sy+12);
+  ctx.textAlign='left';
+  ctx.restore();
+}
+
+// ---------------- panel 2: shell ----------------
+function drawShell(){
+  var p=P.shell, in0=box(p,'2 · ALL THE VOLUME IS IN THE SHELL',
+    'points drawn uniformly in a d-ball: r = u^(1/d)','#7dffb0');
+  var f=shellFrac(dInt);
+  var cx=in0.x+in0.w*0.5, R=Math.min(in0.w*0.42,in0.h*0.40), cy=in0.y+R+6;
+  var i;
+  // annulus fill
+  ctx.beginPath(); ctx.arc(cx,cy,R,0,6.2832); ctx.arc(cx,cy,R*0.9,0,6.2832,true);
+  ctx.fillStyle='rgba(125,255,176,'+(0.05+0.16*f)+')'; ctx.fill();
+  ctx.strokeStyle='rgba(125,255,176,.55)'; ctx.lineWidth=1.2;
+  ctx.beginPath(); ctx.arc(cx,cy,R,0,6.2832); ctx.stroke();
+  ctx.strokeStyle='rgba(125,255,176,.28)'; ctx.setLineDash([3,4]);
+  ctx.beginPath(); ctx.arc(cx,cy,R*0.9,0,6.2832); ctx.stroke(); ctx.setLineDash([]);
+  // real sampled points
+  var inv=1/dInt, nin=0;
+  for(i=0;i<ringU.length;i++){
+    var r=Math.pow(ringU[i],inv);
+    var x=cx+Math.cos(ringA[i])*r*R, y=cy+Math.sin(ringA[i])*r*R;
+    if(r>0.9){ ctx.fillStyle='rgba(255,224,138,.92)'; ctx.fillRect(x-1,y-1,2.2,2.2); }
+    else { nin++; ctx.fillStyle='rgba(125,200,255,.42)'; ctx.fillRect(x-0.7,y-0.7,1.5,1.5); }
+  }
+  ctx.fillStyle='rgba(125,255,176,.10)'; ctx.font=F(9.5); ctx.textAlign='center';
+  ctx.fillText('outer 10%',cx,cy-R-2);
+  // number
+  var ty=cy+R+Math.min(40,in0.h*0.20), fs=clamp(in0.w/8,16,38);
+  ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+  ctx.font=F(fs,1); ctx.fillStyle='#7dffb0';
+  ctx.shadowColor='rgba(125,255,176,.5)'; ctx.shadowBlur=14;
+  ctx.fillText((f*100).toFixed(f>0.999?3:1)+'%',cx,ty); ctx.shadowBlur=0;
+  ctx.font=F(10); ctx.fillStyle='#6b8096';
+  ctx.fillText('of the volume is in the outer 10% shell',cx,ty+15);
+  ctx.font=F(9.5); ctx.fillStyle='#4d6376';
+  ctx.fillText('closed form 1 − 0.9^d   ·   d=2: 19%   d=50: 99.5%',cx,ty+29);
+  ctx.fillStyle='#5b7285';
+  ctx.fillText(nin+' of '+ringU.length+' sampled points still in the interior',cx,ty+42);
+  ctx.textAlign='left';
+  ctx.restore();
+}
+
+// ---------------- panel 3: sphere in cube ----------------
+function drawSphere(){
+  var p=P.sphere, in0=box(p,'3 · THE SPHERE INSIDE THE CUBE VANISHES',
+    'V_ball(d, r=½) / V_cube — closed form via log Γ','#ff7bd5');
+  var l10=log10BallFrac(dInt), ratio=Math.pow(10,Math.max(l10,-300));
+  var S=Math.min(in0.w*0.62,in0.h*0.46), cx=in0.x+in0.w*0.5, cy=in0.y+S*0.5+6;
+  var x0=cx-S/2, y0=cy-S/2, i;
+  // corners glow
+  var ca=clamp(-l10/6,0,1);
+  var cor=[[x0,y0],[x0+S,y0],[x0,y0+S],[x0+S,y0+S]];
+  for(i=0;i<4;i++){
+    var g2=ctx.createRadialGradient(cor[i][0],cor[i][1],0,cor[i][0],cor[i][1],S*0.42);
+    g2.addColorStop(0,'rgba(255,123,213,'+(0.42*ca)+')'); g2.addColorStop(1,'rgba(255,123,213,0)');
+    ctx.fillStyle=g2; ctx.fillRect(x0-2,y0-2,S+4,S+4);
+  }
+  ctx.strokeStyle='rgba(200,220,255,.45)'; ctx.lineWidth=1.2; ctx.strokeRect(x0,y0,S,S);
+  ctx.strokeStyle='rgba(255,123,213,'+(0.10+0.28*ca)+')'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(x0,y0); ctx.lineTo(x0+S,y0+S); ctx.moveTo(x0+S,y0); ctx.lineTo(x0,y0+S); ctx.stroke();
+  // true inscribed circle (reference)
+  ctx.strokeStyle='rgba(120,200,255,.20)'; ctx.setLineDash([3,4]);
+  ctx.beginPath(); ctx.arc(cx,cy,S/2,0,6.2832); ctx.stroke(); ctx.setLineDash([]);
+  // circle whose AREA fraction equals the true volume fraction
+  var rr2=S*Math.sqrt(ratio/Math.PI);
+  ctx.beginPath(); ctx.arc(cx,cy,Math.max(rr2,0.9),0,6.2832);
+  ctx.fillStyle='#7df9ff'; ctx.shadowColor='#7df9ff'; ctx.shadowBlur=14; ctx.fill(); ctx.shadowBlur=0;
+  if(rr2<3){
+    ctx.strokeStyle='rgba(125,249,255,.5)'; ctx.beginPath();
+    ctx.moveTo(cx+6,cy-6); ctx.lineTo(cx+S*0.28,cy-S*0.28); ctx.stroke();
+    ctx.font=F(9); ctx.fillStyle='#7df9ff'; ctx.textAlign='left';
+    ctx.fillText('the ball',cx+S*0.29,cy-S*0.28);
+  }
+  ctx.font=F(9); ctx.fillStyle='#4d6376'; ctx.textAlign='center';
+  ctx.fillText('shaded area ∝ volume fraction',cx,y0+S+12);
+  // log bar
+  var by=Math.min(y0+S+26,in0.y+in0.h-52), bx=in0.x, bwd=in0.w;
+  ctx.fillStyle='rgba(120,200,255,.10)'; ctx.fillRect(bx,by,bwd,5);
+  var fr=clamp(-l10/180,0,1);
+  var gr=ctx.createLinearGradient(bx,0,bx+bwd,0);
+  gr.addColorStop(0,'#7df9ff'); gr.addColorStop(1,'#ff7bd5');
+  ctx.fillStyle=gr; ctx.fillRect(bx,by,bwd*fr,5);
+  ctx.font=F(8.5); ctx.fillStyle='#4d6376'; ctx.textAlign='left';
+  ctx.fillText('10⁰',bx,by+15); ctx.textAlign='right'; ctx.fillText('10⁻¹⁸⁰',bx+bwd,by+15);
+  // readout
+  ctx.textAlign='center';
+  var fs=clamp(in0.w/11,13,26);
+  if(l10>-3){ ctx.font=F(fs,1); ctx.fillStyle='#7df9ff'; ctx.fillText(ratio.toFixed(4),cx,by+34+fs*0.4); }
+  else sci(cx,by+34+fs*0.4,l10,fs,'#ff7bd5','center');
+  ctx.font=F(9.5); ctx.fillStyle='#6b8096';
+  ctx.fillText('essentially all of the cube’s volume sits in its corners',cx,by+50+fs*0.4);
+  ctx.font=F(9); ctx.fillStyle='#4d6376';
+  ctx.fillText('corner is √d/2 = '+(Math.sqrt(dInt)/2).toFixed(2)+' from centre — the ball still only reaches 0.50',cx,by+63+fs*0.4);
+  ctx.textAlign='left';
+  ctx.restore();
+}
+
+// ---------------- panel 4: sampling ----------------
+var MARKS=[[9.9,'people on Earth'],[17.6,'seconds since the Big Bang'],[18.9,'grains of sand on Earth'],
+           [24,'stars in the universe'],[50,'atoms in the Earth'],[80,'atoms in the observable universe']];
+function drawSamp(){
+  var p=P.samp, in0=box(p,'4 · SAMPLING IS HOPELESS',
+    '10 bins per axis → 10^d cells must each get a point','#ff6b6b');
+  var d=dInt, l10=d, i;
+  var fs=clamp(in0.w/8,18,44), cx=in0.x+in0.w*0.5;
+  ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+  ctx.shadowColor='rgba(255,107,107,.5)'; ctx.shadowBlur=14;
+  pow10(cx,in0.y+fs*0.85,d,fs,'#ff6b6b','center'); ctx.shadowBlur=0;
+  ctx.font=F(9.5); ctx.fillStyle='#6b8096';
+  var exact=(d<=15)?(' = '+Math.pow(10,d).toLocaleString('en-US')):'';
+  ctx.fillText('points needed for 10-bin coverage'+ (d<=15?'':''),cx,in0.y+fs*0.85+14);
+  if(exact) ctx.fillText(exact.slice(3),cx,in0.y+fs*0.85+27);
+  // log ladder
+  var by=in0.y+fs*0.85+38, bwd=in0.w, bx=in0.x;
+  ctx.fillStyle='rgba(120,200,255,.10)'; ctx.fillRect(bx,by,bwd,6);
+  var gr=ctx.createLinearGradient(bx,0,bx+bwd,0);
+  gr.addColorStop(0,'#ffe08a'); gr.addColorStop(1,'#ff6b6b');
+  ctx.fillStyle=gr; ctx.fillRect(bx,by,bwd*clamp(l10/200,0,1),6);
+  for(i=0;i<MARKS.length;i++){
+    var mx=bx+bwd*MARKS[i][0]/200;
+    ctx.fillStyle=(l10>=MARKS[i][0])?'#ff6b6b':'rgba(120,200,255,.35)';
+    ctx.fillRect(mx-0.5,by-3,1,12);
+  }
+  ctx.font=F(8.5); ctx.fillStyle='#4d6376'; ctx.textAlign='left'; ctx.fillText('10⁰',bx,by+20);
+  ctx.textAlign='right'; ctx.fillText('10²⁰⁰',bx+bwd,by+20);
+  // threshold rows
+  var ry=by+30, rh=13, room=Math.floor((in0.y+in0.h-ry-16)/rh);
+  ctx.textBaseline='alphabetic';
+  for(i=0;i<MARKS.length&&i<room;i++){
+    var passed=l10>=MARKS[i][0], y=ry+i*rh+9;
+    ctx.textAlign='left';
+    ctx.font=F(9,passed); ctx.fillStyle=passed?'#ff6b6b':'#4d6376';
+    ctx.fillText((passed?'● ':'○ ')+MARKS[i][1],in0.x,y);
+    ctx.textAlign='right'; ctx.font=F(9);
+    ctx.fillStyle=passed?'rgba(255,107,107,.8)':'#3d4f5e';
+    ctx.fillText('10^'+MARKS[i][0].toFixed(MARKS[i][0]%1?1:0),in0.x+in0.w,y);
+  }
+  var fy=in0.y+in0.h-4;
+  ctx.textAlign='left'; ctx.font=F(9); ctx.fillStyle='#63798c';
+  ctx.fillText('your '+N+' samples cover at most 10^'+(Math.log10(N)-d).toFixed(1)+' of the grid',in0.x,fy-12);
+  ctx.fillStyle='#ffe08a';
+  ctx.fillText('d=20 → 10²⁰ points, more than every grain of sand',in0.x,fy);
+  ctx.restore();
+}
+
+// ---------------- panel 5: projection ----------------
+function drawProj(){
+  var p=P.proj, in0=box(p,'5 · WHAT YOU ACTUALLY SEE (2D PROJECTION)',
+    'the same '+N+' points, projected onto a random 2-plane','#9d8bff');
+  var cx=in0.x+in0.w*0.5, cy=in0.y+in0.h*0.5-6;
+  var S=Math.min(in0.w,in0.h-16)*0.5/3.3, i;
+  ctx.save(); rr(in0.x,in0.y-4,in0.w,in0.h-6,6); ctx.clip();
+  for(i=0;i<N;i++){
+    var x=cx+projX[i]*S, y=cy+projY[i]*S;
+    ctx.fillStyle='rgba(157,139,255,.55)';
+    ctx.fillRect(x-0.8,y-0.8,1.7,1.7);
+  }
+  // glow core
+  var g2=ctx.createRadialGradient(cx,cy,0,cx,cy,S*2.6);
+  g2.addColorStop(0,'rgba(157,139,255,.16)'); g2.addColorStop(1,'rgba(157,139,255,0)');
+  ctx.fillStyle=g2; ctx.fillRect(in0.x,in0.y-4,in0.w,in0.h);
+  // highlighted "looks close" pairs
+  var cols=['#7dffb0','#ffe08a','#ff6b6b'];
+  for(i=0;i<3;i++){
+    var a=hi[i][0], b=hi[i][1], td=hi[i][2];
+    var ax=cx+projX[a]*S, ay=cy+projY[a]*S, bx2=cx+projX[b]*S, by2=cy+projY[b]*S;
+    ctx.strokeStyle=cols[i]; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx2,by2); ctx.stroke();
+    ctx.fillStyle=cols[i];
+    ctx.beginPath(); ctx.arc(ax,ay,2.4,0,6.2832); ctx.fill();
+    ctx.beginPath(); ctx.arc(bx2,by2,2.4,0,6.2832); ctx.fill();
+    ctx.font=F(9,1); ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+    ctx.fillText(td.toFixed(2),(ax+bx2)/2+5,(ay+by2)/2-3);
+  }
+  ctx.restore();
+  ctx.font=F(9.5); ctx.textAlign='left'; ctx.fillStyle='#63798c';
+  ctx.fillText('coloured pairs LOOK adjacent here · labels are their TRUE distance in '+dInt+'D',in0.x,in0.y+in0.h+2);
+  var r2=medTrue>0?(hi[0][2]/medTrue):0;
+  ctx.fillStyle='#9d8bff';
+  ctx.fillText('median true pair distance '+medTrue.toFixed(2)+'  ·  closest-looking pair is '+(r2*100).toFixed(0)+'% of it',in0.x,in0.y+in0.h+14);
+  ctx.restore();
+}
+
+// ---------------- loop ----------------
+function step(dt){
+  if(auto){
+    sweep+=dt/40; if(sweep>=1) sweep-=1;
+    var s=sweep, u;
+    if(s<0.05) u=0;
+    else if(s<0.45) u=smoothstep(0,1,(s-0.05)/0.40);
+    else if(s<0.55) u=1;
+    else if(s<0.95) u=1-smoothstep(0,1,(s-0.55)/0.40);
+    else u=0;
+    dCont=Math.exp(u*Math.log(DMAX)); // geometric ramp: equal time per octave
+    dCont=clamp(dCont,1,DMAX);
+    SL.value=Math.round(dCont);
+  }
+  var nd=Math.max(1,Math.min(DMAX,Math.round(dCont)));
+  if(nd!==dInt){ dInt=nd; DV.textContent=dInt; }
+  if(dInt!==lastD){
+    lastD=dInt;
+    computeStats(); buildBasis(); project(clock*0.06); findPairs();
+  }
+  for(var i=0;i<NB;i++) barsC[i]+=(barsT[i]-barsC[i])*Math.min(1,dt*7);
+}
+var projTick=0;
+function frame(ts){
+  requestAnimationFrame(frame);
+  var t=ts/1000, dt=tPrev?Math.min(0.05,t-tPrev):0.016; tPrev=t;
+  if(!paused){ clock+=dt; step(dt); }
+  if(++projTick%3===0){ project(clock*0.06); }
+  ctx.fillStyle='#04050a'; ctx.fillRect(0,0,W,H);
+  // vignette grid
+  ctx.strokeStyle='rgba(120,200,255,.028)'; ctx.lineWidth=1;
+  ctx.beginPath();
+  for(var gx=0;gx<W;gx+=64){ ctx.moveTo(gx+0.5,0); ctx.lineTo(gx+0.5,H); }
+  for(var gy=0;gy<H;gy+=64){ ctx.moveTo(0,gy+0.5); ctx.lineTo(W,gy+0.5); }
+  ctx.stroke();
+  drawHead();
+  drawDist(); drawProj(); drawShell(); drawSphere(); drawSamp();
+  if(paused){
+    ctx.font=F(11,1); ctx.fillStyle='#ffe08a'; ctx.textAlign='right'; ctx.textBaseline='alphabetic';
+    ctx.fillText('PAUSED',W-16,H-14); ctx.textAlign='left';
+  }
+}
+
+// ---------------- input ----------------
+SL.addEventListener('input',function(){ auto=false; dCont=+SL.value; tags(); });
+function tags(){
+  TA.textContent=auto?'auto-sweep ON':'auto-sweep off';
+  TA.className='tag'+(auto?'':' off');
+  TD.textContent=gauss?'gaussian cloud':'uniform cube';
+  TD.className='tag'+(gauss?'':' off');
+}
+window.addEventListener('keydown',function(e){
+  var k=e.key.toLowerCase();
+  if(k===' '||e.code==='Space'){ paused=!paused; e.preventDefault(); }
+  else if(k==='a'){ auto=!auto; if(auto) sweep=Math.max(0.05,Math.min(0.45,0.05+0.40*(Math.log(dCont)/Math.log(DMAX)))); tags(); }
+  else if(k==='g'){ gauss=!gauss; lastD=-1; tags(); }
+  else if(k==='r'){ resample(); }
+});
+
+resample(); resize(); tags();
+dInt=1; lastD=-1; computeStats(); buildBasis(); project(0); findPairs();
+for(var q=0;q<NB;q++) barsC[q]=barsT[q];
+requestAnimationFrame(frame);
+})();
+</script>

@@ -95,6 +95,7 @@ var PRESETS = [
 
 /* ------------------------------------------------------------------ state */
 var M = {a:1,b:0,c:0,d:1};          // target matrix, row-major [[a,b],[c,d]]
+var tipI = [0,0], tipJ = [0,0];     // where î / ĵ arrowheads are actually drawn (for hit-testing)
 var presetName = '1 · IDENTITY';
 var phase = 1, loop = false, showSwarm = true, drag = null, t = 1;
 var SWARM = 40, swarmAng = [];
@@ -304,9 +305,11 @@ function draw(now){
   /* -------- î and ĵ: literally the two columns of the matrix */
   var Qi = arrow(Ci[0],Ci[1], C_I, 5, 'î', 22);
   var Qj = arrow(Cj[0],Cj[1], C_J, 5, 'ĵ', 22);
+  tipI = Qi; tipJ = Qj;
   ctx.lineWidth=2;
-  ctx.strokeStyle='rgba(255,255,255,'+(drag?0.85:0.35)+')';
+  ctx.strokeStyle='rgba(255,255,255,'+(drag==='i'?0.9:0.32)+')';
   ctx.beginPath(); ctx.arc(Qi[0],Qi[1],10,0,6.284); ctx.stroke();
+  ctx.strokeStyle='rgba(255,255,255,'+(drag==='j'?0.9:0.32)+')';
   ctx.beginPath(); ctx.arc(Qj[0],Qj[1],10,0,6.284); ctx.stroke();
 
   /* -------- floor captions */
@@ -398,20 +401,21 @@ function mouse(e){
   var cyy=(e.touches?e.touches[0].clientY:e.clientY)-r.top;
   return [cx,cyy];
 }
+/* grabbable at the arrowhead you can see, or at where it is heading (it may still be animating) */
+function hit(p){
+  var Ti=px(M.a,M.c), Tj=px(M.b,M.d);
+  var di=Math.min(Math.hypot(p[0]-tipI[0],p[1]-tipI[1]), Math.hypot(p[0]-Ti[0],p[1]-Ti[1]));
+  var dj=Math.min(Math.hypot(p[0]-tipJ[0],p[1]-tipJ[1]), Math.hypot(p[0]-Tj[0],p[1]-Tj[1]));
+  if (Math.min(di,dj) > 24) return null;
+  return di<=dj ? 'i' : 'j';
+}
 function down(e){
-  var p=mouse(e);
-  var Pi=px(M.a,M.c), Pj=px(M.b,M.d);
-  var di=Math.hypot(p[0]-Pi[0],p[1]-Pi[1]), dj=Math.hypot(p[0]-Pj[0],p[1]-Pj[1]);
-  if (Math.min(di,dj) < 22){ drag = di<=dj ? 'i' : 'j'; phase=1; loop=false; e.preventDefault(); }
+  var h = hit(mouse(e));
+  if (h){ drag=h; phase=1; loop=false; cv.style.cursor='grabbing'; e.preventDefault(); }
 }
 function move(e){
   var p=mouse(e);
-  if (!drag){
-    var Pi=px(M.a,M.c), Pj=px(M.b,M.d);
-    var near = Math.min(Math.hypot(p[0]-Pi[0],p[1]-Pi[1]), Math.hypot(p[0]-Pj[0],p[1]-Pj[1])) < 22;
-    cv.style.cursor = near ? 'grab' : 'default';
-    return;
-  }
+  if (!drag){ cv.style.cursor = hit(p) ? 'grab' : 'default'; return; }
   e.preventDefault();
   var x=(p[0]-ox)/S, y=(oy-p[1])/S;
   var step = e.shiftKey ? 0.25 : 0.05;
@@ -420,7 +424,7 @@ function move(e){
   if (drag==='i'){ M.a=x; M.c=y; } else { M.b=x; M.d=y; }
   presetName='CUSTOM (dragged)'; syncInputs();
 }
-function up(){ if(drag){ drag=null; cv.style.cursor='grab'; } }
+function up(){ if(drag){ drag=null; cv.style.cursor='default'; } }
 cv.addEventListener('mousedown',down); window.addEventListener('mousemove',move); window.addEventListener('mouseup',up);
 cv.addEventListener('touchstart',down,{passive:false}); window.addEventListener('touchmove',move,{passive:false}); window.addEventListener('touchend',up);
 
