@@ -1,0 +1,239 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Extreme &amp; Mean Ratio</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#08070a}
+  canvas{display:block;position:fixed;inset:0}
+  #ui{position:fixed;top:12px;left:12px;z-index:10;font:12px/1.6 ui-monospace,Menlo,monospace;
+      color:#e8d5a8;background:rgba(20,14,6,.55);padding:11px 15px;
+      border:1px solid rgba(220,180,110,.28);border-radius:10px;backdrop-filter:blur(6px);max-width:390px}
+  #ui b{color:#fff;letter-spacing:.12em}
+  #ui .q{color:#c9b184;font-style:italic}
+  #ui a{color:#f0c987;text-decoration:none}
+  #ui a:hover{text-decoration:underline}
+  #ui .k{color:#8fd4ff}
+</style>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div id="ui">
+  <b>EXTREME &amp; MEAN RATIO</b> <span style="opacity:.6">Elements II.11 · VI.30</span><br>
+  <span class="q">"To cut a given straight line so that the rectangle contained by the whole
+  and one segment equals the square on the remaining segment."</span><br>
+  <span class="k">1</span> construction · <span class="k">2</span> pentagon ·
+  <span class="k">3</span> pentagram · <span class="k">drag</span> endpoints ·
+  <span class="k">space</span> replay<br>
+  <a href="index.html">← gallery</a>
+</div>
+<canvas id="c"></canvas>
+<script>
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+let W,H,DPR;
+function resize(){DPR=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;
+  cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);}
+addEventListener('resize',resize);resize();
+
+const PHI=(1+Math.sqrt(5))/2;
+const GOLD='#e9c46a', PARCH='#d8c9a3', CYAN='#7fd4ff', ROSE='#ff9ec4', DIM='rgba(216,201,163,.22)';
+
+let scene=1, t=0, A={x:0,y:0}, B={x:0,y:0}, drag=null, placed=false;
+function layout(){                                   // default segment, recomputed on resize
+  if(placed)return;
+  A={x:W*0.28,y:H*0.66}; B={x:W*0.72,y:H*0.66};
+}
+addEventListener('resize',()=>{placed=false;layout();});
+
+function d(p,q){return Math.hypot(q.x-p.x,q.y-p.y);}
+function lerp(p,q,s){return {x:p.x+(q.x-p.x)*s, y:p.y+(q.y-p.y)*s};}
+
+// ---- Euclid II.11 construction ------------------------------------------
+// On AB erect square ABDE; bisect AE at F; with centre F radius FB cut EA
+// produced at G; then AH = AG is the golden cut of AB.
+function goldenCut(){
+  const L=d(A,B);
+  const ux=(B.x-A.x)/L, uy=(B.y-A.y)/L;             // along AB
+  const nx=-uy, ny=ux;                               // normal (square erected this side)
+  const sq=s=>({x:A.x+ux*s.u*L+nx*s.v*L, y:A.y+uy*s.u*L+ny*s.v*L});
+  const D=sq({u:1,v:-1}), E=sq({u:0,v:-1});          // square ABDE above the line
+  const F=lerp(A,E,0.5);                             // bisect AE
+  const FB=d(F,B);
+  const G={x:F.x+(A.x-F.x)/d(F,A)*FB, y:F.y+(A.y-F.y)/d(F,A)*FB}; // on EA produced, past A
+  const AG=d(A,G);
+  const Hh={x:A.x+ux*AG, y:A.y+uy*AG};               // the cut point on AB
+  return {L,ux,uy,nx,ny,D,E,F,G,AG,H:Hh,FB};
+}
+
+function line(p,q,col,w,dash){
+  ctx.save();ctx.setLineDash(dash||[]);ctx.strokeStyle=col;ctx.lineWidth=w||1.5;
+  ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(q.x,q.y);ctx.stroke();ctx.restore();
+}
+function arc(c,r,a0,a1,col,w){
+  ctx.strokeStyle=col;ctx.lineWidth=w||1.4;
+  ctx.beginPath();ctx.arc(c.x,c.y,r,a0,a1);ctx.stroke();
+}
+function dot(p,col,r,label){
+  ctx.fillStyle=col;ctx.beginPath();ctx.arc(p.x,p.y,r||4,0,7);ctx.fill();
+  if(label){ctx.fillStyle=PARCH;ctx.font='600 13px ui-monospace,monospace';
+    ctx.fillText(label,p.x+7,p.y-7);}
+}
+function glow(fn,col,blur){
+  ctx.save();ctx.shadowColor=col;ctx.shadowBlur=blur||14;fn();ctx.restore();
+}
+
+// ---- scene 1: the construction ------------------------------------------
+function drawConstruction(){
+  const g=goldenCut();
+  const step=Math.min(5, t/48);                       // staged reveal
+  // square ABDE
+  if(step>0.4){
+    ctx.strokeStyle=DIM;ctx.lineWidth=1.2;
+    ctx.beginPath();ctx.moveTo(A.x,A.y);ctx.lineTo(B.x,B.y);
+    ctx.lineTo(g.D.x,g.D.y);ctx.lineTo(g.E.x,g.E.y);ctx.closePath();ctx.stroke();
+    dot(g.E,PARCH,3,'E');dot(g.D,PARCH,3,'D');
+  }
+  // bisect AE at F
+  if(step>1.4){ dot(g.F,CYAN,4,'F'); line(g.F,B,CYAN,1.2,[4,5]); }
+  // arc centre F radius FB
+  if(step>2.2){
+    const a=Math.min(1,(step-2.2)/0.9);
+    const a0=Math.atan2(B.y-g.F.y,B.x-g.F.x);
+    const a1=Math.atan2(g.G.y-g.F.y,g.G.x-g.F.x);
+    let span=a1-a0; while(span>Math.PI)span-=2*Math.PI; while(span<-Math.PI)span+=2*Math.PI;
+    glow(()=>arc(g.F,g.FB,a0,a0+span*a,CYAN,1.6),CYAN,10);
+    if(step>3.0)dot(g.G,CYAN,4,'G');
+  }
+  // transfer AG onto AB → H
+  if(step>3.4){
+    const a=Math.min(1,(step-3.4)/0.9);
+    const a0=Math.atan2(g.G.y-A.y,g.G.x-A.x);
+    const a1=Math.atan2(g.H.y-A.y,g.H.x-A.x);
+    let span=a1-a0; while(span>Math.PI)span-=2*Math.PI; while(span<-Math.PI)span+=2*Math.PI;
+    glow(()=>arc(A,g.AG,a0,a0+span*a,GOLD,1.6),GOLD,10);
+  }
+  // the segment itself, with the two parts distinguished
+  glow(()=>line(A,B,PARCH,3),PARCH,8);
+  if(step>4.2){
+    glow(()=>line(A,g.H,GOLD,5),GOLD,16);
+    glow(()=>line(g.H,B,ROSE,5),ROSE,16);
+    dot(g.H,GOLD,6,'H');
+    // the defining equality: AB·HB = AH²  (rectangle = square)
+    const AH=d(A,g.H), HB=d(g.H,B), AB=g.L;
+    const ratio=AH/HB;
+    ctx.font='600 14px ui-monospace,monospace';
+    ctx.fillStyle=GOLD;
+    ctx.fillText(`AH / HB  =  ${ratio.toFixed(6)}`, A.x, B.y+46);
+    ctx.fillStyle=PARCH;
+    ctx.fillText(`AB / AH  =  ${(AB/AH).toFixed(6)}`, A.x, B.y+68);
+    ctx.fillStyle='rgba(216,201,163,.65)';
+    ctx.fillText(`φ = (1+√5)/2 = ${PHI.toFixed(6)}   ·   AB·HB − AH² = ${(AB*HB-AH*AH).toExponential(2)}`,
+                 A.x, B.y+90);
+    // visual proof: square on AH vs rectangle AB×HB, drawn to scale below
+    const y0=B.y+118, s=Math.min(0.42, (H-y0-30)/Math.max(AH,1));
+    if(y0+AH*s<H-8){
+      ctx.strokeStyle=GOLD;ctx.lineWidth=1.4;
+      ctx.strokeRect(A.x, y0, AH*s, AH*s);
+      ctx.fillStyle='rgba(233,196,106,.14)';ctx.fillRect(A.x,y0,AH*s,AH*s);
+      ctx.fillStyle=GOLD;ctx.font='11px ui-monospace,monospace';
+      ctx.fillText('AH²', A.x+6, y0+16);
+      const rx=A.x+AH*s+26;
+      ctx.strokeStyle=ROSE;ctx.strokeRect(rx, y0, AB*s, HB*s);
+      ctx.fillStyle='rgba(255,158,196,.14)';ctx.fillRect(rx,y0,AB*s,HB*s);
+      ctx.fillStyle=ROSE;ctx.fillText('AB · HB', rx+6, y0+16);
+      ctx.fillStyle='rgba(216,201,163,.6)';
+      ctx.fillText('equal areas — that is the definition', A.x, y0+Math.max(AH,HB)*s+22);
+    }
+  }
+  dot(A,PARCH,5,'A');dot(B,PARCH,5,'B');
+}
+
+// ---- scene 2: pentagon from the golden ratio ----------------------------
+function drawPentagon(){
+  const cx=W/2, cy=H*0.5, R=Math.min(W,H)*0.28;
+  const P=[];
+  for(let i=0;i<5;i++){const a=-Math.PI/2+i*2*Math.PI/5;P.push({x:cx+Math.cos(a)*R,y:cy+Math.sin(a)*R});}
+  // circumscribing circle
+  ctx.strokeStyle=DIM;ctx.lineWidth=1.2;ctx.beginPath();ctx.arc(cx,cy,R,0,7);ctx.stroke();
+  // sides
+  glow(()=>{ctx.strokeStyle=PARCH;ctx.lineWidth=2.5;ctx.beginPath();
+    P.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.closePath();ctx.stroke();},PARCH,10);
+  // diagonals — every diagonal/side ratio is φ
+  const rev=Math.min(1,t/70);
+  ctx.save();ctx.globalAlpha=rev;
+  glow(()=>{ctx.strokeStyle=GOLD;ctx.lineWidth=2;
+    for(let i=0;i<5;i++){const a=P[i],b=P[(i+2)%5];
+      ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();}},GOLD,12);
+  ctx.restore();
+  P.forEach((p,i)=>dot(p,PARCH,4,String.fromCharCode(65+i)));
+  const side=d(P[0],P[1]), diag=d(P[0],P[2]);
+  ctx.font='600 14px ui-monospace,monospace';ctx.fillStyle=GOLD;
+  ctx.textAlign='center';
+  ctx.fillText(`diagonal / side = ${(diag/side).toFixed(6)}  =  φ`, cx, cy+R+46);
+  ctx.fillStyle='rgba(216,201,163,.7)';ctx.font='12px ui-monospace,monospace';
+  ctx.fillText('Every diagonal cuts every other in extreme and mean ratio (VI.30).', cx, cy+R+70);
+  ctx.fillText('This is why Book XIII needs the golden section to build the dodecahedron.', cx, cy+R+90);
+  ctx.textAlign='left';
+}
+
+// ---- scene 3: pentagram recursion --------------------------------------
+function drawPentagram(){
+  const cx=W/2, cy=H*0.5;
+  let R=Math.min(W,H)*0.34, rot=-Math.PI/2 + t*0.0025;
+  const depth=9;
+  for(let k=0;k<depth;k++){
+    const P=[];
+    for(let i=0;i<5;i++){const a=rot+i*2*Math.PI/5;P.push({x:cx+Math.cos(a)*R,y:cy+Math.sin(a)*R});}
+    const hue=k/depth;
+    ctx.strokeStyle=`rgba(${233-hue*60|0},${196-hue*40|0},${106+hue*120|0},${0.85-k*0.07})`;
+    ctx.lineWidth=Math.max(0.6, 2.4-k*0.22);
+    ctx.beginPath();
+    for(let i=0;i<5;i++){const p=P[(i*2)%5];i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y);}
+    ctx.closePath();
+    ctx.save();ctx.shadowColor=GOLD;ctx.shadowBlur=10;ctx.stroke();ctx.restore();
+    R/=PHI*PHI;                                       // each inner pentagram is φ² smaller
+    rot+=Math.PI;                                     // and flipped
+    if(R<1.2)break;
+  }
+  ctx.font='600 14px ui-monospace,monospace';ctx.fillStyle=GOLD;ctx.textAlign='center';
+  ctx.fillText('each nested pentagram is smaller by φ² — forever', cx, H-70);
+  ctx.fillStyle='rgba(216,201,163,.7)';ctx.font='12px ui-monospace,monospace';
+  ctx.fillText('The Pythagoreans took the pentagram as their emblem; this endless self-similarity', cx, H-48);
+  ctx.fillText('is one classical route to proving √5 — and hence φ — is irrational.', cx, H-28);
+  ctx.textAlign='left';
+}
+
+// ---- interaction --------------------------------------------------------
+cv.addEventListener('pointerdown',e=>{
+  if(scene!==1)return;
+  const p={x:e.clientX,y:e.clientY};
+  if(d(p,A)<22)drag='A'; else if(d(p,B)<22)drag='B';
+});
+addEventListener('pointermove',e=>{
+  if(!drag)return;
+  const p={x:e.clientX,y:e.clientY};
+  placed=true;
+  if(drag==='A')A=p; else B=p;
+  // keep the segment sane so the square/labels stay on screen
+  if(d(A,B)<60){ if(drag==='A')A={x:B.x-60,y:B.y}; else B={x:A.x+60,y:A.y}; }
+});
+addEventListener('pointerup',()=>drag=null);
+addEventListener('keydown',e=>{
+  if(e.key==='1'){scene=1;t=0;}
+  else if(e.key==='2'){scene=2;t=0;}
+  else if(e.key==='3'){scene=3;t=0;}
+  else if(e.key===' '){t=0;e.preventDefault();}
+});
+
+layout();
+function frame(){
+  t++;
+  ctx.fillStyle='#08070a';ctx.fillRect(0,0,W,H);
+  // faint parchment vignette
+  const g=ctx.createRadialGradient(W/2,H/2,0,W/2,H/2,Math.max(W,H)*0.75);
+  g.addColorStop(0,'rgba(60,45,20,.16)');g.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  layout();
+  if(scene===1)drawConstruction();
+  else if(scene===2)drawPentagon();
+  else drawPentagram();
+  requestAnimationFrame(frame);
+}
+frame();
+</script>
