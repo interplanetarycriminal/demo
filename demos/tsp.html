@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Traveling Salesman — Nearest Neighbor + 2-opt</title>
+<style>
+html,body{margin:0;height:100%;background:#05060d;overflow:hidden}
+canvas{display:block;cursor:crosshair}
+#ui{position:fixed;top:10px;left:10px;z-index:10;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#9fd8ff;background:rgba(4,10,22,.76);border:1px solid rgba(255,110,199,.3);border-radius:8px;padding:10px 12px;max-width:330px}
+#ui h1{margin:0;font-size:13px;color:#ff6ec7;letter-spacing:.5px}
+#ui p{margin:5px 0;color:#8fa9c4}
+#ui .hint{color:#5e7a92}
+#ui a{color:#ffd54a;text-decoration:none}
+#stats{margin-top:6px;white-space:pre;color:#cfe9ff}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div id="ui">
+<h1>TRAVELING SALESMAN</h1>
+<p>The tour must visit every city once and return home — nearest-neighbor greedily chains the closest unvisited city, then 2-opt repeatedly finds two edges that cross (<span style="color:#ff3b5c">red</span>), uncrosses them (<span style="color:#39ff8b">green</span>), and the tour length ticks down (graph, bottom-right).</p>
+<p class="hint">click add city · R reseed · Space rerun · <a href="index.html">← gallery</a></p>
+<div id="stats"></div>
+</div>
+<canvas id="c"></canvas>
+<script>
+'use strict';
+var cv=document.getElementById('c'),ctx=cv.getContext('2d'),statsEl=document.getElementById('stats'),W=0,H=0;
+function resizeCanvas(){var d=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;cv.width=W*d;cv.height=H*d;cv.style.width=W+'px';cv.style.height=H+'px';ctx.setTransform(d,0,0,d,0,0)}
+addEventListener('resize',resizeCanvas);
+resizeCanvas();
+
+var cities=[],tour=[],used=null,cur=0,phase='nn',nnT=0,opt=null,history=[],shownLen=0,time=0,lastAdd=null;
+function P(i){return{x:60+cities[i].x*(W-120),y:70+cities[i].y*(H-160)}}
+function d(i,j){var a=P(i),b=P(j);return Math.hypot(a.x-b.x,a.y-b.y)}
+function tourLen(){
+  var L=0,n=tour.length;if(n<2)return 0;
+  var m=(phase==='nn')?n-1:n;
+  for(var k=0;k<m;k++)L+=d(tour[k],tour[(k+1)%n]);
+  return L}
+function reseed(n){cities=[];for(var i=0;i<n;i++)cities.push({x:Math.random(),y:Math.random()})}
+function startAll(){
+  tour=[0];used=new Uint8Array(cities.length);used[0]=1;cur=0;
+  phase='nn';nnT=0;opt=null;history=[];shownLen=0;lastAdd=null}
+
+function scanOne(){
+  var n=tour.length;
+  if(n<4){phase='done';return false}
+  if(opt.i>=n-2){phase='done';history.push(tourLen());return false}
+  var i=opt.i,j=opt.j;
+  var a=tour[i],b=tour[i+1],c=tour[j],e=tour[(j+1)%n];
+  opt.checks++;opt.lastPair=[i,j];
+  var ok=!(i===0&&j===n-1);
+  var delta=(d(a,c)+d(b,e))-(d(a,b)+d(c,e));
+  opt.j++;
+  if(opt.j>=n){opt.i++;opt.j=opt.i+2}
+  if(ok&&delta<-1e-6){opt.anim={i:i,j:j,stage:0,t:0};return false}
+  return true}
+function update(){
+  if(phase==='nn'){
+    nnT++;
+    if(nnT%5===0){
+      var bi=-1,bd=1e18;
+      for(var v=0;v<cities.length;v++)if(!used[v]){var dd=d(cur,v);if(dd<bd){bd=dd;bi=v}}
+      if(bi<0){
+        phase=cities.length<4?'done':'opt';
+        opt={i:0,j:2,checks:0,improves:0,anim:null,lastPair:null};
+        history.push(tourLen())}
+      else{tour.push(bi);used[bi]=1;cur=bi;lastAdd={t:0}}}}
+  else if(phase==='opt'){
+    var A=opt.anim;
+    if(A){
+      A.t+=1/24;
+      if(A.stage===0&&A.t>=1){
+        var sg=tour.slice(A.i+1,A.j+1);sg.reverse();
+        for(var q=0;q<sg.length;q++)tour[A.i+1+q]=sg[q];
+        A.stage=1;A.t=0;opt.improves++;history.push(tourLen())}
+      else if(A.stage===1&&A.t>=1){opt.anim=null;opt.i=0;opt.j=2}}
+    else{for(var cch=0;cch<80;cch++)if(!scanOne())break}}
+  if(lastAdd){lastAdd.t+=0.12;if(lastAdd.t>=1)lastAdd=null}
+  var L=tourLen();shownLen+=(L-shownLen)*0.2}
+
+function seg(a,b){ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke()}
+function circle(p,r){ctx.beginPath();ctx.arc(p.x,p.y,r,0,6.2832);ctx.fill()}
+function hlEdge(k,style,wdt){
+  var n=tour.length,a=P(tour[k]),b=P(tour[(k+1)%n]);
+  ctx.strokeStyle=style;ctx.lineWidth=wdt;seg(a,b)}
+function draw(){
+  ctx.fillStyle='#05060d';ctx.fillRect(0,0,W,H);
+  var n=tour.length,total=cities.length;
+  if(phase==='nn'&&used){
+    var cp=P(cur);ctx.lineWidth=1;ctx.strokeStyle='rgba(255,255,255,.05)';
+    for(var v1=0;v1<total;v1++)if(!used[v1])seg(cp,P(v1))}
+  if(phase==='opt'&&opt&&!opt.anim&&opt.lastPair){
+    var lp=opt.lastPair;
+    if(lp[0]<n&&lp[1]<n){hlEdge(lp[0],'rgba(140,180,255,.3)',1);hlEdge(lp[1],'rgba(140,180,255,.3)',1)}}
+  var m=(phase==='nn')?n-1:n;
+  for(var k=0;k<m;k++){
+    var a=P(tour[k]),b=P(tour[(k+1)%n]);
+    var t=(lastAdd&&phase==='nn'&&k===m-1)?lastAdd.t:1;
+    var bp={x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t};
+    var hue=210+150*k/Math.max(1,n);
+    ctx.strokeStyle='hsla('+hue+',100%,60%,.18)';ctx.lineWidth=6;seg(a,bp);
+    ctx.strokeStyle='hsla('+hue+',100%,65%,.95)';ctx.lineWidth=2;seg(a,bp)}
+  if(phase==='done'&&n>1){
+    ctx.strokeStyle='rgba(255,213,74,'+(0.14+0.12*Math.sin(time*4))+')';ctx.lineWidth=9;
+    ctx.beginPath();
+    for(var k2=0;k2<=n;k2++){var pp=P(tour[k2%n]);if(k2)ctx.lineTo(pp.x,pp.y);else ctx.moveTo(pp.x,pp.y)}
+    ctx.stroke()}
+  if(opt&&opt.anim){
+    var An=opt.anim,col=An.stage===0?'255,59,92':'57,255,139';
+    var pulse=0.55+0.45*Math.sin(time*12);
+    hlEdge(An.i,'rgba('+col+','+pulse+')',4.5);
+    hlEdge(An.j,'rgba('+col+','+pulse+')',4.5)}
+  for(var v=0;v<total;v++){
+    var p=P(v),uv=used&&used[v];
+    ctx.fillStyle=uv?'rgba(0,229,255,.14)':'rgba(120,140,170,.10)';circle(p,7);
+    ctx.fillStyle=uv?'#aef3ff':'#4a5a75';circle(p,3)}
+  if(phase==='nn'){
+    var cc=P(cur);ctx.strokeStyle='#ffd54a';ctx.lineWidth=2;
+    ctx.beginPath();ctx.arc(cc.x,cc.y,8+2*Math.sin(time*6),0,6.2832);ctx.stroke()}
+  drawGraph()}
+function drawGraph(){
+  if(history.length<1)return;
+  var gw=210,gh=92,gx=W-gw-14,gy=H-gh-14;
+  ctx.fillStyle='rgba(4,10,22,.78)';ctx.fillRect(gx,gy,gw,gh);
+  ctx.strokeStyle='rgba(57,255,139,.35)';ctx.lineWidth=1;ctx.strokeRect(gx,gy,gw,gh);
+  var lo=Math.min.apply(null,history),hi=Math.max.apply(null,history);
+  if(hi-lo<1)hi=lo+1;
+  var x=gx+8,y=gy+10;
+  ctx.beginPath();
+  for(var k=0;k<history.length;k++){
+    x=gx+8+(gw-16)*(history.length===1?1:k/(history.length-1));
+    y=gy+10+(gh-30)*((hi-history[k])/(hi-lo));
+    if(k)ctx.lineTo(x,y);else ctx.moveTo(x,y)}
+  ctx.strokeStyle='#39ff8b';ctx.lineWidth=1.5;ctx.stroke();
+  ctx.fillStyle='#39ff8b';ctx.beginPath();ctx.arc(x,y,2.5,0,6.2832);ctx.fill();
+  ctx.font='10px ui-monospace,Menlo,monospace';ctx.fillStyle='#8fa9c4';
+  var imp=history.length>1?(100*(1-history[history.length-1]/history[0])).toFixed(1):'0.0';
+  ctx.fillText('2-opt improvement  −'+imp+'%',gx+8,gy+gh-8)}
+function updateStats(){
+  var ph=phase==='nn'?'nearest-neighbor: chain closest city':
+    (phase==='opt'?(opt&&opt.anim?(opt.anim.stage===0?'2-opt: crossing found — uncrossing…':'2-opt: segment reversed ✓'):'2-opt: scanning edge pairs…'):'done — 2-opt local optimum');
+  var s='cities   '+cities.length+'\n'+
+    'phase    '+ph+'\n'+
+    'tour     '+Math.round(shownLen)+' px\n'+
+    'swaps    '+(opt?opt.improves:0)+'\n'+
+    'checks   '+(opt?opt.checks:0);
+  if(history.length>1)s+='\nsaved    '+(100*(1-history[history.length-1]/history[0])).toFixed(1)+'% vs greedy';
+  statsEl.textContent=s}
+function frame(){time+=0.016;update();draw();updateStats();requestAnimationFrame(frame)}
+
+cv.addEventListener('click',function(e){
+  var nx=(e.clientX-60)/(W-120),ny=(e.clientY-70)/(H-160);
+  cities.push({x:Math.min(1,Math.max(0,nx)),y:Math.min(1,Math.max(0,ny))});
+  startAll()});
+addEventListener('keydown',function(e){
+  var k=e.key;
+  if(k==='r'||k==='R'){reseed(40);startAll()}
+  else if(k===' '){e.preventDefault();startAll()}});
+
+reseed(40);startAll();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

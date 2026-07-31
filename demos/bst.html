@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AVL Tree — Self-Balancing BST</title>
+<style>
+html,body{margin:0;height:100%;background:#04060c;overflow:hidden}
+canvas{display:block;position:fixed;inset:0}
+#ui{position:fixed;top:10px;left:10px;z-index:10;font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#c9e6f2;background:rgba(6,12,22,.74);border:1px solid rgba(77,240,255,.25);border-radius:10px;padding:10px 13px;max-width:370px}
+#ui h1{margin:0 0 3px;font-size:14px;font-weight:700;color:#4df0ff;letter-spacing:.08em;text-shadow:0 0 8px rgba(77,240,255,.6)}
+#ui p{margin:0 0 4px;color:#8fb4c4}
+#ui .hint{color:#ffd24d}
+#stats{margin-top:5px;color:#8ff0b6;white-space:pre-line}
+#ui a{color:#4df0ff;text-decoration:none;border-bottom:1px dotted rgba(77,240,255,.4)}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="cv"></canvas>
+<div id="ui">
+<h1>AVL TREE</h1>
+<p>A binary search tree that repairs itself with rotations after every insert/delete, keeping lookups O(log n).</p>
+<p class="hint">type a number + Enter → insert &nbsp;·&nbsp; click a node → delete &nbsp;·&nbsp; auto-stream runs</p>
+<div id="stats"></div>
+<a href="index.html">← gallery</a>
+</div>
+<script>
+"use strict";
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d'),statsEl=document.getElementById('stats');
+let W=1,H=1;
+function resize(){const d=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;cv.width=Math.round(W*d);cv.height=Math.round(H*d);ctx.setTransform(d,0,0,d,0,0);layout()}
+addEventListener('resize',resize);
+/* ---------- AVL core ---------- */
+let root=null,size=0,rotations=0,lastOp='booting…',buf='';
+const hgt=n=>n?n.h:0,bal=n=>n?hgt(n.left)-hgt(n.right):0;
+function upd(n){n.h=1+Math.max(hgt(n.left),hgt(n.right))}
+function mk(v,x,y){return{val:v,left:null,right:null,h:1,x:x,y:y,tx:x,ty:y,glow:0,flash:0,d:0}}
+function rotR(y){const x=y.left;y.left=x.right;x.right=y;upd(y);upd(x);return x}
+function rotL(x){const y=x.right;x.right=y.left;y.left=x;upd(x);upd(y);return y}
+function rebal(n){upd(n);const b=bal(n);
+ if(b>1){if(bal(n.left)<0){n.left=rotL(n.left);rotations++}rotations++;return rotR(n)}
+ if(b<-1){if(bal(n.right)>0){n.right=rotR(n.right);rotations++}rotations++;return rotL(n)}
+ return n}
+function del(n,v){if(!n)return null;
+ if(v<n.val)n.left=del(n.left,v);
+ else if(v>n.val)n.right=del(n.right,v);
+ else{if(!n.left||!n.right){size--;return n.left||n.right}
+  let m=n.right;while(m.left)m=m.left;
+  n.val=m.val;n.flash=1.2;n.right=del(n.right,m.val)}
+ return rebal(n)}
+function layout(){if(!root)return;const ns=[];
+ (function go(n,d){if(!n)return;go(n.left,d+1);n.d=d;ns.push(n);go(n.right,d+1)})(root,0);
+ const g=Math.min(88,(H-210)/Math.max(1,hgt(root)-1));
+ ns.forEach((n,i)=>{n.tx=30+(i+1)/(ns.length+1)*(W-60);n.ty=100+n.d*g})}
+/* ---------- animated op queue ---------- */
+let pending=[],queue=[],wait=0,cursor=null,autoT=0,opN=0;
+function expand(op){
+ if(op.op==='ins'){
+  if(size>=28){lastOp='tree full (28) — auto-pruning';return}
+  let cur=root;const stack=[];
+  while(cur){queue.push({t:'cmp',n:cur,v:op.v});stack.push(cur);
+   if(op.v===cur.val){queue.push({t:'dup',v:op.v});return}
+   cur=op.v<cur.val?cur.left:cur.right}
+  queue.push({t:'place',v:op.v,p:stack[stack.length-1]||null});
+  queue.push({t:'reb',stack:stack});
+ }else if(op.op==='del'){
+  let cur=root;
+  while(cur&&cur.val!==op.v){queue.push({t:'cmp',n:cur,v:op.v});cur=op.v<cur.val?cur.left:cur.right}
+  if(cur){queue.push({t:'cmp',n:cur,v:op.v});queue.push({t:'kill',v:op.v})}
+  else lastOp=op.v+' not found';
+ }}
+function doStep(s){
+ if(s.t==='cmp'){cursor=s.n;s.n.glow=1;
+  lastOp=s.v<s.n.val?s.v+' < '+s.n.val+' → go left':(s.v>s.n.val?s.v+' > '+s.n.val+' → go right':'found '+s.v);wait=.27}
+ else if(s.t==='dup'){lastOp=s.v+' already present — skipped';cursor=null;wait=.4}
+ else if(s.t==='place'){const p=s.p,n=mk(s.v,p?p.x:W/2,p?p.y-56:70);
+  if(!p)root=n;else if(s.v<p.val)p.left=n;else p.right=n;
+  size++;n.flash=1.3;layout();lastOp='insert '+s.v+' as leaf';cursor=null;wait=.5}
+ else if(s.t==='reb'){const st=s.stack;
+  while(st.length){const n=st.pop();upd(n);const b=bal(n);
+   if(Math.abs(b)>1){const r0=rotations;let n2;
+    if(b>1){if(bal(n.left)<0){n.left=rotL(n.left);rotations++}n2=rotR(n);rotations++}
+    else{if(bal(n.right)>0){n.right=rotR(n.right);rotations++}n2=rotL(n);rotations++}
+    const p=st[st.length-1];
+    if(!p)root=n2;else if(p.left===n)p.left=n2;else p.right=n2;
+    n2.flash=1.5;lastOp=(rotations-r0>1?'DOUBLE':'SINGLE')+' rotation @ '+n2.val;
+    layout();if(st.length)queue.unshift({t:'reb',stack:st});wait=.75;return}}
+  wait=.05}
+ else if(s.t==='kill'){root=del(root,s.v);layout();lastOp='delete '+s.v;cursor=null;wait=.55}}
+function values(){const a=[];(function go(n){if(!n)return;go(n.left);a.push(n.val);go(n.right)})(root);return a}
+function autoOp(){opN++;const vs=values();
+ if(size>=24||(opN%5===0&&size>8)){pending.push({op:'del',v:vs[Math.floor(Math.random()*vs.length)]})}
+ else{let v,k=0;do{v=1+Math.floor(Math.random()*99)}while(vs.includes(v)&&++k<40);pending.push({op:'ins',v:v})}}
+/* ---------- input ---------- */
+addEventListener('keydown',function(e){
+ if(/^[0-9]$/.test(e.key)&&buf.length<3)buf+=e.key;
+ else if(e.key==='Backspace')buf=buf.slice(0,-1);
+ else if(e.key==='Enter'&&buf){pending.push({op:'ins',v:+buf});buf=''}});
+cv.addEventListener('click',function(e){let best=null,bd=24;
+ (function go(n){if(!n)return;const d=Math.hypot(n.x-e.clientX,n.y-e.clientY);
+  if(d<bd){bd=d;best=n}go(n.left);go(n.right)})(root);
+ if(best)pending.push({op:'del',v:best.val})});
+/* ---------- main loop ---------- */
+let last=performance.now();
+function update(dt){
+ wait-=dt;autoT+=dt;let g=0;
+ while(wait<=0&&g++<80){
+  if(queue.length)doStep(queue.shift());
+  else if(pending.length)expand(pending.shift());
+  else break}
+ if(wait<=0&&!queue.length&&!pending.length){cursor=null;if(autoT>1.35){autoT=0;autoOp()}}
+ (function mv(n){if(!n)return;const k=Math.min(1,dt*7);
+  n.x+=(n.tx-n.x)*k;n.y+=(n.ty-n.y)*k;
+  n.glow=Math.max(0,n.glow-dt*2.2);n.flash=Math.max(0,n.flash-dt*1.5);
+  mv(n.left);mv(n.right)})(root);
+ statsEl.textContent='size '+size+'  ·  height '+hgt(root)+'  ·  root balance '+bal(root)+
+  '\nrotations '+rotations+'  ·  queued ops '+(queue.length+pending.length)+
+  '\ninsert> '+buf+'▏'+'\nlast: '+lastOp;}
+function draw(t){
+ ctx.fillStyle='#04060c';ctx.fillRect(0,0,W,H);
+ ctx.lineWidth=1.5;
+ (function ed(n){if(!n)return;
+  for(const c of[n.left,n.right])if(c){
+   ctx.strokeStyle='rgba(90,200,255,'+(0.18+0.5*Math.max(c.glow,c.flash))+')';
+   ctx.beginPath();ctx.moveTo(n.x,n.y);ctx.lineTo(c.x,c.y);ctx.stroke()}
+  ed(n.left);ed(n.right)})(root);
+ (function nd(n){if(!n)return;nd(n.left);nd(n.right);
+  const hue=(185+n.d*38)%360,gl=Math.max(n.glow,n.flash);
+  ctx.save();ctx.shadowColor='hsl('+hue+' 100% 60%)';ctx.shadowBlur=6+26*gl;
+  ctx.beginPath();ctx.arc(n.x,n.y,16,0,7);
+  ctx.fillStyle=gl>0.02?'hsl('+hue+' 80% '+(14+28*gl)+'%)':'#0a1220';ctx.fill();
+  ctx.lineWidth=2;ctx.strokeStyle='hsl('+hue+' 95% '+(55+30*Math.min(1,gl))+'%)';ctx.stroke();ctx.restore();
+  ctx.fillStyle='#eaf8ff';ctx.font='bold 11px monospace';ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillText(n.val,n.x,n.y);
+  const b=bal(n);ctx.fillStyle=Math.abs(b)>1?'#ff5577':'#5f8796';ctx.font='9px monospace';
+  ctx.fillText('bf '+b,n.x,n.y+26)})(root);
+ if(cursor){ctx.beginPath();ctx.arc(cursor.x,cursor.y,21+2.6*Math.sin(t*12),0,7);
+  ctx.strokeStyle='rgba(255,210,77,.95)';ctx.lineWidth=2;ctx.stroke()}}
+function tick(now){const dt=Math.min(.05,(now-last)/1000);last=now;update(dt);draw(now/1000);requestAnimationFrame(tick)}
+resize();
+[50,25,75,12,37,60,88].forEach(v=>pending.push({op:'ins',v:v}));
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>

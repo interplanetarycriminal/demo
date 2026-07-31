@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Search Race — Linear vs Binary</title>
+<style>
+html,body{margin:0;height:100%;background:#04060c;overflow:hidden}
+canvas{position:fixed;inset:0;display:block}
+#ui{position:fixed;top:10px;left:10px;z-index:10;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#9fb6d4;background:rgba(4,10,22,.74);border:1px solid rgba(53,213,255,.28);border-radius:8px;padding:10px 12px;max-width:330px;backdrop-filter:blur(4px)}
+#ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.14em;color:#35d5ff;text-shadow:0 0 8px rgba(53,213,255,.7)}
+#ui .ex{color:#7e93b3;margin:0 0 6px}
+#ui .keys{color:#5c7396;margin:0 0 6px}
+#ui a{color:#ff4fd8;text-decoration:none}
+#stats{white-space:pre;color:#cfe3ff;margin-bottom:6px}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>SEARCH RACE</h1>
+<p class="ex">Two lanes hunt the same target in the same sorted array — linear checks every cell, binary discards half the remaining range per comparison.</p>
+<p class="keys">click a lane: place the target there · auto-loops, n doubles each round</p>
+<div id="stats"></div>
+<a href="index.html">← gallery</a>
+</div>
+<script>
+'use strict';
+const cv=document.getElementById('c'),ctx=cv.getContext('2d'),statsEl=document.getElementById('stats');
+let W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;
+  cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);
+  cv.style.width=W+'px';cv.style.height=H+'px';ctx.setTransform(DPR,0,0,DPR,0,0);}
+addEventListener('resize',resize);resize();
+
+const SIZES=[200,400,800,1600,3200,6400];
+let sizeIx=0,round=1,n=SIZES[0];
+let arr=[],target=0,targetIdx=0,maxV=1;
+let lin,bin,phase,phaseT,goldT,linAcc,binAcc;
+
+function newRound(idx){
+  n=SIZES[sizeIx];
+  arr=new Array(n);let v=3;
+  for(let i=0;i<n;i++){v+=1+((Math.random()*4)|0);arr[i]=v;}
+  maxV=arr[n-1];
+  targetIdx=(idx==null)?((Math.random()*n)|0):idx;
+  target=arr[targetIdx];
+  lin={i:0,comps:0,done:false};
+  bin={lo:0,hi:n-1,mid:-1,comps:0,done:false,flash:0};
+  phase='race';phaseT=0;goldT=0;linAcc=0;binAcc=0;
+}
+newRound();
+
+function update(dt){
+  phaseT+=dt;
+  bin.flash=Math.max(0,bin.flash-dt*2.2);
+  goldT=Math.max(0,goldT-dt*0.7);
+  if(phase==='race'){
+    const linCps=Math.max(34,n/8),binCps=3.2;
+    if(!lin.done){linAcc+=dt*linCps;
+      while(linAcc>=1&&!lin.done){linAcc-=1;lin.comps++;
+        if(arr[lin.i]===target)lin.done=true;else lin.i++;}}
+    if(!bin.done){binAcc+=dt*binCps;
+      while(binAcc>=1&&!bin.done){binAcc-=1;bin.comps++;
+        bin.mid=(bin.lo+bin.hi)>>1;bin.flash=1;
+        if(arr[bin.mid]===target){bin.done=true;goldT=1.6;}
+        else if(arr[bin.mid]<target)bin.lo=bin.mid+1;
+        else bin.hi=bin.mid-1;}}
+    if(lin.done&&bin.done){phase='result';phaseT=0;}
+  }else if(phase==='result'&&phaseT>3){
+    sizeIx=(sizeIx+1)%SIZES.length;round++;newRound();
+  }
+}
+
+function drawLane(x,y,w,h,which,t){
+  const isLin=which===0,col=isLin?'#35d5ff':'#b06bff';
+  ctx.strokeStyle='rgba(120,150,190,.18)';ctx.lineWidth=1;ctx.strokeRect(x-.5,y-.5,w+1,h+1);
+  const bw=w/n;
+  for(let i=0;i<n;i++){
+    const bh=4+(arr[i]/maxV)*(h-10),bx=x+i*bw,by=y+h-bh;
+    let st;
+    if(isLin)st=(i<lin.i)?'rgba(90,110,140,.14)':'rgba(53,213,255,.5)';
+    else st=(i<bin.lo||i>bin.hi)?'rgba(90,110,140,.10)':'rgba(176,107,255,.55)';
+    if(i===targetIdx)st='#ff4fd8';
+    ctx.fillStyle=st;
+    ctx.fillRect(bx,by,Math.max(bw*0.8,0.5),bh);
+  }
+  if(isLin){
+    const hIx=Math.min(lin.i,n-1),hb=4+(arr[hIx]/maxV)*(h-10);
+    ctx.fillStyle='rgba(53,213,255,.22)';
+    ctx.fillRect(x+hIx*bw,y,Math.max(bw,1.5),h);
+    ctx.shadowColor=col;ctx.shadowBlur=16;
+    ctx.fillStyle=lin.done?'#ffd24a':'#dff6ff';
+    ctx.fillRect(x+hIx*bw-1,y+h-hb,Math.max(bw,2.2),hb);
+    ctx.shadowBlur=0;
+  }else{
+    if(bin.hi>=bin.lo){
+      const lox=x+bin.lo*bw,hix=x+(bin.hi+1)*bw;
+      ctx.fillStyle='rgba(176,107,255,.08)';ctx.fillRect(lox,y,hix-lox,h);
+      ctx.strokeStyle='rgba(224,190,255,.9)';ctx.lineWidth=2;
+      ctx.beginPath();ctx.moveTo(lox,y-6);ctx.lineTo(lox,y+h);
+      ctx.moveTo(hix,y-6);ctx.lineTo(hix,y+h);ctx.stroke();ctx.lineWidth=1;
+    }
+    if(bin.mid>=0){
+      const mb=4+(arr[bin.mid]/maxV)*(h-10);
+      ctx.shadowColor='#fff';ctx.shadowBlur=6+18*bin.flash;
+      ctx.fillStyle=bin.done?'#ffd24a':'rgba(255,255,255,'+(0.35+0.65*bin.flash)+')';
+      ctx.fillRect(x+bin.mid*bw-1,y+h-mb,Math.max(bw,2.2),mb);
+      ctx.shadowBlur=0;
+    }
+    if(goldT>0){
+      ctx.fillStyle='rgba(255,210,74,'+(0.28*Math.min(1,goldT))+')';
+      ctx.fillRect(x,y,w,h);
+    }
+  }
+  const tx=x+targetIdx*bw+bw/2;
+  ctx.fillStyle='#ff4fd8';
+  ctx.beginPath();ctx.moveTo(tx,y-3);ctx.lineTo(tx-5,y-11);ctx.lineTo(tx+5,y-11);ctx.closePath();ctx.fill();
+  ctx.textAlign='center';
+  ctx.font='600 13px ui-monospace,monospace';
+  ctx.fillStyle=col;ctx.shadowColor=col;ctx.shadowBlur=10;
+  ctx.fillText(isLin?'LINEAR SCAN — O(n)':'BINARY SEARCH — O(log n)',x+w/2,y-58);
+  ctx.shadowBlur=0;
+  ctx.font='700 30px ui-monospace,monospace';
+  ctx.fillStyle=isLin?(lin.done?'#ffd24a':'#dff6ff'):(bin.done?'#ffd24a':'#f3e8ff');
+  ctx.fillText(String(which===0?lin.comps:bin.comps),x+w/2,y-26);
+  ctx.font='10px ui-monospace,monospace';ctx.fillStyle='#5c7396';
+  let sub='comparisons';
+  if(isLin&&lin.done)sub='comparisons · found';
+  if(!isLin&&bin.done)sub='comparisons · FOUND — WINNER';
+  ctx.fillText(sub,x+w/2,y-12);
+}
+
+function draw(){
+  ctx.fillStyle='#04060c';ctx.fillRect(0,0,W,H);
+  const pad=16,top=96,bottom=48;
+  const laneW=(W-pad*3)/2,laneH=Math.max(60,H-top-bottom);
+  drawLane(pad,top,laneW,laneH,0);
+  drawLane(pad*2+laneW,top,laneW,laneH,1);
+  ctx.textAlign='center';
+  ctx.font='600 12px ui-monospace,monospace';
+  ctx.fillStyle='#ff4fd8';ctx.shadowColor='#ff4fd8';ctx.shadowBlur=8;
+  ctx.fillText('target value '+target+'  ·  hidden at index '+targetIdx+' of '+n,W/2,H-18);
+  ctx.shadowBlur=0;
+  if(phase==='result'){
+    const a=Math.min(1,phaseT*3);
+    ctx.fillStyle='rgba(2,6,14,'+(0.55*a)+')';ctx.fillRect(0,H/2-64,W,120);
+    ctx.fillStyle='rgba(255,210,74,'+a+')';
+    ctx.shadowColor='#ffd24a';ctx.shadowBlur=26;
+    ctx.font='700 '+Math.min(44,W/16)+'px ui-monospace,monospace';
+    ctx.fillText(bin.comps+' vs '+lin.comps+' comparisons',W/2,H/2-6);
+    ctx.shadowBlur=0;
+    ctx.font='12px ui-monospace,monospace';
+    ctx.fillStyle='rgba(158,182,212,'+a+')';
+    ctx.fillText('binary O(log n) crushed linear O(n) at n = '+n+'  ·  next round: n = '+SIZES[(sizeIx+1)%SIZES.length],W/2,H/2+24);
+  }
+  statsEl.textContent='round '+round+'   n = '+n+
+    '\nlinear  '+lin.comps+' comps'+(lin.done?' ✓':'')+
+    '\nbinary  '+bin.comps+' comps'+(bin.done?' ✓':'')+
+    '\nworst case: '+n+' vs ⌈log₂ n⌉ = '+Math.ceil(Math.log2(n));
+}
+
+cv.addEventListener('click',function(e){
+  const pad=16,laneW=(innerWidth-pad*3)/2,x=e.clientX;
+  let idx=-1;
+  if(x>=pad&&x<=pad+laneW)idx=Math.floor((x-pad)/laneW*n);
+  else if(x>=pad*2+laneW&&x<=pad*2+2*laneW)idx=Math.floor((x-pad*2-laneW)/laneW*n);
+  if(idx>=0)newRound(Math.max(0,Math.min(n-1,idx)));
+});
+
+let last=performance.now();
+function frame(now){
+  const dt=Math.min(0.05,(now-last)/1000);last=now;
+  update(dt);draw();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Monte Carlo π</title>
+<style>
+html,body{margin:0;height:100%;background:#05060c;overflow:hidden}
+#c{position:fixed;inset:0;display:block}
+#ui{position:fixed;top:12px;left:12px;z-index:10;font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#bfe9ff;background:rgba(4,8,16,.75);border:1px solid rgba(0,229,255,.25);border-radius:10px;padding:10px 14px;max-width:330px}
+#ui h1{margin:0 0 3px;font-size:13px;letter-spacing:2px;color:#00e5ff;text-shadow:0 0 10px rgba(0,229,255,.6)}
+#ui .ex{color:#8fa8c0}
+#ui .hint{color:#647c95;margin-top:5px}
+#ui .st{color:#ffd76b;margin-top:5px;white-space:pre}
+#ui a{color:#ff6bd6;text-decoration:none;display:inline-block;margin-top:5px}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div id="ui">
+  <h1>MONTE CARLO π</h1>
+  <div class="ex">Throw random darts at a unit square: the fraction landing inside the quarter circle approaches π/4, so 4·in/total → π.</div>
+  <div class="hint">click: pour 2500 points · R reset</div>
+  <div class="st" id="st"></div>
+  <a href="index.html">← gallery</a>
+</div>
+<canvas id="c"></canvas>
+<script>
+"use strict";
+var cv=document.getElementById('c'),ctx=cv.getContext('2d'),stEl=document.getElementById('st');
+var W=0,H=0,DPR=1;
+var acan=document.createElement('canvas'),actx=acan.getContext('2d');
+var PL={x:24,y:24,s:200};
+var xs=[],ys=[],ins=[],STORE=120000;
+var total=0,inside=0,falling=[],burst=0,rate=280;
+var hist=[],nextRec=10,hr=.5;
+var lockT=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+var PISTR=Math.PI.toFixed(10);
+function layout(){var m=24;var s=Math.min(H-2*m,W*.52);PL.s=Math.max(120,s);PL.x=m;PL.y=(H-PL.s)/2}
+function stamp(x,y,isin){
+  var px=x*PL.s,py=(1-y)*PL.s;
+  actx.globalCompositeOperation='lighter';
+  actx.fillStyle=isin?'rgba(0,220,255,.10)':'rgba(255,60,220,.10)';
+  actx.beginPath();actx.arc(px,py,3.4,0,6.2832);actx.fill();
+  actx.fillStyle=isin?'rgba(140,248,255,.75)':'rgba(255,150,238,.75)';
+  actx.beginPath();actx.arc(px,py,1.15,0,6.2832);actx.fill();
+}
+function restamp(){actx.clearRect(0,0,PL.s,PL.s);for(var i=0;i<xs.length;i++)stamp(xs[i],ys[i],ins[i])}
+function resize(){
+  DPR=Math.min(window.devicePixelRatio||1,2);
+  W=window.innerWidth;H=window.innerHeight;
+  cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);
+  cv.style.width=W+'px';cv.style.height=H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  layout();
+  acan.width=Math.round(PL.s*DPR);acan.height=Math.round(PL.s*DPR);
+  actx.setTransform(DPR,0,0,DPR,0,0);
+  restamp();
+}
+window.addEventListener('resize',resize);resize();
+function addPoint(){
+  var x=Math.random(),y=Math.random(),isin=x*x+y*y<=1;
+  total++;if(isin)inside++;
+  if(xs.length<STORE){xs.push(x);ys.push(y);ins.push(isin)}
+  if(falling.length<500){falling.push({x:x,y:y,inz:isin,t:0,d:.3+Math.random()*.25})}
+  else stamp(x,y,isin);
+  if(total>=nextRec){hist.push({n:total,e:4*inside/total});nextRec=Math.ceil(nextRec*1.03)+1;
+    if(hist.length>3000)hist=hist.filter(function(_,i){return i%2===0})}
+}
+cv.addEventListener('pointerdown',function(){burst+=2500});
+window.addEventListener('keydown',function(e){
+  if(e.key==='r'||e.key==='R'){xs=[];ys=[];ins=[];total=0;inside=0;falling=[];burst=0;hist=[];nextRec=10;hr=.5;for(var i=0;i<lockT.length;i++)lockT[i]=0;actx.clearRect(0,0,PL.s,PL.s)}
+});
+var last=0,clock=0;
+function frame(ts){
+  var dt=Math.min(.05,(ts-last)/1000||0);last=ts;clock+=dt;
+  var want=rate*dt;
+  if(burst>0){var b=Math.min(burst,Math.ceil(6000*dt));burst-=b;want+=b}
+  var cnt=Math.floor(want)+(Math.random()<want%1?1:0);
+  for(var i=0;i<cnt;i++)addPoint();
+  ctx.fillStyle='#05060c';ctx.fillRect(0,0,W,H);
+  var X=PL.x,Y=PL.y,S=PL.s;
+  ctx.fillStyle='rgba(10,16,30,.85)';ctx.fillRect(X,Y,S,S);
+  ctx.fillStyle='rgba(0,220,255,.05)';
+  ctx.beginPath();ctx.moveTo(X,Y+S);ctx.arc(X,Y+S,S,-Math.PI/2,0,false);ctx.closePath();ctx.fill();
+  ctx.drawImage(acan,0,0,acan.width,acan.height,X,Y,S,S);
+  // raining points
+  ctx.save();ctx.globalCompositeOperation='lighter';
+  for(i=falling.length-1;i>=0;i--){
+    var f=falling[i];f.t+=dt;var k=f.t/f.d;
+    if(k>=1){stamp(f.x,f.y,f.inz);falling.splice(i,1);continue}
+    var tx=X+f.x*S,ty=Y+(1-f.y)*S;
+    var yy=(Y-30)+(ty-(Y-30))*k*k;
+    var col=f.inz?'rgba(0,230,255,':'rgba(255,80,230,';
+    ctx.strokeStyle=col+(.35*(1-k))+')';
+    ctx.beginPath();ctx.moveTo(tx,yy-16*(1-k));ctx.lineTo(tx,yy);ctx.stroke();
+    ctx.fillStyle=col+'.9)';
+    ctx.beginPath();ctx.arc(tx,yy,1.6,0,6.2832);ctx.fill();
+  }
+  ctx.restore();
+  ctx.strokeStyle='rgba(120,170,220,.5)';ctx.strokeRect(X+.5,Y+.5,S-1,S-1);
+  ctx.strokeStyle='rgba(0,255,230,.9)';ctx.lineWidth=2;
+  ctx.shadowColor='rgba(0,255,230,.8)';ctx.shadowBlur=12;
+  ctx.beginPath();ctx.arc(X,Y+S,S,-Math.PI/2,0,false);ctx.stroke();
+  ctx.shadowBlur=0;ctx.lineWidth=1;
+  ctx.fillStyle='rgba(140,175,205,.6)';ctx.font='11px ui-monospace,Menlo,monospace';ctx.textAlign='left';ctx.textBaseline='alphabetic';
+  ctx.fillText('0',X+4,Y+S-6);ctx.fillText('1',X+S-12,Y+S-6);ctx.fillText('r = 1',X+8,Y+16);
+  // ---- right column ----
+  var rx=X+S+34,rw=W-rx-24;
+  var est=total>0?4*inside/total:0;
+  if(rw>200){
+    var es=est.toFixed(8),match=0;
+    for(i=0;i<es.length;i++){if(es[i]===PISTR[i])match++;else break}
+    for(i=0;i<16;i++){if(i<match){if(!lockT[i])lockT[i]=clock}else lockT[i]=0}
+    var fs=Math.min(64,rw/8.6);
+    ctx.font='700 '+fs.toFixed(1)+'px ui-monospace,Menlo,monospace';
+    var chw=ctx.measureText('0').width;
+    var bx=rx,by=Y+fs*1.15;
+    ctx.fillStyle='rgba(0,229,255,.9)';
+    ctx.fillText('π ≈ ',bx,by);
+    var off=ctx.measureText('π ≈ ').width;
+    for(i=0;i<es.length;i++){
+      var lock=i<match,fl=lock&&(clock-lockT[i])<1;
+      ctx.fillStyle=lock?(fl?'#b6ffd2':'#4dff88'):'rgba(230,240,255,.92)';
+      if(fl){ctx.shadowColor='#4dff88';ctx.shadowBlur=16}else ctx.shadowBlur=0;
+      ctx.fillText(es[i],bx+off+i*chw,by);
+    }
+    ctx.shadowBlur=0;
+    var err=total>0?Math.abs(est-Math.PI)/Math.PI*100:100;
+    ctx.font='13px ui-monospace,Menlo,monospace';
+    ctx.fillStyle='#ffd76b';
+    ctx.fillText('error '+err.toFixed(4)+'%    true π = '+PISTR+'…',bx,by+28);
+    ctx.fillStyle='rgba(140,175,205,.85)';
+    ctx.fillText('points '+total.toLocaleString()+'   inside '+inside.toLocaleString()+'   est = 4·in/total',bx,by+48);
+    // ---- convergence graph ----
+    var gx=rx,gy1=H-46,gh=Math.min(H*.42,300),gy0=gy1-gh,gw=rw;
+    if(gy0<by+72){gy0=by+72;gh=gy1-gy0}
+    if(gh>60){
+      ctx.strokeStyle='rgba(120,170,220,.35)';ctx.strokeRect(gx+.5,gy0+.5,gw-1,gh-1);
+      var tgt=.004;
+      for(i=Math.floor(hist.length*.5);i<hist.length;i++){var d=Math.abs(hist[i].e-Math.PI);if(d>tgt)tgt=d}
+      tgt=Math.min(.5,tgt*1.6);
+      hr+=(tgt-hr)*Math.min(1,dt*1.5);
+      var yc=gy0+gh/2;
+      ctx.setLineDash([5,4]);ctx.strokeStyle='rgba(0,255,213,.55)';
+      ctx.beginPath();ctx.moveTo(gx,yc);ctx.lineTo(gx+gw,yc);ctx.stroke();ctx.setLineDash([]);
+      ctx.font='10px ui-monospace,Menlo,monospace';
+      ctx.fillStyle='rgba(0,255,213,.7)';ctx.fillText('π',gx+5,yc-4);
+      ctx.fillStyle='rgba(140,175,205,.5)';
+      ctx.fillText('π+'+hr.toFixed(3),gx+5,gy0+11);
+      ctx.fillText('π−'+hr.toFixed(3),gx+5,gy1-5);
+      if(hist.length>1){
+        var lmax=Math.log(hist[hist.length-1].n);
+        ctx.strokeStyle='#ffd76b';ctx.lineWidth=1.5;ctx.beginPath();
+        var hx=gx,hy=yc;
+        for(i=0;i<hist.length;i++){
+          hx=gx+(Math.log(hist[i].n)/lmax)*(gw-8)+4;
+          hy=yc-(hist[i].e-Math.PI)/hr*(gh/2-4);
+          hy=Math.max(gy0+2,Math.min(gy1-2,hy));
+          if(i===0)ctx.moveTo(hx,hy);else ctx.lineTo(hx,hy);
+        }
+        ctx.stroke();ctx.lineWidth=1;
+        ctx.fillStyle='#ffd76b';
+        ctx.beginPath();ctx.arc(hx,hy,3,0,6.2832);ctx.fill();
+      }
+      ctx.fillStyle='rgba(140,175,205,.55)';
+      ctx.textAlign='right';
+      ctx.fillText('estimate vs samples (log n)',gx+gw-4,gy1+13);
+      ctx.textAlign='left';
+    }
+  }
+  stEl.textContent='rate ~'+rate+'/s'+(burst>0?'  +burst '+burst:'')+'\nπ ≈ '+est.toFixed(6)+'\ntotal '+total.toLocaleString()+'  inside '+inside.toLocaleString();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
