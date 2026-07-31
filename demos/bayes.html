@@ -97,7 +97,7 @@ var R={};
 function layout(){
   var pad=16, uiEl=document.getElementById('ui');
   var uiW=uiEl.offsetWidth+24, uiH=uiEl.offsetHeight+24;
-  var wide=W>=1060&&H>=580;
+  var wide=W>=960&&H>=560;
   if(wide){
     var lx=pad+uiW-10, split=lx+(W-pad-lx)*0.615;
     R.main={x:lx,y:pad,w:split-lx-14,h:H-2*pad};
@@ -106,13 +106,19 @@ function layout(){
     R.form={x:rx,y:ry+rh*0.455,w:rw,h:rh*0.195};
     R.seq ={x:rx,y:ry+rh*0.665,w:rw,h:rh*0.335};
   }else{
-    var top=pad+uiH-10, av=Math.max(300,H-top-pad), cw=W-2*pad;
-    var seqH=clamp(av*0.24,100,180), rowH=clamp(av*0.30,118,220);
-    var mainH=Math.max(150,av-seqH-rowH-16);
-    R.main={x:pad,y:top,w:cw,h:mainH};
-    R.area={x:pad,y:top+mainH+8,w:cw*0.45,h:rowH};
-    R.form={x:pad+cw*0.47,y:top+mainH+8,w:cw*0.53,h:rowH};
-    R.seq ={x:pad,y:top+mainH+rowH+16,w:cw,h:seqH};
+    // stacked: tuck the main panel beside the overlay whenever there is room for it
+    var cw=W-2*pad, sideX=pad+uiW-10, sideW=W-pad-sideX, side=sideW>=300;
+    var mx=side?sideX:pad, mw=side?sideW:cw, mTop=side?pad:(pad+uiH-10);
+    var space=Math.max(260,H-pad-mTop);
+    var mainH=clamp(space*0.46,170,560);
+    if(side) mainH=Math.max(mainH,uiH-pad);
+    var rowTop=Math.max(mTop+mainH+10,pad+uiH-2);
+    var rest=Math.max(210,H-pad-rowTop);
+    var seqH=clamp(rest*0.40,84,170), rowH=Math.max(112,rest-seqH-10);
+    R.main={x:mx,y:mTop,w:mw,h:mainH};
+    R.area={x:pad,y:rowTop,w:cw*0.45,h:rowH};
+    R.form={x:pad+cw*0.47,y:rowTop,w:cw*0.53,h:rowH};
+    R.seq ={x:pad,y:rowTop+rowH+10,w:cw,h:seqH};
   }
   var m=R.main, lw=Math.min(180,m.w*0.29), foot=clamp(m.h*0.19,84,112);
   R.grid={x:m.x+10,y:m.y+42,w:Math.max(50,m.w-20-lw),h:Math.max(50,m.h-42-foot-8)};
@@ -168,13 +174,16 @@ function buildCluster(){
 }
 
 /* ================= stage machine ================= */
-var stage=0, sv=0, stageT=0, playing=true, flash=0, flashMsg='';
+var stage=0, sv=0, stageT=0, playing=true, flash=0, flashMsg='', pending=false;
 var DWELL=[1.4,2.2,2.8,1e9];
 var CAP=['10,000 people walk in — nobody knows yet who is sick',
          'the base rate splits them: sick (red) vs healthy (blue)',
          'the test runs — a ring marks everyone who tested POSITIVE',
          'discard the negatives. THIS is everyone holding a positive result.'];
-function setStage(s){stage=clamp(s,0,3);stageT=0;}
+function setStage(s){
+  stage=clamp(s,0,3); stageT=0;
+  if(stage===3&&pending){pending=false;flash=1;flashMsg='YOU TESTED POSITIVE.  YOU ARE ~50% LIKELY TO BE SICK.';}
+}
 function advance(){setStage(stage>=3?0:stage+1);playing=true;}
 
 /* ================= input ================= */
@@ -194,8 +203,7 @@ function onParams(){
 function classic(){
   P.p=0.01;P.se=0.99;P.sp=0.99;
   elP.value=10;elSe.value=990;elSp.value=990;
-  onParams(); EV=[]; setStage(0); playing=true;
-  flash=1; flashMsg='YOU TESTED POSITIVE.  YOU ARE ~50% LIKELY TO BE SICK.';
+  onParams(); EV=[]; flash=0; pending=true; setStage(0); playing=true;
 }
 document.getElementById('b-classic').onclick=classic;
 document.getElementById('b-replay').onclick=function(){setStage(0);playing=true;};
@@ -344,28 +352,42 @@ function drawFoot(f){
 /* ================= view 2: the area proof ================= */
 function drawArea(){
   var r=R.area; panel(r,'2 · THE AREA PROOF  ·  area = probability');
-  var p=AN.p,se=AN.se,sp=AN.sp, barH=24, gap=14;
-  var x=r.x+16, y=r.y+30, w=r.w-32, h=r.h-30-barH-gap-34;
-  if(h<34||w<60) return;
-  var wS=w*p, wH=w-wS, hTP=h*se, hFP=h*(1-sp);
+  var p=AN.p,se=AN.se,sp=AN.sp, barH=clamp(r.h*0.13,15,24), gap=14, top=30;
+  var x=r.x+16, y=r.y+top, w=r.w-32, h=r.h-top-gap-34-barH;
+  if(h<26||w<60) return;
+  var labW=clamp(w*0.26,54,94), w2=Math.max(30,w-labW-10);
+  var wS=w2*p, wH=w2-wS, hTP=h*se, hFP=h*(1-sp);
   var q=[[x,y,wS,hTP,0,'TP',p*se],[x,y+hTP,wS,h-hTP,1,'FN',p*(1-se)],
          [x+wS,y,wH,hFP,2,'FP',(1-p)*(1-sp)],[x+wS,y+hFP,wH,h-hFP,3,'TN',(1-p)*sp]];
-  for(var i=0;i<4;i++){
-    var a=q[i];
+  var i,a;
+  for(i=0;i<4;i++){
+    a=q[i];
     if(a[2]<=0.3||a[3]<=0.3) continue;
     ctx.fillStyle=rgba(GC[a[4]],(a[4]===0||a[4]===2)?0.60:0.19);
     ctx.fillRect(a[0],a[1],a[2],a[3]);
     ctx.strokeStyle=rgba(GC[a[4]],0.5); ctx.lineWidth=1;
     ctx.strokeRect(a[0]+0.5,a[1]+0.5,Math.max(0,a[2]-1),Math.max(0,a[3]-1));
-    if(a[2]>46&&a[3]>28){
-      txt(a[5],a[0]+6,a[1]+14,mono(10,'bold'),rgba(GC[a[4]],0.95));
-      txt(a[6].toFixed(4),a[0]+6,a[1]+26,mono(9.5),'rgba(200,220,240,.72)');
-    }
+  }
+  // label column with leader lines — every region stays labelled, however thin it gets
+  var lx=x+w2+10, gapY=clamp(h/4,11,26), showVal=gapY>=21, lab=[];
+  for(i=0;i<4;i++){ a=q[i]; if(a[6]>0) lab.push({g:a[4],t:a[5],v:a[6],cy:a[1]+a[3]/2,ex:a[0]+a[2],ly:a[1]+a[3]/2}); }
+  lab.sort(function(u,v){return u.cy-v.cy;});
+  for(i=1;i<lab.length;i++) if(lab[i].ly<lab[i-1].ly+gapY) lab[i].ly=lab[i-1].ly+gapY;
+  if(lab.length){
+    var ov=lab[lab.length-1].ly-(y+h);
+    if(ov>0) for(i=0;i<lab.length;i++) lab[i].ly-=ov;
+    if(lab[0].ly<y+8){var up=y+8-lab[0].ly; for(i=0;i<lab.length;i++) lab[i].ly+=up;}
+  }
+  for(i=0;i<lab.length;i++){
+    var o=lab[i];
+    ctx.strokeStyle=rgba(GC[o.g],0.45); ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(o.ex,o.cy); ctx.lineTo(lx-5,o.ly-3); ctx.stroke();
+    txt(o.t+(showVal?' '+o.v.toFixed(4):''),lx,o.ly,mono(showVal?9.5:9,'bold'),rgba(GC[o.g],0.95));
   }
   ctx.strokeStyle='rgba(255,255,255,.75)'; ctx.lineWidth=1; ctx.setLineDash([3,3]);
   ctx.beginPath(); ctx.moveTo(x+wS,y-7); ctx.lineTo(x+wS,y+h+7); ctx.stroke(); ctx.setLineDash([]);
   txt('width = base rate P(D) = '+pct(p,2),x,y+h+16,mono(9.5),'#8fa8bd');
-  txt('height = test accuracy',x+w,y+h+16,mono(9.5),'#8fa8bd','right');
+  txt('height = test accuracy',x+w2,y+h+16,mono(9.5),'#8fa8bd','right');
 
   var tp=p*se, fp=(1-p)*(1-sp), tot=tp+fp, by=y+h+gap+16, bw=w;
   txt('the positive strip, rescaled →',x,by-2,mono(9.5),'#6f8598');
@@ -453,8 +475,9 @@ function drawSeq(){
   seqPos+=(cx-seqPos)*0.18;
   ctx.save(); ctx.shadowColor='rgba(255,209,102,.9)'; ctx.shadowBlur=14;
   ctx.fillStyle='#ffd166'; ctx.beginPath(); ctx.arc(seqPos,y,5.5,0,TAU); ctx.fill(); ctx.restore();
-  txt(pct(cur,(cur>0.99||cur<0.02)?2:1),seqPos,y+40,mono(16,'bold'),'#ffd166','center');
-  txt('after '+EV.length+' test'+(EV.length===1?'':'s'),seqPos,y+53,mono(9),'#8fa8bd','center');
+  var bot=r.y+r.h;
+  if(y+40<bot-20) txt(pct(cur,(cur>0.985||cur<0.02)?2:1),seqPos,y+40,mono(16,'bold'),'#ffd166','center');
+  if(y+53<bot-20) txt('after '+EV.length+' test'+(EV.length===1?'':'s'),seqPos,y+53,mono(9),'#8fa8bd','center');
   // history + legend
   var hy=r.y+r.h-14;
   txt('evidence:',r.x+20,hy,mono(9.5),'#6f8598');
@@ -500,7 +523,7 @@ function frame(t){
   }
   bg(); drawMain(); drawArea(); drawForm(); drawSeq();
   if(flash>0){
-    flash-=dt*0.28;
+    flash-=dt*0.22;
     var a=clamp(flash*1.7,0,1)*(0.75+0.25*Math.sin(t*0.006));
     var fz=clamp(W/46,12,30);
     ctx.save(); ctx.font=mono(fz,'bold');
