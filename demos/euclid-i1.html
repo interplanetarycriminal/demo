@@ -43,7 +43,8 @@
 (function(){
 "use strict";
 var cv=document.getElementById('c'), ctx=cv.getContext('2d'), W=0,H=0,DPR=1,bg=null;
-var TAU=Math.PI*2, US=1, S=200, CX=0, CY=0, TOPY=0, BOTY=0, BANDY=0, BANDH=0, PIPY=0, GW=0;
+var TAU=Math.PI*2, US=1, S=200, Scur=-1, CX=0, CY=0, TOPY=0, BOTY=0, HY=0, HW=600;
+var BANDY=0, BANDH=0, PIPY=0, GW=0;
 var SER='"Iowan Old Style","Palatino Linotype","Book Antiqua",Palatino,Georgia,"Times New Roman",serif';
 var C_GOLD='201,163,92', C_IVORY='238,227,203', C_HOT='140,231,255', C_PT='255,212,140';
 
@@ -298,7 +299,9 @@ function build(){
       if(it.t0===undefined)it.t0=0; if(it.t1===undefined)it.t1=1;
       if(it.k==='p')ps.push(it.p);}
   }
-  for(i=0;i<ps.length;i++){cx+=ps[i].x;cy+=ps[i].y;}
+  sc.mx=.4; sc.my=.4;                              // extent, so the view can hold the figure
+  for(i=0;i<ps.length;i++){cx+=ps[i].x;cy+=ps[i].y;
+    sc.mx=Math.max(sc.mx,Math.abs(ps[i].x)); sc.my=Math.max(sc.my,Math.abs(ps[i].y));}
   if(ps.length){cx/=ps.length;cy/=ps.length;}
   for(i=0;i<sc.steps.length;i++){st=sc.steps[i];
     for(j=0;j<st.items.length;j++){it=st.items[j];
@@ -319,12 +322,23 @@ function resize(){
   ctx.setTransform(DPR,0,0,DPR,0,0);
   US=Math.max(.68,Math.min(1.12,Math.min(W,H*1.35)/900));
   BANDH=Math.round(114*US); BANDY=H-BANDH-13; PIPY=BANDY-15; BOTY=PIPY-12;
-  TOPY=Math.round(92*US);
   GW=W>=720?Math.round(Math.min(240,W*0.26)):0;
-  var ah=Math.max(70,BOTY-TOPY-16);
-  S=Math.max(40,Math.min((W-70)/3.15,ah/2.32));
-  CX=W*0.5+Math.min(64,W*0.05); CY=(TOPY+BOTY)*0.5;
+  CX=W*0.5+Math.min(64,W*0.05);
+  HY=(W<776&&H>520)?232:Math.round(30*US);         // clear the overlay panel when narrow
+  HW=(W<776&&H>520)?W-40:Math.max(260,Math.min(760,W-40,2*(CX-322)));
+  TOPY=HY+Math.round(38*US); Scur=-1;
   makeBG();
+}
+/* the heading may wrap to 1-3 lines, so the figure's room is settled per frame */
+function fit(nl,mx,my){
+  TOPY=HY+Math.round(24*US)+nl*Math.round(25*US)+Math.round(14*US);
+  var ah=Math.max(70,BOTY-TOPY-14);
+  CY=(TOPY+BOTY)*0.5;
+  var base=Math.min((W-70)/3.15,ah/2.32);
+  var need=Math.min((W-70)*.5/Math.max(mx,.1),ah*.5/Math.max(my,.1));
+  var tgt=Math.max(26,Math.min(base,need));        // shrink to hold a dragged-out figure
+  Scur=Scur<0?tgt:Scur+(tgt-Scur)*.14;
+  S=Scur;
 }
 function makeBG(){
   bg=document.createElement('canvas'); bg.width=cv.width; bg.height=cv.height;

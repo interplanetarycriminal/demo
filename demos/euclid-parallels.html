@@ -125,6 +125,7 @@ function layout(){
 function txt(s,x,y,f,c,al){ctx.font=f;ctx.fillStyle=c;ctx.textAlign=al||'left';ctx.fillText(s,x,y);}
 function txtFit(s,x,y,mw,sz,fam,c,al){          // shrink to fit rather than spill
   for(;;){ctx.font=sz.toFixed(1)+'px '+fam;if(ctx.measureText(s).width<=mw||sz<=5.5)break;sz-=.5;}
+  while(s.length>1&&ctx.measureText(s).width>mw)s=s.slice(0,-2)+'…';
   ctx.fillStyle=c;ctx.textAlign=al||'left';ctx.fillText(s,x,y);}
 function wrap(s,x,y,mw,lh,f,c,al,ms){ctx.font=f;if(!ms){ctx.fillStyle=c;ctx.textAlign=al||'left';}
   var w=s.split(' '),ln='',yy=y;

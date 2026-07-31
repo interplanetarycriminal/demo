@@ -40,7 +40,7 @@
 (function(){
 "use strict";
 var cv=document.getElementById('c'), ctx=cv.getContext('2d'), W=0,H=0,DPR=1;
-var INK='#e9dcbb', GOLD='#d9b26a', DIM='#8a7346';
+var INK='#e9dcbb';
 var CA=[255,154,77], CB=[99,216,180], CC=[124,176,255], CF=[255,233,168];
 function rgba(c,a){return 'rgba('+c[0]+','+c[1]+','+c[2]+','+a+')';}
 
@@ -192,7 +192,7 @@ function resize(){
 function poly(P){ctx.beginPath();ctx.moveTo(SX(P[0]),SY(P[0]));
   for(var i=1;i<P.length;i++)ctx.lineTo(SX(P[i]),SY(P[i]));ctx.closePath();}
 function fp(P,c,a){if(a<=.002)return;ctx.fillStyle=rgba(c,a);poly(P);ctx.fill();}
-function sp(P,c,a,w,d){if(a<=.002)return;ctx.save();ctx.strokeStyle=rgba(c,a);ctx.lineWidth=w;
+function op(P,c,a,w,d){if(a<=.002)return;ctx.save();ctx.strokeStyle=rgba(c,a);ctx.lineWidth=w;
   ctx.lineJoin='round';if(d)ctx.setLineDash(d);poly(P);ctx.stroke();ctx.restore();}
 function seg(p,q,c,a,w,d){if(a<=.002)return;ctx.save();ctx.strokeStyle=rgba(c,a);ctx.lineWidth=w;
   if(d)ctx.setLineDash(d);ctx.beginPath();ctx.moveTo(SX(p),SY(p));ctx.lineTo(SX(q),SY(q));ctx.stroke();ctx.restore();}
@@ -254,12 +254,12 @@ function drawEuclid(){
 
   /* hypotenuse square + the two rectangles */
   var sqc=shape({q:[G.B,G.D,G.E,G.C],d1:{x:0,y:0},pv:G.B,ang:0,d2:{x:0,y:0}},0,0,grow);
-  fp(sqc,CC,.10); sp(sqc,CC,.55,2);
+  fp(sqc,CC,.10); op(sqc,CC,.55,2);
   if(pv>0.01){
     fp(G.r1,CA,r1a*pv*(1+fl*(st.fl===1?.7:0)));
     fp(G.r2,CB,r2a*pv*(1+fl*(st.fl===2?.7:0)));
-    sp(G.r1,CA,.5*pv+ (st.fl===1?fl*.5:0),1.4);
-    sp(G.r2,CB,.5*pv+ (st.fl===2?fl*.5:0),1.4);
+    op(G.r1,CA,.5*pv+ (st.fl===1?fl*.5:0),1.4);
+    op(G.r2,CB,.5*pv+ (st.fl===2?fl*.5:0),1.4);
     seg(G.A,G.L,CF,.55*pv,1.5,[6,5]);
     seg(G.A,G.M,CF,.75*pv,1.7);
     dot(G.M,3,CF,.8*pv); dot(G.L,3,CF,.6*pv);
@@ -283,16 +283,16 @@ function drawEuclid(){
     var q=shape(leg,cfg[0],cfg[1]?e:1,grow), tri=[q[0],q[1],q[2]];
     var dimf=(st.hi===0||st.hi===k+1)?1:.34;
     var pulse=(st.fl===k+1?fl:0);
-    fp(q,col,.16*dimf); sp(q,col,.62*dimf+pulse*.38,1.6);
-    if(si>=(k?8:3)){ fp(tri,col,(.30+pulse*.35)*dimf); sp(tri,col,.9*dimf,2.1); }
+    fp(q,col,.16*dimf); op(q,col,.62*dimf+pulse*.38,1.6);
+    if(si>=(k?8:3)){ fp(tri,col,(.30+pulse*.35)*dimf); op(tri,col,.9*dimf,2.1); }
     areaLabel(q,(k?'b':'a')+'² = '+fmt(k?PB*PB:PA*PA),rgba(col,.85*dimf),1,13);
   }
   /* the triangle itself */
   var T=[G.A,G.B,G.C];
-  fp(T,[233,220,187],.07); sp(T,[240,214,160],.95,2.4);
+  fp(T,[233,220,187],.07); op(T,[240,214,160],.95,2.4);
   var ua={x:(G.B.x-G.A.x)/G.a,y:(G.B.y-G.A.y)/G.a}, ub={x:(G.C.x-G.A.x)/G.b,y:(G.C.y-G.A.y)/G.b};
   var rr=Math.min(14/view.s,G.a*.22,G.b*.22);
-  sp([{x:G.A.x+ua.x*rr,y:G.A.y+ua.y*rr},
+  op([{x:G.A.x+ua.x*rr,y:G.A.y+ua.y*rr},
       {x:G.A.x+(ua.x+ub.x)*rr,y:G.A.y+(ua.y+ub.y)*rr},
       {x:G.A.x+ub.x*rr,y:G.A.y+ub.y*rr}],[240,214,160],.7,1.4);
   /* rectangle area readouts */
@@ -326,17 +326,17 @@ function handles(){return [G.A,{x:G.A.x/2,y:G.A.y/2},{x:(G.A.x+G.C.x)/2,y:(G.A.y
 function drawDissect(){
   var st=DS[si], e=ease(sp), d=dissect(PA,PB), i;
   var mv=st.mv?(si===1?e:1):0, fin=st.fin?(si===2?e:1):0;
-  fp(d.big,[233,220,187],.05); sp(d.big,[240,214,160],.7,2.2);
-  if(mv<1){ fp(d.hyp,CC,.26*(1-mv)); sp(d.hyp,CC,.85*(1-mv),2);
+  fp(d.big,[233,220,187],.05); op(d.big,[240,214,160],.7,2.2);
+  if(mv<1){ fp(d.hyp,CC,.26*(1-mv)); op(d.hyp,CC,.85*(1-mv),2);
     areaLabel(d.hyp,'c² = '+fmt(G.c*G.c),rgba(CC,.95),1-mv,15); }
-  if(fin>0){ fp(d.sa,CA,.26*fin); sp(d.sa,CA,.85*fin,2);
-    fp(d.sb,CB,.26*fin); sp(d.sb,CB,.85*fin,2);
+  if(fin>0){ fp(d.sa,CA,.26*fin); op(d.sa,CA,.85*fin,2);
+    fp(d.sb,CB,.26*fin); op(d.sb,CB,.85*fin,2);
     areaLabel(d.sa,'a² = '+fmt(PA*PA),rgba(CA,.95),fin,14);
     areaLabel(d.sb,'b² = '+fmt(PB*PB),rgba(CB,.95),fin,14); }
   for(i=0;i<4;i++){
     var t=clamp((mv-i*0.06)/(1-3*0.06),0,1), v=d.dv[i], P=[];
     for(var j=0;j<3;j++)P.push({x:d.T[i][j].x+v.x*t, y:d.T[i][j].y+v.y*t});
-    fp(P,[233,220,187],.13); sp(P,[240,214,160],.8,1.8);
+    fp(P,[233,220,187],.13); op(P,[240,214,160],.8,1.8);
   }
   if(st.fin){
     var y=H*0.16;
@@ -414,8 +414,8 @@ function frame(now){
 
 /* ================= input ================= */
 function pbtn(){document.getElementById('b-play').textContent=auto?'[space] pause':'[space] play';}
-function goto(i){var A=scene?DS:ST; si=clamp(i,0,A.length-1); sp=0; run=true;}
-function next(){var A=scene?DS:ST; if(si<A.length-1)goto(si+1); else {sp=1;run=false;}}
+function jump(i){var A=scene?DS:ST; si=clamp(i,0,A.length-1); sp=0; run=true;}
+function next(){var A=scene?DS:ST; if(si<A.length-1)jump(si+1); else {sp=1;run=false;}}
 function prev(){if(si>0){si--;sp=1;run=false;}else{sp=0;run=true;}}
 function replay(){si=0;sp=0;run=true;auto=true;pbtn();}
 function play(){auto=!auto; if(auto){var A=scene?DS:ST;
