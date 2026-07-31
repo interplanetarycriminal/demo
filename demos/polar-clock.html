@@ -1,0 +1,84 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Polar Clock</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#04040c}
+  canvas{display:block;position:fixed;inset:0}
+  #ui{position:fixed;top:12px;left:12px;z-index:10;font:12px/1.6 ui-monospace,Menlo,monospace;
+      color:#adf;background:rgba(5,8,25,.5);padding:10px 14px;border:1px solid rgba(140,180,255,.25);
+      border-radius:10px;backdrop-filter:blur(6px)}
+  #ui b{color:#fff;letter-spacing:.12em}#ui a{color:#9cf;text-decoration:none}
+  #ui a:hover{text-decoration:underline}
+</style>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div id="ui"><b>POLAR CLOCK</b><br>live time as glowing arcs · move mouse to tilt<br><a href="index.html">← gallery</a></div>
+<canvas id="c"></canvas>
+<script>
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+let W,H,DPR;
+function resize(){DPR=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;
+  cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);}
+addEventListener('resize',resize);resize();
+let tx=0,ty=0,cxr=0,cyr=0;
+addEventListener('pointermove',e=>{tx=(e.clientX/W-.5);ty=(e.clientY/H-.5);});
+
+const sparks=[];
+function arc(r,w,frac,hue,label,val){
+  const a0=-Math.PI/2, a1=a0+frac*Math.PI*2;
+  // track
+  ctx.strokeStyle=`hsla(${hue},60%,50%,.12)`;ctx.lineWidth=w;ctx.lineCap='round';
+  ctx.beginPath();ctx.arc(0,0,r,0,Math.PI*2);ctx.stroke();
+  // glow pass + core pass
+  for(const[lw,al,li]of[[w+10,.12,55],[w,.9,60]]){
+    ctx.strokeStyle=`hsla(${hue},100%,${li}%,${al})`;ctx.lineWidth=lw;
+    ctx.beginPath();ctx.arc(0,0,r,a0,a1);ctx.stroke();
+  }
+  // head dot + spark emission
+  const hx=Math.cos(a1)*r, hy=Math.sin(a1)*r;
+  ctx.fillStyle=`hsla(${hue},100%,85%,1)`;
+  ctx.beginPath();ctx.arc(hx,hy,w*.55,0,7);ctx.fill();
+  if(Math.random()<.35)sparks.push({x:hx,y:hy,vx:(Math.random()-.5)*1.2,vy:(Math.random()-.5)*1.2,life:1,hue});
+  // label
+  ctx.fillStyle=`hsla(${hue},80%,75%,.9)`;
+  ctx.font='600 12px ui-monospace,monospace';ctx.textAlign='left';
+  ctx.fillText(`${label} ${val}`, 8, -r+w*0.5-4);
+}
+function frame(){
+  cxr+=(tx-cxr)*.06; cyr+=(ty-cyr)*.06;
+  ctx.fillStyle='rgba(4,4,12,.35)';ctx.fillRect(0,0,W,H);
+  const n=new Date(), ms=n.getMilliseconds(),
+        s=n.getSeconds()+ms/1000,
+        m=n.getMinutes()+s/60,
+        h=(n.getHours()%12)+m/60,
+        dow=(n.getDay()+6)%7 + (n.getHours()+m/60)/24,
+        dom=n.getDate()-1 + (n.getHours())/24,
+        dim=new Date(n.getFullYear(),n.getMonth()+1,0).getDate(),
+        mo=n.getMonth()+dom/dim;
+  ctx.save();
+  ctx.translate(W/2,H/2);
+  ctx.transform(1,cyr*.35,cxr*.35,1,0,0);            // playful tilt shear
+  const R=Math.min(W,H)*0.36;
+  arc(R*1.00,10, (mo)/12,      265,'MONTH', n.toLocaleString('en',{month:'short'}));
+  arc(R*0.84,10, dom/dim,      220,'DAY',   n.getDate());
+  arc(R*0.68,10, dow/7,        190,'WEEK',  ['MON','TUE','WED','THU','FRI','SAT','SUN'][(n.getDay()+6)%7]);
+  arc(R*0.52,12, h/12,         160,'HOUR',  n.getHours());
+  arc(R*0.36,12, m/60,         120,'MIN',   String(n.getMinutes()).padStart(2,'0'));
+  arc(R*0.20,14, s/60,          45,'SEC',   String(n.getSeconds()).padStart(2,'0'));
+  // center digital
+  ctx.fillStyle='#fff';ctx.textAlign='center';ctx.font='700 22px ui-monospace,monospace';
+  ctx.fillText(`${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}`,0,7);
+  // sparks
+  ctx.globalCompositeOperation='lighter';
+  for(let i=sparks.length-1;i>=0;i--){
+    const p=sparks[i];p.x+=p.vx;p.y+=p.vy;p.life-=.02;
+    if(p.life<=0){sparks.splice(i,1);continue;}
+    ctx.fillStyle=`hsla(${p.hue},100%,75%,${p.life})`;
+    ctx.beginPath();ctx.arc(p.x,p.y,1.6,0,7);ctx.fill();
+  }
+  ctx.globalCompositeOperation='source-over';
+  ctx.restore();
+  requestAnimationFrame(frame);
+}
+ctx.fillStyle='#04040c';ctx.fillRect(0,0,W,H);
+frame();
+</script>
