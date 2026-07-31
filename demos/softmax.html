@@ -1,0 +1,271 @@
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<title>Softmax &amp; Sampling</title>
+<style>
+  html,body{margin:0;height:100%;background:#070510;overflow:hidden;font-family:ui-monospace,Menlo,Consolas,monospace}
+  canvas{display:block;position:fixed;inset:0;cursor:crosshair}
+  #ui{position:fixed;top:14px;left:14px;z-index:10;background:rgba(10,8,22,.74);border:1px solid rgba(200,140,255,.28);
+      border-radius:10px;padding:12px 14px;color:#ecdcff;font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;
+      max-width:380px;backdrop-filter:blur(6px)}
+  #ui h1{margin:0 0 6px;font-size:15px;letter-spacing:.16em;color:#c78bff;text-transform:uppercase}
+  #ui p{margin:0 0 8px;color:#9c8ab8}
+  .hint{color:#8073a0}
+  #ui a{color:#5df0ff;text-decoration:none}
+  #ui a:hover{text-decoration:underline}
+  input[type=range]{width:100%;accent-color:#c78bff;margin:2px 0 4px}
+  .stat{color:#5df0ff}
+  .on{color:#7dffa8}.off{color:#5a4d72}
+</style>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>Softmax &amp; Sampling</h1>
+  <p>Softmax turns raw scores into probabilities, and temperature decides how boldly the model gambles.</p>
+  <label class="hint">temperature <span class="stat" id="tv">1.00</span></label>
+  <input type="range" id="temp" min="0.1" max="3" step="0.01" value="1">
+  <label class="hint">sampling rate <span class="stat" id="rv">12/s</span></label>
+  <input type="range" id="rate" min="1" max="60" step="1" value="12">
+  <div class="hint">drag bars · [A] auto-animate · [K] top-k=3 · [P] top-p=0.9 · [R] reset</div>
+  <div class="hint">auto <span id="fA" class="off">off</span> · top-k <span id="fK" class="off">off</span>
+     · top-p <span id="fP" class="off">off</span></div>
+  <div class="hint">samples <span class="stat" id="ns">0</span> · argmax <span class="stat" id="am">—</span>
+     · p_max <span class="stat" id="pm">—</span> · entropy <span class="stat" id="en">—</span></div>
+  <div class="hint">L1 error to true p: <span class="stat" id="er">—</span></div>
+  <p class="hint" style="margin-top:8px">p<sub>i</sub> = exp(z<sub>i</sub>/T) / Σ<sub>j</sub> exp(z<sub>j</sub>/T) — the last step of every LLM forward pass.</p>
+  <a href="index.html">← gallery</a>
+</div>
+<script>
+(function(){
+var c=document.getElementById('c'),x=c.getContext('2d');
+var W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;
+  c.width=W*DPR;c.height=H*DPR;x.setTransform(DPR,0,0,DPR,0,0);}
+addEventListener('resize',resize);
+
+var NAMES=['the','cat','sat','on','mat','sky','ran','dog','and','why'];
+var N=NAMES.length;
+var Z=[],P=[],MASK=[],counts=[],total=0,chips=[];
+var flags={auto:false,k:false,p:false};
+var K=3,TOPP=0.9;
+
+function reset(){
+  Z=[];for(var i=0;i<N;i++)Z.push(2.6*Math.sin(i*1.9+0.7)+1.2*Math.cos(i*0.6));
+  counts=[];for(var i2=0;i2<N;i2++)counts.push(0);
+  total=0;chips=[];
+}
+reset();
+
+function softmax(){
+  var T=parseFloat(document.getElementById('temp').value)||1;
+  var mx=-1e9;for(var i=0;i<N;i++)if(Z[i]>mx)mx=Z[i];
+  var e=[],s=0;
+  for(var i2=0;i2<N;i2++){var v=Math.exp((Z[i2]-mx)/T);e.push(v);s+=v;}
+  var base=[];for(var i3=0;i3<N;i3++)base.push(e[i3]/s);
+
+  MASK=[];for(var i4=0;i4<N;i4++)MASK.push(true);
+  var order=base.map(function(v,i){return[v,i]}).sort(function(a,b){return b[0]-a[0]});
+  if(flags.k){for(var q=K;q<N;q++)MASK[order[q][1]]=false;}
+  if(flags.p){
+    var cum=0,cut=N;
+    for(var q2=0;q2<N;q2++){cum+=base[order[q2][1]];if(cum>=TOPP){cut=q2+1;break;}}
+    for(var q3=cut;q3<N;q3++)MASK[order[q3][1]]=false;
+  }
+  // renormalize over kept set
+  var ks=0;for(var i5=0;i5<N;i5++)if(MASK[i5])ks+=base[i5];
+  if(ks<=0){for(var i6=0;i6<N;i6++)MASK[i6]=true;ks=1;}
+  P=[];for(var i7=0;i7<N;i7++)P.push(MASK[i7]?base[i7]/ks:0);
+}
+
+function sample(){
+  var r=Math.random(),acc=0;
+  for(var i=0;i<N;i++){acc+=P[i];if(r<=acc)return i;}
+  return N-1;
+}
+
+var drag=-1,mouse={x:-999,y:-999};
+function geom(){
+  var pad=Math.max(70,W*0.05);
+  var right=Math.min(360,W*0.30);
+  var left=pad+280;  // clear of overlay
+  var bw=Math.max(120,W-left-right-pad);
+  return {lx:left,bw:bw,rx:W-right-pad*0.4,rw:right,
+          zTop:H*0.16,zH:H*0.24,pTop:H*0.52,pH:H*0.26};
+}
+function barX(g,i){var s=g.bw/N;return {x:g.lx+i*s+s*0.14,w:s*0.72};}
+
+function pt(e){var r=c.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top};}
+c.addEventListener('mousedown',function(e){var m=pt(e),g=geom();mouse=m;
+  for(var i=0;i<N;i++){var b=barX(g,i);
+    if(m.x>=b.x-4&&m.x<=b.x+b.w+4&&m.y>g.zTop-20&&m.y<g.zTop+g.zH+30){drag=i;setZ(i,m.y,g);flags.auto=false;upd();break;}}});
+addEventListener('mousemove',function(e){var m=pt(e);mouse=m;if(drag>=0)setZ(drag,m.y,geom());});
+addEventListener('mouseup',function(){drag=-1;});
+function setZ(i,my,g){
+  var mid=g.zTop+g.zH/2;
+  Z[i]=Math.max(-6,Math.min(6,(mid-my)/(g.zH/2)*6));
+}
+addEventListener('keydown',function(e){
+  var k=e.key.toLowerCase();
+  if(k==='a'){flags.auto=!flags.auto;}
+  else if(k==='k'){flags.k=!flags.k;counts=counts.map(function(){return 0});total=0;chips=[];}
+  else if(k==='p'){flags.p=!flags.p;counts=counts.map(function(){return 0});total=0;chips=[];}
+  else if(k==='r'){reset();}
+  upd();
+});
+function upd(){
+  document.getElementById('fA').textContent=flags.auto?'on':'off';
+  document.getElementById('fA').className=flags.auto?'on':'off';
+  document.getElementById('fK').textContent=flags.k?'on (k=3)':'off';
+  document.getElementById('fK').className=flags.k?'on':'off';
+  document.getElementById('fP').textContent=flags.p?'on (p=0.9)':'off';
+  document.getElementById('fP').className=flags.p?'on':'off';
+}
+upd();
+
+function rr(X,Y,w,h,r){r=Math.min(r,w/2,Math.abs(h)/2);x.beginPath();
+  x.moveTo(X+r,Y);x.lineTo(X+w-r,Y);x.quadraticCurveTo(X+w,Y,X+w,Y+r);
+  x.lineTo(X+w,Y+h-r);x.quadraticCurveTo(X+w,Y+h,X+w-r,Y+h);x.lineTo(X+r,Y+h);
+  x.quadraticCurveTo(X,Y+h,X,Y+h-r);x.lineTo(X,Y+r);x.quadraticCurveTo(X,Y,X+r,Y);x.closePath();}
+
+var t0=performance.now(),acc=0,phase=0;
+function frame(now){
+  var dt=Math.min(0.05,(now-t0)/1000);t0=now;phase+=dt;
+  if(flags.auto&&drag<0){for(var i=0;i<N;i++)Z[i]=3.4*Math.sin(phase*0.55+i*1.15)+1.1*Math.cos(phase*0.31+i*2.2);}
+  softmax();
+  var g=geom();
+
+  x.fillStyle='#070510';x.fillRect(0,0,W,H);
+  var bg=x.createRadialGradient(W*0.5,H*0.5,0,W*0.5,H*0.5,Math.max(W,H)*0.7);
+  bg.addColorStop(0,'rgba(80,30,150,.16)');bg.addColorStop(1,'rgba(0,0,0,0)');
+  x.fillStyle=bg;x.fillRect(0,0,W,H);
+
+  // sampling
+  var rate=parseFloat(document.getElementById('rate').value)||12;
+  acc+=dt*rate;
+  while(acc>=1){acc-=1;var s=sample();counts[s]++;total++;
+    chips.push({i:s,x:g.rx+g.rw*0.5,y:H*0.20,vy:0,life:1,t:NAMES[s]});
+    if(chips.length>60)chips.shift();}
+
+  x.textAlign='center';x.textBaseline='middle';
+
+  // ---- logits row ----
+  var zMid=g.zTop+g.zH/2;
+  x.strokeStyle='rgba(160,140,220,.28)';x.lineWidth=1;
+  x.beginPath();x.moveTo(g.lx-10,zMid);x.lineTo(g.lx+g.bw+10,zMid);x.stroke();
+  x.textAlign='left';x.font='11px ui-monospace,monospace';x.fillStyle='rgba(180,160,225,.75)';
+  x.fillText('LOGITS  z  (drag me)',g.lx-8,g.zTop-16);
+  x.textAlign='center';
+  for(var i2=0;i2<N;i2++){
+    var b=barX(g,i2),h=Z[i2]/6*(g.zH/2),on=MASK[i2];
+    var col=on?'199,139,255':'90,77,114';
+    var y0=zMid,y1=zMid-h;
+    rr(b.x,Math.min(y0,y1),b.w,Math.abs(h)||1,4);
+    x.fillStyle='rgba('+col+',.30)';x.fill();
+    x.strokeStyle='rgba('+col+',.95)';x.lineWidth=1.4;
+    x.shadowColor='rgba('+col+',.9)';x.shadowBlur=on?14:0;x.stroke();x.shadowBlur=0;
+    // handle
+    x.beginPath();x.arc(b.x+b.w/2,y1,4,0,6.2832);
+    x.fillStyle=on?'#e9d0ff':'#5a4d72';x.fill();
+    x.font='11px ui-monospace,monospace';
+    x.fillStyle='rgba(200,180,240,'+(on?.9:.35)+')';
+    x.fillText(Z[i2].toFixed(1),b.x+b.w/2,y1+(h>=0?-14:14));
+  }
+
+  // ---- probabilities row ----
+  var pBase=g.pTop+g.pH;
+  x.textAlign='left';x.font='11px ui-monospace,monospace';x.fillStyle='rgba(120,235,255,.8)';
+  x.fillText('PROBABILITIES  p = exp(z/T) / Σ exp(z/T)',g.lx-8,g.pTop-16);
+  x.textAlign='center';
+  x.strokeStyle='rgba(120,235,255,.22)';x.beginPath();x.moveTo(g.lx-10,pBase);x.lineTo(g.lx+g.bw+10,pBase);x.stroke();
+  var pmax=0;for(var q=0;q<N;q++)if(P[q]>pmax)pmax=P[q];
+  for(var i3=0;i3<N;i3++){
+    var b3=barX(g,i3),on3=MASK[i3];
+    var h3=Math.max(1,P[i3]*g.pH/Math.max(0.12,1));
+    h3=Math.max(1,P[i3]*g.pH);
+    var col3=on3?'93,240,255':'70,70,95';
+    rr(b3.x,pBase-h3,b3.w,h3,4);
+    var gr=x.createLinearGradient(0,pBase-h3,0,pBase);
+    if(on3){gr.addColorStop(0,'rgba(93,240,255,.85)');gr.addColorStop(1,'rgba(93,240,255,.18)');}
+    else{gr.addColorStop(0,'rgba(80,80,110,.4)');gr.addColorStop(1,'rgba(80,80,110,.1)');}
+    x.fillStyle=gr;x.shadowColor='rgba('+col3+',.8)';x.shadowBlur=on3?16:0;x.fill();x.shadowBlur=0;
+    x.strokeStyle='rgba('+col3+',.85)';x.lineWidth=1;x.stroke();
+    // empirical marker
+    if(total>0){
+      var f=counts[i3]/total,fy=pBase-f*g.pH;
+      x.beginPath();x.moveTo(b3.x-2,fy);x.lineTo(b3.x+b3.w+2,fy);
+      x.strokeStyle='#ffb45d';x.lineWidth=2;x.shadowColor='#ffb45d';x.shadowBlur=8;x.stroke();x.shadowBlur=0;
+    }
+    x.font='12px ui-monospace,monospace';
+    x.fillStyle=on3?'#d9f7ff':'rgba(150,150,180,.5)';
+    x.fillText(NAMES[i3],b3.x+b3.w/2,pBase+18);
+    x.font='10px ui-monospace,monospace';
+    x.fillStyle=on3?'rgba(93,240,255,.9)':'rgba(140,140,170,.5)';
+    x.fillText((P[i3]*100).toFixed(1)+'%',b3.x+b3.w/2,pBase-h3-9);
+  }
+  x.textAlign='left';x.font='10px ui-monospace,monospace';x.fillStyle='#ffb45d';
+  x.fillText('— orange line = observed sample frequency',g.lx-8,pBase+42);
+
+  // ---- sampler panel ----
+  var rx=g.rx,rw=g.rw;
+  x.textAlign='left';x.font='11px ui-monospace,monospace';x.fillStyle='rgba(199,139,255,.85)';
+  x.fillText('SAMPLER  n='+total,rx,g.zTop-16);
+  x.strokeStyle='rgba(199,139,255,.18)';x.lineWidth=1;
+  x.strokeRect(rx,g.zTop-6,rw,H-g.zTop-40);
+
+  // falling chips
+  for(var ci=chips.length-1;ci>=0;ci--){
+    var ch=chips[ci];
+    ch.vy+=dt*260;ch.y+=ch.vy*dt;ch.life-=dt*0.55;
+    if(ch.life<=0||ch.y>H-70){chips.splice(ci,1);continue;}
+    var a=Math.min(1,ch.life);
+    x.font='13px ui-monospace,monospace';x.textAlign='center';
+    var tw=x.measureText(ch.t).width+16;
+    rr(rx+rw/2-tw/2,ch.y-11,tw,22,6);
+    x.fillStyle='rgba(199,139,255,'+(a*0.2).toFixed(3)+')';x.fill();
+    x.strokeStyle='rgba(199,139,255,'+a.toFixed(3)+')';x.lineWidth=1;
+    x.shadowColor='#c78bff';x.shadowBlur=12*a;x.stroke();x.shadowBlur=0;
+    x.fillStyle='rgba(240,224,255,'+a.toFixed(3)+')';x.fillText(ch.t,rx+rw/2,ch.y+1);
+  }
+
+  // rolling histogram
+  var hTop=H*0.52,hH=H*0.30,rowH=Math.min(22,hH/N);
+  x.textAlign='left';x.font='10px ui-monospace,monospace';x.fillStyle='rgba(160,140,210,.7)';
+  x.fillText('frequency → converges to p',rx,hTop-8);
+  var cmax=1;for(var q2=0;q2<N;q2++)if(counts[q2]>cmax)cmax=counts[q2];
+  var err=0;
+  for(var i4=0;i4<N;i4++){
+    var y4=hTop+i4*rowH,f4=total?counts[i4]/total:0;
+    err+=Math.abs(f4-P[i4]);
+    var bw4=(rw-58)*(counts[i4]/cmax);
+    x.fillStyle='rgba(255,255,255,.05)';x.fillRect(rx+40,y4,rw-58,rowH-4);
+    var gr4=x.createLinearGradient(rx+40,0,rx+40+Math.max(1,bw4),0);
+    gr4.addColorStop(0,'rgba(199,139,255,.85)');gr4.addColorStop(1,'rgba(93,240,255,.85)');
+    x.fillStyle=gr4;x.shadowColor='#c78bff';x.shadowBlur=8;
+    x.fillRect(rx+40,y4,Math.max(1,bw4),rowH-4);x.shadowBlur=0;
+    // true p tick
+    var tx4=rx+40+(rw-58)*(P[i4]*total/cmax);
+    if(total>0&&tx4<rx+rw-16){x.fillStyle='#7dffa8';x.fillRect(tx4-1,y4-1,2,rowH-2);}
+    x.fillStyle=MASK[i4]?'rgba(220,205,250,.9)':'rgba(120,115,145,.5)';
+    x.font='11px ui-monospace,monospace';x.textAlign='right';
+    x.fillText(NAMES[i4],rx+34,y4+rowH/2);
+    x.textAlign='left';
+  }
+  x.fillStyle='rgba(125,255,168,.75)';x.font='10px ui-monospace,monospace';
+  x.fillText('| green tick = exact probability',rx,hTop+N*rowH+12);
+
+  // stats
+  var am=0;for(var q3=1;q3<N;q3++)if(P[q3]>P[am])am=q3;
+  var ent=0;for(var q4=0;q4<N;q4++)if(P[q4]>1e-9)ent-=P[q4]*Math.log2(P[q4]);
+  document.getElementById('ns').textContent=total;
+  document.getElementById('am').textContent=NAMES[am];
+  document.getElementById('pm').textContent=(P[am]*100).toFixed(1)+'%';
+  document.getElementById('en').textContent=ent.toFixed(2)+' bits';
+  document.getElementById('er').textContent=total?err.toFixed(3):'—';
+  requestAnimationFrame(frame);
+}
+document.getElementById('temp').addEventListener('input',function(){
+  document.getElementById('tv').textContent=parseFloat(this.value).toFixed(2);
+  counts=counts.map(function(){return 0});total=0;chips=[];});
+document.getElementById('rate').addEventListener('input',function(){
+  document.getElementById('rv').textContent=this.value+'/s';});
+resize();
+requestAnimationFrame(frame);
+})();
+</script>

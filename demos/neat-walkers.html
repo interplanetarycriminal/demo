@@ -1,0 +1,282 @@
+<meta charset="utf-8">
+<title>Evolving Hoppers — Genetic Algorithm</title>
+<style>
+  html,body{margin:0;height:100%;background:#05070d;overflow:hidden}
+  canvas{display:block;position:fixed;inset:0}
+  #ui{position:fixed;top:12px;left:12px;z-index:10;max-width:340px;
+      font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#c9e8ff;
+      background:rgba(5,10,20,.62);border:1px solid rgba(120,255,200,.2);
+      border-radius:8px;padding:10px 12px;backdrop-filter:blur(4px)}
+  #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.14em;color:#8affc1;text-transform:uppercase}
+  #ui p{margin:0 0 7px;color:#7d9bb0}
+  #ui .k{color:#ffd36e}
+  #ui .s{color:#8affc1}
+  #ui a{color:#8affc1;text-decoration:none;border-bottom:1px solid rgba(138,255,193,.35)}
+  #ui table{border-collapse:collapse;margin:2px 0 6px}
+  #ui td{padding:0 8px 0 0;color:#6f8ea3}
+  #ui td.v{color:#eaffff}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>Evolving Hoppers</h1>
+  <p>30 two-blob creatures with a sinusoidal muscle genome are selected and mutated each round until they learn to bounce rightward.</p>
+  <table>
+    <tr><td>generation</td><td class="v" id="gen">1</td></tr>
+    <tr><td>round time</td><td class="v" id="t">0.0s</td></tr>
+    <tr><td>leader now</td><td class="v" id="lead">0.0 m</td></tr>
+    <tr><td>best ever</td><td class="v s" id="best">0.0 m</td></tr>
+    <tr><td>gen average</td><td class="v" id="avg">0.0 m</td></tr>
+    <tr><td>mutation σ</td><td class="v" id="mu">0.20</td></tr>
+  </table>
+  <p><span class="k">F</span> fast-forward · <span class="k">R</span> restart evolution</p>
+  <a href="index.html">← gallery</a>
+</div>
+<script>
+(function(){
+"use strict";
+var cv=document.getElementById('c'),ctx=cv.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  W=window.innerWidth;H=window.innerHeight;
+  cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);
+  cv.style.width=W+'px';cv.style.height=H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize',resize);resize();
+
+var POP=30, ROUND=6.0, DT=1/60, G=1400, MUT=0.20;
+var groundY=0, PPM=26; // pixels per "metre"
+function layout(){ groundY=H*0.74; }
+layout();
+window.addEventListener('resize',layout);
+
+var pop=[], gen=1, t=0, bestEver=0, genAvg=0, history=[], cam=0, fast=false;
+
+function rnd(a,b){return a+Math.random()*(b-a);}
+function gauss(){var u=1-Math.random(),v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(6.2832*v);}
+
+function randomGenome(){
+  return {
+    amp:rnd(0.25,1.0),      // muscle contraction amplitude (fraction of rest length)
+    freq:rnd(1.0,5.0),      // Hz
+    phase:rnd(0,6.2832),    // phase offset
+    rest:rnd(34,64),        // rest length px
+    lean:rnd(-0.7,0.7),     // asymmetry: forward tilt of the muscle axis
+    stiff:rnd(240,700),     // spring constant
+    fricA:rnd(0.25,0.95),   // per-blob ground friction
+    fricB:rnd(0.25,0.95)
+  };
+}
+function mutate(g){
+  function j(v,s,lo,hi){v+=gauss()*s*MUT;return v<lo?lo:(v>hi?hi:v);}
+  return {
+    amp:j(g.amp,0.35,0.05,1.15),
+    freq:j(g.freq,1.6,0.4,7.0),
+    phase:(g.phase+gauss()*1.4*MUT+6.2832)%6.2832,
+    rest:j(g.rest,16,20,80),
+    lean:j(g.lean,0.4,-1.2,1.2),
+    stiff:j(g.stiff,180,120,900),
+    fricA:j(g.fricA,0.3,0.05,1),
+    fricB:j(g.fricB,0.3,0.05,1)
+  };
+}
+function makeCreature(g){
+  var r1=7+g.rest*0.10, r2=6+g.rest*0.08;
+  return {
+    g:g,
+    a:{x:0,y:groundY-r1-g.rest*0.35,vx:0,vy:0,r:r1,m:1.5},
+    b:{x:g.rest*0.7,y:groundY-r2,vx:0,vy:0,r:r2,m:1.0},
+    fit:0,alive:true,hue:rnd(150,205)
+  };
+}
+function initPop(){
+  pop=[];
+  for(var i=0;i<POP;i++) pop.push(makeCreature(randomGenome()));
+  gen=1;t=0;bestEver=0;history=[];cam=0;
+}
+function resetBodies(){
+  for(var i=0;i<pop.length;i++){
+    var c=pop[i],g=c.g;
+    var r1=7+g.rest*0.10,r2=6+g.rest*0.08;
+    c.a={x:0,y:groundY-r1-g.rest*0.35,vx:0,vy:0,r:r1,m:1.5};
+    c.b={x:g.rest*0.7,y:groundY-r2,vx:0,vy:0,r:r2,m:1.0};
+    c.fit=0;
+  }
+}
+
+function integrate(c,time){
+  var g=c.g,a=c.a,b=c.b;
+  // target muscle length on a sinusoid — the genome
+  var L=g.rest*(1-g.amp*0.45*(1+Math.sin(time*6.2832*g.freq+g.phase))*0.5);
+  var dx=b.x-a.x, dy=b.y-a.y;
+  var d=Math.sqrt(dx*dx+dy*dy)||1e-6;
+  var nx=dx/d, ny=dy/d;
+  // lean rotates the spring axis so the push has a horizontal component
+  var cs=Math.cos(g.lean),sn=Math.sin(g.lean);
+  var ax=nx*cs-ny*sn, ay=nx*sn+ny*cs;
+  var f=g.stiff*(d-L);
+  var damp=6.0*((b.vx-a.vx)*nx+(b.vy-a.vy)*ny);
+  var fx=(f+damp)*ax, fy=(f+damp)*ay;
+  a.vx+=fx/a.m*DT; a.vy+=fy/a.m*DT;
+  b.vx-=fx/b.m*DT; b.vy-=fy/b.m*DT;
+  a.vy+=G*DT; b.vy+=G*DT;
+  a.vx*=0.999;b.vx*=0.999;
+  step(a,g.fricA);step(b,g.fricB);
+}
+function step(p,fric){
+  p.x+=p.vx*DT;p.y+=p.vy*DT;
+  var fl=groundY-p.r;
+  if(p.y>fl){
+    p.y=fl;
+    if(p.vy>0) p.vy*=-0.22;
+    p.vx*=(1-fric*0.5);
+  }
+}
+
+function simStep(){
+  t+=DT;
+  for(var i=0;i<pop.length;i++){
+    var c=pop[i];
+    integrate(c,t);
+    var cx=(c.a.x+c.b.x)*0.5;
+    if(cx/PPM>c.fit) c.fit=cx/PPM;
+    if(!isFinite(cx)||!isFinite(c.a.y)){c.a.x=0;c.b.x=0;c.a.vx=c.a.vy=c.b.vx=c.b.vy=0;c.fit=0;}
+  }
+  if(t>=ROUND) evolve();
+}
+
+function leader(){
+  var bi=0,bf=-Infinity;
+  for(var i=0;i<pop.length;i++) if(pop[i].fit>bf){bf=pop[i].fit;bi=i;}
+  return bi;
+}
+
+function evolve(){
+  var sorted=pop.slice().sort(function(x,y){return y.fit-x.fit;});
+  var sum=0;for(var i=0;i<pop.length;i++) sum+=pop[i].fit;
+  genAvg=sum/pop.length;
+  if(sorted[0].fit>bestEver) bestEver=sorted[0].fit;
+  history.push({best:sorted[0].fit,avg:genAvg});
+  if(history.length>140) history.shift();
+
+  var elite=Math.max(2,Math.round(POP*0.18));
+  var next=[];
+  for(i=0;i<elite;i++) next.push(makeCreature(sorted[i].g)); // keep elites verbatim
+  while(next.length<POP){
+    // tournament selection of 3
+    var p=null;
+    for(var k=0;k<3;k++){
+      var cand=sorted[Math.floor(Math.random()*Math.min(sorted.length,Math.max(4,POP*0.6)))];
+      if(!p||cand.fit>p.fit)p=cand;
+    }
+    next.push(makeCreature(mutate(p.g)));
+  }
+  pop=next;
+  resetBodies();
+  gen++;t=0;
+}
+
+// ---- render -----------------------------------------------------------
+function drawGround(off){
+  ctx.fillStyle='rgba(6,14,24,0.9)';
+  ctx.fillRect(0,groundY,W,H-groundY);
+  ctx.beginPath();ctx.moveTo(0,groundY);ctx.lineTo(W,groundY);
+  ctx.strokeStyle='rgba(120,255,200,0.55)';ctx.lineWidth=1.6;
+  ctx.shadowBlur=12;ctx.shadowColor='rgba(80,255,190,0.6)';ctx.stroke();ctx.shadowBlur=0;
+  // metre markers
+  ctx.font='10px ui-monospace,monospace';
+  var m0=Math.floor(off/PPM)-1;
+  for(var m=m0;m<m0+Math.ceil(W/PPM)+3;m++){
+    var x=m*PPM-off;
+    if(x<-20||x>W+20)continue;
+    var major=(m%5===0);
+    ctx.beginPath();ctx.moveTo(x,groundY);ctx.lineTo(x,groundY+(major?14:7));
+    ctx.strokeStyle=major?'rgba(120,255,200,0.35)':'rgba(120,255,200,0.14)';
+    ctx.lineWidth=1;ctx.stroke();
+    if(major){ctx.fillStyle='rgba(130,190,180,0.6)';ctx.fillText(m+'m',x+3,groundY+24);}
+  }
+}
+function drawCreature(c,off,isBest){
+  var a=c.a,b=c.b;
+  var ax=a.x-off, bx=b.x-off;
+  if(Math.max(ax,bx)<-80||Math.min(ax,bx)>W+80)return;
+  var col=isBest?'rgba(255,206,84,':'hsla('+c.hue.toFixed(0)+',80%,65%,';
+  ctx.beginPath();ctx.moveTo(ax,a.y);ctx.lineTo(bx,b.y);
+  ctx.strokeStyle=col+(isBest?0.95:0.35)+')';
+  ctx.lineWidth=isBest?3.2:2;
+  if(isBest){ctx.shadowBlur=14;ctx.shadowColor='rgba(255,190,60,0.9)';}
+  ctx.stroke();ctx.shadowBlur=0;
+  ctx.beginPath();ctx.arc(ax,a.y,a.r,0,6.2832);
+  ctx.fillStyle=col+(isBest?0.9:0.28)+')';ctx.fill();
+  ctx.beginPath();ctx.arc(bx,b.y,b.r,0,6.2832);
+  ctx.fillStyle=col+(isBest?0.7:0.2)+')';ctx.fill();
+  if(isBest){
+    ctx.beginPath();ctx.arc(ax,a.y,a.r+6,0,6.2832);
+    ctx.strokeStyle='rgba(255,206,84,0.5)';ctx.lineWidth=1;ctx.stroke();
+  }
+}
+function drawGraph(){
+  var w=300,h=86,x0=W-w-22,y0=H-h-26;
+  ctx.fillStyle='rgba(5,10,20,0.62)';ctx.strokeStyle='rgba(120,255,200,0.2)';ctx.lineWidth=1;
+  ctx.beginPath();ctx.rect(x0-8,y0-18,w+16,h+34);ctx.fill();ctx.stroke();
+  ctx.fillStyle='rgba(130,190,180,0.8)';ctx.font='10px ui-monospace,monospace';
+  ctx.fillText('distance per generation  (gold=best, cyan=avg)',x0-4,y0-6);
+  if(history.length<2)return;
+  var mx=1;
+  for(var i=0;i<history.length;i++) if(history[i].best>mx) mx=history[i].best;
+  function line(key,style,lw){
+    ctx.beginPath();
+    for(var i=0;i<history.length;i++){
+      var x=x0+(i/(history.length-1))*w;
+      var y=y0+h-Math.max(0,history[i][key]/mx)*h;
+      if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+    }
+    ctx.strokeStyle=style;ctx.lineWidth=lw;ctx.stroke();
+  }
+  line('avg','rgba(90,220,255,0.7)',1.2);
+  line('best','rgba(255,206,84,0.95)',1.8);
+  ctx.fillStyle='rgba(130,190,180,0.65)';
+  ctx.fillText(mx.toFixed(1)+'m',x0+w-34,y0+10);
+}
+
+var last=performance.now();
+function frame(now){
+  var dt=Math.min(0.05,(now-last)/1000);last=now;
+  var steps=fast?26:Math.max(1,Math.round(dt/DT));
+  if(steps>30)steps=30;
+  for(var s=0;s<steps;s++) simStep();
+
+  ctx.fillStyle='rgba(5,7,13,0.30)';ctx.fillRect(0,0,W,H);
+
+  var bi=leader();
+  var target=(pop[bi].a.x+pop[bi].b.x)*0.5-W*0.35;
+  if(target<0)target=0;
+  cam+=(target-cam)*0.10;
+
+  drawGround(cam);
+  for(var i=0;i<pop.length;i++) if(i!==bi) drawCreature(pop[i],cam,false);
+  drawCreature(pop[bi],cam,true);
+  drawGraph();
+
+  document.getElementById('gen').textContent=gen;
+  document.getElementById('t').textContent=t.toFixed(1)+'s';
+  document.getElementById('lead').textContent=pop[bi].fit.toFixed(1)+' m';
+  document.getElementById('best').textContent=bestEver.toFixed(1)+' m';
+  document.getElementById('avg').textContent=genAvg.toFixed(1)+' m';
+  document.getElementById('mu').textContent=MUT.toFixed(2)+(fast?'  ⏩':'');
+  requestAnimationFrame(frame);
+}
+
+window.addEventListener('keydown',function(e){
+  var k=e.key.toLowerCase();
+  if(k==='f')fast=!fast;
+  else if(k==='r'){initPop();resetBodies();}
+});
+
+initPop();resetBodies();
+ctx.fillStyle='#05070d';ctx.fillRect(0,0,W,H);
+requestAnimationFrame(frame);
+})();
+</script>

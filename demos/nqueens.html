@@ -1,0 +1,247 @@
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<title>N-Queens Backtracking</title>
+<style>
+html,body{margin:0;padding:0;background:#04050a;overflow:hidden;height:100%}
+canvas{display:block}
+#ui{position:fixed;top:0;left:0;margin:12px;padding:10px 12px;background:rgba(10,8,20,.62);
+  border:1px solid rgba(180,140,255,.28);border-radius:6px;color:#dcd0ff;
+  font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;max-width:330px;pointer-events:none;
+  text-shadow:0 0 8px rgba(160,110,255,.35)}
+#ui h1{margin:0 0 4px;font-size:14px;letter-spacing:.11em;color:#c9a4ff}
+#ui .e{color:#9d94b8}
+#ui .k{color:#ffd76a}
+#ui .s{color:#7effc0}
+#ui a{color:#ff8ad8;pointer-events:auto;text-decoration:none}
+</style>
+<div id="ui">
+  <h1>N-QUEENS &mdash; BACKTRACKING</h1>
+  <div class="e">Place a queen, shade what she attacks, and when no row survives, lift her off and try the next one.</div>
+  <div class="k">[4-9] board size &nbsp; [SPACE] pause &nbsp; [&rarr;] step &nbsp; [+/-] speed</div>
+  <div class="s" id="stats"></div>
+  <a href="index.html">&larr; gallery</a>
+</div>
+<canvas id="c"></canvas>
+<script>
+(function(){
+var c=document.getElementById('c'),g=c.getContext('2d'),stats=document.getElementById('stats');
+var W=0,H=0,DPR=1;
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  W=window.innerWidth;H=window.innerHeight;
+  c.width=Math.floor(W*DPR);c.height=Math.floor(H*DPR);
+  c.style.width=W+'px';c.style.height=H+'px';
+  g.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize',resize);resize();
+
+var N=8,pos=[],col=0,row=0,solutions=0,backtracks=0,tries=0;
+var thumbs=[],flash=0,goldFlash=0,liftAt=null,paused=false,step=false,speed=6,tick=0,t=0,done=false,doneT=0;
+
+function reset(n){
+  N=n;pos=[];col=0;row=0;solutions=0;backtracks=0;tries=0;thumbs=[];flash=0;goldFlash=0;
+  liftAt=null;done=false;doneT=0;
+}
+reset(8);
+
+function safe(r,c2){
+  for(var i=0;i<c2;i++){
+    if(pos[i]===r)return false;
+    if(Math.abs(pos[i]-r)===Math.abs(i-c2))return false;
+  }
+  return true;
+}
+function attacked(r,c2){
+  for(var i=0;i<pos.length;i++){
+    if(pos[i]===r)return true;
+    if(Math.abs(pos[i]-r)===Math.abs(i-c2))return true;
+  }
+  return false;
+}
+
+function advance(){
+  if(done){doneT++;if(doneT>140){reset(N);}return;}
+  if(col>=N){ // full solution
+    solutions++;
+    goldFlash=1;
+    thumbs.push(pos.slice());
+    if(thumbs.length>24)thumbs.shift();
+    // backtrack to continue search
+    col--;row=pos[col]+1;pos.pop();backtracks++;liftAt={r:pos.length?row-1:row-1,c:col,f:1};
+    return;
+  }
+  if(row>=N){ // exhausted this column -> backtrack
+    if(col===0){done=true;return;}
+    col--;
+    var old=pos.pop();
+    liftAt={r:old,c:col,f:1};
+    row=old+1;
+    backtracks++;
+    return;
+  }
+  tries++;
+  if(safe(row,col)){
+    pos.push(row);
+    flash=1;
+    col++;row=0;
+  } else {
+    row++;
+  }
+}
+
+function draw(){
+  g.clearRect(0,0,W,H);
+  var bg=g.createRadialGradient(W*0.5,H*0.4,10,W*0.5,H*0.5,Math.max(W,H)*0.8);
+  bg.addColorStop(0,'#120c26');bg.addColorStop(1,'#04050a');
+  g.fillStyle=bg;g.fillRect(0,0,W,H);
+
+  var thumbH=Math.min(96,H*0.15);
+  var pad=Math.min(W,H)*0.05;
+  var avail=Math.min(W-pad*2-320, H-pad*2-thumbH-20);
+  if(avail<160)avail=Math.min(W-pad*2,H-pad*2-thumbH-20);
+  var S=Math.max(120,avail), cs=S/N;
+  var bx=W/2-S/2+Math.min(120,W*0.08), by=pad+ (H-pad*2-thumbH-20-S)/2;
+  if(bx<pad)bx=pad;
+  if(by<pad)by=pad;
+
+  // board glow
+  g.save();
+  g.shadowColor='rgba(160,110,255,.55)';g.shadowBlur=40;
+  g.fillStyle='#0a0716';g.fillRect(bx,by,S,S);
+  g.restore();
+
+  // squares
+  for(var r=0;r<N;r++)for(var cc=0;cc<N;cc++){
+    var x=bx+cc*cs,y=by+r*cs;
+    var light=((r+cc)&1)===0;
+    g.fillStyle=light?'rgba(120,100,180,.16)':'rgba(40,30,70,.30)';
+    g.fillRect(x,y,cs,cs);
+    if(cc<pos.length||cc===col){
+      if(attacked(r,cc)&&!(cc<pos.length&&pos[cc]===r)){
+        g.fillStyle='rgba(255,60,60,'+(cc<pos.length?0.16:0.24)+')';
+        g.fillRect(x,y,cs,cs);
+      }
+    }
+  }
+  // grid
+  g.strokeStyle='rgba(190,160,255,.16)';g.lineWidth=1;
+  for(var i=0;i<=N;i++){
+    g.beginPath();g.moveTo(bx+i*cs,by);g.lineTo(bx+i*cs,by+S);g.stroke();
+    g.beginPath();g.moveTo(bx,by+i*cs);g.lineTo(bx+S,by+i*cs);g.stroke();
+  }
+  g.strokeStyle='rgba(201,164,255,.7)';g.lineWidth=2;g.strokeRect(bx+.5,by+.5,S-1,S-1);
+
+  // active column highlight
+  if(col<N&&!done){
+    g.fillStyle='rgba(126,255,192,.06)';
+    g.fillRect(bx+col*cs,by,cs,S);
+    // candidate cursor
+    if(row<N){
+      var cy=by+row*cs;
+      g.strokeStyle=safe(row,col)?'#7effc0':'#ff6b6b';
+      g.lineWidth=2;g.shadowColor=g.strokeStyle;g.shadowBlur=14;
+      g.strokeRect(bx+col*cs+2,cy+2,cs-4,cs-4);
+      g.shadowBlur=0;
+    }
+  }
+
+  // queens
+  for(var q=0;q<pos.length;q++)drawQueen(bx+q*cs+cs/2,by+pos[q]*cs+cs/2,cs*0.30,
+    (q===pos.length-1)?flash:0);
+
+  // lift-off flash
+  if(liftAt&&liftAt.f>0){
+    var lx=bx+liftAt.c*cs+cs/2, ly=by+liftAt.r*cs+cs/2;
+    g.globalAlpha=liftAt.f;
+    g.strokeStyle='#ff3355';g.lineWidth=3;g.shadowColor='#ff3355';g.shadowBlur=24;
+    g.beginPath();g.arc(lx,ly-(1-liftAt.f)*cs*0.7,cs*0.34*(1+(1-liftAt.f)),0,7);g.stroke();
+    g.shadowBlur=0;g.globalAlpha=1;
+  }
+
+  // gold solution flash
+  if(goldFlash>0){
+    g.globalAlpha=goldFlash*0.75;
+    g.strokeStyle='#ffd76a';g.lineWidth=6;g.shadowColor='#ffd76a';g.shadowBlur=40;
+    g.strokeRect(bx-3,by-3,S+6,S+6);g.shadowBlur=0;
+    g.globalAlpha=goldFlash;
+    g.font='bold '+Math.max(16,S*0.075)+'px ui-monospace,monospace';
+    g.textAlign='center';g.fillStyle='#ffd76a';
+    g.shadowColor='#ffd76a';g.shadowBlur=26;
+    g.fillText('SOLUTION #'+solutions,bx+S/2,by-14);
+    g.shadowBlur=0;g.globalAlpha=1;g.textAlign='left';
+  }
+
+  // thumbnails strip
+  var ty=H-thumbH-6, ts=Math.min(thumbH-18,74);
+  g.fillStyle='#9d94b8';g.font='11px ui-monospace,monospace';
+  g.fillText('solutions found ('+solutions+')',12,ty-6);
+  var tx=12;
+  for(var k=0;k<thumbs.length&&tx<W-ts-8;k++){
+    var sol=thumbs[k], u=ts/N;
+    g.fillStyle='rgba(255,215,106,.08)';g.fillRect(tx,ty,ts,ts);
+    g.strokeStyle='rgba(255,215,106,.45)';g.lineWidth=1;g.strokeRect(tx+.5,ty+.5,ts-1,ts-1);
+    for(var s2=0;s2<sol.length;s2++){
+      g.fillStyle='#ffd76a';
+      g.fillRect(tx+s2*u+u*0.22,ty+sol[s2]*u+u*0.22,u*0.56,u*0.56);
+    }
+    tx+=ts+8;
+  }
+
+  // done banner
+  if(done){
+    g.textAlign='center';g.font='bold 15px ui-monospace,monospace';
+    g.fillStyle='#7effc0';g.globalAlpha=0.6+0.4*Math.sin(t*0.09);
+    g.fillText('SEARCH COMPLETE — '+solutions+' solutions for N='+N+'  — restarting…',W/2,by+S+26);
+    g.globalAlpha=1;g.textAlign='left';
+  }
+}
+
+function drawQueen(x,y,r,fl){
+  g.save();
+  var glow=0.55+0.45*Math.sin(t*0.05+x*0.01)+fl*1.2;
+  g.shadowColor='rgba(126,255,192,'+Math.min(1,glow)+')';
+  g.shadowBlur=18+fl*30;
+  g.fillStyle=fl>0.02?'#eaffef':'#7effc0';
+  // crown-ish shape
+  g.beginPath();
+  g.moveTo(x-r,y+r*0.85);
+  g.lineTo(x-r*0.72,y-r*0.25);
+  g.lineTo(x-r*0.36,y+r*0.15);
+  g.lineTo(x,y-r*0.75);
+  g.lineTo(x+r*0.36,y+r*0.15);
+  g.lineTo(x+r*0.72,y-r*0.25);
+  g.lineTo(x+r,y+r*0.85);
+  g.closePath();g.fill();
+  g.shadowBlur=0;
+  g.fillStyle='rgba(255,255,255,.85)';
+  g.beginPath();g.arc(x,y-r*0.95,r*0.16,0,7);g.fill();
+  g.restore();
+}
+
+var acc=0;
+function loop(){
+  requestAnimationFrame(loop);
+  t++;
+  if(step){advance();step=false;}
+  else if(!paused){
+    acc+=speed;
+    while(acc>=6){acc-=6;advance();}
+  }
+  if(flash>0)flash-=0.05;
+  if(goldFlash>0)goldFlash-=0.012;
+  if(liftAt){liftAt.f-=0.06;if(liftAt.f<=0)liftAt=null;}
+  draw();
+  stats.textContent='N='+N+'   col '+Math.min(col,N)+'/'+N+'   row '+Math.min(row,N-1)+
+    '\nsolutions '+solutions+'   backtracks '+backtracks+
+    '\nplacements tried '+tries+'   speed '+speed;
+}
+window.addEventListener('keydown',function(e){
+  var n=parseInt(e.key,10);
+  if(n>=4&&n<=9)reset(n);
+  else if(e.key===' '){paused=!paused;e.preventDefault();}
+  else if(e.key==='ArrowRight'){step=true;paused=true;}
+  else if(e.key==='+'||e.key==='=')speed=Math.min(60,speed+2);
+  else if(e.key==='-'||e.key==='_')speed=Math.max(1,speed-2);
+});
+loop();
+})();
+</script>

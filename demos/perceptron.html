@@ -1,0 +1,302 @@
+<title>Perceptron Learning Rule</title>
+<style>
+  html,body{margin:0;padding:0;background:#04050a;overflow:hidden;height:100%}
+  canvas{display:block;position:fixed;inset:0}
+  #ui{position:fixed;top:0;left:0;margin:12px;padding:10px 12px;background:rgba(8,10,18,.62);
+      border:1px solid rgba(120,255,220,.22);border-radius:8px;color:#c6ffe9;
+      font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;max-width:330px;
+      backdrop-filter:blur(6px);z-index:10}
+  #ui h1{margin:0 0 4px;font-size:14px;letter-spacing:.08em;color:#5cffc8;text-transform:uppercase}
+  #ui .exp{color:#8ba8a0;margin-bottom:7px}
+  #ui .hint{color:#6f8a83;margin-top:6px}
+  #ui a{color:#ffd166;text-decoration:none}
+  #ui a:hover{text-decoration:underline}
+  .row{display:flex;justify-content:space-between;gap:10px}
+  .k{color:#6f8a83}.v{color:#eafff8}
+  input[type=range]{width:100%;accent-color:#5cffc8;margin:4px 0 2px}
+  .ok{color:#ffd166}.bad{color:#ff6b8a}
+</style>
+
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>Perceptron</h1>
+  <div class="exp">One neuron nudges its weight vector toward every point it misclassifies, rotating the decision line until the data is split.</div>
+  <div class="row"><span class="k">dataset</span><span class="v" id="s-set">separable</span></div>
+  <div class="row"><span class="k">weights (w1,w2,b)</span><span class="v" id="s-w">-</span></div>
+  <div class="row"><span class="k">last sample</span><span class="v" id="s-sample">-</span></div>
+  <div class="row"><span class="k">pred / label</span><span class="v" id="s-pl">-</span></div>
+  <div class="row"><span class="k">updates</span><span class="v" id="s-upd">0</span></div>
+  <div class="row"><span class="k">errors this pass</span><span class="v" id="s-err">-</span></div>
+  <div class="row"><span class="k">status</span><span class="v" id="s-status">learning…</span></div>
+  <label class="k">speed <span class="v" id="s-spd">1.0x</span></label>
+  <input type="range" id="spd" min="15" max="400" value="100">
+  <div class="hint">[r] reseed · [space] pause · [n] toggle separable/not · <a href="index.html">← gallery</a></div>
+</div>
+<script>
+(function(){
+"use strict";
+var cv=document.getElementById('c'),ctx=cv.getContext('2d'),W=0,H=0,DPR=1;
+var cxp=0,cyp=0,SC=1;
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  W=window.innerWidth;H=window.innerHeight;
+  cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);
+  cv.style.width=W+'px';cv.style.height=H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  cxp=W*0.5+W*0.10; cyp=H*0.5; SC=Math.min(W,H)*0.165;
+}
+window.addEventListener('resize',resize);
+function px(x){return cxp+x*SC;} function py(y){return cyp-y*SC;}
+
+// ---------- data ----------
+var pts=[],separable=true,w=[0,0],bias=0,LR=0.35;
+function makeData(sep){
+  pts=[];
+  if(sep){
+    // random true separator, margin gap
+    var ang=Math.random()*Math.PI*2, tw=[Math.cos(ang),Math.sin(ang)], tb=(Math.random()*2-1)*0.6;
+    var n=0,guard=0;
+    while(n<44&&guard<6000){
+      guard++;
+      var x=(Math.random()*2-1)*2.4, y=(Math.random()*2-1)*2.0;
+      var s=tw[0]*x+tw[1]*y+tb;
+      if(Math.abs(s)<0.42) continue;
+      pts.push({x:x,y:y,l:s>0?1:-1});n++;
+    }
+  }else{
+    // XOR-ish: two interleaved blobs, provably not linearly separable
+    var centers=[[-1.35,1.0,1],[1.35,-1.0,1],[-1.35,-1.0,-1],[1.35,1.0,-1]];
+    for(var c=0;c<centers.length;c++)for(var i=0;i<11;i++){
+      pts.push({x:centers[c][0]+(Math.random()*2-1)*0.62,
+                y:centers[c][1]+(Math.random()*2-1)*0.62,
+                l:centers[c][2]});
+    }
+  }
+  w=[(Math.random()*2-1)*0.6,(Math.random()*2-1)*0.6];bias=(Math.random()*2-1)*0.3;
+  idx=0;updates=0;errThisPass=0;lastErrs=-1;converged=false;goldFlash=0;
+  order=[];for(var q=0;q<pts.length;q++)order.push(q);
+  shuffle(order);
+  cur=null;phase='pick';phaseT=0;prevW=[w[0],w[1],bias];oscHist=[];passCount=0;
+}
+function shuffle(A){for(var i=A.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=A[i];A[i]=A[j];A[j]=t;}}
+function predict(p){return (w[0]*p.x+w[1]*p.y+bias)>=0?1:-1;}
+
+// ---------- state ----------
+var idx=0,updates=0,errThisPass=0,lastErrs=-1,converged=false,goldFlash=0,cur=null;
+var phase='pick',phaseT=0,prevW=[0,0,0],speed=1,paused=false,oscHist=[],passCount=0,wasWrong=false,tPrev=0;
+resize();makeData(true);
+
+var spd=document.getElementById('spd');
+spd.addEventListener('input',function(){speed=parseInt(spd.value,10)/100;document.getElementById('s-spd').textContent=speed.toFixed(1)+'x';});
+window.addEventListener('keydown',function(e){
+  if(e.code==='Space'){paused=!paused;e.preventDefault();}
+  if(e.key==='r'||e.key==='R'){makeData(separable);}
+  if(e.key==='n'||e.key==='N'){separable=!separable;makeData(separable);}
+});
+
+// ---------- logic ----------
+function stepLogic(){
+  if(phase==='pick'){
+    if(idx>=order.length){
+      passCount++;
+      lastErrs=errThisPass;
+      oscHist.push(errThisPass); if(oscHist.length>140) oscHist.shift();
+      if(errThisPass===0&&separable){converged=true;goldFlash=1;}
+      errThisPass=0;idx=0;shuffle(order);
+      if(converged&&passCount>2){
+        // sit on the solution a while, then reseed with the non-separable set
+        if(passCount>4){separable=!separable;makeData(separable);return;}
+      }
+    }
+    cur=pts[order[idx]];
+    var pr=predict(cur);
+    wasWrong=(pr!==cur.l);
+    cur._pred=pr;
+    phase='judge';phaseT=0;
+  }else if(phase==='judge'){
+    if(wasWrong){
+      prevW=[w[0],w[1],bias];
+      w[0]+=LR*cur.l*cur.x; w[1]+=LR*cur.l*cur.y; bias+=LR*cur.l;
+      updates++;errThisPass++;converged=false;
+      phase='update';phaseT=0;
+    }else{
+      idx++;phase='pick';phaseT=0;
+    }
+  }else if(phase==='update'){
+    idx++;phase='pick';phaseT=0;
+  }
+}
+function tick(dt){
+  if(paused)return;
+  goldFlash=Math.max(0,goldFlash-dt*0.9);
+  phaseT+=dt*speed*(phase==='judge'?3.2:(phase==='update'?2.0:5.0));
+  var guard=0;
+  while(phaseT>=1&&guard<40){phaseT-=1;stepLogic();guard++;}
+}
+
+// ---------- draw ----------
+function drawLine(wv,bv,color,width,dash){
+  // wv0*x + wv1*y + bv = 0
+  var a=wv[0],b2=wv[1];
+  if(Math.abs(a)<1e-9&&Math.abs(b2)<1e-9)return;
+  var xs=[-W/SC,W/SC],P=[];
+  if(Math.abs(b2)>1e-6){
+    P=[[xs[0],(-bv-a*xs[0])/b2],[xs[1],(-bv-a*xs[1])/b2]];
+  }else{
+    var xv=-bv/a;P=[[xv,-H/SC],[xv,H/SC]];
+  }
+  ctx.save();ctx.setLineDash(dash||[]);
+  ctx.strokeStyle=color;ctx.lineWidth=width;
+  ctx.beginPath();ctx.moveTo(px(P[0][0]),py(P[0][1]));ctx.lineTo(px(P[1][0]),py(P[1][1]));ctx.stroke();
+  ctx.restore();
+}
+function draw(t){
+  ctx.fillStyle='#04050a';ctx.fillRect(0,0,W,H);
+  // decision-region shading (coarse quads for speed)
+  var step=Math.max(14,Math.round(Math.min(W,H)/44));
+  for(var X=0;X<W;X+=step)for(var Y=0;Y<H;Y+=step){
+    var wx=(X+step/2-cxp)/SC, wy=(cyp-(Y+step/2))/SC;
+    var s=w[0]*wx+w[1]*wy+bias;
+    var m=Math.min(1,Math.abs(s)*0.55);
+    ctx.fillStyle=s>=0?'rgba(60,180,255,'+(0.025+m*0.075)+')':'rgba(255,90,140,'+(0.025+m*0.075)+')';
+    ctx.fillRect(X,Y,step,step);
+  }
+  // axes
+  ctx.strokeStyle='rgba(120,180,200,.16)';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(0,py(0));ctx.lineTo(W,py(0));ctx.moveTo(px(0),0);ctx.lineTo(px(0),H);ctx.stroke();
+
+  // previous line ghost during update
+  if(phase==='update'){
+    drawLine([prevW[0],prevW[1]],prevW[2],'rgba(255,255,255,'+(0.30*(1-phaseT))+')',1.4,[6,6]);
+  }
+  // decision boundary
+  var gf=goldFlash;
+  drawLine(w,bias,gf>0.02?'rgba(255,215,110,'+(0.55+gf*0.45)+')':'rgba(120,255,220,.9)',2.4+gf*3);
+
+  // weight vector arrow from origin
+  var wn=Math.hypot(w[0],w[1])||1;
+  var scale=Math.min(2.0,1.05+wn*0.06)/wn*1.35;
+  var ax=px(w[0]*scale),ay=py(w[1]*scale);
+  ctx.strokeStyle='rgba(255,209,102,.95)';ctx.lineWidth=3;
+  ctx.beginPath();ctx.moveTo(px(0),py(0));ctx.lineTo(ax,ay);ctx.stroke();
+  var ang=Math.atan2(ay-py(0),ax-px(0));
+  ctx.fillStyle='rgba(255,209,102,.95)';
+  ctx.beginPath();
+  ctx.moveTo(ax,ay);
+  ctx.lineTo(ax-12*Math.cos(ang-0.4),ay-12*Math.sin(ang-0.4));
+  ctx.lineTo(ax-12*Math.cos(ang+0.4),ay-12*Math.sin(ang+0.4));
+  ctx.closePath();ctx.fill();
+  ctx.fillStyle='rgba(255,225,160,.9)';ctx.font='12px ui-monospace,monospace';
+  ctx.textAlign='left';ctx.textBaseline='middle';
+  ctx.fillText('w',ax+10,ay-8);
+
+  // points
+  var pulse=(Math.sin(t*0.006)+1)/2;
+  for(var i=0;i<pts.length;i++){
+    var p=pts[i];
+    var X2=px(p.x),Y2=py(p.y);
+    var wrong=(predict(p)!==p.l);
+    var isCur=(p===cur);
+    var r=6.2+(isCur?(phase==='judge'?4.5*(1-phaseT*0.6):3):0);
+    if(wrong){
+      var rr=r+4+pulse*5;
+      var g=ctx.createRadialGradient(X2,Y2,0,X2,Y2,rr*2.2);
+      g.addColorStop(0,'rgba(255,70,110,'+(0.30+pulse*0.30)+')');
+      g.addColorStop(1,'rgba(255,70,110,0)');
+      ctx.fillStyle=g;ctx.beginPath();ctx.arc(X2,Y2,rr*2.2,0,6.2832);ctx.fill();
+    }
+    if(isCur){
+      var gg=ctx.createRadialGradient(X2,Y2,0,X2,Y2,34);
+      gg.addColorStop(0,'rgba(255,255,255,'+(0.42*(1-phaseT*0.7))+')');
+      gg.addColorStop(1,'rgba(255,255,255,0)');
+      ctx.fillStyle=gg;ctx.beginPath();ctx.arc(X2,Y2,34,0,6.2832);ctx.fill();
+    }
+    ctx.beginPath();
+    if(p.l===1){ctx.arc(X2,Y2,r,0,6.2832);}
+    else{ctx.rect(X2-r*0.88,Y2-r*0.88,r*1.76,r*1.76);}
+    ctx.fillStyle=p.l===1?'rgba(90,190,255,.92)':'rgba(255,120,160,.92)';
+    ctx.fill();
+    ctx.lineWidth=isCur?2.4:1.2;
+    ctx.strokeStyle=isCur?'#ffffff':(wrong?'rgba(255,70,110,.95)':'rgba(255,255,255,.35)');
+    ctx.stroke();
+  }
+
+  // annotation for current sample
+  if(cur&&(phase==='judge'||phase==='update')){
+    var X3=px(cur.x),Y3=py(cur.y);
+    var lines=['sample ('+cur.x.toFixed(2)+', '+cur.y.toFixed(2)+')',
+               'predict '+(cur._pred>0?'+1':'-1')+'   label '+(cur.l>0?'+1':'-1'),
+               wasWrong?('WRONG → w += η·y·x'):'correct → no change'];
+    ctx.font='12px ui-monospace,monospace';ctx.textAlign='left';ctx.textBaseline='top';
+    var bw=0;for(var q=0;q<lines.length;q++)bw=Math.max(bw,ctx.measureText(lines[q]).width);
+    bw+=16;
+    var bx=Math.min(X3+16,W-bw-10),by=Math.min(Y3+14,H-72);
+    ctx.fillStyle='rgba(4,8,16,.9)';ctx.fillRect(bx,by,bw,58);
+    ctx.strokeStyle=wasWrong?'rgba(255,90,130,.8)':'rgba(120,255,220,.6)';ctx.lineWidth=1;
+    ctx.strokeRect(bx,by,bw,58);
+    ctx.fillStyle='#dfeff0';ctx.fillText(lines[0],bx+8,by+6);
+    ctx.fillStyle='#a8c8d8';ctx.fillText(lines[1],bx+8,by+22);
+    ctx.fillStyle=wasWrong?'#ff6b8a':'#5cffc8';ctx.fillText(lines[2],bx+8,by+38);
+  }
+
+  // banners
+  ctx.textAlign='center';ctx.textBaseline='middle';
+  if(goldFlash>0.02){
+    ctx.fillStyle='rgba(255,215,110,'+Math.min(1,goldFlash)+')';
+    ctx.font='bold '+Math.round(Math.min(46,W*0.045))+'px ui-monospace,monospace';
+    ctx.fillText('CONVERGED — zero errors',W/2,H*0.12);
+  }
+  if(!separable){
+    var blink=0.62+0.38*Math.sin(t*0.005);
+    ctx.fillStyle='rgba(255,90,130,'+blink+')';
+    ctx.font='bold '+Math.round(Math.min(38,W*0.036))+'px ui-monospace,monospace';
+    ctx.fillText('not linearly separable!',W/2,H*0.10);
+    ctx.fillStyle='rgba(255,150,175,.75)';
+    ctx.font=Math.round(Math.min(16,W*0.016))+'px ui-monospace,monospace';
+    ctx.fillText('the line can never settle — it oscillates forever',W/2,H*0.10+34);
+  }
+
+  // errors-per-pass sparkline
+  if(oscHist.length>1){
+    var cw=Math.min(300,W*0.24),ch=58,x0=W-cw-24,y0=H-ch-26;
+    ctx.fillStyle='rgba(8,12,20,.62)';ctx.fillRect(x0-8,y0-18,cw+16,ch+34);
+    ctx.strokeStyle='rgba(120,255,220,.2)';ctx.lineWidth=1;ctx.strokeRect(x0-8,y0-18,cw+16,ch+34);
+    var mv=1;for(var h=0;h<oscHist.length;h++)mv=Math.max(mv,oscHist[h]);
+    ctx.beginPath();
+    for(var h2=0;h2<oscHist.length;h2++){
+      var Xp=x0+cw*(h2/Math.max(1,oscHist.length-1)),Yp=y0+ch-(oscHist[h2]/mv)*ch;
+      h2?ctx.lineTo(Xp,Yp):ctx.moveTo(Xp,Yp);
+    }
+    ctx.strokeStyle=separable?'rgba(92,255,200,.9)':'rgba(255,110,150,.9)';ctx.lineWidth=1.8;ctx.stroke();
+    ctx.fillStyle='rgba(150,190,190,.75)';ctx.font='10px ui-monospace,monospace';
+    ctx.textAlign='left';ctx.textBaseline='alphabetic';
+    ctx.fillText('mistakes per pass'+(separable?' → 0':' → never 0'),x0-4,y0-6);
+  }
+}
+
+var el={set:document.getElementById('s-set'),w:document.getElementById('s-w'),sample:document.getElementById('s-sample'),
+        pl:document.getElementById('s-pl'),upd:document.getElementById('s-upd'),err:document.getElementById('s-err'),
+        status:document.getElementById('s-status')};
+var uiT=0;
+function frame(t){
+  var dt=Math.min(0.05,(t-tPrev)/1000)||0.016;tPrev=t;
+  tick(dt);draw(t);
+  uiT+=dt;
+  if(uiT>0.07){
+    uiT=0;
+    el.set.textContent=separable?'linearly separable':'NOT separable (xor)';
+    el.w.textContent=w[0].toFixed(2)+', '+w[1].toFixed(2)+', '+bias.toFixed(2);
+    el.sample.textContent=cur?('('+cur.x.toFixed(2)+', '+cur.y.toFixed(2)+')'):'-';
+    el.pl.textContent=cur?((cur._pred>0?'+1':'-1')+' / '+(cur.l>0?'+1':'-1')):'-';
+    el.upd.textContent=updates;
+    el.err.textContent=errThisPass+(lastErrs>=0?'  (prev '+lastErrs+')':'');
+    el.status.innerHTML=paused?'<span class="k">paused</span>'
+      :(converged?'<span class="ok">converged ✓</span>'
+      :(separable?'learning…':'<span class="bad">oscillating forever</span>'));
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+})();
+</script>
