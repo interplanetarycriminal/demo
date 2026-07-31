@@ -63,7 +63,11 @@ function rebuild(){
     pts.push({x:a*ct-b*st, y:a*st+b*ct, ax:0, ay:0, t:Math.random()});
   }
   centre();
-  v={x:Math.cos(0.9),y:Math.sin(0.9)}; iter=0; delta=1;
+  // start the candidate axis ~78 deg away from the true principal direction
+  var a0=theta+1.36;
+  v={x:Math.cos(a0),y:Math.sin(a0)};
+  vd={x:v.x,y:v.y};
+  iter=0; delta=1; converged=false;
 }
 function centre(){
   var mx=0,my=0;
@@ -80,7 +84,16 @@ function cov(){
   C[0]=a/n;C[1]=b/n;C[2]=c/n;
 }
 // ---- power iteration state ----
-var v={x:1,y:0}, iter=0, delta=1, converged=false;
+var v={x:1,y:0}, vd={x:1,y:0}, iter=0, delta=1, converged=false;
+// vd = smoothly eased display axis, chases the true power-iteration vector v
+function easeAxis(dt){
+  var ta=Math.atan2(v.y,v.x), ca=Math.atan2(vd.y,vd.x);
+  var diff=ta-ca;
+  while(diff>Math.PI)diff-=2*Math.PI;
+  while(diff<-Math.PI)diff+=2*Math.PI;
+  ca+=diff*Math.min(1,dt*4.5);
+  vd.x=Math.cos(ca);vd.y=Math.sin(ca);
+}
 function powerStep(){
   var nx=C[0]*v.x+C[1]*v.y, ny=C[1]*v.x+C[2]*v.y;
   var L=Math.hypot(nx,ny)||1; nx/=L; ny/=L;
@@ -110,7 +123,7 @@ window.addEventListener('mousemove',function(e){
   // horizontal drag = stretch along current PC1, vertical = rotate
   var s=1+dx*0.004, r=dy*0.006;
   var cr=Math.cos(r),sr=Math.sin(r);
-  var ux=v.x,uy=v.y, wx=-uy, wy=ux;
+  var ux=vd.x,uy=vd.y, wx=-uy, wy=ux;
   for(var i=0;i<pts.length;i++){
     var p=pts[i];
     var a=p.x*ux+p.y*uy, b=p.x*wx+p.y*wy;
@@ -155,9 +168,12 @@ function frame(ts){
   var dt=Math.min(0.05,(ts-last)/1000||0.016); last=ts;
   cov(); eigen();
 
-  // step power iteration a few times per second so it's visible
+  // step power iteration a few times per second so each step is visible
   acc+=dt;
-  if(acc>0.09 && !converged){acc=0;powerStep();}
+  if(acc>0.17 && !converged){acc=0;powerStep();}
+  easeAxis(dt);
+  var gap=Math.abs(Math.atan2(vd.x*v.y-vd.y*v.x, vd.x*v.x+vd.y*v.y));
+  var settled=converged && gap<0.003;
 
   projT+=(projTarget-projT)*Math.min(1,dt*3.2);
 
@@ -172,7 +188,7 @@ function frame(ts){
   for(var y=cy%g;y<H;y+=g){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
   ctx.restore();
 
-  var ux=v.x, uy=v.y, wx=-uy, wy=ux;
+  var ux=vd.x, uy=vd.y, wx=-uy, wy=ux;
   var L1=Math.sqrt(Math.max(lam1,1e-6)), L2=Math.sqrt(Math.max(lam2,1e-6));
 
   // PC1 line (infinite)
@@ -185,15 +201,20 @@ function frame(ts){
   ctx.moveTo(cx-ux*big,cy-uy*big);ctx.lineTo(cx+ux*big,cy+uy*big);ctx.stroke();
   ctx.restore();
 
-  // candidate axis (power iteration) — shown while converging
-  if(!converged){
+  // candidate axis (the vector power iteration is currently pushing around)
+  if(!settled){
     var pulse=0.5+0.5*Math.sin(ts/180);
     ctx.save();
     ctx.strokeStyle='rgba(255,224,102,'+(0.35+0.4*pulse)+')';
     ctx.lineWidth=1.6;ctx.setLineDash([4,6]);
     ctx.beginPath();
-    ctx.moveTo(cx-ux*big*0.6,cy-uy*big*0.6);ctx.lineTo(cx+ux*big*0.6,cy+uy*big*0.6);
-    ctx.stroke();ctx.restore();
+    ctx.moveTo(cx-v.x*big*0.6,cy-v.y*big*0.6);ctx.lineTo(cx+v.x*big*0.6,cy+v.y*big*0.6);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.font='11px ui-monospace,monospace';
+    ctx.fillStyle='rgba(255,224,102,.9)';
+    ctx.fillText('candidate  v ← Cv/|Cv|   step '+iter, cx+v.x*big*0.28+10, cy+v.y*big*0.28);
+    ctx.restore();
   }
 
   // points
@@ -261,7 +282,7 @@ function frame(ts){
   uiAcc+=dt;
   if(uiAcc>0.1){
     uiAcc=0;
-    els.st1.textContent='iter '+iter+' · Δ '+delta.toExponential(2)+(converged?' ✓ converged':' …');
+    els.st1.textContent='power iter '+iter+' · Δ '+delta.toExponential(2)+(settled?' ✓ converged':' …');
     els.st2.textContent='n = '+pts.length+' points · λ1='+lam1.toFixed(1)+' λ2='+lam2.toFixed(1);
     els.st3.textContent='mode: '+(projT>0.5?'projected onto PC1':'full 2D');
     els.v1.textContent=(e1*100).toFixed(1)+'%';

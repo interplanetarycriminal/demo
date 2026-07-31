@@ -217,7 +217,6 @@ function frame(ts){
     if(i%2)continue;
     var p=pts[i], col=COLS[(label[i]-1)%COLS.length];
     var nb=neighbours(i);
-    ctx.strokeStyle=col.replace(')',')');
     ctx.globalAlpha=0.10;
     ctx.beginPath();
     for(var k=0;k<nb.length;k+=3){

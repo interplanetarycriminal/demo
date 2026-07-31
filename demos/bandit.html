@@ -37,10 +37,11 @@ var best = 0, bestP = 0;
 var paused = false, fast = false, spotlight = -1;
 var particles = [];
 
+var EPSILON = 0.1;
 var STRATS = [
-  { name:'ε-greedy', color:'#ffcc44', short:'EPS' },
-  { name:'UCB1',     color:'#44e0ff', short:'UCB' },
-  { name:'Thompson', color:'#ff5fd0', short:'THM' }
+  { name:'ε-greedy ε=0.1', color:'#ffcc44', short:'EPS' },
+  { name:'UCB1-tuned',     color:'#44e0ff', short:'UCB' },
+  { name:'Thompson',       color:'#ff5fd0', short:'THM' }
 ];
 
 function makeAgent(i){
@@ -60,10 +61,10 @@ var agents = [];
 
 function reroll(){
   truth = [];
-  for (var i=0;i<K;i++) truth.push(0.12 + Math.random()*0.76);
-  // guarantee a clear winner
+  for (var i=0;i<K;i++) truth.push(0.10 + Math.random()*0.52);
+  // guarantee one clearly-best arm so the gap is learnable on screen
   var bi = (Math.random()*K)|0;
-  truth[bi] = 0.80 + Math.random()*0.15;
+  truth[bi] = 0.80 + Math.random()*0.14;
   best = 0; bestP = truth[0];
   for (var j=1;j<K;j++) if (truth[j] > bestP){ bestP = truth[j]; best = j; }
   agents = [makeAgent(0), makeAgent(1), makeAgent(2)];
@@ -103,17 +104,18 @@ function randBeta(a,b){
 function chooseArm(ag, si){
   var i;
   for (i=0;i<K;i++) if (ag.n[i] === 0) return i;   // one pull each first
-  if (si === 0){ // epsilon-greedy, slowly decaying
-    var eps = Math.max(0.08, 0.3 / Math.sqrt(1 + ag.t*0.02));
-    if (Math.random() < eps) return (Math.random()*K)|0;
+  if (si === 0){ // epsilon-greedy with a constant epsilon -> LINEAR regret
+    if (Math.random() < EPSILON) return (Math.random()*K)|0;
     var b0 = 0;
     for (i=1;i<K;i++) if (ag.est[i] > ag.est[b0]) b0 = i;
     return b0;
   }
-  if (si === 1){ // UCB1
+  if (si === 1){ // UCB1-tuned (Auer, Cesa-Bianchi & Fischer 2002) -> LOG regret
+    var lt = Math.log(ag.t + 1);
     var bi = 0, bv = -1e9;
     for (i=0;i<K;i++){
-      var v = ag.est[i] + Math.sqrt(2*Math.log(ag.t+1)/ag.n[i]);
+      var varEst = ag.est[i]*(1 - ag.est[i]) + Math.sqrt(2*lt/ag.n[i]);
+      var v = ag.est[i] + Math.sqrt((lt/ag.n[i]) * Math.min(0.25, varEst));
       if (v > bv){ bv = v; bi = i; }
     }
     return bi;

@@ -100,7 +100,7 @@ function stepAgent(){
   if (done || steps > 260){
     lastReward = epReward;
     history.push(epReward);
-    if (history.length > 160) history.shift();
+    if (history.length > 400) history.shift();
     episode++;
     eps = Math.max(EPS_MIN, eps * EPS_DECAY);
     newEpisode();
