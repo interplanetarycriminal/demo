@@ -1,0 +1,314 @@
+<title>Null Measurement</title>
+<style>
+html,body{margin:0;padding:0;background:#04070c;overflow:hidden;height:100%}
+canvas{display:block;position:fixed;inset:0}
+#ui{position:fixed;top:12px;left:12px;z-index:10;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;
+ color:#cfe6ff;background:rgba(6,10,20,.74);border:1px solid rgba(120,255,220,.26);border-radius:9px;
+ padding:10px 12px;max-width:352px;backdrop-filter:blur(6px);box-shadow:0 0 26px rgba(0,220,180,.14)}
+#ui h1{margin:0 0 3px;font-size:13px;letter-spacing:.15em;color:#5cffcf;text-shadow:0 0 12px #0fd8a8}
+#ui .cc{color:#ffd76a;font-size:10px;letter-spacing:.1em}
+#ui .th{color:#9fb6cc;margin:5px 0 7px}
+#ui .hint{color:#6f8399;margin:6px 0 0;font-size:10px}
+#ui a{color:#5cffcf;text-decoration:none;border-bottom:1px dotted #2f8a75}
+#ui .row{display:flex;justify-content:space-between;gap:10px}
+#ui .k{color:#6f8399}
+#ui .v{color:#e8f6ff}
+hr{border:0;border-top:1px solid rgba(120,200,220,.16);margin:7px 0}
+button{font:10px ui-monospace,monospace;color:#bfe9ff;background:rgba(18,38,60,.85);
+ border:1px solid rgba(120,220,255,.35);border-radius:5px;padding:4px 7px;cursor:pointer;margin:4px 4px 0 0}
+button:hover{background:rgba(30,80,120,.95);box-shadow:0 0 10px rgba(90,220,255,.45)}
+button.sab{border-color:rgba(255,110,110,.55);color:#ffb0b0;background:rgba(60,16,20,.8)}
+button.sab:hover{background:rgba(110,26,32,.95);box-shadow:0 0 10px rgba(255,90,90,.5)}
+button.on{background:rgba(20,110,90,.95);color:#defff5;border-color:#5cffcf}
+input[type=range]{width:100%;accent-color:#5cffcf;margin:4px 0 0}
+#pun{position:fixed;bottom:10px;left:50%;transform:translateX(-50%);z-index:10;font:11px ui-monospace,monospace;
+ color:#8aa4bd;background:rgba(6,10,20,.6);padding:6px 14px;border-radius:14px;border:1px solid rgba(120,255,220,.16)}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div class="cc">CHEAT CODE #94</div>
+  <h1>NULL MEASUREMENT</h1>
+  <div class="th">The most accurate reading is zero: balance the unknown against an adjustable known and only ask "is it zero yet?" — at balance the detector's gain, offset and drift stop mattering.</div>
+  <div class="row"><span class="k">true sensor Rx</span><span class="v" id="rTrue">—</span></div>
+  <div class="row"><span class="k">DIRECT read (drifty meter)</span><span class="v" id="rDir" style="color:#ff8a8a">—</span></div>
+  <div class="row"><span class="k">NULL read (knob R3)</span><span class="v" id="rNull" style="color:#5cffcf">—</span></div>
+  <div class="row"><span class="k">detector out</span><span class="v" id="rDet">—</span></div>
+  <div class="row"><span class="k">detector state</span><span class="v" id="rSab" style="color:#ffb0b0">clean</span></div>
+  <hr>
+  <div class="k">REFERENCE KNOB R3 = <span class="v" id="rKnob">100.00 Ω</span></div>
+  <input type="range" id="knob" min="60" max="160" step="0.001" value="100">
+  <div>
+    <button id="bAuto">AUTO-BALANCE: OFF</button><button id="bTare">TARE ZERO</button><button id="bReset">RESET DETECTOR</button>
+  </div>
+  <div>
+    <button class="sab" id="bG">SABOTAGE: ½ GAIN</button><button class="sab" id="bO">+OFFSET</button><button class="sab" id="bN">10× NOISE</button>
+  </div>
+  <div class="hint">drag the knob dial or the slider until the needle centres — the ANSWER IS THE KNOB. Hit sabotage: the red direct trace jumps, the green null trace does not flinch. AUTO-BALANCE = a servo that re-nulls forever; its knob motion IS the measurement (force-balance accelerometer). <a href="index.html">← gallery</a></div>
+</div>
+<div id="pun">stop measuring the quantity; cancel it, and read the cancellation</div>
+<script>
+"use strict";
+var c=document.getElementById('c'),g=c.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;
+ c.width=Math.round(W*DPR);c.height=Math.round(H*DPR);c.style.width=W+'px';c.style.height=H+'px';
+ g.setTransform(DPR,0,0,DPR,0,0);}
+addEventListener('resize',resize);resize();
+if(!CanvasRenderingContext2D.prototype.roundRect){CanvasRenderingContext2D.prototype.roundRect=function(x,y,w,h,r){
+ this.beginPath();this.moveTo(x+r,y);this.arcTo(x+w,y,x+w,y+h,r);this.arcTo(x+w,y+h,x,y+h,r);
+ this.arcTo(x,y+h,x,y,r);this.arcTo(x,y,x+w,y,r);this.closePath();return this;};}
+
+// ================= PHYSICS =================
+var VS=5.0, R1=1000, R2=1000, R0=100, ALPHA=0.00385; // Pt100 RTD
+var S={T:22, tphase:0, walk:0};
+function RxOf(T){return R0*(1+ALPHA*T);}
+// bridge node voltages
+function VA(){return VS*R2/(R1+R2);}
+function VB(R3,Rx){return VS*Rx/(R3+Rx);}
+function dV(R3,Rx){return VA()-VB(R3,Rx);}      // detector input, zero at R1/R2 = R3/Rx
+// detector: gain-scaled, cubic-compressed, offset, noise.  ODD in dV -> zero-preserving.
+var D={gain:1400, nl:-2.6e5, offset:0, noise:0.004, tare:0, sabG:0,sabO:0,sabN:0};
+function detRaw(x){return D.gain*x + D.nl*x*x*x + D.offset;}
+function detOut(x,noise){return detRaw(x)-D.tare + (noise?(Math.random()+Math.random()+Math.random()-1.5)*D.noise*2:0);}
+// exact balance knob position: dV=0  =>  R3 = Rx*R1/R2
+function balanceKnob(Rx){return Rx*R1/R2;}
+// ACT 1: plain voltmeter across the sensor arm, gain+offset drifting
+var M={g:1.0,o:0,gp:0,op:1.7};
+function meterRead(v){return M.g*v+M.o;}
+function inferDirect(vm,R3){return R3*vm/(VS-vm);} // invert divider assuming a PERFECT meter
+
+// ================= STATE =================
+var knob=parseFloat(document.getElementById('knob').value), auto=false, t=0, sabEvents=[];
+var TR=[],TRMAX=520, msg=null, needle=0, needleV=0;
+function setKnob(v){knob=Math.max(60,Math.min(160,v));document.getElementById('knob').value=knob.toFixed(3);}
+document.getElementById('knob').oninput=function(){knob=parseFloat(this.value);auto=false;syncAuto();};
+function syncAuto(){var b=document.getElementById('bAuto');b.textContent='AUTO-BALANCE: '+(auto?'ON':'OFF');b.className=auto?'on':'';}
+document.getElementById('bAuto').onclick=function(){auto=!auto;syncAuto();say(auto?'servo engaged — the knob now tracks Rx by itself':'servo off');};
+document.getElementById('bTare').onclick=function(){D.tare=D.offset;say('detector zero tared — offset removed by protocol');};
+document.getElementById('bReset').onclick=function(){D.gain=1400;D.nl=-2.6e5;D.offset=0;D.noise=0.004;D.tare=0;
+ D.sabG=0;D.sabO=0;D.sabN=0;say('detector restored');};
+function mark(label){sabEvents.push({t:t,label:label});if(sabEvents.length>10)sabEvents.shift();say('SABOTAGE: '+label+'  → watch the green trace NOT move');}
+document.getElementById('bG').onclick=function(){D.gain*=0.5;D.sabG++;mark('gain ×0.5');};
+document.getElementById('bO').onclick=function(){D.offset+=0.35;D.sabO++;mark('offset +0.35 V (tare it)');};
+document.getElementById('bN').onclick=function(){D.noise*=3.2;D.sabN++;mark('noise ×3.2');};
+function say(s){msg={s:s,a:1};}
+addEventListener('keydown',function(e){
+ if(e.key==='ArrowLeft'){setKnob(knob-(e.shiftKey?0.02:0.2));auto=false;syncAuto();}
+ if(e.key==='ArrowRight'){setKnob(knob+(e.shiftKey?0.02:0.2));auto=false;syncAuto();}
+ if(e.key==='a')document.getElementById('bAuto').click();
+});
+// drag the dial
+var dial={x:0,y:0,r:0},dragging=false;
+function pt(e){var r=c.getBoundingClientRect();return{x:(e.touches?e.touches[0].clientX:e.clientX)-r.left,
+ y:(e.touches?e.touches[0].clientY:e.clientY)-r.top};}
+function down(e){var p=pt(e);if(Math.hypot(p.x-dial.x,p.y-dial.y)<dial.r*1.25){dragging=true;auto=false;syncAuto();move(e);e.preventDefault();}}
+function move(e){if(!dragging)return;var p=pt(e);var a=Math.atan2(p.y-dial.y,p.x-dial.x);
+ a=(a+Math.PI*2.5)%(Math.PI*2); // 0 at top, cw
+ var frac=a/(Math.PI*2); // full turn = full range
+ setKnob(60+frac*100);e.preventDefault();}
+function up(){dragging=false;}
+c.addEventListener('mousedown',down);addEventListener('mousemove',move);addEventListener('mouseup',up);
+c.addEventListener('touchstart',down,{passive:false});addEventListener('touchmove',move,{passive:false});addEventListener('touchend',up);
+
+// ================= DRAW HELPERS =================
+function glowText(s,x,y,col,size,bold,align){g.save();g.textAlign=align||'left';
+ g.font=(bold?'bold ':'')+size+'px ui-monospace,Menlo,monospace';g.shadowBlur=10;g.shadowColor=col;g.fillStyle=col;
+ g.fillText(s,x,y);g.restore();}
+function resistor(x1,y1,x2,y2,col,label,val,hot){
+ var dx=x2-x1,dy=y2-y1,L=Math.hypot(dx,dy),ux=dx/L,uy=dy/L,px=-uy,py=ux;
+ var s=(L-56)/2;
+ g.strokeStyle=col;g.lineWidth=hot?2.6:1.8;g.shadowBlur=hot?16:7;g.shadowColor=col;
+ g.beginPath();g.moveTo(x1,y1);g.lineTo(x1+ux*s,y1+uy*s);
+ var n=6,zl=56/n;
+ for(var i=0;i<=n;i++){var bx=x1+ux*(s+i*zl),by=y1+uy*(s+i*zl);
+  var off=(i===0||i===n)?0:((i%2)?9:-9);g.lineTo(bx+px*off,by+py*off);}
+ g.lineTo(x2,y2);g.stroke();g.shadowBlur=0;
+ var mx=(x1+x2)/2+px*22,my=(y1+y2)/2+py*22;
+ g.textAlign='center';
+ glowText(label,mx,my-4,col,11,true,'center');
+ glowText(val,mx,my+10,'#cfe6ff',10,false,'center');
+ g.textAlign='left';
+}
+function wire(x1,y1,x2,y2,col){g.strokeStyle=col||'rgba(120,180,220,.55)';g.lineWidth=1.6;
+ g.beginPath();g.moveTo(x1,y1);g.lineTo(x2,y2);g.stroke();}
+function node(x,y,col){g.fillStyle=col;g.shadowBlur=12;g.shadowColor=col;g.beginPath();g.arc(x,y,4,0,7);g.fill();g.shadowBlur=0;}
+
+// ================= LOOP =================
+var last=performance.now();
+function frame(now){
+ var dt=Math.min(0.05,(now-last)/1000);last=now;t+=dt;
+ // sensor drift (the thing being measured)
+ S.walk+=(Math.random()-0.5)*dt*1.4;S.walk*=0.995;
+ S.T=42+16*Math.sin(t*0.19)+7*Math.sin(t*0.071+1.2)+S.walk*3;
+ var Rx=RxOf(S.T);
+ // drifting voltmeter (ACT 1) — ±5% gain wander, wandering offset
+ M.g=1+0.05*Math.sin(t*0.33+0.7)+0.012*Math.sin(t*2.1);
+ M.o=0.045*Math.sin(t*0.21+2.0)+0.006*Math.sin(t*3.7);
+ // servo
+ var d0=dV(knob,Rx), det=detOut(d0,true);
+ if(auto){ setKnob(knob + det*0.0016*Math.min(1,dt*60)*3.2); }
+ // needle physics (2nd order, critically-ish damped)
+ var target=Math.max(-1,Math.min(1,det*0.9));
+ needleV+= (target-needle)*46*dt - needleV*8.5*dt; needle+=needleV*dt;
+ // traces
+ var vm=meterRead(VB(knob,Rx));
+ var Rdir=inferDirect(vm,knob);
+ var Rnull=balanceKnob(Rx); // what the knob reads AT balance = the null answer
+ TR.push({t:t,dir:Rdir,nul:auto?knob:Rnull,tru:Rx});if(TR.length>TRMAX)TR.shift();
+
+ // ---- render
+ g.setTransform(DPR,0,0,DPR,0,0);
+ g.fillStyle='#04070c';g.fillRect(0,0,W,H);
+ // vignette grid
+ g.strokeStyle='rgba(60,120,150,0.05)';g.lineWidth=1;
+ for(var x=0;x<W;x+=44){g.beginPath();g.moveTo(x,0);g.lineTo(x,H);g.stroke();}
+ for(var y=0;y<H;y+=44){g.beginPath();g.moveTo(0,y);g.lineTo(W,y);g.stroke();}
+
+ var narrow=W<980;
+ var bw=narrow?W*0.86:Math.min(560,W*0.44), bh=Math.min(H*0.52,420);
+ var bx=narrow?W*0.5:W*0.30, by=narrow?H*0.42:H*0.52;
+ // diamond nodes
+ var C={x:bx,y:by-bh/2},Dn={x:bx,y:by+bh/2},A={x:bx-bw/2,y:by},B={x:bx+bw/2,y:by};
+ // arms  C-A=R1, A-D=R2, C-B=R3(knob), B-D=Rx(sensor)
+ var bal=Math.abs(knob-Rx)<0.05;
+ resistor(C.x,C.y,A.x,A.y,'#7fb6ff','R1','1000 Ω',false);
+ resistor(A.x,A.y,Dn.x,Dn.y,'#7fb6ff','R2','1000 Ω',false);
+ resistor(C.x,C.y,B.x,B.y,'#5cffcf','R3 (KNOB)',knob.toFixed(2)+' Ω',true);
+ resistor(B.x,B.y,Dn.x,Dn.y,'#ffb347','Rx (SENSOR)',Rx.toFixed(2)+' Ω',true);
+ node(C.x,C.y,'#ff6f9c');node(Dn.x,Dn.y,'#6fb0ff');node(A.x,A.y,'#9fd8ff');node(B.x,B.y,'#9fd8ff');
+ glowText('+'+VS.toFixed(1)+' V',C.x+12,C.y-10,'#ff6f9c',11,true);
+ glowText('GND',Dn.x+12,Dn.y+18,'#6fb0ff',11,true);
+ // detector wire A—B
+ var mid={x:bx,y:by};
+ wire(A.x,A.y,mid.x-46,mid.y,bal?'rgba(92,255,207,.9)':'rgba(120,180,220,.55)');
+ wire(mid.x+46,mid.y,B.x,B.y,bal?'rgba(92,255,207,.9)':'rgba(120,180,220,.55)');
+
+ // ---- galvanometer
+ var gr=44;
+ g.save();g.translate(mid.x,mid.y);
+ var gcol=bal?'#5cffcf':'#9fd8ff';
+ g.shadowBlur=bal?30:12;g.shadowColor=gcol;
+ g.strokeStyle=gcol;g.lineWidth=2;g.beginPath();g.arc(0,0,gr,0,7);g.stroke();g.shadowBlur=0;
+ g.fillStyle='rgba(4,12,18,.9)';g.beginPath();g.arc(0,0,gr-2,0,7);g.fill();
+ // scale
+ for(var i=-5;i<=5;i++){var a=i*0.19;g.strokeStyle=i===0?'rgba(92,255,207,.9)':'rgba(140,190,220,.35)';
+  g.lineWidth=i===0?2:1;g.beginPath();
+  g.moveTo(Math.sin(a)*(gr-6),-Math.cos(a)*(gr-6));g.lineTo(Math.sin(a)*(gr-(i===0?18:12)),-Math.cos(a)*(gr-(i===0?18:12)));g.stroke();}
+ var na=Math.max(-1,Math.min(1,needle))*0.95;
+ g.strokeStyle=bal?'#5cffcf':'#ff7a7a';g.lineWidth=2.4;g.shadowBlur=16;g.shadowColor=g.strokeStyle;
+ g.beginPath();g.moveTo(0,6);g.lineTo(Math.sin(na)*(gr-10),-Math.cos(na)*(gr-10));g.stroke();g.shadowBlur=0;
+ g.fillStyle=gcol;g.beginPath();g.arc(0,0,3.5,0,7);g.fill();
+ glowText('G',0,gr-10,'rgba(160,210,240,.7)',10,true,'center');
+ g.restore();
+ if(bal){g.save();g.globalCompositeOperation='lighter';
+  var rg=g.createRadialGradient(mid.x,mid.y,4,mid.x,mid.y,gr*2.4);
+  rg.addColorStop(0,'rgba(92,255,207,.30)');rg.addColorStop(1,'rgba(92,255,207,0)');
+  g.fillStyle=rg;g.beginPath();g.arc(mid.x,mid.y,gr*2.4,0,7);g.fill();g.restore();
+  glowText('NULL — READ THE KNOB',mid.x,mid.y+gr+22,'#5cffcf',12,true,'center');}
+ else glowText('Δ = '+(d0*1000).toFixed(2)+' mV',mid.x,mid.y+gr+20,'rgba(160,200,230,.7)',11,false,'center');
+
+ // ---- ACT 1 drifting voltmeter, hung off node B
+ var vmx=narrow?W*0.5:B.x+ (W-B.x)*0.0+110, vmy=B.y+ (narrow?150:130);
+ if(!narrow){
+  vmx=Math.min(W-140,B.x+120);
+  wire(B.x,B.y,vmx,B.y,'rgba(255,120,120,.4)');wire(vmx,B.y,vmx,vmy-34,'rgba(255,120,120,.4)');
+ }
+ g.save();g.translate(vmx,vmy);
+ g.strokeStyle='rgba(255,120,120,.8)';g.lineWidth=1.6;g.shadowBlur=12;g.shadowColor='#ff6a6a';
+ g.beginPath();g.roundRect(-64,-32,128,64,8);g.stroke();g.shadowBlur=0;
+ g.fillStyle='rgba(20,6,8,.85)';g.beginPath();g.roundRect(-64,-32,128,64,8);g.fill();
+ glowText('DIRECT VOLTMETER',0,-18,'rgba(255,150,150,.8)',9,true,'center');
+ glowText(vm.toFixed(4)+' V',0,2,'#ff9a9a',15,true,'center');
+ glowText('gain '+M.g.toFixed(3)+'  off '+(M.o>=0?'+':'')+M.o.toFixed(3),0,18,'rgba(255,160,160,.55)',9,false,'center');
+ g.restore();
+
+ // ================= RIGHT PANEL: traces + math =================
+ var px0=narrow?12:W*0.575, pw=narrow?W-24:W*0.40, py0=narrow?12:70, ph=Math.min(240,H*0.30);
+ if(narrow){py0=H-330;ph=150;}
+ // frame
+ g.strokeStyle='rgba(120,200,255,.22)';g.lineWidth=1;
+ g.fillStyle='rgba(6,12,20,.62)';g.beginPath();g.roundRect(px0,py0,pw,ph+96,8);g.fill();g.stroke();
+ glowText('THE KILLER PLOT — inferred Rx over time',px0+12,py0+18,'#cfe6ff',11,true);
+ var lo=Rx-9,hi=Rx+9;
+ TR.forEach(function(p){lo=Math.min(lo,p.dir,p.nul,p.tru);hi=Math.max(hi,p.dir,p.nul,p.tru);});
+ lo-=1;hi+=1;
+ var gx=px0+46,gy=py0+28,gw=pw-60,gh=ph-46;
+ g.strokeStyle='rgba(120,200,255,.14)';
+ for(var i=0;i<=4;i++){var yy=gy+gh*i/4;g.beginPath();g.moveTo(gx,yy);g.lineTo(gx+gw,yy);g.stroke();
+  glowText((hi-(hi-lo)*i/4).toFixed(1),gx-6,yy+3,'rgba(140,180,210,.55)',9,false,'right');}
+ function X(i){return gx+gw*i/(TRMAX-1);}
+ function Y(v){return gy+gh*(1-(v-lo)/(hi-lo));}
+ // sabotage markers
+ sabEvents.forEach(function(ev){
+  var idx=-1;for(var i=0;i<TR.length;i++)if(TR[i].t>=ev.t){idx=i;break;}
+  if(idx<0)return;var xx=X(idx+(TRMAX-TR.length));
+  g.strokeStyle='rgba(255,90,90,.45)';g.lineWidth=1;g.setLineDash([3,3]);
+  g.beginPath();g.moveTo(xx,gy);g.lineTo(xx,gy+gh);g.stroke();g.setLineDash([]);
+  glowText('✖',xx,gy-2,'rgba(255,110,110,.9)',9,true,'center');});
+ function poly(key,col,wdt,glow){g.strokeStyle=col;g.lineWidth=wdt;g.shadowBlur=glow?10:0;g.shadowColor=col;
+  g.beginPath();var off=TRMAX-TR.length;
+  for(var i=0;i<TR.length;i++){var xx=X(i+off),yy=Y(TR[i][key]);if(i===0)g.moveTo(xx,yy);else g.lineTo(xx,yy);}
+  g.stroke();g.shadowBlur=0;}
+ poly('tru','rgba(190,210,230,.5)',1.2,false);
+ poly('dir','#ff6a6a',1.6,true);
+ poly('nul','#5cffcf',2.0,true);
+ glowText('— true Rx',gx+6,gy+gh+14,'rgba(190,210,230,.65)',9,false);
+ glowText('— DIRECT (jumps at every ✖)',gx+86,gy+gh+14,'#ff8a8a',9,false);
+ glowText('— NULL (does not flinch)',gx+286>gx+gw?gx+6:gx+286,gy+gh+(gx+286>gx+gw?26:14),'#5cffcf',9,false);
+
+ // math panel
+ var my0=py0+ph+2;
+ glowText('LIVE MATH',px0+12,my0+14,'#ffd76a',10,true);
+ var eqs=[
+  'V_A = Vs·R2/(R1+R2) = '+VA().toFixed(4)+' V',
+  'V_B = Vs·Rx/(R3+Rx) = '+VB(knob,Rx).toFixed(4)+' V',
+  'balance:  R1/R2 = R3/Rx  →  '+(R1/R2).toFixed(3)+' = '+(knob/Rx).toFixed(3),
+  'Rx = R2·R3/R1 = '+(R2*knob/R1).toFixed(3)+' Ω    (true '+Rx.toFixed(3)+' Ω)',
+  'detector: out = k·Δ + c·Δ³ + off   — k,c,off CANCEL at Δ=0'
+ ];
+ eqs.forEach(function(s,i){glowText(s,px0+12,my0+30+i*13,i>=2?'#bfe0ff':'rgba(160,195,225,.8)',10,i===2||i===4);});
+
+ // ---- KNOB DIAL (bottom right / bottom center)
+ dial.r=Math.min(64,Math.max(42,W*0.045));
+ dial.x=narrow?W-dial.r-24:W-dial.r-40;dial.y=H-dial.r-34;
+ g.save();g.translate(dial.x,dial.y);
+ g.strokeStyle='rgba(92,255,207,.55)';g.lineWidth=2;g.shadowBlur=16;g.shadowColor='#5cffcf';
+ g.beginPath();g.arc(0,0,dial.r,0,7);g.stroke();g.shadowBlur=0;
+ g.fillStyle='rgba(6,20,18,.85)';g.beginPath();g.arc(0,0,dial.r-3,0,7);g.fill();
+ for(var i=0;i<40;i++){var a=i/40*Math.PI*2;var l=(i%5===0)?9:5;
+  g.strokeStyle=(i%5===0)?'rgba(92,255,207,.6)':'rgba(92,255,207,.25)';g.lineWidth=1;
+  g.beginPath();g.moveTo(Math.sin(a)*(dial.r-4),-Math.cos(a)*(dial.r-4));
+  g.lineTo(Math.sin(a)*(dial.r-4-l),-Math.cos(a)*(dial.r-4-l));g.stroke();}
+ var ka=(knob-60)/100*Math.PI*2;
+ g.strokeStyle='#5cffcf';g.lineWidth=3;g.shadowBlur=14;g.shadowColor='#5cffcf';
+ g.beginPath();g.moveTo(0,0);g.lineTo(Math.sin(ka)*(dial.r-14),-Math.cos(ka)*(dial.r-14));g.stroke();g.shadowBlur=0;
+ glowText(knob.toFixed(2),0,dial.r+16,'#5cffcf',12,true,'center');
+ glowText(auto?'SERVO':'DRAG ME',0,dial.r+30,auto?'#ffd76a':'rgba(150,200,220,.6)',9,true,'center');
+ g.restore();
+
+ // message toast
+ if(msg){msg.a-=dt*0.35;if(msg.a<=0)msg=null;else{
+  var a2=Math.min(1,msg.a*1.6);g.textAlign='center';g.font='bold 13px ui-monospace,monospace';
+  var tw=g.measureText(msg.s).width;
+  g.fillStyle='rgba(6,14,20,'+(0.85*a2)+')';g.beginPath();g.roundRect(W/2-tw/2-14,H-72,tw+28,28,14);g.fill();
+  g.strokeStyle='rgba(92,255,207,'+(0.5*a2)+')';g.lineWidth=1;g.stroke();
+  g.fillStyle='rgba(220,255,245,'+a2+')';g.fillText(msg.s,W/2,H-53);g.textAlign='left';}}
+
+ // ---- HTML readouts
+ document.getElementById('rTrue').textContent=Rx.toFixed(3)+' Ω  ('+S.T.toFixed(2)+' °C)';
+ var errD=(Rdir-Rx)/Rx*100, errN=((auto?knob:Rnull)-Rx)/Rx*100;
+ document.getElementById('rDir').textContent=Rdir.toFixed(3)+' Ω  ('+(errD>=0?'+':'')+errD.toFixed(2)+'%)';
+ document.getElementById('rNull').textContent=(auto?knob:Rnull).toFixed(3)+' Ω  ('+(errN>=0?'+':'')+errN.toFixed(3)+'%)';
+ document.getElementById('rDet').textContent=det.toFixed(4)+(bal?'  ⟵ NULL':'');
+ document.getElementById('rKnob').textContent=knob.toFixed(2)+' Ω';
+ var sb=[];if(D.sabG)sb.push('gain×'+Math.pow(0.5,D.sabG).toFixed(3));if(D.sabO)sb.push('offset+'+D.offset.toFixed(2));
+ if(D.sabN)sb.push('noise×'+(D.noise/0.004).toFixed(1));if(D.tare)sb.push('tared');
+ document.getElementById('rSab').textContent=sb.length?sb.join(' · '):'clean';
+ requestAnimationFrame(frame);
+}
+say('ACT 1 — the red meter drifts ±5%. You cannot tell sensor from meter.');
+setTimeout(function(){say('ACT 2 — turn the knob until the needle centres. Then sabotage the detector.');},7000);
+requestAnimationFrame(frame);
+</script>
+</body>

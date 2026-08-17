@@ -170,25 +170,20 @@ function drawStereo(){
   var vh=H*0.56, vw=W/2-1;
   drawScene(0,0,vw,vh,-st.baseline/2,'LEFT EYE   camX = −b/2','#8ce8ff');
   drawScene(vw+2,0,vw,vh,+st.baseline/2,'RIGHT EYE  camX = +b/2','#ff8fdd');
-  // annotate per-object shift
-  var y=vh-8;
-  OBJ.forEach(function(o){
-    var d=disparityPx(o,st.baseline);
-    if(d<0.02)return;
-  });
   drawShiftTable(0,vh);
 }
 
 function drawShiftTable(x0,yTop){
-  var y=yTop-10;
-  ctx.save();ctx.font='11px ui-monospace,monospace';
+  // keep clear of the top-left overlay
+  var x=Math.max(W*0.44,430);
   var lines=OBJ.map(function(o){
     var d=disparityPx(o,st.baseline);
-    return o.n+'  Z='+fmtLen(o.Z)+'  shift='+(d<0.01?d.toExponential(1):d.toFixed(2))+' px';
+    return o.n+'  Z='+fmtLen(o.Z)+'   jump = '+(d<0.01?d.toExponential(1):d.toFixed(2))+' px';
   });
-  ctx.restore();
+  txt('PER-OBJECT SHIFT BETWEEN THE TWO VIEWS',x,yTop-lines.length*14-24,
+      'rgba(140,190,230,.6)','11px ui-monospace,monospace');
   lines.forEach(function(s,i){
-    txt(s,12,yTop-lines.length*14+i*14-6,i===st.sel?'#8dff9d':'rgba(160,190,220,.55)',
+    txt(s,x,yTop-lines.length*14+i*14-6,i===st.sel?'#8dff9d':'rgba(160,190,220,.55)',
         '11px ui-monospace,monospace');
   });
 }

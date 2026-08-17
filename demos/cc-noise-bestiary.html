@@ -78,10 +78,16 @@ var pink=new PinkGen(), driftState=0, tIdx=0;
      does nothing below the 1/f corner.
    So flickerRec/driftRec are drawn ONCE PER FRAME and reused by all N repeats,
    while the white draws are fresh in every repeat. */
-var flickerRec=new Float64Array(N), driftRec=new Float64Array(N);
+   Flicker is split at the corner: the SUB-corner part is shared by every repeat
+   (it is slower than the record), the ABOVE-corner part is drawn fresh, so it
+   averages like any other independent noise. */
+var CORNER=10, AC=1-Math.exp(-2*Math.PI*CORNER/FS);   // 1-pole @ 10 Hz
+var flickerSlow=new Float64Array(N), driftRec=new Float64Array(N);
+var pinkFast=new PinkGen(), fastLP=0, slowLP=0;
 function refreshSlow(){
  for(var i=0;i<N;i++){
-  flickerRec[i]=pink.next();
+  slowLP += AC*(pink.next()-slowLP);      // sub-corner flicker: common-mode
+  flickerSlow[i]=slowLP;
   driftState+=gauss()*0.004-driftState*0.0006;
   driftRec[i]=driftState;
  }
@@ -123,8 +129,9 @@ function makeBlock(applyWeapons){
   if(sOn.johnson) v+=0.22*gauss();
   if(sOn.shot)    v+=shotAmp*gauss();
   if(sOn.flicker){
+    var fr=pinkFast.next(); fastLP+=AC*(fr-fastLP);   // above-corner: independent
     // chopping: modulate signal to fc, so 1/f lands out-of-band, then demod
-    v += flickerRec[i]*0.30*(chopOn?0.12:1);
+    v += (flickerSlow[i]*3.0 + (fr-fastLP))*0.30*(chopOn?0.12:1);
   }
   if(sOn.drift){ v+= driftRec[i]*(recalOn?0.05:4.0); }
   if(sOn.mains && !notchOn){ v+=0.45*Math.sin(2*Math.PI*50*t+0.7)

@@ -306,7 +306,7 @@ function frame(){
     h+=row('perp. spacing',perpSpacing(st.theta).toFixed(3)+' mm');
     h+=row('θ recovered',(angleFromSpacing(S)*180/Math.PI*60).toFixed(3)+' arcmin');
     h+=row('ΔS per arcmin',Math.abs(S-fringeSpacing(st.theta+1/60*Math.PI/180)).toFixed(3)+' mm',true);
-    h+=row('angular gain',(S/PROT).toFixed(0)+' mm of fringe / rad',true);
+    h+=row('magnification S/p',(S/PROT).toFixed(0)+' ×   (= 1/sin θ)',true);
   }else{
     h+=row('p₁ (fixed)',(P1*1000).toFixed(1)+' µm');
     h+=row('p₂ (movable)',(P2()*1000).toFixed(1)+' µm');
