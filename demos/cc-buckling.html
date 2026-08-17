@@ -364,8 +364,10 @@ var caps=[
 function drawCaptions(){
   var y=H-92;
   txt('NATURE\'S COMPARATORS',24,y-16,'#6fb6d6',11);
-  var idx=Math.floor(S.t/3.4)%caps.length;
-  var fade=Math.min(1,(S.t/3.4%1)*4)*Math.min(1,(1-(S.t/3.4%1))*4+0.4);
+  // positive modulo — a plain % can go negative and index off the end of the array
+  var idx=((Math.floor(S.t/3.4)%caps.length)+caps.length)%caps.length;
+  var ph=(S.t/3.4)%1; if(ph<0)ph+=1;
+  var fade=Math.min(1,ph*4)*Math.min(1,(1-ph)*4+0.4);
   g.save();g.globalAlpha=0.35+0.65*Math.min(1,fade);
   txt(caps[idx][0],24,y+6,'#ffd27f',14);
   txt(caps[idx][1],24,y+24,'#9fd0e4',11);
@@ -390,7 +392,7 @@ function updateUI(){
 // ---------- loop ----------
 var last=performance.now();
 function frame(now){
-  var dt=Math.min(0.033,(now-last)/1000);last=now;
+  var dt=Math.min(0.033,Math.max(0,(now-last)/1000));last=now;
   for(var k=0;k<2;k++)step(dt/2);
   g.setTransform(DPR,0,0,DPR,0,0);
   g.fillStyle='#04070c';g.fillRect(0,0,W,H);

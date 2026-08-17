@@ -53,8 +53,11 @@ var RHO=1000;      // water, kg/m^3  (venturi)
 var RHO_AIR=1.225; // kg/m^3         (pitot)
 var Gg=9.81;
 var P_ATM=101325;
+var P_VAP=2340;    // water vapour pressure @20C - below this it cavitates
+var P1_GAUGE=60000;// supply head at the inlet tap (6.1 m of water)
+var PSCALE=180000; // manometer full scale, ABSOLUTE Pa
 
-var S={act:0, Q:0.020, throat:0.35, wind:30, blow:12, dbg:0};
+var S={act:0, Q:0.012, throat:0.35, wind:30, blow:12, dbg:0};
 // Q = volumetric flow m^3/s ; throat = area ratio A2/A1 ; wind = m/s ; blow = m/s
 
 // pipe geometry (SI): pipe is a square duct of side D1
@@ -66,15 +69,15 @@ function A2(){return A1()*S.throat;}
 function venturi(){
   var a1=A1(),a2=A2();
   var v1=S.Q/a1, v2=S.Q/a2;
-  // static gauge pressures, taking inlet static as reference p1
-  var p1=8000;                       // Pa gauge at inlet (pump head)
+  // static ABSOLUTE pressures; inlet is held at a fixed supply head
+  var p1=P_ATM+P1_GAUGE;
   var p2=p1+0.5*RHO*(v1*v1-v2*v2);   // Bernoulli
   var p3=p2+0.5*RHO*(v2*v2-v1*v1);   // ideal full recovery -> p3 == p1
   var dP=p1-p2;
   // venturi meter inversion: Q = A2*sqrt(2*dP/(rho*(1-(A2/A1)^2)))
   var beta2=(a2/a1)*(a2/a1);
   var Qrec=a2*Math.sqrt(Math.max(0,2*dP/(RHO*(1-beta2))));
-  return {v1:v1,v2:v2,p1:p1,p2:p2,p3:p3,dP:dP,Qrec:Qrec,a1:a1,a2:a2};
+  return {v1:v1,v2:v2,p1:p1,p2:p2,p3:p3,dP:dP,Qrec:Qrec,a1:a1,a2:a2,cav:(p2<P_VAP)};
 }
 // ---------------- pitot physics ----------------
 function pitot(){
@@ -133,7 +136,7 @@ function slider(id,label,min,max,step,val){
 function buildCtl(){
   var h='';
   if(S.act===0){
-    h+=slider('sQ','flow rate Q',2,60,0.5,S.Q*1000);
+    h+=slider('sQ','flow rate Q  (L/s)',2,20,0.1,S.Q*1000);
     h+=slider('sT','throat area ratio A₂/A₁',0.12,0.95,0.01,S.throat);
     hint.textContent='drag throat walls vertically · sliders · keys 1/2/3';
   }else if(S.act===1){
@@ -176,12 +179,12 @@ function glowText(txt,x,y,col,size,align){
   g.save();g.font=(size||12)+'px ui-monospace,Menlo,monospace';g.textAlign=align||'left';
   g.fillStyle=col;g.shadowColor=col;g.shadowBlur=10;g.fillText(txt,x,y);g.restore();
 }
-function manometer(x,yBase,hpx,pGauge,label,col,maxH){
+function manometer(x,yBase,pAbs,label,col,maxH){
   var w=15,tubeH=maxH;
   g.save();
   g.strokeStyle='rgba(140,200,230,.45)';g.lineWidth=1.5;
   g.strokeRect(x-w/2,yBase-tubeH,w,tubeH);
-  var lv=Math.max(2,Math.min(tubeH-2,hpx));
+  var lv=Math.max(2,Math.min(tubeH-2,Math.max(0,pAbs/PSCALE)*tubeH));
   var grd=g.createLinearGradient(0,yBase-lv,0,yBase);
   grd.addColorStop(0,col);grd.addColorStop(1,'rgba(0,60,110,.9)');
   g.fillStyle=grd;g.shadowColor=col;g.shadowBlur=14;
@@ -190,7 +193,8 @@ function manometer(x,yBase,hpx,pGauge,label,col,maxH){
   g.fillStyle='rgba(255,255,255,.9)';g.fillRect(x-w/2+1.5,yBase-lv-2,w-3,2);
   g.restore();
   glowText(label,x,yBase+14,'#8fd7ff',10,'center');
-  glowText((pGauge/1000).toFixed(2)+' kPa',x,yBase+26,col,10,'center');
+  glowText((pAbs/1000).toFixed(2)+' kPa abs',x,yBase+26,col,10,'center');
+  glowText(((pAbs-P_ATM)/1000).toFixed(2)+' kPa gauge',x,yBase+38,'rgba(160,200,220,.75)',9,'center');
 }
 
 // ================= ACT 1: VENTURI =================
@@ -236,20 +240,27 @@ function drawVenturi(dt,T){
   var taps=[{t:0.14,p:V.p1,l:'TAP 1  inlet',c:'#4fd2ff'},
             {t:0.48,p:V.p2,l:'TAP 2  THROAT',c:'#ff5fa8'},
             {t:0.86,p:V.p3,l:'TAP 3  outlet',c:'#4fd2ff'}];
-  var maxH=Math.min(200,H*0.26);
-  var pmax=12000;
+  var maxH=Math.min(190,H*0.24);
+  var base=cy-PIPE.halfIn-58;
+  // reference lines on the manometer bank: atmosphere and cavitation
+  var yATM=base-(P_ATM/PSCALE)*maxH, yVAP=base-(P_VAP/PSCALE)*maxH;
+  g.save();g.setLineDash([4,5]);g.lineWidth=1;
+  g.strokeStyle='rgba(200,230,255,.35)';
+  g.beginPath();g.moveTo(xOf(0.06),yATM);g.lineTo(xOf(0.94),yATM);g.stroke();
+  g.strokeStyle='rgba(255,95,111,.45)';
+  g.beginPath();g.moveTo(xOf(0.06),yVAP);g.lineTo(xOf(0.94),yVAP);g.stroke();g.restore();
+  glowText('1 atm',xOf(0.06)-6,yATM+3,'rgba(200,230,255,.7)',9,'right');
+  glowText('P_vap (cavitation)',xOf(0.06)-6,yVAP+3,'rgba(255,120,130,.8)',9,'right');
   for(i=0;i<taps.length;i++){
     var tp=taps[i],x=xOf(tp.t),yTop=cy-halfAt(tp.t);
-    var base=cy-PIPE.halfIn-24;
     // tap stub
     g.save();g.strokeStyle='rgba(150,220,255,.6)';g.lineWidth=2;
     g.beginPath();g.moveTo(x,yTop);g.lineTo(x,base);g.stroke();g.restore();
-    var lvl=Math.max(0,Math.min(1,tp.p/pmax))*maxH;
-    manometer(x,base,lvl,tp.p,tp.l,tp.c,maxH);
+    manometer(x,base,tp.p,tp.l,tp.c,maxH);
   }
   // arrow annotation on the drop
   var xa=xOf(0.48);
-  glowText('▼ LOW P',xa,cy-PIPE.halfIn-24-maxH-16,'#ff8fc4',11,'center');
+  glowText('▼ LOW P',xa,base-(V.p2/PSCALE)*maxH-10,'#ff8fc4',11,'center');
   glowText('v = Q/A  ⟹  fast ⟹  low P',xOf(0.48),cy+PIPE.halfIn+34,'#ffd98a',12,'center');
 
   // local velocity profile strip
@@ -263,7 +274,7 @@ function drawVenturi(dt,T){
   g.beginPath();
   for(t=0;t<=1.0001;t+=0.004){
     var vv=vAt(t);var pst=V.p1+0.5*RHO*(V.v1*V.v1-vv*vv);
-    var y2=cy+PIPE.halfIn+90-(pst/pmax)*54;
+    var y2=cy+PIPE.halfIn+90-(pst/PSCALE)*54;
     if(t===0)g.moveTo(xOf(t),y2);else g.lineTo(xOf(t),y2);
   }
   g.strokeStyle='#4fd2ff';g.lineWidth=2;g.shadowColor='#4fd2ff';g.shadowBlur=12;g.stroke();
@@ -278,9 +289,10 @@ function drawVenturi(dt,T){
    row('v₁ inlet',V.v1.toFixed(3)+' m/s')+
    row('v₂ throat',V.v2.toFixed(3)+' m/s  <span class="ok">×'+(V.v2/V.v1).toFixed(2)+'</span>')+
    row('continuity A₁v₁',(V.a1*V.v1*1000).toFixed(3)+' = '+(V.a2*V.v2*1000).toFixed(3)+' L/s')+
-   row('P₁ static',(V.p1/1000).toFixed(3)+' kPa')+
-   row('P₂ throat','<span class="warn">'+(V.p2/1000).toFixed(3)+' kPa</span>')+
+   row('P₁ static',(V.p1/1000).toFixed(3)+' kPa abs')+
+   row('P₂ throat','<span class="warn">'+(V.p2/1000).toFixed(3)+' kPa abs</span>')+
    row('ΔP = P₁−P₂',(V.dP/1000).toFixed(3)+' kPa')+
+   row('cavitation margin',(V.cav?'<span class="warn">CAVITATING</span>':'<span class="ok">'+((V.p2-P_VAP)/1000).toFixed(1)+' kPa clear</span>'))+
    '<div class="sec"></div>'+
    row('TRUE Q',(S.Q*1000).toFixed(3)+' L/s')+
    row('Q recovered from ΔP','<span class="ok">'+(V.Qrec*1000).toFixed(3)+' L/s</span>')+

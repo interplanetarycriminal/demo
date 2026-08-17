@@ -57,7 +57,7 @@ window.addEventListener('resize',resize);resize();
 var MATS=[
  {key:'steel', name:'SPRING STEEL',  col:'#8fd8ff', k:26000, cvis:1.5,  fy:0,     rate:0.0,  note:'whisper-thin loop — nearly lossless'},
  {key:'foam',  name:'FOAM BLOCK',    col:'#5effc8', k:5200,  cvis:190,  fy:24,    rate:0.15, note:'fat loop — every cycle is heat'},
- {key:'rubber',name:'RUBBER',        col:'#ffb64d', k:9000,  cvis:520,  fy:14,    rate:1.00, note:'rate-dependent — faster = fatter'},
+ {key:'rubber',name:'RUBBER',        col:'#ffb64d', k:9000,  cvis:160,  fy:14,    rate:1.00, note:'rate-dependent — faster = fatter'},
  {key:'bh',    name:'MAGNETIC B–H',  col:'#ff7ba8', k:0,     cvis:0,    fy:0,     rate:0.0,  note:'sigmoid loop; area = core loss/cycle'},
  {key:'joint', name:'WORN JOINT',    col:'#c69bff', k:14000, cvis:40,   fy:8,     rate:0.05, note:'loop AREA is the health metric'}
 ];
@@ -118,8 +118,9 @@ function force(m,x,v,dt){
   }
   var wearMul = (m.key==='joint') ? (1+7.5*S.wear) : 1;
   var k=m.k*(m.key==='joint'?(1-0.28*S.wear):1);
-  // rate-dependent viscous term (rubber's loop widens with speed)
-  var cvis=m.cvis*(1+m.rate*3.2*(S.speed/0.85-1));
+  // rate-dependent viscous term (rubber's loop widens with speed).
+  // Power law, never negative: c ∝ speed^(1.2·rate)  →  loop area ∝ speed^(1+1.2·rate).
+  var cvis=m.cvis*Math.pow(S.speed/0.85, m.rate*1.2);
   // Bouc-Wen hysteretic (rate-INdependent friction/plastic) element
   var fy=m.fy*wearMul;
   if(fy>0){
@@ -168,7 +169,7 @@ function step(dt){
     S.area=Math.abs(shoelace(S.lastLoop));
     S.areaShown+=(S.area-S.areaShown)*1.0;
     S.cycles++;
-    S.areaHistory.push({w:S.wear,a:S.area});
+    S.areaHistory.push({w:S.wear,sp:S.speed,a:S.area});
     if(S.areaHistory.length>240)S.areaHistory.shift();
     S.loop=[{x:S.x,F:S.F}];
     S.energyIn=0;
@@ -177,8 +178,8 @@ function step(dt){
   S.power=S.area*S.speed;
 
   // thermal model fed by EXACTLY that dissipated power
-  var Cth=42;                 // J/K  (block heat capacity)
-  var hA=0.85;                // W/K  to ambient
+  var Cth=30;                 // J/K  (block heat capacity)
+  var hA=0.30;                // W/K  to ambient
   var Pmech=(m.key==='bh')?S.power*0.02:S.power;
   S.T += (Pmech - hA*(S.T-S.Tamb))/Cth*dt;
   if(!isFinite(S.T))S.T=S.Tamb;
@@ -222,7 +223,7 @@ function drawStage(x,y,w,h){
   var top=floorY-bh;
 
   // heat glow behind the block
-  var heat=Math.min(1,(S.T-S.Tamb)/24);
+  var heat=Math.min(1,(S.T-S.Tamb)/6);
   if(heat>0.01){
     var rg=g.createRadialGradient(cx,floorY-bh/2,4,cx,floorY-bh/2,blockW*1.25);
     rg.addColorStop(0,'rgba(255,'+Math.round(140-90*heat)+',40,'+(0.42*heat)+')');
@@ -281,7 +282,7 @@ function drawStage(x,y,w,h){
   var tH=h*0.5;
   g.save();g.strokeStyle='rgba(255,120,60,.5)';g.lineWidth=1;
   g.strokeRect(tb,y+40,12,tH);g.restore();
-  var frac=Math.min(1,(S.T-S.Tamb)/30);
+  var frac=Math.min(1,(S.T-S.Tamb)/12);
   g.save();g.fillStyle='rgba(255,'+Math.round(160-120*frac)+',60,.85)';g.shadowColor='#ff7a2a';g.shadowBlur=14;
   g.fillRect(tb+1,y+40+tH*(1-frac)+1,10,tH*frac-2);g.restore();
   txt(S.T.toFixed(2)+'°C',tb-4,y+34,'#ff9b6b',11);
@@ -394,7 +395,7 @@ function drawWearPlot(x,y,w,h){
   // sampled history dots (x-axis = wear, or speed for rubber)
   for(var i2=0;i2<S.areaHistory.length;i2++){
     var s=S.areaHistory[i2];
-    var xv=(m.key==='rubber')?Math.min(1,S.speed/3.0):s.w;
+    var xv=(m.key==='rubber')?Math.min(1,(s.sp||S.speed)/3.0):s.w;
     g.save();g.fillStyle='rgba(198,155,255,.55)';g.shadowColor='#c69bff';g.shadowBlur=6;
     g.beginPath();g.arc(px(xv),py(s.a),2,0,7);g.fill();g.restore();
   }
@@ -431,7 +432,7 @@ function updateUI(){
 // ---------- frame ----------
 var last=performance.now();
 function frame(now){
-  var dt=Math.min(0.033,(now-last)/1000);last=now;
+  var dt=Math.min(0.033,Math.max(0,(now-last)/1000));last=now;
   var sub=6;
   for(var i=0;i<sub;i++)step(dt/sub);
 

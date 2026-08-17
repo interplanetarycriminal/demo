@@ -35,8 +35,8 @@
   <input id="u" type="range" min="-2000" max="2000" step="0.5" value="0">
   <label>pitch mismatch p₂−p₁ (µm) — smaller = more gain</label>
   <input id="dp" type="range" min="1" max="40" step="0.5" value="4">
-  <label>rotation θ (arcmin)</label>
-  <input id="th" type="range" min="2" max="120" step="0.25" value="30">
+  <label>rotation θ (arcmin) — act 2</label>
+  <input id="th" type="range" min="15" max="300" step="0.25" value="60">
   <button id="tl">▶ crack time-lapse</button>
   <hr>
   <div id="ro"></div>
@@ -59,7 +59,8 @@ window.addEventListener('resize',resize);resize();
 // ---- physical scale --------------------------------------------------------
 var PXMM=30;                 // 30 CSS px per millimetre
 var P1=0.200;                // bottom grating pitch, mm  (200 µm — a fine printed ruling)
-var st={mode:1, u:0, dpitch:0.004, theta:30/60*Math.PI/180,
+var PROT=0.080;              // 80 µm ruling used for the angle act (finer = more fringes)
+var st={mode:1, u:0, dpitch:0.004, theta:60/60*Math.PI/180,
         crack:0, running:false, day:0, t:0};
 
 function P2(){return P1+st.dpitch;}
@@ -69,10 +70,14 @@ function beatPeriod(){return P1*P2()/Math.abs(P1-P2());}   // mm
 // beat-band centre position for a top-grating shift u (mm)
 function beatPos(u){return u*gain();}
 
-// rotation moiré: two pitch-P1 gratings at relative angle th
-// fringe spacing S = p / (2 sin(th/2))   (exact); ≈ p/th for small th
-function fringeSpacing(th){var s=2*Math.sin(th/2); return s>1e-12? P1/s : Infinity;}
-function angleFromSpacing(S){return 2*Math.asin(Math.min(1,P1/(2*S)));}
+// ROTATION moiré: two identical pitch-PROT gratings of VERTICAL lines, crossed by th.
+// beat phase = x/p − (x cos th + y sin th)/p, so ∇φ = ((1−cos th)/p, −sin th/p):
+// the gradient is almost entirely vertical ⇒ the fringes come out HORIZONTAL,
+// stacked with vertical spacing  Sy = p / |sin th|   (this is what you measure).
+// The true perpendicular spacing is p/(2 sin(th/2)) — the two agree to cos(th/2).
+function fringeSpacing(th){var s=Math.abs(Math.sin(th)); return s>1e-12? PROT/s : Infinity;}
+function perpSpacing(th){var s=2*Math.sin(th/2); return s>1e-12? PROT/s : Infinity;}
+function angleFromSpacing(S){return Math.asin(Math.min(1,PROT/S));}
 
 // ---- controls --------------------------------------------------------------
 var uEl=document.getElementById('u'), dpEl=document.getElementById('dp'),
@@ -101,32 +106,33 @@ function paintGratings(x0,y0,w,h,shift,rot){
   octx.save();
   octx.beginPath();octx.rect(x0*s,y0*s,w*s,h*s);octx.clip();
 
-  var pitchA=P1*PXMM*s, pitchB=P2()*PXMM*s;
-  // ---- grating 1 (fixed, bottom): bright bars where OPEN
+  // act 2 crosses two IDENTICAL fine rulings; acts 1 & 3 use mismatched pitches
+  var pA=(st.mode===2)?PROT:P1, pB_mm=(st.mode===2)?PROT:P2();
+  var pitchA=pA*PXMM*s, pB=pB_mm*PXMM*s;
+  // ---- grating 1 (fixed, bottom): bright bars where OPEN, phase origin at x0
   octx.globalCompositeOperation='source-over';
   octx.fillStyle='#7dffd8';
   var n1=Math.ceil(w*s/pitchA)+2;
   for(var i=-1;i<n1;i++){
-    var x=x0*s+i*pitchA;
-    octx.fillRect(x,y0*s,pitchA*0.5,h*s);
+    octx.fillRect(x0*s+i*pitchA,y0*s,pitchA*0.5,h*s);
   }
   // ---- grating 2 (movable/rotated): erase where its bars are OPAQUE
   octx.globalCompositeOperation='destination-out';
   octx.fillStyle='#000';
-  var pB=(st.mode===2)?pitchA:pitchB;
   var sh=shift*PXMM*s;
   octx.save();
   if(rot){
     var cx=(x0+w/2)*s, cy=(y0+h/2)*s;
     octx.translate(cx,cy);octx.rotate(rot);octx.translate(-cx,-cy);
   }
-  var span=Math.hypot(w,h)*s;
-  var n2=Math.ceil(span/pB)+4;
-  var ox=x0*s-(span-w*s)/2;
-  var oy=y0*s-(span-h*s)/2;
+  var span=rot?Math.hypot(w,h)*s:w*s;
+  // pad by a WHOLE number of pitches so grating 2 keeps its phase origin at x0
+  var padPitches=rot?Math.ceil((span-w*s)/2/pB)+1:0;
+  var ox=x0*s-padPitches*pB;
+  var oy=y0*s-(rot?(span-h*s)/2:0);
+  var n2=Math.ceil(span/pB)+2*padPitches+4;
   for(var j=-1;j<n2;j++){
-    var x2=ox+j*pB+sh;
-    octx.fillRect(x2+pB*0.5,oy,pB*0.5,span);
+    octx.fillRect(ox+j*pB+sh+pB*0.5,oy,pB*0.5,rot?span:h*s);
   }
   octx.restore();
   octx.restore();
@@ -200,37 +206,42 @@ function actTranslate(){
 function actRotate(){
   var x0=W*0.30, w=W-x0-40, y0=H*0.16, h=H*0.52;
   var S=fringeSpacing(st.theta);
-  txt('ACT 2 — ROTATION MOIRÉ   identical pitches, one rotated by a hair',
-      x0,y0-40,'#6cffd6','13px ui-monospace,monospace');
-  txt('θ = '+(st.theta*180/Math.PI*60).toFixed(2)+"′  →  horizontal fringe spacing S = p/(2 sin θ/2) = "+
+  txt('ACT 2 — ROTATION MOIRÉ   two identical '+(PROT*1000).toFixed(0)+
+      ' µm rulings, one turned by a hair',x0,y0-40,'#6cffd6','13px ui-monospace,monospace');
+  txt('θ = '+(st.theta*180/Math.PI*60).toFixed(2)+"′  →  HORIZONTAL fringes, vertical spacing S = p/sin θ = "+
       S.toFixed(2)+' mm',x0,y0-20,'rgba(160,220,210,.7)','12px ui-monospace,monospace');
   ctx.save();ctx.fillStyle='rgba(4,10,12,.9)';ctx.fillRect(x0,y0,w,h);ctx.restore();
   paintGratings(x0,y0,w,h,st.u,st.theta);
   ctx.save();ctx.strokeStyle='rgba(108,255,214,.30)';ctx.lineWidth=1;
   ctx.strokeRect(x0+.5,y0+.5,w-1,h-1);ctx.restore();
 
-  // predicted fringe positions: fringes run perpendicular to the bisector, spacing S
-  var Spx=S*PXMM;
-  if(isFinite(Spx)&&Spx>6&&Spx<w*4){
+  // predicted fringes: HORIZONTAL bands stacked every S mm, anchored at the pivot
+  var Spx=S*PXMM, cyv=y0+h/2;
+  if(isFinite(Spx)&&Spx>7){
     ctx.save();
-    for(var k=-40;k<=40;k++){
-      var xm=x0+w/2+k*Spx;
-      if(xm<x0||xm>x0+w)continue;
-      gline(xm,y0,xm,y0+h,'rgba(255,212,121,.45)',1.2,10);
+    for(var k=-60;k<=60;k++){
+      var ym=cyv+k*Spx;
+      if(ym<y0+1||ym>y0+h-1)continue;
+      gline(x0,ym,x0+w,ym,'rgba(255,212,121,.42)',1.2,10);
     }
     ctx.restore();
-    var xa=x0+w/2, xb=xa+Spx;
-    if(xb<x0+w){
-      gline(xa,y0+h+14,xb,y0+h+14,'#ffd479',2,12);
-      txt('S = '+S.toFixed(2)+' mm  ⇒  θ = 2·asin(p/2S) = '+
-          (angleFromSpacing(S)*180/Math.PI*60).toFixed(3)+'′',
-          xa,y0+h+34,'#ffd479','12px ui-monospace,monospace');
+    var ya=cyv, yb=cyv+Spx;
+    if(yb<y0+h){
+      gline(x0+w-46,ya,x0+w-46,yb,'#ffd479',2.4,14);
+      txt('S',x0+w-40,(ya+yb)/2+4,'#ffd479','13px ui-monospace,monospace');
     }
+    txt('measure S = '+S.toFixed(2)+' mm  ⇒  θ = asin(p/S) = '+
+        (angleFromSpacing(S)*180/Math.PI*60).toFixed(3)+"′   (true "+
+        (st.theta*180/Math.PI*60).toFixed(3)+"′)",x0,y0+h+22,'#ffd479','12px ui-monospace,monospace');
+  }else{
+    txt('fringes now finer than the ruling itself — back off the angle',
+        x0,y0+h+22,'#ff9d9d','12px ui-monospace,monospace');
   }
-  ruler(y0+h+58,x0,x0+w);
-  var dS=Math.abs(fringeSpacing(st.theta)-fringeSpacing(st.theta+1/60*Math.PI/180));
-  txt('one extra ARCMINUTE of rotation moves the fringe spacing by '+dS.toFixed(2)+
-      ' mm — visible with a ruler.',x0,y0+h+86,'#6cffd6','12px ui-monospace,monospace');
+  ruler(y0+h+46,x0,x0+w);
+  var dS=Math.abs(S-fringeSpacing(st.theta+1/60*Math.PI/180));
+  txt('one extra ARCMINUTE of rotation changes the fringe spacing by '+dS.toFixed(3)+
+      ' mm — read it with a ruler, no electronics.',
+      x0,y0+h+76,'#6cffd6','12px ui-monospace,monospace');
 }
 
 // ---------- ACT 3 : crack monitor ----------
@@ -287,16 +298,20 @@ function frame(){
   var beat=beatPos(u);
   var h='';
   h+=row('mode',st.mode===1?'TRANSLATION':st.mode===2?'ROTATION':'CRACK MONITOR');
-  h+=row('p₁ (fixed)',(P1*1000).toFixed(1)+' µm');
-  h+=row('p₂ (movable)',st.mode===2?(P1*1000).toFixed(1)+' µm (equal)':(P2()*1000).toFixed(1)+' µm');
-  h+=row('p₂ − p₁',st.mode===2?'0 (rotation only)':(st.dpitch*1000).toFixed(1)+' µm');
-  h+=row('beat period P',st.mode===2?fringeSpacing(st.theta).toFixed(2)+' mm':P.toFixed(2)+' mm');
   if(st.mode===2){
     var S=fringeSpacing(st.theta);
+    h+=row('ruling p (both)',(PROT*1000).toFixed(1)+' µm');
     h+=row('rotation θ',(st.theta*180/Math.PI*60).toFixed(2)+' arcmin');
+    h+=row('fringe spacing S',S.toFixed(3)+' mm',true);
+    h+=row('perp. spacing',perpSpacing(st.theta).toFixed(3)+' mm');
     h+=row('θ recovered',(angleFromSpacing(S)*180/Math.PI*60).toFixed(3)+' arcmin');
-    h+=row('S per arcmin',Math.abs(S-fringeSpacing(st.theta+1/60*Math.PI/180)).toFixed(2)+' mm',true);
+    h+=row('ΔS per arcmin',Math.abs(S-fringeSpacing(st.theta+1/60*Math.PI/180)).toFixed(3)+' mm',true);
+    h+=row('angular gain',(S/PROT).toFixed(0)+' mm of fringe / rad',true);
   }else{
+    h+=row('p₁ (fixed)',(P1*1000).toFixed(1)+' µm');
+    h+=row('p₂ (movable)',(P2()*1000).toFixed(1)+' µm');
+    h+=row('p₂ − p₁',(st.dpitch*1000).toFixed(1)+' µm');
+    h+=row('beat period P',P.toFixed(2)+' mm');
     h+=row('ACTUAL motion',(u*1000).toFixed(2)+' µm');
     h+=row('BEAT motion',beat.toFixed(3)+' mm',true);
     h+=row('amplification',G.toFixed(1)+' ×',true);
@@ -305,11 +320,12 @@ function frame(){
 
   var a='';
   if(st.mode===2){
-    a='Two identical rulings crossed at angle θ beat with spacing<br>'+
-      '<b>S = p / (2 sin(θ/2)) ≈ p/θ</b>. Invert it: <b style="color:#8dff9d">θ = 2 asin(p/2S)</b>.<br>'+
-      'At p = 200 µm, a 30′ tilt gives centimetre fringes. The measurement<br>'+
-      'resolution is set by how well you can see a fringe, divided by p/S.<br>'+
-      'This is the Vernier / Ronchi principle — and how autocollimators read angle.';
+    a='Beat phase of two crossed rulings: φ = x/p − (x cos θ + y sin θ)/p.<br>'+
+      '∇φ is almost pure −y, so the fringes lie <b>horizontal</b>, spaced<br>'+
+      '<b>S = p / sin θ ≈ p/θ</b>. Invert it: <b style="color:#8dff9d">θ = asin(p/S)</b>.<br>'+
+      'p = '+(PROT*1000).toFixed(0)+' µm, θ = 1′ ⇒ S = '+(PROT/Math.sin(1/60*Math.PI/180)).toFixed(0)+
+      ' mm. A quarter-degree tilt swings the fringes<br>across the whole field: microscopic angle → macroscopic ruler reading.<br>'+
+      'This is the Vernier / Ronchi principle, and how autocollimators read angle.';
   }else{
     a='Bottom grating cos(2πx/p₁), top grating shifted by u: cos(2π(x−u)/p₂).<br>'+
       'The difference term beats at 1/p₁ − 1/p₂, so a band sits at<br>'+

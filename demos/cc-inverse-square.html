@@ -54,8 +54,8 @@ function p2m(p){return p/PX_PER_M;}
 
 var state={
   law:3,                 // 3 = dipole 1/r^3, 2 = point source 1/r^2
-  pipe:{d:0.22, y:0},    // depth behind wall (m), y offset from centre (m)
-  probeY:0,              // sensor pair centre, m from vertical centre
+  pipe:{d:0.22, y:-0.06},// depth behind wall (m), y offset from centre (m)
+  probeY:0.15,           // sensor pair centre, m from vertical centre
   baseline:0.10,         // 10 cm
   single:false,
   array:false,
@@ -207,17 +207,15 @@ function drawDipoleLines(){
       ctx.beginPath();ctx.moveTo(p.x+Math.cos(a)*10,p.y+Math.sin(a)*10);
       ctx.lineTo(p.x+Math.cos(a)*Math.max(W,H),p.y+Math.sin(a)*Math.max(W,H));ctx.stroke();
     }else{
-      // dipole streamline: r = R sin^2(theta), axis vertical
-      var R=(i%7+1)*46;
-      ctx.strokeStyle='rgba(120,200,255,'+(0.26-(i%7)*0.02)+')';
+      // magnetic dipole streamline: r = R sin^2(theta), axis vertical
+      var R=(i%7+1)*70, side=(i<n/2)?1:-1;
+      ctx.strokeStyle='rgba(120,200,255,'+(0.26-(i%7)*0.025)+')';
       ctx.lineWidth=1.1;ctx.shadowColor='#6cf';ctx.shadowBlur=7;
       ctx.beginPath();
-      for(var s=0;s<=1;s+=0.02){
-        var th=s*Math.PI*2, rr=R*Math.sin(th)*Math.sin(th);
-        var sgn=(i<n/2)?1:-1;
-        var x=p.x+sgn*rr*Math.sin(th)*0 + rr*Math.sin(th)*(i<n/2?1:-1);
-        var y=p.y+rr*Math.cos(th);
-        if(s===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+      for(var k=0;k<=48;k++){
+        var th=k/48*Math.PI, rr=R*Math.sin(th)*Math.sin(th);
+        var x=p.x+side*rr*Math.sin(th), y=p.y+rr*Math.cos(th);
+        if(k===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
       }
       ctx.stroke();
     }
@@ -305,9 +303,10 @@ function drawAmbiguity(){
   var dy=(cy+m2p(yF)-p.y)/PX_PER_M;
   var r=Math.hypot(state.pipe.d,dy);
   var rPh=r*0.5;
-  var ang=Math.atan2(dy,state.pipe.d);
-  var px=wx+Math.cos(ang)*m2p(rPh), py=cy+m2p(yF)-Math.sin(ang)*m2p(rPh)*0+ -Math.sin(-ang)*m2p(rPh);
-  py=cy+m2p(yF)-Math.sin(ang)*m2p(rPh);
+  // same bearing from the sensor, half the range
+  var sy=cy+m2p(yF);
+  var ux=(p.x-wx)/m2p(r), uy=(p.y-sy)/m2p(r);
+  var px=wx+ux*m2p(rPh), py=sy+uy*m2p(rPh);
   ctx.save();ctx.globalCompositeOperation='lighter';
   ctx.strokeStyle='#ff6bd6';ctx.lineWidth=2;ctx.shadowColor='#ff6bd6';ctx.shadowBlur=18;
   ctx.setLineDash([5,5]);

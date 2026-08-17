@@ -76,35 +76,35 @@ var vChaos=document.getElementById('vChaos'),vV=document.getElementById('vV');
 var read=document.getElementById('read');
 
 // ---- scatterer model: returns list of {r (range, m), a (amplitude)} ----
-var walkV=1.4, fanRps=2.5, fanR=0.35, fanBlades=5, brRate=0.25, brAmp=0.006, hrRate=1.15, hrAmp=0.0004;
+var walkV=1.4, fanRps=1.6, fanR=0.30, fanBlades=5, brRate=0.25, brAmp=0.006, hrRate=1.15, hrAmp=0.0004;
+var WSPAN=5.0;                       // metres the walker paces over
+function walkR(t){                   // exact triangle path -> |dR/dt| = v, constant
+  var v=walkV*vscale;
+  var u=(t*v/WSPAN)%2; if(u<0)u+=2;
+  var tri=u<1?u:2-u;
+  return {R:3.2+WSPAN*tri, v:v, sgn:(u<1?1:-1)};
+}
 function targets(t){
   var out=[];
   if(cur==='1'){
-    var v=walkV*vscale;
-    var R=P.R0+2.2*Math.sin(2*Math.PI*0.055*t/Math.max(.3,vscale)); // paces back and forth
-    var vt=2.2*2*Math.PI*0.055/Math.max(.3,vscale)*Math.cos(2*Math.PI*0.055*t/Math.max(.3,vscale));
-    // scale so the torso speed matches walkV*vscale
-    var k=v/Math.max(1e-6,Math.abs(2.2*2*Math.PI*0.055/Math.max(.3,vscale)));
-    R=P.R0+2.2*k*Math.sin(2*Math.PI*0.055*t/Math.max(.3,vscale));
+    var wk=walkR(t), R=wk.R;
     out.push({r:R,a:1.0,tag:'torso'});
-    var gait=2*Math.PI*(1.0+0.55*v)*t;
-    out.push({r:R+0.42*Math.sin(gait),a:0.30,tag:'legL'});
-    out.push({r:R-0.42*Math.sin(gait),a:0.30,tag:'legR'});
-    out.push({r:R+0.24*Math.sin(gait+Math.PI),a:0.14,tag:'armL'});
-    out.push({r:R-0.24*Math.sin(gait+Math.PI),a:0.14,tag:'armR'});
-    out.torsoV=Math.abs(2.2*k*2*Math.PI*0.055/Math.max(.3,vscale)*Math.cos(2*Math.PI*0.055*t/Math.max(.3,vscale)));
-    out.truth=Math.abs(2.2*k*2*Math.PI*0.055/Math.max(.3,vscale));   // peak torso speed
+    var gait=2*Math.PI*(0.9+0.45*wk.v)*t;
+    out.push({r:R+0.40*Math.sin(gait),a:0.28,tag:'legL'});
+    out.push({r:R-0.40*Math.sin(gait),a:0.28,tag:'legR'});
+    out.push({r:R+0.22*Math.sin(gait+Math.PI),a:0.13,tag:'armL'});
+    out.push({r:R-0.22*Math.sin(gait+Math.PI),a:0.13,tag:'armR'});
+    out.truth=wk.v;                  // torso speed, constant magnitude
     out.mode='peak';
   } else if(cur==='2'){
     var rps=fanRps*vscale, w=2*Math.PI*rps;
     out.push({r:P.R0,a:0.55,tag:'hub'});
     for(var b=0;b<fanBlades;b++){
       var th=w*t+b*2*Math.PI/fanBlades;
+      var flash=Math.pow(Math.abs(Math.cos(th)),6);       // specular blade flash
       for(var s=1;s<=5;s++){
         var rr=fanR*s/5;
-        // blade element projected on the line of sight
-        var flash=Math.pow(Math.abs(Math.cos(th)),6);       // specular blade flash
-        out.push({r:P.R0+rr*Math.sin(th),a:0.05+0.30*flash*(s/5),tag:'blade'});
+        out.push({r:P.R0+rr*Math.sin(th),a:0.06+0.42*flash*(s/5),tag:'blade'});
       }
     }
     out.truth=2*Math.PI*rps*fanR;    // tip speed
@@ -184,14 +184,18 @@ function binToFd(k){return (k<M/2?k:k-M)*P.prf/M;}
 function estimate(mode){
   var best=-1,bv=0,i;
   if(mode==='max'){
-    var thr=0;for(i=0;i<M;i++)thr=Math.max(thr,mag[i]);thr*=0.10;
+    // outermost spectral line above the noise floor = fastest scatterer (blade tip)
+    var mx=0,sum=0;
+    for(i=0;i<M;i++){mx=Math.max(mx,mag[i]);sum+=mag[i];}
+    var thr=Math.max(0.05*mx,6*sum/M);
     var bestAbs=-1;
     for(i=0;i<M;i++){ if(mag[i]>thr){var f=Math.abs(binToFd(i));if(f>bestAbs){bestAbs=f;best=i;}} }
     if(best<0)return null;
   } else {
+    var dcGuard=cur==='3'?P.prf/M*2.5:0;
     for(i=0;i<M;i++){
       var f2=Math.abs(binToFd(i));
-      if(cur==='3'&&f2<P.prf/M*0.9)continue;      // reject DC clutter (static wall)
+      if(f2<dcGuard)continue;                    // reject 0 Hz clutter (static wall)
       if(mag[i]>bv){bv=mag[i];best=i;}
     }
     if(best<0)return null;
@@ -360,7 +364,7 @@ function drawScene(L,dt){
   g.shadowColor='#7dffc0';g.shadowBlur=12;g.strokeStyle='#7dffc0';g.lineWidth=2;
   if(cur==='1'){
     var px=X(Rt),sc2=Math.max(10,(w-44)/RMAX*0.34);
-    var gait=2*Math.PI*(1.0+0.55*walkV*vscale)*simT;
+    var gait=2*Math.PI*(0.9+0.45*walkV*vscale)*simT;
     g.beginPath();g.arc(px,cy-sc2*1.1,sc2*0.28,0,7);g.stroke();               // head
     g.beginPath();g.moveTo(px,cy-sc2*0.8);g.lineTo(px,cy+sc2*0.15);g.stroke();// torso
     g.beginPath();g.moveTo(px,cy+sc2*0.15);g.lineTo(px+sc2*0.42*Math.sin(gait),cy+sc2*0.95);

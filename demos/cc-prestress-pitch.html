@@ -27,7 +27,7 @@
   <h1>CHEAT CODE #63 — PRESTRESS = PITCH</h1>
   <p class="code">Prestress is stored information: a tensioned wire carries its tension in its pitch, f = (1/2L)√(T/µ) — so losing tension is the earliest failure signal, and you hear it before you see it.</p>
   <p class="hint">CLICK a wire to pluck · [1-5] select · [A] pluck all · [S] audio · [C] creep clock</p>
-  <div class="row"><label>TENSION (sel)</label><input id="sT" type="range" min="20" max="1600" step="1" value="800"><span class="rd" id="vT">800 N</span></div>
+  <div class="row"><label>TENSION (sel)</label><input id="sT" type="range" min="40" max="1600" step="1" value="800"><span class="rd" id="vT">800 N</span></div>
   <div class="row"><label>HUMIDITY</label><input id="sH" type="range" min="0" max="100" step="1" value="35"><span class="rd" id="vH">35 %</span></div>
   <div class="row"><button id="bA">PLUCK ALL</button><button id="bS">AUDIO: off</button><button id="bC">CREEP: off</button></div>
   <div class="rd" id="r1">selected: wire 1</div>
@@ -304,8 +304,11 @@ function drawFFT(x,y,w,h){
     g.save();g.fillStyle='hsla('+hue+',95%,60%,'+(0.25+0.7*v)+')';g.shadowColor='hsl('+hue+',95%,60%)';g.shadowBlur=8*v;
     g.fillRect(x+15+b2*bw,y+h-18-bh,Math.max(1,bw-0.6),bh);g.restore();
   }
-  var pf=peakFreq(sp);
-  wr.fftPeak=pf;
+  // only trust the peak while the wire is actually ringing; otherwise hold the last reading
+  var rms=0;for(var k=0;k<wr.samples.length;k++)rms+=wr.samples[k]*wr.samples[k];
+  rms=Math.sqrt(rms/Math.max(1,wr.samples.length));
+  if(rms>2e-5){ wr.fftPeak=peakFreq(sp); }
+  var pf=wr.fftPeak;
   // theory marker
   var ft=f1(wr.T);
   var tx=x+15+((ft-FMIN)/(FMAX-FMIN))*(w-30);
@@ -426,7 +429,7 @@ function draw(){
 
 var last=performance.now();
 function frame(now){
-  var dt=Math.min(0.033,(now-last)/1000);last=now;
+  var dt=Math.min(0.033,Math.max(0,(now-last)/1000));last=now;
   step(dt);draw();updateUI();
   requestAnimationFrame(frame);
 }

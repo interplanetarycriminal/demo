@@ -88,7 +88,7 @@ SCENES['5']=scene('OPEN vs CAPPED PIPE — POLARITY',1.60,'m',343,'ms',
 var cur='1',S=null;
 var lanes=[];      // each: {Z:Float64Array, wp:Float64Array, wm:Float64Array, ascan:Float64Array, rEnd, label, bnd:[]}
 var ASCAN=1900;    // steps recorded
-var step=0,firing=false,autoFire=true,simSpeed=3;
+var step=0,firing=false,autoFire=true,simSpeed=6;
 var dragB=-1,dragLane=0;
 
 function buildScene(key){
@@ -116,16 +116,17 @@ function clearWaves(){
     lanes[li].wp.fill(0);lanes[li].wm.fill(0);lanes[li].ascan.fill(0);lanes[li].peaks=[];
   }
 }
-var PULSE=[],PLEN=0;
+var PULSE=[],PLEN=0,PCEN=0;
 function makePulse(){
   PULSE=[];var n=34;
   for(var i=0;i<n;i++){
     var x=(i-n/2)/(n/5.2);
     PULSE.push(Math.exp(-x*x)*Math.sin(2*Math.PI*(i-n/2)/(n/2.6)));
   }
-  var mx=0;for(var j=0;j<n;j++)mx=Math.max(mx,Math.abs(PULSE[j]));
+  var mx=0,mi=0;
+  for(var j=0;j<n;j++)if(Math.abs(PULSE[j])>mx){mx=Math.abs(PULSE[j]);mi=j;}
   for(var k=0;k<n;k++)PULSE[k]/=mx;
-  PLEN=n;
+  PLEN=n;PCEN=mi;
 }
 makePulse();
 
@@ -170,12 +171,14 @@ function computePredictions(){
       var k=L.bnd[bi]-1;
       var z1=Z[k],z2=Z[k+1];
       var r=(z2-z1)/(z2+z1);
-      pk.push({cell:L.bnd[bi],t:2*L.bnd[bi],r:r,amp:amp*r,
+      // t  = true round-trip time in cells (2 x depth)   -> physics readout
+      // tx = where that echo's PEAK lands in the recorded trace (pulse centre offset)
+      pk.push({cell:L.bnd[bi],t:2*L.bnd[bi],tx:2*L.bnd[bi]-1+PCEN,r:r,amp:amp*r,
         name:S.segs[bi].name+' │ '+S.segs[bi+1].name});
       amp*=(1+r)*(1-r);      // two-way transmission through this interface
       segStartZ=z2;
     }
-    pk.push({cell:N,t:2*N,r:L.rEnd,amp:amp*L.rEnd,name:(L.label||S.endName)});
+    pk.push({cell:N,t:2*N,tx:2*N-1+PCEN,r:L.rEnd,amp:amp*L.rEnd,name:(L.label||S.endName)});
     L.peaks=pk;
   }
 }
@@ -361,7 +364,7 @@ function drawLane(li){
   g.save();g.shadowColor='#ffd85e';g.shadowBlur=8;
   g.strokeStyle='#ffd85e';g.lineWidth=1.4;g.beginPath();
   var shown=Math.min(step,ASCAN);
-  var maxT=2*N;
+  var maxT=2*N+PLEN;
   for(var t=0;t<shown&&t<maxT;t++){
     var px3=G.x0+(t/maxT)*G.w, py3=amid-L.ascan[t]*(G.ah/2-6);
     if(t===0)g.moveTo(px3,py3);else g.lineTo(px3,py3);
@@ -371,9 +374,9 @@ function drawLane(li){
   // predicted echo labels
   for(var pi=0;pi<L.peaks.length;pi++){
     var P=L.peaks[pi];
-    if(P.t>maxT)continue;
-    var pxL=G.x0+(P.t/maxT)*G.w;
-    var arrived=step>=P.t;
+    if(P.tx>maxT)continue;
+    var pxL=G.x0+(P.tx/maxT)*G.w;
+    var arrived=step>=P.tx;
     var pcol=P.amp>=0?'#7dffc0':'#ff9c5a';
     g.save();g.globalAlpha=arrived?1:.25;
     g.strokeStyle=pcol;g.lineWidth=1;g.setLineDash([2,3]);
@@ -391,7 +394,7 @@ function drawLane(li){
   }
   // sweep cursor
   if(firing){
-    var sx=G.x0+(Math.min(step,maxT)/maxT)*G.w;
+    var sx=G.x0+(Math.min(step,2*N+PLEN)/(2*N+PLEN))*G.w;
     g.strokeStyle='rgba(95,242,255,.55)';g.lineWidth=1;
     g.beginPath();g.moveTo(sx,G.ay);g.lineTo(sx,G.ay+G.ah);g.stroke();
   }

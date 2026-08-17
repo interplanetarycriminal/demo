@@ -116,7 +116,7 @@ var SM=[];for(i=0;i<220;i++)SM.push({y:Math.random(),x:0,vx:0,seed:Math.random()
 var TRACE=new Array(320);for(i=0;i<TRACE.length;i++)TRACE[i]=8;
 var tracePtr=0;
 // ramp record: Re at which hiss switched on, per sweep
-var flips=[],rampPrevTurb=0,sweepCount=0;
+var flips=[],rampPrevTurb=0,rampPrevV=0,sweepCount=0;
 
 function hash(n){var s=Math.sin(n*127.1)*43758.5453;return s-Math.floor(s);}
 function noise1(x,seed){
@@ -328,18 +328,25 @@ function drawListen(dt){
 }
 
 // ---------------- auto-ramp ----------------
+// Re at an arbitrary velocity, current fluid/geometry
+function ReAt(v){return fl().rho*v*S.D/mu();}
 function stepRamp(dt){
   if(!S.ramp)return;
   S.rampT+=dt*0.32;
-  if(S.rampT>1){S.rampT=0;sweepCount++;rampPrevTurb=0;}
+  if(S.rampT>1){S.rampT=0;sweepCount++;rampPrevTurb=0;rampPrevV=0.01;}
+  var vPrev=rampPrevV||0.01;
   S.v=0.01+S.rampT*6;
   if(sV)sV.value=S.v;
-  var t=turb(Re());
+  var t=turb(ReAt(S.v));
   if(rampPrevTurb<=0&&t>0){
-    flips.push(Re());
+    // the sweep straddled the flip between frames: bisect on the detector itself
+    // so the recorded flip is frame-rate independent, not "first frame past it".
+    var lo=vPrev,hi=S.v;
+    for(var i=0;i<80;i++){var m=(lo+hi)/2;if(turb(ReAt(m))>0)hi=m;else lo=m;}
+    flips.push(ReAt((lo+hi)/2));
     if(flips.length>12)flips.shift();
   }
-  rampPrevTurb=t;
+  rampPrevTurb=t;rampPrevV=S.v;
 }
 
 // ---------------- loop ----------------
