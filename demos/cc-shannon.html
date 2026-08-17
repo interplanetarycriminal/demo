@@ -1,0 +1,388 @@
+<title>Slowness Is Range</title>
+<style>
+html,body{margin:0;padding:0;background:#04060a;overflow:hidden;height:100%}
+canvas{display:block;position:fixed;top:0;left:0}
+#ui{position:fixed;top:0;left:0;padding:10px 12px;color:#9fe;background:rgba(4,8,14,.62);
+  font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;max-width:340px;z-index:10;
+  border-right:1px solid #0ff3;border-bottom:1px solid #0ff3;text-shadow:0 0 6px #0ff6}
+#ui h1{font-size:13px;margin:0 0 4px;color:#5ff;letter-spacing:.06em;text-shadow:0 0 10px #0ff}
+#ui .th{color:#ffd36e;margin:0 0 6px;text-shadow:0 0 8px #fa06}
+#ui .hint{color:#6bb;margin:6px 0}
+#ui .row{display:flex;justify-content:space-between;gap:8px}
+#ui b{color:#fff;font-weight:600}
+#ui a{color:#5ff;text-decoration:none;border-bottom:1px dotted #5ff8}
+#ui .sep{height:1px;background:#0ff2;margin:6px 0}
+#ui .pun{color:#ff8ad2;text-shadow:0 0 8px #f0a6}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>CHEAT CODE #50 — SLOWNESS IS RANGE</h1>
+<div class="th">C = B·log₂(1+SNR): you can ALWAYS trade data rate for range or noise-immunity — slowness is a superpower.</div>
+<div class="hint">[↑/↓ or click dial] spreading factor &nbsp; [W] walk/pause &nbsp; [R] reset walker &nbsp; [T] integration-time act &nbsp; [+/−] integrate</div>
+<div class="sep"></div>
+<div class="row"><span>SF</span><b id="r_sf">7</b></div>
+<div class="row"><span>bitrate</span><b id="r_br">5470 bps</b></div>
+<div class="row"><span>RX sensitivity</span><b id="r_sens">−123.0 dBm</b></div>
+<div class="row"><span>range (BER=0)</span><b id="r_rng">1.00 km</b></div>
+<div class="row"><span>walker @</span><b id="r_d">0.00 km</b></div>
+<div class="row"><span>RX power</span><b id="r_rx">— dBm</b></div>
+<div class="row"><span>link margin</span><b id="r_marg">— dB</b></div>
+<div class="row"><span>packets ok</span><b id="r_pk">0/0</b></div>
+<div class="sep"></div>
+<div id="r_act" class="hint">ACT 2 [T]: lock-in integration — SNR ∝ √t. Same law.</div>
+<div class="pun">"when a link fails, don't reach for power — reach for patience."</div>
+<div><a href="index.html">← gallery</a></div>
+</div>
+<script>
+"use strict";
+var c=document.getElementById('c'),g=c.getContext('2d');
+var W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
+ c.width=Math.round(W*DPR);c.height=Math.round(H*DPR);c.style.width=W+'px';c.style.height=H+'px';
+ g.setTransform(DPR,0,0,DPR,0,0);buildTown();}
+window.addEventListener('resize',resize);
+
+/* ---------- REAL LINK BUDGET MATH ---------- */
+var TXP=14;            // dBm EIRP
+var NF=6, BW=125e3;    // noise figure dB, bandwidth Hz
+var CR=1;              // coding rate 4/5 -> 4/(4+CR)
+var F=868e6, NEXP=2.7; // MHz carrier, path loss exponent
+var SNRreq={7:-7.5,8:-10,9:-12.5,10:-15,11:-17.5,12:-20}; // dB, ~2.5 dB/step
+var NOISE=-174+10*Math.log10(BW)+NF;  // thermal noise floor dBm ≈ -117.0
+function sens(sf){return NOISE+SNRreq[sf];}
+function bitrate(sf){return sf*(4/(4+CR))*BW/Math.pow(2,sf);}
+// path loss: PL(d) = PL0 + 10*n*log10(d/d0), d0=1 m reference free-space
+var PL0=20*Math.log10(4*Math.PI*1/(3e8/F)); // free-space loss at 1 m
+function pathLoss(d_m){return PL0+10*NEXP*Math.log10(Math.max(d_m,1));}
+function rxPower(d_m){return TXP-pathLoss(d_m);}
+function maxRange(sf){ // solve rxPower(d)=sens(sf)
+  var lg=(TXP-sens(sf)-PL0)/(10*NEXP);return Math.pow(10,lg);}
+function capacity(sf){ // Shannon on the required SNR (linear)
+  var s=Math.pow(10,SNRreq[sf]/10);return BW*Math.log2(1+s);}
+
+var SF=7, walking=true, wd=0, wv=0.055; // km/s of sim
+var pkts=[], nOK=0,nTot=0, bitbuf=[], bitT=0;
+var explored={};
+var act2=false, tau=0.05; // integration time seconds
+var t0=performance.now()/1000, T=0;
+
+/* ---------- TOWN ---------- */
+var houses=[],trees=[],rng0=1;
+function rnd(){rng0=(rng0*1664525+1013904223)&0x7fffffff;return rng0/0x7fffffff;}
+function buildTown(){
+  rng0=12345;houses=[];trees=[];
+  var n=Math.floor(W*H/9000);
+  for(var i=0;i<n;i++){
+    var a=rnd()*Math.PI*2,r=Math.pow(rnd(),.55)*Math.min(W,H)*0.95;
+    var x=W*0.5+Math.cos(a)*r*1.35,y=H*0.55+Math.sin(a)*r*0.85;
+    if(x<-40||x>W+40||y<-40||y>H+40)continue;
+    var d=Math.hypot(x-W*0.5,y-H*0.55);
+    if(d<50)continue;
+    if(rnd()<0.34)trees.push({x:x,y:y,s:6+rnd()*8,h:rnd()});
+    else houses.push({x:x,y:y,w:16+rnd()*22,h:10+rnd()*10,t:rnd()});
+  }
+}
+/* pixel scale: km -> px */
+function KM(){return Math.min(W,H)*0.40/6.0;} // 6 km spans ~40% of min dim
+
+/* ---------- PACKETS ---------- */
+function spawnPacket(){
+  var d_m=Math.max(wd,0.002)*1000;
+  var rx=rxPower(d_m),margin=rx-sens(SF);
+  // probabilistic: sigmoid around 0 dB margin (fading sigma ~2.5 dB)
+  var p=1/(1+Math.exp(-margin/2.2));
+  var ok=Math.random()<p;
+  nTot++;if(ok)nOK++;
+  pkts.push({d:wd,t:0,ok:ok,margin:margin});
+  if(ok){var k=explored[SF]||{sf:SF,d:0,br:bitrate(SF)};if(wd>k.d)k.d=wd;explored[SF]=k;}
+  return ok;
+}
+function airtime(sf){ // seconds for a 20-byte payload, real LoRa-ish
+  var ts=Math.pow(2,sf)/BW, npre=(8+4.25)*ts;
+  var payloadSym=8+Math.max(Math.ceil((8*20-4*sf+28+16)/(4*sf))*(4+CR),0);
+  return npre+payloadSym*ts;
+}
+
+/* ---------- INPUT ---------- */
+window.addEventListener('keydown',function(e){
+  var k=e.key.toLowerCase();
+  if(e.key==='ArrowUp'){SF=Math.min(12,SF+1);e.preventDefault();}
+  else if(e.key==='ArrowDown'){SF=Math.max(7,SF-1);e.preventDefault();}
+  else if(k==='w'){walking=!walking;}
+  else if(k==='r'){wd=0;nOK=nTot=0;pkts.length=0;bitbuf.length=0;}
+  else if(k==='t'){act2=!act2;}
+  else if(k==='+'||k==='='){tau=Math.min(20,tau*1.6);}
+  else if(k==='-'||k==='_'){tau=Math.max(0.01,tau/1.6);}
+});
+c.addEventListener('pointerdown',function(e){
+  var x=e.clientX,y=e.clientY,dx=x-(W-110),dy=y-(H-110);
+  if(Math.hypot(dx,dy)<95){var a=Math.atan2(dy,dx);var f=(a+Math.PI*1.25)/(Math.PI*1.5);
+    SF=Math.max(7,Math.min(12,7+Math.round(f*5)));}
+  else{wd=Math.hypot(x-W*0.5,y-H*0.55)/KM();}
+});
+
+/* ---------- LOCK-IN SIM (ACT 2) ---------- */
+var lockPhase=0,lockAcc=0,lockN=0,lockOut=0,lockHist=[];
+var TRUE_DC=0.30; // "buried" signal amplitude (arbitrary units)
+function stepLockIn(dt){
+  // noisy measurement, SNR improves as sqrt(integration time)
+  var samples=Math.max(1,Math.round(dt*400));
+  for(var i=0;i<samples;i++){
+    var noise=(Math.random()+Math.random()+Math.random()+Math.random()-2)*3.0;
+    lockAcc+=TRUE_DC+noise;lockN++;
+    if(lockN>=Math.max(1,tau*400)){lockOut=lockAcc/lockN;lockAcc=0;lockN=0;
+      lockHist.push(lockOut);if(lockHist.length>240)lockHist.shift();}
+  }
+}
+
+/* ---------- DRAW HELPERS ---------- */
+function glow(col,b){g.shadowColor=col;g.shadowBlur=b;}
+function noglow(){g.shadowBlur=0;}
+function txt(s,x,y,col,size,al){g.fillStyle=col;g.font=(size||11)+'px ui-monospace,Menlo,monospace';
+  g.textAlign=al||'left';g.fillText(s,x,y);g.textAlign='left';}
+
+function drawTown(){
+  var cx=W*0.5,cy=H*0.55;
+  for(var i=0;i<trees.length;i++){var t=trees[i];
+    g.fillStyle='rgba(30,90,70,'+(.35+t.h*.3)+')';
+    g.beginPath();g.arc(t.x,t.y,t.s,0,7);g.fill();
+    g.strokeStyle='rgba(60,200,150,.18)';g.lineWidth=1;g.stroke();}
+  for(i=0;i<houses.length;i++){var h=houses[i];
+    g.fillStyle='rgba(20,34,54,.85)';
+    g.fillRect(h.x-h.w/2,h.y-h.h/2,h.w,h.h);
+    g.strokeStyle='rgba(90,150,210,.30)';g.lineWidth=1;
+    g.strokeRect(h.x-h.w/2+.5,h.y-h.h/2+.5,h.w-1,h.h-1);
+    // roof
+    g.beginPath();g.moveTo(h.x-h.w/2-2,h.y-h.h/2);g.lineTo(h.x,h.y-h.h/2-6-h.t*5);
+    g.lineTo(h.x+h.w/2+2,h.y-h.h/2);g.closePath();
+    g.fillStyle='rgba(50,80,120,.55)';g.fill();
+    if(h.t>0.7){g.fillStyle='rgba(255,200,120,.5)';g.fillRect(h.x-2,h.y-1,4,4);}}
+  // roads (faint grid)
+  g.strokeStyle='rgba(70,110,150,.10)';g.lineWidth=8;
+  for(i=-3;i<=3;i++){g.beginPath();g.moveTo(cx+i*130,0);g.lineTo(cx+i*130,H);g.stroke();
+    g.beginPath();g.moveTo(0,cy+i*110);g.lineTo(W,cy+i*110);g.stroke();}
+}
+
+function drawCoverage(){
+  var cx=W*0.5,cy=H*0.55,k=KM();
+  for(var s=7;s<=12;s++){
+    var r=maxRange(s)/1000*k,on=(s<=SF);
+    var hue=190+(s-7)*22;
+    g.beginPath();g.arc(cx,cy,r,0,7);
+    if(s===SF){
+      var grd=g.createRadialGradient(cx,cy,r*0.55,cx,cy,r);
+      grd.addColorStop(0,'hsla('+hue+',100%,60%,0.02)');
+      grd.addColorStop(1,'hsla('+hue+',100%,60%,0.16)');
+      g.fillStyle=grd;g.fill();
+      glow('hsl('+hue+',100%,60%)',22);g.strokeStyle='hsla('+hue+',100%,72%,.95)';g.lineWidth=2.2;
+    }else{noglow();g.strokeStyle='hsla('+hue+',80%,60%,'+(on?.30:.12)+')';g.lineWidth=1;
+      g.setLineDash([4,7]);}
+    g.stroke();g.setLineDash([]);noglow();
+    // label on the ring
+    txt('SF'+s+'  '+(maxRange(s)/1000).toFixed(2)+' km',cx+r*0.707+4,cy-r*0.707-3,
+      'hsla('+hue+',90%,'+(s===SF?78:52)+'%,'+(s===SF?1:.5)+')',s===SF?12:10);
+  }
+  // transmitter
+  glow('#5ff',24);g.fillStyle='#8ff';g.beginPath();g.arc(cx,cy,5,0,7);g.fill();noglow();
+  g.strokeStyle='#7ff';g.lineWidth=1.5;g.beginPath();g.moveTo(cx,cy);g.lineTo(cx,cy-24);g.stroke();
+  for(var q=1;q<=3;q++){g.beginPath();g.arc(cx,cy-24,q*5,-2.4,-0.75);g.strokeStyle='rgba(120,255,255,'+(.6/q)+')';g.stroke();}
+  txt('YOUR HOUSE / GATEWAY',cx+10,cy-26,'#7ffb',10);
+  // expanding pulse
+  var ph=(T*0.55)%1, pr=ph*maxRange(SF)/1000*k;
+  g.beginPath();g.arc(cx,cy,pr,0,7);g.strokeStyle='rgba(120,255,240,'+(0.35*(1-ph))+')';g.lineWidth=2;g.stroke();
+}
+
+function drawWalker(){
+  var cx=W*0.5,cy=H*0.55,k=KM();
+  var x=cx+wd*k,y=cy;
+  // trail
+  g.strokeStyle='rgba(255,210,110,.35)';g.lineWidth=1.5;
+  g.beginPath();g.moveTo(cx,cy);g.lineTo(x,y);g.stroke();
+  var margin=rxPower(Math.max(wd,.002)*1000)-sens(SF);
+  var col=margin>0?'#ffd36e':'#f5606a';
+  glow(col,18);g.fillStyle=col;g.beginPath();g.arc(x,y,6,0,7);g.fill();noglow();
+  txt('RX walker '+wd.toFixed(2)+' km',x+10,y-10,col,11);
+  txt(margin>=0?('+'+margin.toFixed(1)+' dB margin'):(margin.toFixed(1)+' dB — DEAD'),x+10,y+4,col,10);
+  // packets in flight
+  for(var i=pkts.length-1;i>=0;i--){var p=pkts[i];p.t+=0.02;
+    if(p.t>1.15){pkts.splice(i,1);continue;}
+    var pr=Math.min(p.t,1)*p.d*k;
+    var a=p.ok?(1-p.t)*0.9:(p.t<0.85?0.8:0);
+    if(!p.ok&&p.t>0.85){continue;}
+    g.beginPath();g.arc(cx+pr,cy,3,0,7);
+    g.fillStyle=p.ok?'rgba(120,255,180,'+a+')':'rgba(245,96,106,'+a+')';g.fill();
+    if(!p.ok&&p.t>0.7){txt('✕',cx+pr-3,cy-8,'rgba(245,96,106,.9)',12);}
+  }
+}
+
+function drawLedger(){
+  var x=14,y=H-186,w=316,h=172;
+  g.fillStyle='rgba(4,10,16,.80)';g.fillRect(x,y,w,h);
+  g.strokeStyle='rgba(0,255,255,.22)';g.lineWidth=1;g.strokeRect(x+.5,y+.5,w-1,h-1);
+  txt('dB LEDGER — path loss vs distance',x+8,y+15,'#5ff',11);
+  var px=x+40,py=y+28,pw=w-58,ph=h-52;
+  // axes: x = log10 distance 10 m..30 km, y = dBm from +20 to -140
+  function X(d){return px+(Math.log10(d)-1)/(Math.log10(30000)-1)*pw;}
+  function Y(p){return py+(20-p)/(20-(-140))*ph;}
+  g.strokeStyle='rgba(120,180,220,.20)';
+  for(var dd=1;dd<=4;dd++){var xx=X(Math.pow(10,dd));g.beginPath();g.moveTo(xx,py);g.lineTo(xx,py+ph);g.stroke();
+    txt(Math.pow(10,dd)>=1000?(Math.pow(10,dd)/1000)+'km':Math.pow(10,dd)+'m',xx,py+ph+11,'#6ab',9,'center');}
+  for(var pp=0;pp>=-140;pp-=40){var yy=Y(pp);g.beginPath();g.moveTo(px,yy);g.lineTo(px+pw,yy);g.stroke();
+    txt(pp,px-4,yy+3,'#6ab',9,'right');}
+  // rx power curve
+  glow('#ffd36e',10);g.strokeStyle='#ffd36e';g.lineWidth=2;g.beginPath();
+  for(var i=0;i<=100;i++){var d=Math.pow(10,1+i/100*(Math.log10(30000)-1));
+    var v=rxPower(d);if(i===0)g.moveTo(X(d),Y(v));else g.lineTo(X(d),Y(v));}
+  g.stroke();noglow();
+  txt('RX power = '+TXP+' dBm − PL(d), n='+NEXP,px+6,py+12,'#ffd36e',9);
+  // sensitivity floors
+  for(var s=7;s<=12;s++){var sv=sens(s),yy2=Y(sv),hue=190+(s-7)*22;
+    g.strokeStyle='hsla('+hue+',90%,62%,'+(s===SF?0.95:0.22)+')';g.lineWidth=s===SF?2:1;
+    if(s!==SF)g.setLineDash([3,4]);
+    g.beginPath();g.moveTo(px,yy2);g.lineTo(px+pw,yy2);g.stroke();g.setLineDash([]);
+    if(s===SF){glow('hsl('+hue+',90%,62%)',10);g.stroke();noglow();
+      txt('SF'+s+' sens '+sv.toFixed(1)+' dBm',px+pw-2,yy2-4,'hsl('+hue+',90%,75%)',10,'right');
+      // intersection marker
+      var rr=maxRange(s);g.fillStyle='#fff';g.beginPath();g.arc(X(rr),yy2,3.5,0,7);g.fill();}
+  }
+  txt('noise floor '+NOISE.toFixed(1)+' dBm (kTB+NF)',px+6,py+ph-4,'#f5606a',9);
+  g.strokeStyle='rgba(245,96,106,.55)';g.setLineDash([2,3]);
+  g.beginPath();g.moveTo(px,Y(NOISE));g.lineTo(px+pw,Y(NOISE));g.stroke();g.setLineDash([]);
+  txt('↓ each SF step buys 2.5 dB → ×1.33 range (n=2.7)',x+8,y+h-5,'#9fe',9);
+}
+
+function drawTradeoff(){
+  var w=250,h=150,x=W-w-14,y=14;
+  g.fillStyle='rgba(4,10,16,.80)';g.fillRect(x,y,w,h);
+  g.strokeStyle='rgba(0,255,255,.22)';g.strokeRect(x+.5,y+.5,w-1,h-1);
+  txt('rate ⟷ range trade-off',x+8,y+14,'#5ff',11);
+  var px=x+38,py=y+24,pw=w-50,ph=h-46;
+  function X(r){return px+(r/10)*pw;}                      // km 0..10
+  function Y(b){return py+ph-(Math.log10(b)-2)/(Math.log10(20000)-2)*ph;} // bps log
+  g.strokeStyle='rgba(120,180,220,.18)';
+  for(var i=0;i<=5;i++){g.beginPath();g.moveTo(px+i/5*pw,py);g.lineTo(px+i/5*pw,py+ph);g.stroke();}
+  txt('0',px,py+ph+10,'#6ab',9,'center');txt('10 km',px+pw,py+ph+10,'#6ab',9,'center');
+  txt('20k',px-4,py+6,'#6ab',9,'right');txt('100 bps',px-4,py+ph,'#6ab',9,'right');
+  // theoretical curve
+  g.strokeStyle='rgba(0,255,255,.5)';g.lineWidth=1.5;g.beginPath();
+  for(var s=7;s<=12;s++){var xx=X(maxRange(s)/1000),yy=Y(bitrate(s));
+    if(s===7)g.moveTo(xx,yy);else g.lineTo(xx,yy);}
+  g.stroke();
+  for(s=7;s<=12;s++){var xx2=X(maxRange(s)/1000),yy2=Y(bitrate(s)),hue=190+(s-7)*22;
+    var ex=explored[s];
+    g.beginPath();g.arc(xx2,yy2,s===SF?5:3,0,7);
+    if(ex){glow('hsl('+hue+',95%,65%)',12);g.fillStyle='hsl('+hue+',95%,65%)';}
+    else{g.fillStyle='rgba(120,170,200,.35)';}
+    g.fill();noglow();
+    if(s===SF)txt('SF'+s+' '+Math.round(bitrate(s))+'bps',xx2+7,yy2-3,'hsl('+hue+',95%,78%)',9);}
+  txt('filled = you proved it works',x+8,y+h-5,'#6bb',9);
+}
+
+function drawBitstream(){
+  var w=250,h=86,x=W-w-14,y=176;
+  g.fillStyle='rgba(4,10,16,.80)';g.fillRect(x,y,w,h);
+  g.strokeStyle='rgba(0,255,255,.22)';g.strokeRect(x+.5,y+.5,w-1,h-1);
+  var br=bitrate(SF);
+  txt('bits arriving @ '+Math.round(br)+' bps',x+8,y+14,'#5ff',11);
+  txt('airtime/20B pkt: '+(airtime(SF)*1000).toFixed(0)+' ms',x+8,y+26,'#6bb',9);
+  // bit blocks
+  var cols=32,cw=(w-18)/cols;
+  for(var i=0;i<bitbuf.length&&i<cols*2;i++){
+    var bi=bitbuf[bitbuf.length-1-i];
+    var col=i%cols,row=Math.floor(i/cols);
+    g.fillStyle=bi?'rgba(120,255,180,.9)':'rgba(40,90,110,.6)';
+    g.fillRect(x+9+col*cw,y+38+row*14,cw-1.5,10);
+  }
+  txt(SF>=11?'…crawling. patient. alive.':'…snappy, but short-legged.',x+8,y+h-6,'#ffd36e',9);
+}
+
+function drawDial(){
+  var cx=W-110,cy=H-110,R=78;
+  g.fillStyle='rgba(4,10,16,.72)';g.beginPath();g.arc(cx,cy,R+16,0,7);g.fill();
+  g.strokeStyle='rgba(0,255,255,.2)';g.stroke();
+  for(var s=7;s<=12;s++){
+    var f=(s-7)/5,a=-Math.PI*1.25+f*Math.PI*1.5,hue=190+(s-7)*22;
+    var x1=cx+Math.cos(a)*(R-14),y1=cy+Math.sin(a)*(R-14);
+    var x2=cx+Math.cos(a)*R,y2=cy+Math.sin(a)*R;
+    g.strokeStyle=s===SF?'hsl('+hue+',100%,70%)':'hsla('+hue+',70%,55%,.35)';
+    g.lineWidth=s===SF?3:1.5;
+    if(s===SF)glow('hsl('+hue+',100%,70%)',12);
+    g.beginPath();g.moveTo(x1,y1);g.lineTo(x2,y2);g.stroke();noglow();
+    txt('SF'+s,cx+Math.cos(a)*(R+12),cy+Math.sin(a)*(R+12)+3,
+      s===SF?'#fff':'hsla('+hue+',70%,60%,.55)',s===SF?11:9,'center');
+  }
+  var fa=-Math.PI*1.25+((SF-7)/5)*Math.PI*1.5;
+  glow('#5ff',16);g.strokeStyle='#9ff';g.lineWidth=3;
+  g.beginPath();g.moveTo(cx,cy);g.lineTo(cx+Math.cos(fa)*(R-20),cy+Math.sin(fa)*(R-20));g.stroke();noglow();
+  txt('SPREADING',cx,cy+30,'#6bb',9,'center');
+  txt('FACTOR',cx,cy+41,'#6bb',9,'center');
+  txt('slower ↻',cx,cy-34,'#ffd36e',9,'center');
+}
+
+function drawAct2(){
+  var w=Math.min(560,W-40),h=250,x=(W-w)/2,y=(H-h)/2;
+  g.fillStyle='rgba(2,6,12,.94)';g.fillRect(x,y,w,h);
+  glow('#ff8ad2',18);g.strokeStyle='rgba(255,138,210,.75)';g.lineWidth=1.5;g.strokeRect(x+.5,y+.5,w-1,h-1);noglow();
+  txt('ACT 2 — THE SAME LAW, WEARING A LAB COAT',x+14,y+22,'#ff8ad2',13);
+  txt('lock-in amplifier: integrate a buried DC signal for τ seconds. SNR ∝ √τ.',x+14,y+38,'#9fe',10);
+  txt('[+/−] integration time τ = '+tau.toFixed(2)+' s   → SNR gain ×'+Math.sqrt(tau/0.01).toFixed(1),x+14,y+52,'#ffd36e',11);
+  // trace
+  var px=x+14,py=y+64,pw=w-28,ph=96;
+  g.fillStyle='rgba(0,20,26,.6)';g.fillRect(px,py,pw,ph);
+  g.strokeStyle='rgba(0,255,255,.18)';g.strokeRect(px+.5,py+.5,pw-1,ph-1);
+  var mid=py+ph/2, sc=ph/2/6;
+  g.strokeStyle='rgba(120,255,180,.5)';g.setLineDash([4,4]);
+  g.beginPath();g.moveTo(px,mid-TRUE_DC*sc*6);g.lineTo(px+pw,mid-TRUE_DC*sc*6);g.stroke();g.setLineDash([]);
+  txt('true buried signal = '+TRUE_DC.toFixed(2),px+4,mid-TRUE_DC*sc*6-4,'rgba(120,255,180,.9)',9);
+  glow('#5ff',8);g.strokeStyle='#5ff';g.lineWidth=1.4;g.beginPath();
+  for(var i=0;i<lockHist.length;i++){var xx=px+i/Math.max(1,lockHist.length-1)*pw;
+    var yy=mid-lockHist[i]*sc*6;yy=Math.max(py+1,Math.min(py+ph-1,yy));
+    if(i===0)g.moveTo(xx,yy);else g.lineTo(xx,yy);}
+  g.stroke();noglow();
+  // measured sigma
+  var m=0,v=0;for(i=0;i<lockHist.length;i++)m+=lockHist[i];m/=Math.max(1,lockHist.length);
+  for(i=0;i<lockHist.length;i++)v+=(lockHist[i]-m)*(lockHist[i]-m);v=Math.sqrt(v/Math.max(1,lockHist.length));
+  txt('measured σ = '+v.toFixed(3)+'   mean = '+m.toFixed(3)+'   (predicted σ ∝ 1/√τ)',px+4,py+ph-5,'#9fe',9);
+  txt('FAMILY RESEMBLANCE: lock-in narrowness · LoRa spreading · GPS 50 bps patience — one equation.',
+    x+14,y+h-32,'#ff8ad2',10);
+  txt('GPS: arrives ~20 dB BELOW the noise floor and decodes anyway — 50 bps of patience.',x+14,y+h-18,'#ffd36e',10);
+  txt('[T] close',x+w-14,y+22,'#6bb',10,'right');
+}
+
+/* ---------- MAIN ---------- */
+var lastPkt=0,lastBit=0,prevT=0;
+function frame(){
+  var now=performance.now()/1000;T=now-t0;var dt=Math.min(0.05,T-prevT);prevT=T;
+  g.fillStyle='#04060a';g.fillRect(0,0,W,H);
+  // vignette starfield
+  g.fillStyle='rgba(0,255,255,.03)';
+  drawTown();drawCoverage();drawWalker();
+  drawLedger();drawTradeoff();drawBitstream();drawDial();
+
+  if(walking&&!act2){wd+=wv*dt*3;if(wd>9.5)wd=0;}
+  if(T-lastPkt>Math.max(0.28,airtime(SF)*0.9)){lastPkt=T;
+    var ok=spawnPacket();
+    if(ok){var nb=Math.max(1,Math.round(bitrate(SF)/900));for(var i=0;i<nb&&i<8;i++)bitbuf.push(Math.random()<.5?1:0);
+      while(bitbuf.length>64)bitbuf.shift();}}
+  if(act2)stepLockIn(dt);
+  if(act2)drawAct2();
+
+  // readouts
+  var d_m=Math.max(wd,.002)*1000,rx=rxPower(d_m),mg=rx-sens(SF);
+  document.getElementById('r_sf').textContent=SF;
+  document.getElementById('r_br').textContent=Math.round(bitrate(SF))+' bps';
+  document.getElementById('r_sens').textContent=sens(SF).toFixed(1)+' dBm';
+  document.getElementById('r_rng').textContent=(maxRange(SF)/1000).toFixed(2)+' km';
+  document.getElementById('r_d').textContent=wd.toFixed(2)+' km';
+  document.getElementById('r_rx').textContent=rx.toFixed(1)+' dBm';
+  document.getElementById('r_marg').textContent=(mg>=0?'+':'')+mg.toFixed(1)+' dB';
+  document.getElementById('r_pk').textContent=nOK+'/'+nTot+'  ('+(nTot?Math.round(100*nOK/nTot):0)+'%)';
+  document.getElementById('r_act').textContent=act2?
+    ('ACT 2 OPEN — τ='+tau.toFixed(2)+' s, SNR gain ×'+Math.sqrt(tau/0.01).toFixed(1)):
+    ('ACT 2 [T]: lock-in integration — SNR ∝ √t. Same law.  Shannon C='+Math.round(capacity(SF))+' bps');
+  requestAnimationFrame(frame);
+}
+resize();frame();
+</script>

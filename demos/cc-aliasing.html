@@ -1,0 +1,294 @@
+<title>Alias Impersonators</title>
+<style>
+html,body{margin:0;padding:0;height:100%;background:#05060c;overflow:hidden}
+canvas{display:block;position:fixed;top:0;left:0}
+#ui{position:fixed;top:0;left:0;padding:10px 12px;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;
+ color:#cfe1ff;background:rgba(5,6,12,.64);border-right:1px solid #a6f3;border-bottom:1px solid #a6f3;
+ max-width:352px;z-index:10;text-shadow:0 0 6px #a6f6;backdrop-filter:blur(3px)}
+#ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.14em;color:#c9a0ff;text-shadow:0 0 12px #a0f9}
+.th{color:#9ab;margin:0 0 7px;font-style:italic}
+.hint{color:#4fd6a6;margin:6px 0}
+.rd{color:#ffd479;text-shadow:0 0 8px #fa06}
+.big{font-size:15px;color:#8ff0ff;text-shadow:0 0 12px #0ffa}
+a{color:#f7a;text-decoration:none;border-bottom:1px dotted #f7a5}
+.tab{display:inline-block;padding:2px 7px;margin:1px 3px 1px 0;border:1px solid #a6f5;color:#c9b6ff;cursor:pointer;border-radius:2px}
+.tab.on{background:#a6f3;color:#fff;box-shadow:0 0 10px #a6f6}
+.btn{display:inline-block;margin-top:5px;padding:3px 9px;border:1px solid #4fd6a6;color:#4fd6a6;cursor:pointer;border-radius:2px}
+.btn:hover{background:#4fd6a622}
+.pun{color:#f9a;margin-top:7px;border-top:1px solid #f9a3;padding-top:5px}
+</style>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>CHEAT CODE #52 · ALIASING</h1>
+  <div class="th">Sample slower than twice a signal's frequency and it comes back DISGUISED as a lower frequency — lies with confident faces, and, mastered, a free downconverter.</div>
+  <div>
+    <span class="tab on" data-a="0">1 · WAGON WHEEL</span>
+    <span class="tab" data-a="1">2 · THE BUG</span>
+    <span class="tab" data-a="2">3 · ON PURPOSE</span>
+  </div>
+  <div class="hint" id="hint"></div>
+  <div class="big" id="big">--</div>
+  <div class="rd" id="rd1">--</div>
+  <div class="rd" id="rd2">--</div>
+  <div id="btnwrap"></div>
+  <div class="pun">any mysterious slow oscillation: FIRST suspect an alias of something fast.</div>
+  <div><a href="index.html">← gallery</a></div>
+</div>
+<script>
+"use strict";
+var cv=document.getElementById('c'),cx=cv.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;
+ cv.width=W*DPR|0;cv.height=H*DPR|0;cv.style.width=W+'px';cv.style.height=H+'px';cx.setTransform(DPR,0,0,DPR,0,0);}
+addEventListener('resize',resize);resize();
+
+/* ---------- THE FORMULA (shared, single source of truth) ---------- */
+// Alias of signal f sampled at fs: fold f onto [0, fs/2], keeping sign for rotation direction.
+function aliasSigned(f,fs){
+  var r=f-fs*Math.round(f/fs);   // nearest-multiple residue in (-fs/2, fs/2]
+  return r;
+}
+function aliasAbs(f,fs){return Math.abs(aliasSigned(f,fs));}
+
+var act=0,T=0;
+var hints=["← → spokes · drag/scroll RPM · [ ] change fps · watch it stop & reverse",
+           "watch the logger lie · press D to DOUBLE the sample rate",
+           "drag the sample rate · the 40.1 kHz tone lands at 100 Hz in-band"];
+function setAct(i){act=i;document.getElementById('hint').textContent=hints[i];
+  chart=[];strobeAcc=0;sampAng=0;spec=[];
+  var t=document.querySelectorAll('.tab');for(var k=0;k<t.length;k++)t[k].className='tab'+(k===i?' on':'');
+  document.getElementById('btnwrap').innerHTML = i===1?'<span class="btn" id="dbl">▶ DOUBLE THE SAMPLE RATE</span>':'';
+  if(i===1){document.getElementById('dbl').onclick=function(){fs2=(fs2<80)?98:49;chart=[];};}}
+var tabs=document.querySelectorAll('.tab');
+for(var i=0;i<tabs.length;i++)(function(n){tabs[n].onclick=function(){setAct(n)}})(i);
+
+/* ---------- state ---------- */
+var rpm=300, fps=10, spokes=8, wheelAng=0, sampAng=0, strobeAcc=0, flash=0;
+var fs2=49, chart=[], phaseT=0;
+var fUltra=40100, fsU=8000, spec=[];
+var dragging=false;
+
+addEventListener('pointerdown',function(e){dragging=true;onDrag(e)});
+addEventListener('pointerup',function(){dragging=false});
+addEventListener('pointermove',function(e){if(dragging)onDrag(e)});
+function onDrag(e){
+  var u=Math.max(0,Math.min(1,e.clientX/W));
+  if(act===0)rpm=-1200+u*2400;
+  if(act===2)fsU=2000+u*14000;
+}
+addEventListener('wheel',function(e){if(act===0){rpm+=(e.deltaY>0?-10:10);}},{passive:true});
+addEventListener('keydown',function(e){
+  if(e.key==='1')setAct(0);if(e.key==='2')setAct(1);if(e.key==='3')setAct(2);
+  if(act===0){
+    if(e.key==='ArrowRight')rpm+=15; if(e.key==='ArrowLeft')rpm-=15;
+    if(e.key==='ArrowUp')fps+=1; if(e.key==='ArrowDown')fps=Math.max(1,fps-1);
+    if(e.key==='[')fps=Math.max(1,fps-1); if(e.key===']')fps+=1;
+    if(e.key==='s')spokes=spokes>=16?3:spokes+1;
+  }
+  if(act===1&&(e.key==='d'||e.key==='D')){fs2=(fs2<80)?98:49;chart=[];}
+});
+setAct(0);
+
+function panel(x,y,w,h,l){cx.save();cx.fillStyle='rgba(10,12,22,.6)';cx.strokeStyle='#a6f4';cx.lineWidth=1;
+ cx.fillRect(x,y,w,h);cx.strokeRect(x,y,w,h);if(l){cx.fillStyle='#c9b6ff';cx.font='10px ui-monospace,monospace';cx.fillText(l,x+7,y+14);}cx.restore();}
+function wheel(px,py,R,ang,col,glow,alpha){
+  cx.save();cx.globalAlpha=alpha===undefined?1:alpha;cx.translate(px,py);cx.rotate(ang);
+  cx.strokeStyle=col;cx.shadowColor=col;cx.shadowBlur=glow;cx.lineWidth=2.4;
+  cx.beginPath();cx.arc(0,0,R,0,6.283);cx.stroke();
+  for(var s=0;s<spokes;s++){var a=s/spokes*6.283;
+    cx.lineWidth=s===0?4.5:2.2;
+    cx.beginPath();cx.moveTo(0,0);cx.lineTo(Math.cos(a)*R,Math.sin(a)*R);cx.stroke();}
+  cx.fillStyle=col;cx.beginPath();cx.arc(0,0,5,0,6.283);cx.fill();
+  cx.restore();
+}
+
+/* =============== ACT 1 =============== */
+function drawAct1(dt){
+  var fRot=rpm/60;                       // wheel rotations / s (signed)
+  var fSpoke=fRot*spokes;                // spoke-pattern frequency
+  wheelAng+=fRot*6.283*dt;
+  // strobe sampling
+  strobeAcc+=dt;
+  var stepped=false;
+  while(strobeAcc>=1/fps){strobeAcc-=1/fps;sampAng=wheelAng;stepped=true;flash=1;}
+  flash=Math.max(0,flash-dt*5);
+  // apparent motion from the formula
+  var aSpoke=aliasSigned(fSpoke,fps);    // apparent spoke-pattern freq (signed)
+  var aRot=aSpoke/spokes;                // apparent wheel rate (rev/s)
+  var R=Math.min(W,H)*0.16;
+  var y=H*0.47;
+  // truth wheel
+  wheel(W*0.30,y,R,wheelAng,'#5cd8ff',18,1);
+  cx.fillStyle='#8fe6ff';cx.font='11px ui-monospace,monospace';cx.textAlign='center';
+  cx.fillText('TRUTH — continuous  '+rpm.toFixed(0)+' RPM',W*0.30,y+R+34);
+  // sampled wheel (held between samples => strobe look)
+  cx.save();if(flash>0.5){cx.shadowBlur=0;}
+  wheel(W*0.62,y,R,sampAng,'#ff9ec9',14+26*flash,1);cx.restore();
+  cx.fillStyle='#ffc7e0';
+  cx.fillText('THE LIE — sampled @ '+fps.toFixed(0)+' fps',W*0.62,y+R+34);
+  var word = Math.abs(aRot)<0.02?'FROZEN':(aRot*Math.sign(fRot||1)<0?'BACKWARD':'forward');
+  cx.fillStyle=Math.abs(aRot)<0.02?'#7ffcd8':(aRot<0?'#ff6b8a':'#ffd479');
+  cx.font='bold 15px ui-monospace,monospace';
+  cx.fillText('apparent: '+(aRot*60).toFixed(1)+' RPM  ('+(aRot<-0.02?'BACKWARD':(Math.abs(aRot)<0.02?'FROZEN':'forward'))+')',W*0.62,y-R-26);
+  cx.textAlign='left';
+  // folding diagram
+  var px=W*0.06,py=H*0.76,pw=W*0.88,ph=H*0.17;
+  panel(px,py,pw,ph,'FOLDING DIAGRAM — frequency axis creased at Nyquist fs/2 = '+(fps/2).toFixed(1)+' Hz');
+  var fmax=fps*3.2, sx=function(f){return px+14+(pw-28)*Math.min(1,Math.abs(f)/fmax);};
+  var base=py+ph-16;
+  glowLine(px+14,base,px+pw-14,base,'#3a4a6a',1.5,0);
+  for(var n=0;n<=6;n++){var fv=n*fps/2;if(fv>fmax)break;
+    var X=sx(fv);glowLine(X,base-8,X,base+5,n%2?'#ff5f7e':'#6cf',1.2,6);
+    cx.fillStyle=n%2?'#ff9db1':'#8cf';cx.font='9px ui-monospace,monospace';
+    cx.fillText(fv.toFixed(1),X-10,base+16);}
+  // fold path from |fSpoke| down to alias
+  var fabs=Math.abs(fSpoke), cur=0, up=true, X0=sx(0), Y0=base-10;
+  cx.save();cx.strokeStyle='#ffd479';cx.lineWidth=2;cx.shadowColor='#fa0';cx.shadowBlur=12;cx.beginPath();
+  cx.moveTo(sx(0),base-6);
+  var seg=0,f0=0;
+  while(f0<fabs&&seg<12){
+    var f1=Math.min(fabs,(seg+1)*fps/2);
+    var h1=up?36:6, h0=up?6:36;
+    cx.lineTo(sx(f1),base-h1);
+    f0=f1;up=!up;seg++;
+  }
+  cx.stroke();cx.restore();
+  var af=aliasAbs(fSpoke,fps);
+  var AX=sx(af);
+  cx.save();cx.fillStyle='#7ffcd8';cx.shadowColor='#7ffcd8';cx.shadowBlur=20;
+  cx.beginPath();cx.arc(AX,base-6,6,0,6.283);cx.fill();cx.restore();
+  cx.fillStyle='#7ffcd8';cx.font='10px ui-monospace,monospace';
+  cx.fillText('lands here: '+af.toFixed(2)+' Hz',AX+10,base-12);
+  cx.fillStyle='#9ab';
+  cx.fillText('true spoke rate '+fabs.toFixed(2)+' Hz  →  folds  →  alias '+af.toFixed(2)+' Hz',px+14,py+ph-2);
+
+  var n0=Math.round(fSpoke/fps);
+  document.getElementById('big').textContent='f_alias = |f − n·fs| = |'+fSpoke.toFixed(2)+' − '+n0+'·'+fps.toFixed(0)+'| = '+af.toFixed(2)+' Hz';
+  document.getElementById('rd1').textContent='wheel '+rpm.toFixed(0)+' RPM · '+spokes+' spokes → spoke rate '+fSpoke.toFixed(2)+' Hz';
+  document.getElementById('rd2').textContent='camera '+fps.toFixed(0)+' fps · Nyquist '+(fps/2).toFixed(1)+' Hz · apparent '+(aRot*60).toFixed(1)+' RPM';
+}
+function glowLine(a,b,c,d,col,w,bl){cx.save();cx.strokeStyle=col;cx.lineWidth=w;if(bl){cx.shadowColor=col;cx.shadowBlur=bl;}
+ cx.beginPath();cx.moveTo(a,b);cx.lineTo(c,d);cx.stroke();cx.restore();}
+
+/* =============== ACT 2 =============== */
+function drawAct2(dt){
+  var fTrue=50;
+  phaseT+=dt*0.9;                          // simulated seconds of logging (sped up)
+  var alias=aliasAbs(fTrue,fs2);           // 50 @ 49 -> 1 Hz ; 50 @ 98 -> 50 Hz (unaliased)
+  // true signal panel
+  var px=W*0.06,py=H*0.14,pw=W*0.88,ph=H*0.26;
+  panel(px,py,pw,ph,'GROUND TRUTH — 50 Hz mains hum (real, fast)');
+  cx.save();cx.strokeStyle='#5cd8ff';cx.lineWidth=1.3;cx.shadowColor='#5cd8ff';cx.shadowBlur=9;cx.beginPath();
+  for(var x=0;x<pw-24;x++){var t=phaseT+x/(pw-24)*0.12;
+    var Y=py+ph/2+Math.sin(6.283*fTrue*t)*(ph*0.32);
+    x?cx.lineTo(px+12+x,Y):cx.moveTo(px+12+x,Y);}
+  cx.stroke();cx.restore();
+  // sample dots on truth
+  var ns=Math.floor((pw-24)/((pw-24)/(0.12*fs2)));
+  cx.save();cx.fillStyle='#ffd479';cx.shadowColor='#fa0';cx.shadowBlur=8;
+  for(var k=0;k<Math.floor(0.12*fs2)+1;k++){
+    var ts=Math.ceil(phaseT*fs2)/fs2 + k/fs2;
+    var xx=px+12+((ts-phaseT)/0.12)*(pw-24);
+    if(xx>px+12&&xx<px+pw-12){var YY=py+ph/2+Math.sin(6.283*fTrue*ts)*(ph*0.32);
+      cx.beginPath();cx.arc(xx,YY,3,0,6.283);cx.fill();}}
+  cx.restore();
+  cx.fillStyle='#ffd479';cx.font='10px ui-monospace,monospace';
+  cx.fillText('sampler ticks @ '+fs2+' Hz (orange)',px+12,py+ph-6);
+
+  // chart recorder: what the logger records
+  var qy=H*0.46,qh=H*0.36;
+  panel(px,qy,pw,qh,'YOUR DATA LOGGER SWEARS — reconstructed from those samples');
+  // build chart from actual sampled values (real math: sample the true 50 Hz at fs2)
+  chart.push(Math.sin(6.283*fTrue*(Math.round(phaseT*fs2)/fs2)));
+  var maxPts=Math.floor(pw-24);if(chart.length>maxPts)chart.shift();
+  cx.save();cx.strokeStyle=fs2<80?'#ff6b8a':'#7ffcd8';cx.lineWidth=2;
+  cx.shadowColor=fs2<80?'#ff6b8a':'#7ffcd8';cx.shadowBlur=14;cx.beginPath();
+  for(var s=0;s<chart.length;s++){var X=px+12+s,Y=qy+qh/2-chart[s]*(qh*0.34);
+    s?cx.lineTo(X,Y):cx.moveTo(X,Y);}
+  cx.stroke();cx.restore();
+  glowLine(px+12,qy+qh/2,px+pw-12,qy+qh/2,'#2a3a5a',1,0);
+  cx.fillStyle=fs2<80?'#ff9db1':'#7ffcd8';cx.font='bold 14px ui-monospace,monospace';
+  cx.fillText(fs2<80?('"a majestic '+alias.toFixed(2)+' Hz drift" — the impostor')
+                    :('honest '+alias.toFixed(1)+' Hz — impostor evaporated'),px+16,qy+qh-14);
+  cx.fillStyle='#9ab';cx.font='10px ui-monospace,monospace';
+  cx.fillText('the week you lose: three days chasing a thermal drift that was mains all along',px+16,qy+qh+16);
+
+  document.getElementById('big').textContent='|50 − 1·'+fs2+'| = '+alias.toFixed(2)+' Hz';
+  document.getElementById('rd1').textContent='true 50.00 Hz · fs = '+fs2+' Hz · Nyquist '+(fs2/2).toFixed(1)+' Hz';
+  document.getElementById('rd2').textContent=(fs2<80?'ALIASED (50 > fs/2) — you are logging a lie':'CLEAN (50 < fs/2) — Nyquist satisfied');
+}
+
+/* =============== ACT 3 =============== */
+function drawAct3(dt){
+  var alias=aliasAbs(fUltra,fsU);
+  var px=W*0.06,py=H*0.14,pw=W*0.88,ph=H*0.30;
+  panel(px,py,pw,ph,'SPECTRUM — bandwidth 0…fs/2, with the fold that brings 40.1 kHz in-band');
+  var fmax=fsU/2;
+  var SX=function(f){return px+16+(pw-32)*Math.min(1,f/fmax);};
+  var base=py+ph-24;
+  glowLine(px+16,base,px+pw-16,base,'#3a4a6a',1.5,0);
+  for(var k=0;k<=5;k++){var fv=k*fmax/5;var X=SX(fv);
+    glowLine(X,base,X,base+6,'#5a6a8a',1,0);cx.fillStyle='#8cf';cx.font='9px ui-monospace,monospace';
+    cx.fillText((fv/1000).toFixed(1)+'k',X-11,base+17);}
+  // aliased peak
+  var AX=SX(alias);
+  spec.push(alias);if(spec.length>200)spec.shift();
+  cx.save();cx.strokeStyle='#7ffcd8';cx.lineWidth=4;cx.shadowColor='#7ffcd8';cx.shadowBlur=26;
+  cx.beginPath();cx.moveTo(AX,base);cx.lineTo(AX,py+34);cx.stroke();cx.restore();
+  cx.fillStyle='#7ffcd8';cx.font='bold 12px ui-monospace,monospace';
+  cx.fillText(alias.toFixed(1)+' Hz  ← your 40.1 kHz, downconverted for free',AX+8,py+46);
+  // noise floor
+  cx.save();cx.strokeStyle='#2f6ea655';cx.lineWidth=1;cx.beginPath();
+  for(var x=0;x<pw-32;x+=3){var nz=base-3-Math.abs(Math.sin(x*0.7+T*2))*7;
+    cx.moveTo(px+16+x,base);cx.lineTo(px+16+x,nz);}
+  cx.stroke();cx.restore();
+
+  // the ladder: 40.1 kHz sitting up at Nyquist zone n
+  var qy=H*0.50,qh=H*0.30;
+  panel(px,qy,pw,qh,'NYQUIST ZONES — the signal lives up here, the ADC folds it down');
+  var FMAX=48000, ZX=function(f){return px+16+(pw-32)*Math.min(1,f/FMAX);};
+  var zb=qy+qh-30;
+  glowLine(px+16,zb,px+pw-16,zb,'#3a4a6a',1.5,0);
+  var zone=0;
+  for(var f=0;f<FMAX;f+=fsU/2){
+    var X1=ZX(f),X2=ZX(Math.min(FMAX,f+fsU/2));
+    cx.save();cx.fillStyle=zone%2?'rgba(255,95,126,.10)':'rgba(92,216,255,.10)';
+    cx.fillRect(X1,qy+26,X2-X1,zb-qy-26);
+    cx.strokeStyle=zone%2?'#ff5f7e55':'#5cd8ff55';cx.strokeRect(X1,qy+26,X2-X1,zb-qy-26);cx.restore();
+    cx.fillStyle='#7a8aaa';cx.font='9px ui-monospace,monospace';
+    if(X2-X1>26)cx.fillText('Z'+(zone+1),X1+4,qy+38);
+    zone++;if(zone>40)break;
+  }
+  var UX=ZX(fUltra);
+  cx.save();cx.strokeStyle='#ff9ec9';cx.lineWidth=3;cx.shadowColor='#ff9ec9';cx.shadowBlur=20;
+  cx.beginPath();cx.moveTo(UX,zb);cx.lineTo(UX,qy+34);cx.stroke();cx.restore();
+  cx.fillStyle='#ffc7e0';cx.font='11px ui-monospace,monospace';
+  cx.fillText('40.1 kHz ultrasonic',Math.min(UX+8,px+pw-160),qy+52);
+  // fold arrow down to alias
+  var n=Math.round(fUltra/fsU);
+  cx.save();cx.strokeStyle='#ffd479';cx.lineWidth=1.6;cx.setLineDash([5,4]);cx.shadowColor='#fa0';cx.shadowBlur=10;
+  cx.beginPath();cx.moveTo(UX,zb-4);cx.quadraticCurveTo((UX+ZX(alias))/2,zb+22,ZX(alias)+2,zb-2);cx.stroke();
+  cx.setLineDash([]);cx.restore();
+  cx.fillStyle='#ffd479';cx.font='10px ui-monospace,monospace';
+  cx.fillText('n = '+n+'  →  |'+(fUltra/1000).toFixed(1)+'k − '+n+'·'+(fsU/1000).toFixed(2)+'k| = '+alias.toFixed(1)+' Hz',px+16,qy+qh-8);
+  cx.fillStyle='#9ab';
+  cx.fillText('heterodyning without a mixer — no LO, no diode, just a slow ADC used on purpose',px+16,qy+qh+16);
+
+  document.getElementById('big').textContent='40.1 kHz @ '+(fsU/1000).toFixed(2)+' kHz → '+alias.toFixed(1)+' Hz';
+  document.getElementById('rd1').textContent='drag anywhere: fs = '+fsU.toFixed(0)+' Hz · Nyquist '+(fsU/2).toFixed(0)+' Hz';
+  document.getElementById('rd2').textContent=(Math.abs(fsU-8000)<1?'★ fs = 8 kHz: lands EXACTLY at 100 Hz':'try fs = 8000 Hz exactly');
+}
+
+/* ---------- loop ---------- */
+var last=performance.now();
+function frame(now){
+  var dt=Math.min(0.05,(now-last)/1000);last=now;T+=dt;
+  cx.fillStyle='rgba(5,6,12,.34)';cx.fillRect(0,0,W,H);
+  cx.save();cx.strokeStyle='rgba(120,90,220,.06)';cx.beginPath();
+  for(var x=0;x<W;x+=56){cx.moveTo(x,0);cx.lineTo(x,H);}
+  for(var y=0;y<H;y+=56){cx.moveTo(0,y);cx.lineTo(W,y);}cx.stroke();cx.restore();
+  if(act===0)drawAct1(dt);else if(act===1)drawAct2(dt);else drawAct3(dt);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>

@@ -102,10 +102,10 @@ function instrument(nTrue){
 function c4(k){if(k<2)return 1;return Math.sqrt(2/(k-1))*Math.exp(lgamma(k/2)-lgamma((k-1)/2));}
 function relErrPoints(arr){
  var pts=[],n=arr.length;if(n<8)return pts;
- for(var m=1;m<=n/8;m*=2){
+ for(var m=1;m<=n/12;m*=2){
   var k=Math.floor(n/m),s=0,s2=0;
   for(var i=0;i<k;i++){var sum=0;for(var j=0;j<m;j++)sum+=arr[i*m+j];s+=sum;s2+=sum*sum;}
-  var mean=s/k;if(mean<=0||k<8)continue;
+  var mean=s/k;if(mean<=0||k<12)continue;
   var varr=(s2-k*mean*mean)/(k-1);if(varr<0)varr=0;
   pts.push({N:mean,e:Math.sqrt(varr)/c4(k)/mean,k:k,m:m});
  }
@@ -213,7 +213,7 @@ function frame(now){
  txt('bin '+bins.length+'  ·  '+binTrue+' counts in this 10 s bin',stx,sty-19,'rgba(180,210,230,.75)',9,false);
 
  // ===== THREE BOTTOM PANELS =====
- var py=topY+topH+14, ph=H-py-34;
+ var py=topY+topH+14, ph=Math.max(150,H-py-34);
  var GX=narrow?12:356, GW=W-GX-14;
  var cw=(GW-24)/3, rh=(ph-16)/3;
  function rect(i){return narrow?{x:GX,y:py+i*(rh+8),w:GW,h:rh}
