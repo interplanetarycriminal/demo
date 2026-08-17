@@ -55,7 +55,7 @@ window.addEventListener('resize',resize);resize();
 // Each returns FORCE (N) for a displacement x (m) and velocity v (m/s), with internal state.
 // Loss comes from an explicit dissipative term so integrating F·dx equals the heat we inject.
 var MATS=[
- {key:'steel', name:'SPRING STEEL',  col:'#8fd8ff', k:26000, cvis:6,    fy:0,     rate:0.0,  note:'whisper-thin loop — nearly lossless'},
+ {key:'steel', name:'SPRING STEEL',  col:'#8fd8ff', k:26000, cvis:1.5,  fy:0,     rate:0.0,  note:'whisper-thin loop — nearly lossless'},
  {key:'foam',  name:'FOAM BLOCK',    col:'#5effc8', k:5200,  cvis:190,  fy:24,    rate:0.15, note:'fat loop — every cycle is heat'},
  {key:'rubber',name:'RUBBER',        col:'#ffb64d', k:9000,  cvis:520,  fy:14,    rate:1.00, note:'rate-dependent — faster = fatter'},
  {key:'bh',    name:'MAGNETIC B–H',  col:'#ff7ba8', k:0,     cvis:0,    fy:0,     rate:0.0,  note:'sigmoid loop; area = core loss/cycle'},

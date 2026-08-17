@@ -1,0 +1,327 @@
+<title>Cheat Code 92 — Moiré Magnifies the Invisible</title>
+<style>
+  html,body{margin:0;padding:0;background:#04060a;overflow:hidden;height:100%}
+  canvas{display:block;position:fixed;top:0;left:0}
+  #ui{position:fixed;top:12px;left:12px;z-index:10;background:rgba(6,10,18,.76);
+      border:1px solid rgba(120,255,220,.28);border-radius:8px;padding:10px 12px;
+      font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#bff5e6;
+      max-width:400px;backdrop-filter:blur(6px);box-shadow:0 0 26px rgba(60,255,200,.14)}
+  #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.11em;color:#6cffd6;
+         text-shadow:0 0 10px rgba(90,255,214,.7);text-transform:uppercase}
+  .cc{color:#ffd479;margin:0 0 7px;text-shadow:0 0 8px rgba(255,190,90,.4)}
+  .hint{color:#7c9a93;margin:0 0 6px}
+  .row{display:flex;justify-content:space-between;gap:10px}
+  .k{color:#6f938b}.v{color:#9dfbc0;text-shadow:0 0 8px rgba(110,255,180,.35)}
+  .v.hot{color:#ffd479;text-shadow:0 0 9px rgba(255,200,100,.5)}
+  hr{border:0;border-top:1px solid rgba(120,255,220,.18);margin:7px 0}
+  a{color:#6cffd6;text-decoration:none}a:hover{text-decoration:underline}
+  .alg{color:#c9b3ff;font-size:11px;line-height:1.45}
+  label{display:block;color:#6f938b;font-size:11px;margin-top:5px}
+  input[type=range]{width:100%;accent-color:#6cffd6;height:15px}
+  button{background:rgba(108,255,214,.12);border:1px solid rgba(108,255,214,.4);
+         color:#6cffd6;font:11px ui-monospace,monospace;padding:3px 8px;border-radius:4px;
+         cursor:pointer;margin-top:5px}
+  button:hover{background:rgba(108,255,214,.25)}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>CC#92 · Moiré Amplification</h1>
+  <p class="cc">Overlay two periodic patterns and the beat band moves p/(p₁−p₂) times faster than the thing you are trying to see.</p>
+  <p class="hint">[1] translation &nbsp; [2] rotation &nbsp; [3] crack monitor<br>
+     ← → arrow keys = 10 µm steps &nbsp; (shift = 1 µm)</p>
+  <label>fine translation of top grating (±2 mm)</label>
+  <input id="u" type="range" min="-2000" max="2000" step="0.5" value="0">
+  <label>pitch mismatch p₂−p₁ (µm) — smaller = more gain</label>
+  <input id="dp" type="range" min="1" max="40" step="0.5" value="4">
+  <label>rotation θ (arcmin)</label>
+  <input id="th" type="range" min="2" max="120" step="0.25" value="30">
+  <button id="tl">▶ crack time-lapse</button>
+  <hr>
+  <div id="ro"></div>
+  <hr>
+  <div class="alg" id="alg"></div>
+  <hr>
+  <a href="index.html">&#8592; gallery</a>
+</div>
+<script>
+"use strict";
+var c=document.getElementById('c'),ctx=c.getContext('2d'),W=0,H=0,DPR=1;
+var off=document.createElement('canvas'),octx=off.getContext('2d');
+function resize(){DPR=Math.min(window.devicePixelRatio||1,2);
+  W=window.innerWidth;H=window.innerHeight;
+  c.width=Math.round(W*DPR);c.height=Math.round(H*DPR);
+  c.style.width=W+'px';c.style.height=H+'px';ctx.setTransform(DPR,0,0,DPR,0,0);
+  off.width=c.width;off.height=c.height;}
+window.addEventListener('resize',resize);resize();
+
+// ---- physical scale --------------------------------------------------------
+var PXMM=30;                 // 30 CSS px per millimetre
+var P1=0.200;                // bottom grating pitch, mm  (200 µm — a fine printed ruling)
+var st={mode:1, u:0, dpitch:0.004, theta:30/60*Math.PI/180,
+        crack:0, running:false, day:0, t:0};
+
+function P2(){return P1+st.dpitch;}
+// gain: beat displacement / real displacement  =  p1/(p1-p2)  (signed)
+function gain(){return P1/(P1-P2());}
+function beatPeriod(){return P1*P2()/Math.abs(P1-P2());}   // mm
+// beat-band centre position for a top-grating shift u (mm)
+function beatPos(u){return u*gain();}
+
+// rotation moiré: two pitch-P1 gratings at relative angle th
+// fringe spacing S = p / (2 sin(th/2))   (exact); ≈ p/th for small th
+function fringeSpacing(th){var s=2*Math.sin(th/2); return s>1e-12? P1/s : Infinity;}
+function angleFromSpacing(S){return 2*Math.asin(Math.min(1,P1/(2*S)));}
+
+// ---- controls --------------------------------------------------------------
+var uEl=document.getElementById('u'), dpEl=document.getElementById('dp'),
+    thEl=document.getElementById('th'), tlEl=document.getElementById('tl');
+uEl.addEventListener('input',function(){st.u=(+uEl.value)/1000;});      // µm -> mm
+dpEl.addEventListener('input',function(){st.dpitch=(+dpEl.value)/1000;});
+thEl.addEventListener('input',function(){st.theta=(+thEl.value)/60*Math.PI/180;});
+tlEl.addEventListener('click',function(){st.running=!st.running;
+  tlEl.textContent=st.running?'❚❚ pause time-lapse':'▶ crack time-lapse';});
+window.addEventListener('keydown',function(e){
+  var step=e.shiftKey?0.001:0.010;   // 1 µm / 10 µm, in mm
+  if(e.key==='ArrowLeft'){st.u=Math.max(-2,st.u-step);uEl.value=(st.u*1000).toFixed(1);e.preventDefault();}
+  else if(e.key==='ArrowRight'){st.u=Math.min(2,st.u+step);uEl.value=(st.u*1000).toFixed(1);e.preventDefault();}
+  else if(e.key==='1')st.mode=1; else if(e.key==='2')st.mode=2; else if(e.key==='3'){st.mode=3;}
+});
+
+// ---- REAL grating rendering ------------------------------------------------
+// Physical gratings are binary: transmission = open1 AND open2.
+// We paint light where grating 1 is OPEN, then erase where grating 2 is CLOSED.
+// Fractional coordinates give the canvas antialiaser sub-pixel sensitivity —
+// exactly the sub-pixel response a real optical overlay has.
+function paintGratings(x0,y0,w,h,shift,rot){
+  var s=DPR;
+  octx.setTransform(1,0,0,1,0,0);
+  octx.clearRect(x0*s,y0*s,w*s,h*s);
+  octx.save();
+  octx.beginPath();octx.rect(x0*s,y0*s,w*s,h*s);octx.clip();
+
+  var pitchA=P1*PXMM*s, pitchB=P2()*PXMM*s;
+  // ---- grating 1 (fixed, bottom): bright bars where OPEN
+  octx.globalCompositeOperation='source-over';
+  octx.fillStyle='#7dffd8';
+  var n1=Math.ceil(w*s/pitchA)+2;
+  for(var i=-1;i<n1;i++){
+    var x=x0*s+i*pitchA;
+    octx.fillRect(x,y0*s,pitchA*0.5,h*s);
+  }
+  // ---- grating 2 (movable/rotated): erase where its bars are OPAQUE
+  octx.globalCompositeOperation='destination-out';
+  octx.fillStyle='#000';
+  var pB=(st.mode===2)?pitchA:pitchB;
+  var sh=shift*PXMM*s;
+  octx.save();
+  if(rot){
+    var cx=(x0+w/2)*s, cy=(y0+h/2)*s;
+    octx.translate(cx,cy);octx.rotate(rot);octx.translate(-cx,-cy);
+  }
+  var span=Math.hypot(w,h)*s;
+  var n2=Math.ceil(span/pB)+4;
+  var ox=x0*s-(span-w*s)/2;
+  var oy=y0*s-(span-h*s)/2;
+  for(var j=-1;j<n2;j++){
+    var x2=ox+j*pB+sh;
+    octx.fillRect(x2+pB*0.5,oy,pB*0.5,span);
+  }
+  octx.restore();
+  octx.restore();
+
+  // composite the real optical result onto the neon stage
+  ctx.save();
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.globalCompositeOperation='lighter';
+  ctx.drawImage(off,x0*s,y0*s,w*s,h*s,x0*s,y0*s,w*s,h*s);
+  ctx.restore();
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+
+function txt(s,x,y,col,font,align){ctx.save();ctx.font=font||'12px ui-monospace,monospace';
+  ctx.fillStyle=col||'#bff5e6';ctx.textAlign=align||'left';ctx.shadowColor=col||'#bff5e6';
+  ctx.shadowBlur=8;ctx.fillText(s,x,y);ctx.restore();}
+function gline(x1,y1,x2,y2,col,w,b){ctx.save();ctx.strokeStyle=col;ctx.lineWidth=w||1.5;
+  ctx.shadowColor=col;ctx.shadowBlur=b||12;ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);
+  ctx.stroke();ctx.restore();}
+
+function ruler(y,x0,x1){
+  gline(x0,y,x1,y,'rgba(140,220,255,.35)',1,4);
+  for(var mm=0;x0+mm*PXMM<x1;mm++){
+    var x=x0+mm*PXMM, big=(mm%5===0);
+    gline(x,y,x,y+(big?9:5),'rgba(140,220,255,'+(big?.6:.3)+')',1,3);
+    if(big&&mm>0)txt(mm+'mm',x,y+21,'rgba(140,200,230,.5)','10px ui-monospace,monospace','center');
+  }
+}
+
+// ---------- ACT 1 : translation ----------
+function actTranslate(){
+  var x0=W*0.30, w=W-x0-40, y0=H*0.16, h=H*0.42;
+  txt('ACT 1 — TRANSLATION MOIRÉ   (two real gratings, drawn stripe by stripe)',
+      x0,y0-40,'#6cffd6','13px ui-monospace,monospace');
+  txt('p₁ = '+(P1*1000).toFixed(0)+' µm (fixed)    p₂ = '+(P2()*1000).toFixed(1)+
+      ' µm (movable)    beat period = '+beatPeriod().toFixed(2)+' mm',
+      x0,y0-20,'rgba(160,220,210,.7)','12px ui-monospace,monospace');
+  ctx.save();ctx.fillStyle='rgba(4,10,12,.9)';ctx.fillRect(x0,y0,w,h);ctx.restore();
+  paintGratings(x0,y0,w,h,st.u,0);
+  ctx.save();ctx.strokeStyle='rgba(108,255,214,.30)';ctx.lineWidth=1;
+  ctx.strokeRect(x0+.5,y0+.5,w-1,h-1);ctx.restore();
+
+  // predicted beat-band centres (analytic) drawn as markers
+  var P=beatPeriod(), pos=beatPos(st.u);
+  ctx.save();
+  var k0=Math.floor((-pos)/P)-1, k1=Math.ceil((w/PXMM-pos)/P)+1;
+  for(var k=k0;k<=k1;k++){
+    var xm=x0+(pos+k*P)*PXMM;
+    if(xm<x0-4||xm>x0+w+4)continue;
+    gline(xm,y0-6,xm,y0+h+6,'rgba(255,212,121,.75)',1.6,14);
+    txt('▼',xm,y0-9,'#ffd479','11px ui-monospace,monospace','center');
+  }
+  ctx.restore();
+  ruler(y0+h+34,x0,x0+w);
+  txt('BRIGHT BEAT BANDS (predicted ▼ = observed) — they travel '+
+      Math.abs(gain()).toFixed(0)+'× faster than the grating',
+      x0,y0+h+62,'#ffd479','12px ui-monospace,monospace');
+
+  // micro-displacement bar: show how tiny the real motion is
+  var by=y0+h+90;
+  txt('real motion of the top grating, TRUE SCALE:',x0,by-6,'rgba(150,200,190,.65)','11px ui-monospace,monospace');
+  gline(x0,by+8,x0+300,by+8,'rgba(120,200,255,.25)',1,4);
+  var px=x0+150+st.u*PXMM;
+  ctx.save();ctx.globalCompositeOperation='lighter';ctx.fillStyle='#8ce8ff';
+  ctx.shadowColor='#8ce8ff';ctx.shadowBlur=16;
+  ctx.beginPath();ctx.arc(px,by+8,4,0,7);ctx.fill();ctx.restore();
+  txt((st.u*1000).toFixed(1)+' µm',px+10,by+12,'#8ce8ff','11px ui-monospace,monospace');
+}
+
+// ---------- ACT 2 : rotation ----------
+function actRotate(){
+  var x0=W*0.30, w=W-x0-40, y0=H*0.16, h=H*0.52;
+  var S=fringeSpacing(st.theta);
+  txt('ACT 2 — ROTATION MOIRÉ   identical pitches, one rotated by a hair',
+      x0,y0-40,'#6cffd6','13px ui-monospace,monospace');
+  txt('θ = '+(st.theta*180/Math.PI*60).toFixed(2)+"′  →  horizontal fringe spacing S = p/(2 sin θ/2) = "+
+      S.toFixed(2)+' mm',x0,y0-20,'rgba(160,220,210,.7)','12px ui-monospace,monospace');
+  ctx.save();ctx.fillStyle='rgba(4,10,12,.9)';ctx.fillRect(x0,y0,w,h);ctx.restore();
+  paintGratings(x0,y0,w,h,st.u,st.theta);
+  ctx.save();ctx.strokeStyle='rgba(108,255,214,.30)';ctx.lineWidth=1;
+  ctx.strokeRect(x0+.5,y0+.5,w-1,h-1);ctx.restore();
+
+  // predicted fringe positions: fringes run perpendicular to the bisector, spacing S
+  var Spx=S*PXMM;
+  if(isFinite(Spx)&&Spx>6&&Spx<w*4){
+    ctx.save();
+    for(var k=-40;k<=40;k++){
+      var xm=x0+w/2+k*Spx;
+      if(xm<x0||xm>x0+w)continue;
+      gline(xm,y0,xm,y0+h,'rgba(255,212,121,.45)',1.2,10);
+    }
+    ctx.restore();
+    var xa=x0+w/2, xb=xa+Spx;
+    if(xb<x0+w){
+      gline(xa,y0+h+14,xb,y0+h+14,'#ffd479',2,12);
+      txt('S = '+S.toFixed(2)+' mm  ⇒  θ = 2·asin(p/2S) = '+
+          (angleFromSpacing(S)*180/Math.PI*60).toFixed(3)+'′',
+          xa,y0+h+34,'#ffd479','12px ui-monospace,monospace');
+    }
+  }
+  ruler(y0+h+58,x0,x0+w);
+  var dS=Math.abs(fringeSpacing(st.theta)-fringeSpacing(st.theta+1/60*Math.PI/180));
+  txt('one extra ARCMINUTE of rotation moves the fringe spacing by '+dS.toFixed(2)+
+      ' mm — visible with a ruler.',x0,y0+h+86,'#6cffd6','12px ui-monospace,monospace');
+}
+
+// ---------- ACT 3 : crack monitor ----------
+function actCrack(){
+  var x0=W*0.30, w=W-x0-40, y0=H*0.18, h=H*0.36;
+  txt('ACT 3 — CRACK MONITOR   two gratings epoxied either side of a hairline crack',
+      x0,y0-42,'#6cffd6','13px ui-monospace,monospace');
+  txt('creep rate 3.0 µm/day · day '+st.day.toFixed(1)+' · total opening '+
+      (st.crack*1000).toFixed(1)+' µm  (a human hair is 70 µm)',
+      x0,y0-22,'rgba(160,220,210,.7)','12px ui-monospace,monospace');
+
+  var half=w/2;
+  ctx.save();ctx.fillStyle='rgba(4,10,12,.9)';ctx.fillRect(x0,y0,w,h);ctx.restore();
+  // left slab: reference (unmoved). right slab: moves with the crack.
+  paintGratings(x0,y0,half-2,h,0,0);
+  paintGratings(x0+half+2,y0,half-2,h,st.crack,0);
+  ctx.save();ctx.strokeStyle='rgba(108,255,214,.30)';ctx.lineWidth=1;
+  ctx.strokeRect(x0+.5,y0+.5,w-1,h-1);ctx.restore();
+  // the crack itself, drawn to true scale (invisible — that's the point)
+  var cx=x0+half;
+  gline(cx,y0-8,cx,y0+h+8,'rgba(255,110,110,.8)',Math.max(0.5,st.crack*PXMM),10);
+  txt('CRACK (true width: '+(st.crack*PXMM).toFixed(3)+' screen px)',cx+8,y0+h+24,
+      '#ff9d9d','12px ui-monospace,monospace');
+
+  var P=beatPeriod(), pos=beatPos(st.crack);
+  gline(x0+half+2+((pos%P)+P)%P*PXMM,y0-6,x0+half+2+((pos%P)+P)%P*PXMM,y0+h+6,'#ffd479',1.8,16);
+  txt('beat band displaced '+(pos).toFixed(2)+' mm  =  '+(st.crack*1000).toFixed(1)+
+      ' µm × '+Math.abs(gain()).toFixed(0),x0,y0+h+50,'#ffd479','13px ui-monospace,monospace');
+  txt('No eye, no dial gauge, no electronics resolves 3 µm.  The bands announce it daily.',
+      x0,y0+h+74,'#6cffd6','12px ui-monospace,monospace');
+  ruler(y0+h+100,x0,x0+w);
+}
+
+// ---------- HUD ----------
+var ro=document.getElementById('ro'), alg=document.getElementById('alg');
+function row(k,v,hot){return '<div class="row"><span class="k">'+k+'</span><span class="v'+(hot?' hot':'')+'">'+v+'</span></div>';}
+
+function frame(){
+  st.t+=1/60;
+  if(st.running){ st.day+=0.08; st.crack=st.day*0.0030; if(st.crack>0.5){st.day=0;st.crack=0;} }
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.fillStyle='#04060a';ctx.fillRect(0,0,W,H);
+  // faint stage glow
+  var g=ctx.createRadialGradient(W*0.6,H*0.4,10,W*0.6,H*0.4,Math.max(W,H)*0.7);
+  g.addColorStop(0,'rgba(20,60,60,.35)');g.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+
+  if(st.mode===1)actTranslate();
+  else if(st.mode===2)actRotate();
+  else actCrack();
+
+  var G=Math.abs(gain()), P=beatPeriod();
+  var u=(st.mode===3)?st.crack:st.u;
+  var beat=beatPos(u);
+  var h='';
+  h+=row('mode',st.mode===1?'TRANSLATION':st.mode===2?'ROTATION':'CRACK MONITOR');
+  h+=row('p₁ (fixed)',(P1*1000).toFixed(1)+' µm');
+  h+=row('p₂ (movable)',st.mode===2?(P1*1000).toFixed(1)+' µm (equal)':(P2()*1000).toFixed(1)+' µm');
+  h+=row('p₂ − p₁',st.mode===2?'0 (rotation only)':(st.dpitch*1000).toFixed(1)+' µm');
+  h+=row('beat period P',st.mode===2?fringeSpacing(st.theta).toFixed(2)+' mm':P.toFixed(2)+' mm');
+  if(st.mode===2){
+    var S=fringeSpacing(st.theta);
+    h+=row('rotation θ',(st.theta*180/Math.PI*60).toFixed(2)+' arcmin');
+    h+=row('θ recovered',(angleFromSpacing(S)*180/Math.PI*60).toFixed(3)+' arcmin');
+    h+=row('S per arcmin',Math.abs(S-fringeSpacing(st.theta+1/60*Math.PI/180)).toFixed(2)+' mm',true);
+  }else{
+    h+=row('ACTUAL motion',(u*1000).toFixed(2)+' µm');
+    h+=row('BEAT motion',beat.toFixed(3)+' mm',true);
+    h+=row('amplification',G.toFixed(1)+' ×',true);
+  }
+  ro.innerHTML=h;
+
+  var a='';
+  if(st.mode===2){
+    a='Two identical rulings crossed at angle θ beat with spacing<br>'+
+      '<b>S = p / (2 sin(θ/2)) ≈ p/θ</b>. Invert it: <b style="color:#8dff9d">θ = 2 asin(p/2S)</b>.<br>'+
+      'At p = 200 µm, a 30′ tilt gives centimetre fringes. The measurement<br>'+
+      'resolution is set by how well you can see a fringe, divided by p/S.<br>'+
+      'This is the Vernier / Ronchi principle — and how autocollimators read angle.';
+  }else{
+    a='Bottom grating cos(2πx/p₁), top grating shifted by u: cos(2π(x−u)/p₂).<br>'+
+      'The difference term beats at 1/p₁ − 1/p₂, so a band sits at<br>'+
+      '<b>x = u · p₁/(p₁−p₂)</b> ⇒ gain M = p₁/(p₁−p₂) = <b style="color:#8dff9d">'+
+      (gain()>0?'+':'')+gain().toFixed(1)+'×</b><br>'+
+      'Here '+(u*1000).toFixed(2)+' µm of real motion → '+beat.toFixed(2)+' mm of band motion.<br>'+
+      'Shrink p₂−p₁ with the slider and the gain runs away: equal pitches = infinite gain<br>'+
+      '(and zero range). <b>Don\'t amplify electronically — overlay periodicity and read the beat.</b>';
+  }
+  alg.innerHTML=a;
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>

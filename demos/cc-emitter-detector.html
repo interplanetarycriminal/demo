@@ -63,7 +63,7 @@ var COLORS=[ {n:'blue',  lam:465, css:'#4fa8ff'},
              {n:'amber', lam:592, css:'#ffc23a'},
              {n:'red',   lam:635, css:'#ff5555'},
              {n:'IR',    lam:850, css:'#8b4b6b'} ];
-var STOKES=20, SHORT=110;                       // nm
+var STOKES=20, SHORT=80;                        // nm
 function emitSpec(lam,l){var s=22,d=(l-lam)/s;return Math.exp(-0.5*d*d);}
 function detResp(lamD,l){                        // responsivity of an LED with emission peak lamD
   var edge=lamD+STOKES;                          // absorption edge
@@ -205,9 +205,9 @@ function actA(dt){
   // spectral overlap bar
   var bw=W*0.20,bx=W*0.06,by=H*0.60;
   x.fillStyle='rgba(8,14,20,.8)';x.strokeStyle='rgba(90,220,255,.25)';x.beginPath();x.rect(bx,by,bw,14);x.fill();x.stroke();
-  glow('#ffd76a',12,function(){x.fillStyle=resp>0.6?'#8ef0c0':(resp>0.25?'#ffd76a':'#ff6b6b');
+  glow('#ffd76a',12,function(){x.fillStyle=resp>0.88?'#8ef0c0':(resp>0.35?'#ffd76a':'#ff6b6b');
     x.fillRect(bx+1,by+1,(bw-2)*Math.min(1,resp),12);});
-  var why = resp>0.75 ? 'MATCHED — the key fits'
+  var why = resp>0.88 ? 'MATCHED — the key fits'
           : (lamD<lamE ? 'detector too BLUE — photons below its bandgap pass straight through'
                        : 'detector too RED — blue photons die in the dead layer');
   x.font='10px ui-monospace,monospace';x.fillStyle='#7d93a8';x.textAlign='left';

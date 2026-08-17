@@ -1,0 +1,464 @@
+<meta charset="utf-8">
+<title>Scaling Laws</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;background:#04060a;overflow:hidden}
+  canvas{display:block;position:fixed;inset:0}
+  #ui{position:fixed;left:12px;top:12px;z-index:10;width:352px;max-height:calc(100vh - 24px);
+      overflow:auto;background:rgba(8,8,18,.74);border:1px solid rgba(190,140,255,.30);
+      border-radius:8px;padding:10px 12px;color:#dcd0ff;
+      font:11px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+      box-shadow:0 0 30px rgba(160,80,255,.18), inset 0 0 40px rgba(60,20,110,.28);
+      backdrop-filter:blur(3px)}
+  #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.9px;color:#d6a8ff;text-shadow:0 0 10px #a34dff}
+  .cheat{color:#ffd98a;border-left:2px solid #ffb347;padding-left:7px;margin:6px 0 8px;text-shadow:0 0 8px rgba(255,170,60,.35)}
+  .hint{color:#9d8fc0;margin:6px 0}
+  .row{display:flex;justify-content:space-between;gap:8px}
+  .k{color:#9a86c4}.v{color:#f2ecff}
+  .sec{margin-top:8px;border-top:1px solid rgba(190,140,255,.16);padding-top:6px}
+  a{color:#d6a8ff;text-decoration:none;border-bottom:1px dotted #7a4fae}
+  a:hover{color:#fff}
+  /* the magnificent zoom slider */
+  #zoomwrap{position:fixed;left:0;right:0;bottom:0;height:118px;z-index:9;
+    background:linear-gradient(to top,rgba(6,4,14,.96),rgba(6,4,14,.55),rgba(6,4,14,0));
+    padding:10px 4vw 0;box-sizing:border-box}
+  #zoom{width:100%;height:44px;-webkit-appearance:none;appearance:none;background:transparent;cursor:ew-resize}
+  #zoom::-webkit-slider-runnable-track{height:12px;border-radius:6px;
+    background:linear-gradient(90deg,#ff4d6d,#ffb347,#7ef0ff,#a34dff);box-shadow:0 0 22px rgba(160,80,255,.55)}
+  #zoom::-moz-range-track{height:12px;border-radius:6px;
+    background:linear-gradient(90deg,#ff4d6d,#ffb347,#7ef0ff,#a34dff)}
+  #zoom::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:34px;margin-top:-11px;border-radius:5px;
+    background:#fff;box-shadow:0 0 20px #fff,0 0 42px #a34dff;border:0}
+  #zoom::-moz-range-thumb{width:22px;height:34px;border-radius:5px;background:#fff;border:0;
+    box-shadow:0 0 20px #fff,0 0 42px #a34dff}
+  #zlabel{text-align:center;color:#f2ecff;font:600 13px/1.3 ui-monospace,Menlo,monospace;
+    letter-spacing:2px;text-shadow:0 0 14px #a34dff;margin-top:2px}
+  #zticks{position:relative;height:16px;margin-top:-2px}
+  #zticks span{position:absolute;transform:translateX(-50%);color:#9d8fc0;
+    font:10px ui-monospace,monospace;white-space:nowrap}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>SCALING LAWS — THE MASTER KEY</h1>
+  <div class="cheat">Halve the size: area falls 4×, volume 8×, frequency doubles — whichever force scales with the LOWER power of length wins as things shrink.</div>
+  <div class="hint" id="hint">drag the BIG slider (or ← →) · [A] auto-sweep · click a law panel</div>
+  <div class="sec" id="out"></div>
+  <div class="sec" style="color:#ffd98a">"compare EXPONENTS — the lower power of L wins small. Choose size by which side your physics is on."</div>
+  <div style="margin-top:6px"><a href="index.html">← gallery</a></div>
+</div>
+<div id="zoomwrap">
+  <div id="zlabel">L = 1.000 m</div>
+  <input type="range" id="zoom" min="-6" max="0" step="0.0005" value="0">
+  <div id="zticks"></div>
+</div>
+<script>
+'use strict';
+var c=document.getElementById('c'),g=c.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
+  c.width=Math.round(W*DPR);c.height=Math.round(H*DPR);c.style.width=W+'px';c.style.height=H+'px';
+  g.setTransform(DPR,0,0,DPR,0,0);}
+window.addEventListener('resize',resize);resize();
+
+// ---------------- reference scale (L0 = 1 m) & exact power laws ----------------
+var L0=1.0;
+// (1) geometry
+function area(L){return L*L;}                      // exponent 2
+function volume(L){return L*L*L;}                  // exponent 3
+function strengthToWeight(L){return 1/L;}          // (L^2)/(L^3)
+// (2) natural frequency: f = k/L  (exponent -1). k chosen so a 1 m beam ≈ 200 Hz-class object
+var F1=200;                                        // Hz at L = 1 m
+function freq(L){return F1/L*L0;}
+// (3) thermal time constant: tau = rho*cp*L^2/k  (exponent 2). tau(1 m) for a solid ≈ 1e6 s
+var TAU1=1.0e6;                                    // s at L = 1 m
+function tau(L){return TAU1*Math.pow(L/L0,2);}
+// (4) surface (adhesion/surface tension) vs body (weight) forces
+// F_adh = gamma * L  (exponent 1);  F_wt = rho*g*L^3 (exponent 3)
+var GAMMA=0.072;                                   // N/m water surface tension
+var RHO_S=1000, Gg=9.81;
+function fAdh(L){return GAMMA*L;}
+function fWt(L){return RHO_S*Gg*L*L*L;}
+function adhRatio(L){return fAdh(L)/fWt(L);}       // ∝ L^-2
+var L_CROSS=Math.sqrt(GAMMA/(RHO_S*Gg));           // capillary length ~2.7 mm; ratio=1 here
+// max sustainable g for a MEMS-ish structure: g_max ∝ 1/L
+function gMax(L){return 10*L0/L;}                  // 10 g at 1 m -> 1e7 g at 1 µm
+
+// ---------------- state ----------------
+var S={logL:0, auto:false, panel:-1};
+function L(){return Math.pow(10,S.logL);}
+
+// residents by decade
+var RES=[
+ {lo:-0.7, name:'PERSON',    sub:'1.7 m · falls off ceilings', icon:'person'},
+ {lo:-1.3, name:'CAT/MOUSE', sub:'10 cm · survives its own fall', icon:'mouse'},
+ {lo:-2.3, name:'BEETLE',    sub:'5 mm · lifts 50× its weight', icon:'beetle'},
+ {lo:-3.3, name:'FLY',       sub:'0.5 mm hairs · walks the ceiling', icon:'fly'},
+ {lo:-4.6, name:'DUST MOTE', sub:'50 µm · gravity is irrelevant', icon:'dust'},
+ {lo:-6.1, name:'MEMS BEAM', sub:'1–10 µm · MHz, 10,000 g survivable', icon:'mems'}
+];
+function resident(lg){
+  for(var i=0;i<RES.length;i++){if(lg>RES[i].lo)return RES[i];}
+  return RES[RES.length-1];
+}
+// frequency landmarks (real objects)
+var FREQ_MARKS=[
+ {L:100,   f:0.2,   n:'suspension bridge'},
+ {L:1,     f:200,   n:'1 m steel beam'},
+ {L:0.08,  f:1000,  n:'wine glass ~1 kHz'},
+ {L:0.001, f:2e5,   n:'quartz tuning fork'},
+ {L:1e-5,  f:2e7,   n:'MEMS resonator MHz'}
+];
+
+// ---------------- UI wiring ----------------
+var zoom=document.getElementById('zoom'),zlabel=document.getElementById('zlabel'),
+    zticks=document.getElementById('zticks'),out=document.getElementById('out'),hint=document.getElementById('hint');
+(function ticks(){
+  var h='',labels=[['1 m',0],['10 cm',-1],['1 cm',-2],['1 mm',-3],['100 µm',-4],['10 µm',-5],['1 µm',-6]];
+  for(var i=0;i<labels.length;i++){
+    var frac=(labels[i][1]+6)/6*100;
+    h+='<span style="left:'+frac.toFixed(2)+'%">'+labels[i][0]+'</span>';
+  }
+  zticks.innerHTML=h;
+})();
+zoom.addEventListener('input',function(){S.logL=parseFloat(zoom.value);S.auto=false;});
+window.addEventListener('keydown',function(e){
+  if(e.key==='a'||e.key==='A'){S.auto=!S.auto;}
+  if(e.key==='ArrowLeft'){S.logL=Math.max(-6,S.logL-0.05);zoom.value=S.logL;S.auto=false;}
+  if(e.key==='ArrowRight'){S.logL=Math.min(0,S.logL+0.05);zoom.value=S.logL;S.auto=false;}
+});
+var autoDir=-1;
+function stepAuto(dt){
+  if(!S.auto)return;
+  S.logL+=autoDir*dt*0.55;
+  if(S.logL<-6){S.logL=-6;autoDir=1;} if(S.logL>0){S.logL=0;autoDir=-1;}
+  zoom.value=S.logL;
+}
+
+// panel hit-testing
+var PANELS=[];
+c.addEventListener('pointerdown',function(e){
+  for(var i=0;i<PANELS.length;i++){var p=PANELS[i];
+    if(e.clientX>p.x&&e.clientX<p.x+p.w&&e.clientY>p.y&&e.clientY<p.y+p.h){S.panel=(S.panel===i?-1:i);return;}}
+  S.panel=-1;
+});
+
+// ---------------- helpers ----------------
+function glowText(txt,x,y,col,size,align,weight){
+  g.save();g.font=(weight?weight+' ':'')+(size||12)+'px ui-monospace,Menlo,monospace';g.textAlign=align||'left';
+  g.fillStyle=col;g.shadowColor=col;g.shadowBlur=10;g.fillText(txt,x,y);g.restore();
+}
+function panel(x,y,w,h,title,col,idx){
+  g.save();
+  var on=(S.panel===idx);
+  g.fillStyle=on?'rgba(30,14,50,.88)':'rgba(10,8,22,.72)';
+  g.fillRect(x,y,w,h);
+  g.strokeStyle=on?col:'rgba(190,140,255,.25)';g.lineWidth=on?2:1;
+  g.shadowColor=col;g.shadowBlur=on?18:6;g.strokeRect(x,y,w,h);
+  g.restore();
+  glowText(title,x+10,y+17,col,11.5,'left','bold');
+  PANELS[idx]={x:x,y:y,w:w,h:h};
+}
+function eng(v,unit,digits){
+  var a=Math.abs(v);
+  var pre=[['P',1e15],['T',1e12],['G',1e9],['M',1e6],['k',1e3],['',1],['m',1e-3],['µ',1e-6],['n',1e-9],['p',1e-12],['f',1e-15]];
+  for(var i=0;i<pre.length;i++){ if(a>=pre[i][1]*0.999) return (v/pre[i][1]).toFixed(digits==null?2:digits)+' '+pre[i][0]+unit; }
+  return v.toExponential(2)+' '+unit;
+}
+function fmtTime(s){
+  if(s<1e-3)return (s*1e6).toFixed(1)+' µs';
+  if(s<1)return (s*1e3).toFixed(2)+' ms';
+  if(s<90)return s.toFixed(2)+' s';
+  if(s<5400)return (s/60).toFixed(2)+' min';
+  if(s<172800)return (s/3600).toFixed(2)+' h';
+  return (s/86400).toFixed(2)+' days';
+}
+
+// ---------------- residents drawing ----------------
+function drawIcon(kind,x,y,s,col,T){
+  g.save();g.translate(x,y);g.strokeStyle=col;g.fillStyle=col;g.lineWidth=Math.max(1.2,s*0.05);
+  g.shadowColor=col;g.shadowBlur=14;g.lineCap='round';
+  var w=Math.sin(T*3)*0.18;
+  if(kind==='person'){
+    g.beginPath();g.arc(0,-s*0.75,s*0.17,0,6.2832);g.stroke();
+    g.beginPath();g.moveTo(0,-s*0.58);g.lineTo(0,0);g.stroke();
+    g.beginPath();g.moveTo(0,-s*0.42);g.lineTo(-s*0.30,-s*0.15+w*s*0.1);
+    g.moveTo(0,-s*0.42);g.lineTo(s*0.30,-s*0.15-w*s*0.1);g.stroke();
+    g.beginPath();g.moveTo(0,0);g.lineTo(-s*0.22,s*0.45);g.moveTo(0,0);g.lineTo(s*0.22,s*0.45);g.stroke();
+  }else if(kind==='mouse'){
+    g.beginPath();g.ellipse(0,0,s*0.42,s*0.26,0,0,6.2832);g.stroke();
+    g.beginPath();g.arc(s*0.42,-s*0.06,s*0.16,0,6.2832);g.stroke();
+    g.beginPath();g.arc(s*0.34,-s*0.20,s*0.10,0,6.2832);g.stroke();
+    g.beginPath();g.moveTo(-s*0.42,0);g.quadraticCurveTo(-s*0.75,s*0.18*Math.sin(T*4),-s*0.85,-s*0.12);g.stroke();
+  }else if(kind==='beetle'){
+    g.beginPath();g.ellipse(0,0,s*0.30,s*0.42,0,0,6.2832);g.stroke();
+    g.beginPath();g.moveTo(0,-s*0.42);g.lineTo(0,s*0.42);g.stroke();
+    for(var i=-1;i<=1;i++){
+      g.beginPath();g.moveTo(-s*0.28,i*s*0.20);g.lineTo(-s*0.55,i*s*0.28+w*s*0.12);
+      g.moveTo(s*0.28,i*s*0.20);g.lineTo(s*0.55,i*s*0.28-w*s*0.12);g.stroke();
+    }
+    g.beginPath();g.arc(0,-s*0.50,s*0.13,0,6.2832);g.stroke();
+  }else if(kind==='fly'){
+    g.beginPath();g.ellipse(0,0,s*0.22,s*0.34,0,0,6.2832);g.stroke();
+    g.beginPath();g.ellipse(-s*0.34,-s*0.12,s*0.30,s*0.11,-0.5+w,0,6.2832);g.stroke();
+    g.beginPath();g.ellipse(s*0.34,-s*0.12,s*0.30,s*0.11,0.5-w,0,6.2832);g.stroke();
+    g.beginPath();g.arc(0,-s*0.42,s*0.15,0,6.2832);g.stroke();
+  }else if(kind==='dust'){
+    for(var k=0;k<9;k++){var a=k*0.7+T*0.4,r=s*(0.14+0.32*((k*37)%11)/11);
+      g.globalAlpha=0.5+0.4*Math.sin(T*2+k);
+      g.beginPath();g.arc(Math.cos(a)*r,Math.sin(a*1.3)*r,s*0.06,0,6.2832);g.fill();}
+    g.globalAlpha=1;
+  }else{ // mems
+    g.strokeRect(-s*0.55,-s*0.10,s*1.1,s*0.20);
+    var d=Math.sin(T*22)*s*0.10;
+    g.beginPath();g.moveTo(-s*0.55,0);
+    for(var t2=0;t2<=1.001;t2+=0.05)g.lineTo(-s*0.55+t2*s*1.1,d*Math.sin(t2*Math.PI));
+    g.stroke();
+    g.fillRect(-s*0.62,-s*0.22,s*0.08,s*0.44);g.fillRect(s*0.54,-s*0.22,s*0.08,s*0.44);
+  }
+  g.restore();
+}
+
+// ---------------- panel 1: area vs volume ----------------
+function panelAV(x,y,w,h,T){
+  panel(x,y,w,h,'① AREA L²  vs  VOLUME L³',' #7ef0ff'.trim(),0);
+  var l=L(),A=area(l),V=volume(l);
+  var bx=x+16,by=y+34,bw=w-120,bh=16;
+  // log-normalized bars: fraction of the 6-decade span (A spans 12 decades, V spans 18)
+  var fa=Math.max(0,(Math.log10(A)+12)/12), fv=Math.max(0,(Math.log10(V)+18)/18);
+  bar(bx,by,bw,bh,fa,'#7ef0ff','A = L²  '+eng(A,'m²'));
+  bar(bx,by+30,bw,bh,fv,'#ff5fa8','V = L³  '+eng(V,'m³'));
+  var sw=strengthToWeight(l);
+  bar(bx,by+60,bw,bh,Math.min(1,(Math.log10(sw)+0)/6),'#66ffa8','A/V (strength/weight) ×'+eng(sw,'',1));
+  glowText('shrink 10× → area ÷100, volume ÷1000 → strength/weight ×10',x+16,y+h-24,'#cdb9ef',10.5);
+  glowText('ant lifts 50× · MEMS survives '+eng(gMax(l),'g',0),x+16,y+h-10,'#ffd98a',10.5);
+}
+function bar(x,y,w,h,frac,col,label){
+  g.save();
+  g.fillStyle='rgba(255,255,255,.07)';g.fillRect(x,y,w,h);
+  frac=Math.max(0.002,Math.min(1,frac));
+  var gr=g.createLinearGradient(x,0,x+w,0);
+  gr.addColorStop(0,'rgba(0,0,0,0)');gr.addColorStop(1,col);
+  g.fillStyle=gr;g.shadowColor=col;g.shadowBlur=14;g.fillRect(x,y,w*frac,h);
+  g.restore();
+  glowText(label,x+w+8,y+h-3,col,10.5);
+}
+
+// ---------------- panel 2: frequency ----------------
+function panelFreq(x,y,w,h,T){
+  panel(x,y,w,h,'② NATURAL FREQUENCY  f ∝ 1/L','#ffd447',1);
+  var l=L(),f=freq(l);
+  var ax=x+16,ay=y+h-32,aw=w-32,ah=h-62;
+  // log axis 0.1 Hz .. 100 MHz
+  var lo=-1,hi=8;
+  function fx(v){return ax+(Math.log10(Math.max(1e-3,v))-lo)/(hi-lo)*aw;}
+  g.save();g.strokeStyle='rgba(255,212,71,.3)';g.lineWidth=1;
+  g.beginPath();g.moveTo(ax,ay);g.lineTo(ax+aw,ay);g.stroke();g.restore();
+  for(var d=lo;d<=hi;d++){
+    var tx=fx(Math.pow(10,d));
+    g.save();g.strokeStyle='rgba(255,255,255,.15)';g.beginPath();g.moveTo(tx,ay);g.lineTo(tx,ay+4);g.stroke();g.restore();
+  }
+  for(var i=0;i<FREQ_MARKS.length;i++){
+    var m=FREQ_MARKS[i],mx=fx(m.f);
+    if(mx<ax-2||mx>ax+aw+2)continue;
+    g.save();g.strokeStyle='rgba(190,140,255,.45)';g.lineWidth=1;
+    g.beginPath();g.moveTo(mx,ay);g.lineTo(mx,ay-ah*0.55);g.stroke();g.restore();
+    g.save();g.translate(mx,ay-ah*0.58);g.rotate(-Math.PI/2.6);
+    glowText(m.n,0,0,'rgba(206,180,255,.85)',9.5);g.restore();
+  }
+  // live ring pulsing at f (visual rate compressed logarithmically so it stays watchable)
+  var cxp=fx(f);
+  var rate=Math.min(24,0.6+Math.log10(Math.max(1,f))*3.0);
+  var ph=(T*rate)%1;
+  g.save();g.globalCompositeOperation='lighter';
+  for(var r=0;r<3;r++){
+    var pp=(ph+r/3)%1;
+    g.strokeStyle='rgba(255,212,71,'+(0.75*(1-pp)).toFixed(3)+')';
+    g.lineWidth=2;g.beginPath();g.arc(cxp,ay-ah*0.30,4+pp*26,0,6.2832);g.stroke();
+  }
+  g.restore();
+  g.save();g.fillStyle='#ffd447';g.shadowColor='#ffd447';g.shadowBlur=16;
+  g.beginPath();g.arc(cxp,ay-ah*0.30,4,0,6.2832);g.fill();g.restore();
+  glowText('f = '+eng(f,'Hz'),x+w-14,y+30,'#ffd447',15,'right','bold');
+  glowText('half the size → double the pitch',x+16,y+h-8,'#cdb9ef',10.5);
+}
+
+// ---------------- panel 3: thermal ----------------
+var thermT=0,thermState=0;
+function panelTherm(x,y,w,h,T,dt){
+  panel(x,y,w,h,'③ THERMAL TIME CONSTANT  τ ∝ L²','#ff8a4f',2);
+  var l=L(),tt=tau(l);
+  // animated equilibration: a glowing test body cooling with exp(-t/τ),
+  // shown on a common wall-clock loop compressed logarithmically so every scale is watchable
+  var loop=2.6;                                   // s of screen time per full display cycle
+  thermT+=dt;
+  if(thermT>loop){thermT-=loop;thermState^=1;}
+  var frac=thermT/loop;                           // 0..1 of the SAME number of τ
+  var nTau=4.0;                                   // always show 4 τ per loop
+  var temp=thermState? (1-Math.exp(-frac*nTau)) : Math.exp(-frac*nTau);
+  var bx=x+18,by=y+38,bw=w-36,bh=14;
+  g.save();g.fillStyle='rgba(255,255,255,.07)';g.fillRect(bx,by,bw,bh);
+  var gr=g.createLinearGradient(bx,0,bx+bw,0);
+  gr.addColorStop(0,'#2a5cff');gr.addColorStop(.5,'#ff8a4f');gr.addColorStop(1,'#fff3b0');
+  g.fillStyle=gr;g.shadowColor='#ff8a4f';g.shadowBlur=12;g.fillRect(bx,by,bw*temp,bh);g.restore();
+  // glowing body
+  var ox=x+w-58,oy=y+h-46,rr=20;
+  var rg=g.createRadialGradient(ox,oy,0,ox,oy,rr*1.9);
+  rg.addColorStop(0,'rgba('+Math.floor(60+195*temp)+','+Math.floor(80+120*temp)+','+Math.floor(255-160*temp)+','+(0.35+0.6*temp)+')');
+  rg.addColorStop(1,'rgba(0,0,0,0)');
+  g.save();g.fillStyle=rg;g.beginPath();g.arc(ox,oy,rr*1.9,0,6.2832);g.fill();
+  g.strokeStyle='rgba(255,220,180,.7)';g.lineWidth=1.5;g.beginPath();g.arc(ox,oy,rr,0,6.2832);g.stroke();g.restore();
+  glowText('τ = '+fmtTime(tt),x+18,y+h-40,'#ff8a4f',15,'left','bold');
+  glowText('to 63% of a step change',x+18,y+h-26,'#cdb9ef',10);
+  glowText('bead: ms · brick: hours — ÷10 size = ÷100 time',x+18,y+h-10,'#ffd98a',10.5);
+}
+
+// ---------------- panel 4: surface vs body forces ----------------
+function panelForces(x,y,w,h,T){
+  panel(x,y,w,h,'④ SURFACE L¹  vs  BODY L³','#66ffa8',3);
+  var l=L(),Fa=fAdh(l),Fw=fWt(l),R=adhRatio(l);
+  var win=R>1;
+  glowText('F_adh = γL = '+eng(Fa,'N'),x+16,y+36,'#66ffa8',11);
+  glowText('F_wt = ρgL³ = '+eng(Fw,'N'),x+16,y+52,'#ff5f6f',11);
+  glowText('ratio = '+ (R>=1000||R<0.001 ? R.toExponential(2) : R.toFixed(3)) +'×',x+16,y+70,win?'#66ffa8':'#ff5f6f',13,'left','bold');
+  glowText(win?'ADHESION WINS — sticks to the ceiling':'WEIGHT WINS — it falls off',x+16,y+88,win?'#66ffa8':'#ff5f6f',11.5);
+  glowText('crossover at L = '+eng(L_CROSS,'m')+'  (capillary length)',x+16,y+h-26,'#cdb9ef',10.5);
+  glowText(win?'drops go spherical · dust ignores gravity':'drops puddle · gravity rules',x+16,y+h-10,'#ffd98a',10.5);
+
+  // mini ceiling scene
+  var sx=x+w-118,sy=y+34,sw2=100,sh2=h-58;
+  g.save();g.strokeStyle='rgba(190,140,255,.25)';g.strokeRect(sx,sy,sw2,sh2);
+  g.fillStyle='rgba(190,140,255,.25)';g.fillRect(sx,sy,sw2,5);   // ceiling
+  g.restore();
+  var bugY;
+  if(win){ bugY=sy+11+Math.sin(T*1.4)*2; }
+  else { var tf=(T*0.55)%1; bugY=sy+11+tf*tf*(sh2-24); }
+  drawIcon(win?'fly':'person',sx+sw2/2+(win?Math.sin(T*0.8)*22:0),bugY,20,win?'#66ffa8':'#ff5f6f',T);
+  // water drop shape: spherical when small
+  var sph=Math.max(0,Math.min(1,1/(1+Math.pow(l/L_CROSS,2))));
+  var dx=sx+22,dy=sy+sh2-16,rr=10;
+  g.save();g.fillStyle='rgba(90,190,255,.6)';g.shadowColor='#4fd2ff';g.shadowBlur=12;
+  g.beginPath();g.ellipse(dx,dy-rr*sph*0.5,rr*(1+0.7*(1-sph)),rr*(0.35+0.65*sph),0,0,6.2832);g.fill();g.restore();
+}
+
+// ---------------- master log-log plot ----------------
+function masterPlot(x,y,w,h,T){
+  g.save();
+  g.fillStyle='rgba(6,4,16,.78)';g.fillRect(x,y,w,h);
+  g.strokeStyle='rgba(190,140,255,.28)';g.lineWidth=1;g.strokeRect(x,y,w,h);
+  g.restore();
+  glowText('LOG–LOG MASTER PLOT — slope = exponent',x+12,y+18,'#d6a8ff',12,'left','bold');
+  var px=x+46,py=y+30,pw=w-70,ph=h-58;
+  // x axis: log10 L from -6..0 ; y axis: normalized decades -18..+12
+  var ylo=-12,yhi=12;
+  function X(lg){return px+(lg+6)/6*pw;}
+  function Y(v){return py+ph-(v-ylo)/(yhi-ylo)*ph;}
+  g.save();g.strokeStyle='rgba(255,255,255,.10)';g.lineWidth=1;
+  for(var d=-6;d<=0;d++){g.beginPath();g.moveTo(X(d),py);g.lineTo(X(d),py+ph);g.stroke();}
+  for(var v=ylo;v<=yhi;v+=6){g.beginPath();g.moveTo(px,Y(v));g.lineTo(px+pw,Y(v));g.stroke();}
+  g.restore();
+  var lines=[
+   {f:function(lg){return 2*lg;},   col:'#7ef0ff', n:'A ∝ L²   (slope +2)'},
+   {f:function(lg){return 3*lg;},   col:'#ff5fa8', n:'V ∝ L³   (slope +3)'},
+   {f:function(lg){return -1*lg;},  col:'#ffd447', n:'f ∝ L⁻¹  (slope −1)'},
+   {f:function(lg){return 2*lg;},   col:'#ff8a4f', n:'τ ∝ L²   (slope +2)', dash:[6,5]},
+   {f:function(lg){return -2*lg;},  col:'#66ffa8', n:'F_adh/F_wt ∝ L⁻² (slope −2)'}
+  ];
+  for(var i=0;i<lines.length;i++){
+    var ln=lines[i];
+    g.save();g.strokeStyle=ln.col;g.lineWidth=2;g.shadowColor=ln.col;g.shadowBlur=10;
+    if(ln.dash)g.setLineDash(ln.dash);
+    g.beginPath();
+    for(var lg=-6;lg<=0.0001;lg+=0.05){
+      var yy=Math.max(ylo,Math.min(yhi,ln.f(lg)));
+      if(lg===-6)g.moveTo(X(lg),Y(yy));else g.lineTo(X(lg),Y(yy));
+    }
+    g.stroke();g.restore();
+    glowText(ln.n,px+pw-6,py+14+i*13,ln.col,9.5,'right');
+  }
+  // cursor
+  var cxp=X(S.logL);
+  g.save();g.strokeStyle='#fff';g.lineWidth=1.5;g.shadowColor='#fff';g.shadowBlur=14;
+  g.beginPath();g.moveTo(cxp,py);g.lineTo(cxp,py+ph);g.stroke();g.restore();
+  for(i=0;i<lines.length;i++){
+    var yv=Math.max(ylo,Math.min(yhi,lines[i].f(S.logL)));
+    g.save();g.fillStyle=lines[i].col;g.shadowColor=lines[i].col;g.shadowBlur=12;
+    g.beginPath();g.arc(cxp,Y(yv),3.5,0,6.2832);g.fill();g.restore();
+  }
+  glowText('L (m)',px+pw/2,py+ph+18,'#9d8fc0',10,'center');
+  glowText('1 µm',X(-6),py+ph+18,'#9d8fc0',9,'center');
+  glowText('1 m',X(0),py+ph+18,'#9d8fc0',9,'center');
+  g.save();g.translate(px-14,py+ph/2);g.rotate(-Math.PI/2);
+  glowText('decades relative to L = 1 m',0,0,'#9d8fc0',10,'center');g.restore();
+}
+
+// ---------------- main render ----------------
+var Tg=0,last=performance.now();
+function frame(now){
+  var dt=Math.min(0.05,(now-last)/1000);last=now;Tg+=dt;
+  stepAuto(dt);
+  var l=L();
+  zlabel.textContent='L = '+eng(l,'m',3)+'      ('+ (l>=1?'human scale':'') + resLabel(l) +')';
+
+  g.fillStyle='rgba(4,4,12,0.34)';g.fillRect(0,0,W,H);
+  // starfield-ish scale grid
+  g.save();g.strokeStyle='rgba(120,70,180,.07)';g.lineWidth=1;
+  for(var x=0;x<W;x+=60){g.beginPath();g.moveTo(x,0);g.lineTo(x,H);g.stroke();}
+  for(var y=0;y<H;y+=60){g.beginPath();g.moveTo(0,y);g.lineTo(W,y);g.stroke();}
+  g.restore();
+
+  // ----- morphing resident, centre-left of the free area -----
+  var stageX=Math.max(430,W*0.34), stageY=H*0.30;
+  var r=resident(S.logL);
+  // apparent size shrinks within each decade then "re-zooms" — classic powers-of-ten feel
+  var frac=(S.logL-Math.floor(S.logL));            // 0..1 within decade
+  var sz=Math.min(190,H*0.20)*(0.45+0.75*frac);
+  // cross-fade between neighbouring residents
+  var rNext=resident(S.logL-0.35);
+  g.save();g.globalAlpha=0.35;drawIcon(rNext.icon,stageX,stageY,sz*0.6,'#8f6fd0',Tg);g.restore();
+  drawIcon(r.icon,stageX,stageY,sz,'#e6d4ff',Tg);
+  // scale bar
+  var sbW=Math.min(200,W*0.16);
+  g.save();g.strokeStyle='rgba(230,212,255,.7)';g.lineWidth=2;g.shadowColor='#a34dff';g.shadowBlur=10;
+  g.beginPath();g.moveTo(stageX-sbW/2,stageY+sz*0.75);g.lineTo(stageX+sbW/2,stageY+sz*0.75);
+  g.moveTo(stageX-sbW/2,stageY+sz*0.75-5);g.lineTo(stageX-sbW/2,stageY+sz*0.75+5);
+  g.moveTo(stageX+sbW/2,stageY+sz*0.75-5);g.lineTo(stageX+sbW/2,stageY+sz*0.75+5);
+  g.stroke();g.restore();
+  glowText(eng(l,'m',2),stageX,stageY+sz*0.75+18,'#e6d4ff',13,'center','bold');
+  glowText(r.name,stageX,stageY-sz*0.95,'#d6a8ff',18,'center','bold');
+  glowText(r.sub,stageX,stageY-sz*0.95+18,'#9d8fc0',11,'center');
+
+  // ----- four law panels (right column) -----
+  var pw=Math.min(400,W*0.30),phh=Math.min(138,(H-190)/4-8);
+  var pxr=W-pw-20,py0=16;
+  panelAV(pxr,py0,pw,phh,Tg);
+  panelFreq(pxr,py0+(phh+10),pw,phh,Tg);
+  panelTherm(pxr,py0+2*(phh+10),pw,phh,Tg,dt);
+  panelForces(pxr,py0+3*(phh+10),pw,phh,Tg);
+
+  // ----- master log-log plot (bottom-centre) -----
+  var mpw=Math.min(560,Math.max(340,pxr-Math.max(400,W*0.30)-40));
+  var mpx=Math.max(390,W*0.29), mph=Math.min(240,H-260);
+  masterPlot(mpx,H-140-mph,mpw,mph,Tg);
+
+  // readouts
+  var A=area(l),V=volume(l),f=freq(l),tt=tau(l),R=adhRatio(l);
+  out.innerHTML=
+   rw('L',eng(l,'m',4))+
+   rw('resident',r.name)+
+   '<div class="sec"></div>'+
+   rw('A = L²  (exp 2)',eng(A,'m²',4))+
+   rw('V = L³  (exp 3)',eng(V,'m³',4))+
+   rw('A/V strength/weight','×'+eng(strengthToWeight(l),'',3))+
+   rw('survivable shock',eng(gMax(l),'g',2))+
+   rw('f = k/L  (exp −1)',eng(f,'Hz',4))+
+   rw('τ = kL² (exp 2)',fmtTime(tt)+'  ('+tt.toExponential(3)+' s)')+
+   rw('F_adh/F_wt (exp −2)',(R>=1e3||R<1e-3?R.toExponential(3):R.toFixed(4))+'×')+
+   rw('crossover L*',eng(L_CROSS,'m',3))+
+   rw('verdict',R>1?'<span style="color:#66ffa8">surface forces rule</span>':'<span style="color:#ff5f6f">gravity rules</span>');
+  hint.textContent=S.auto?'AUTO-SWEEP running — [A] to stop':'drag the BIG slider (or ← →) · [A] auto-sweep · click a law panel';
+  requestAnimationFrame(frame);
+}
+function resLabel(l){var r=resident(Math.log10(l));return (l>=1?'':'')+r.name.toLowerCase();}
+function rw(k,v){return '<div class="row"><span class="k">'+k+'</span><span class="v">'+v+'</span></div>';}
+requestAnimationFrame(frame);
+</script>

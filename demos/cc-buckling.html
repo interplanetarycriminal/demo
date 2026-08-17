@@ -118,7 +118,7 @@ function step(dt){
   var q=S.q;
   var force = -( q*(1-r) + 0.30*q*q*q );
   // tiny imperfection so it always picks a side (real columns are never perfect)
-  force += 0.0018*S.side*r;
+  force += 0.0010*S.side*r;
   var m=1.0,damp=2.6;
   S.qv += (force/m)*dt*90;
   S.qv *= Math.exp(-damp*dt);

@@ -131,8 +131,10 @@ function step(dt,lvl){
     for(var i2=0;i2<s.modes.length;i2++){
       var mo=s.modes[i2],o=st[i2];
       var w0=Math.sqrt(mo.k/mo.m),g=2*mo.z*w0;
-      // semi-implicit Euler (stable at these rates)
-      var a=(F*mo.w - g*mo.v*mo.m - mo.k*o.x)/mo.m;
+      // semi-implicit Euler, with the stiffness PRE-WARPED so the discrete
+      // resonance lands exactly on √(k/m)/2π instead of ~1% sharp
+      var wi=(2/h)*Math.sin(Math.min(1.4,w0*h/2)),keff=wi*wi*mo.m;
+      var a=(F*mo.w - g*o.v*mo.m - keff*o.x)/mo.m;
       o.v+=a*h;o.x+=o.v*h;
       disp+=o.x*mo.w;
     }
