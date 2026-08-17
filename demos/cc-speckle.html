@@ -1,0 +1,341 @@
+<title>Speckle Microphone</title>
+<style>
+html,body{margin:0;padding:0;background:#050308;overflow:hidden;height:100%}
+canvas{display:block;position:fixed;top:0;left:0}
+#ui{position:fixed;top:0;left:0;padding:10px 12px;color:#fbd;background:rgba(8,4,12,.66);
+  font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;max-width:352px;z-index:10;
+  border-right:1px solid #f0a3;border-bottom:1px solid #f0a3;text-shadow:0 0 6px #f066}
+#ui h1{font-size:13px;margin:0 0 4px;color:#ff5d7a;letter-spacing:.05em;text-shadow:0 0 10px #f04}
+#ui .th{color:#7fe9ff;margin:0 0 6px;text-shadow:0 0 8px #0af6}
+#ui .hint{color:#a88;margin:6px 0}
+#ui .row{display:flex;justify-content:space-between;gap:8px}
+#ui b{color:#fff;font-weight:600}
+#ui a{color:#ff5d7a;text-decoration:none;border-bottom:1px dotted #ff5d7a88}
+#ui .sep{height:1px;background:#f0a2;margin:6px 0}
+#ui .pun{color:#ffd36e;text-shadow:0 0 8px #fa06}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>CHEAT CODE #57 — LISTEN WITH LIGHT</h1>
+<div class="th">Coherence is fragile — exploit the fragility: send something fragile and watch HOW it breaks.</div>
+<div class="hint">[drag] move photodiode &nbsp; [1/2/3] 10 / 50 / 500 nm &nbsp; [←/→] pitch &nbsp; [L] laser⇄lamp &nbsp; [SPACE] freeze wall</div>
+<div class="sep"></div>
+<div class="row"><span>source</span><b id="r_src">COHERENT LASER λ=650 nm</b></div>
+<div class="row"><span>wall amplitude</span><b id="r_amp">50 nm</b></div>
+<div class="row"><span>= fraction of λ</span><b id="r_frac">1/13 λ</b></div>
+<div class="row"><span>voice pitch</span><b id="r_f">220 Hz</b></div>
+<div class="row"><span>photodiode I</span><b id="r_i">—</b></div>
+<div class="row"><span>speckle ⟨I⟩</span><b id="r_mean">—</b></div>
+<div class="row"><span>σ/⟨I⟩ (should=1)</span><b id="r_cn">—</b></div>
+<div class="row"><span>recovery corr</span><b id="r_corr">—</b></div>
+<div class="sep"></div>
+<div class="hint" id="r_cap">Laser-microphone-on-a-window. Wi-Fi CSI is the same physics at λ=12 cm.</div>
+<div class="pun">"anything that RUINS a coherent pattern is measurable BY that ruin."</div>
+<div><a href="index.html">← gallery</a></div>
+</div>
+<script>
+"use strict";
+var c=document.getElementById('c'),g=c.getContext('2d');
+var W=0,H=0,DPR=1;
+/* ---------- speckle field grid ---------- */
+var GW=0,GH=0,CELL=5,I=null,img=null,idat=null;
+var NSC=14;               // scatterers per cell
+var sx=null,sy=null,sph=null,samp=null; // scatterer geometry per cell
+var LAMBDA=650e-9;
+var coherent=true, ampNM=50, freq=220, frozen=false;
+var pdx=0,pdy=0,PDR=13,dragging=false;
+var trace=[],truth=[],TRACE=260;
+var t0=performance.now()/1000,T=0,prevT=0;
+
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
+  c.width=Math.round(W*DPR);c.height=Math.round(H*DPR);c.style.width=W+'px';c.style.height=H+'px';
+  g.setTransform(DPR,0,0,DPR,0,0);
+  buildField();
+  if(pdx===0){pdx=wallX()+wallW()*0.45;pdy=wallY()+wallH()*0.5;}
+}
+window.addEventListener('resize',resize);
+function wallX(){return Math.round(W*0.30);}
+function wallY(){return Math.round(H*0.10);}
+function wallW(){return Math.round(W*0.44);}
+function wallH(){return Math.round(H*0.62);}
+
+function buildField(){
+  GW=Math.max(8,Math.ceil(wallW()/CELL));GH=Math.max(8,Math.ceil(wallH()/CELL));
+  var n=GW*GH;
+  I=new Float32Array(n);
+  sph=new Float32Array(n*NSC); samp=new Float32Array(n*NSC);
+  sx=new Float32Array(n*NSC); sy=new Float32Array(n*NSC);
+  for(var i=0;i<n*NSC;i++){
+    sph[i]=Math.random()*Math.PI*2;         // static rough-surface phase 4π d0/λ mod 2π
+    samp[i]=0.6+Math.random()*0.8;          // scatterer strength
+    sx[i]=Math.random();sy[i]=Math.random();// sub-cell position (for vibration mode shape)
+  }
+  img=g.createImageData(GW,GH);idat=img.data;
+}
+
+/* ---------- REAL interferometric speckle ----------
+   Each screen cell sums NSC random phasors. Phase of scatterer k:
+     φ_k = φ0_k + 4π·δ_k/λ    where δ_k is the wall displacement at that scatterer.
+   I = |Σ a_k e^{iφ_k}|²  → fully-developed speckle: negative-exponential intensity.
+   Incoherent lamp: intensities add, not amplitudes → I = Σ a_k² (smooth). */
+function computeField(disp){ // disp(u,v) returns displacement in metres
+  var k4=4*Math.PI/LAMBDA;
+  var n=GW*GH,mean=0;
+  for(var cy=0;cy<GH;cy++){
+    var v=cy/GH;
+    for(var cx=0;cx<GW;cx++){
+      var u=cx/GW, ci=cy*GW+cx, base=ci*NSC;
+      var re=0,im=0,pw=0;
+      for(var k=0;k<NSC;k++){
+        var a=samp[base+k];
+        if(coherent){
+          var d=disp(u+sx[base+k]/GW, v+sy[base+k]/GH);
+          var ph=sph[base+k]+k4*d;
+          re+=a*Math.cos(ph);im+=a*Math.sin(ph);
+        } else { pw+=a*a; }
+      }
+      var val=coherent?(re*re+im*im):pw;
+      I[ci]=val;mean+=val;
+    }
+  }
+  return mean/n;
+}
+
+function sampleI(u,v){ // bilinear-ish nearest sample of intensity grid
+  var cx=Math.max(0,Math.min(GW-1,Math.floor(u*GW))),cy=Math.max(0,Math.min(GH-1,Math.floor(v*GH)));
+  return I[cy*GW+cx];
+}
+
+/* ---------- display ---------- */
+function renderField(mean){
+  var n=GW*GH,scale=1/(mean*2.2);
+  for(var i=0;i<n;i++){
+    var v=I[i]*scale; v=v>1?1:v;
+    var q=Math.pow(v,0.72);
+    // red laser palette / warm white lamp
+    var r,gg,b;
+    if(coherent){ r=255*Math.min(1,q*1.25); gg=255*Math.pow(q,2.6)*0.55; b=255*Math.pow(q,3.4)*0.45; }
+    else { r=255*q*0.98; gg=250*q*0.93; b=235*q*0.86; }
+    var o=i*4;idat[o]=r;idat[o+1]=gg;idat[o+2]=b;idat[o+3]=255;
+  }
+  g.putImageData(img,0,0); // temp at origin; then blit scaled
+}
+
+/* ---------- interaction ---------- */
+window.addEventListener('keydown',function(e){
+  var k=e.key.toLowerCase();
+  if(k==='1')ampNM=10;else if(k==='2')ampNM=50;else if(k==='3')ampNM=500;
+  else if(k==='l'){coherent=!coherent;trace.length=0;truth.length=0;}
+  else if(e.key==='ArrowLeft'){freq=Math.max(40,freq-20);e.preventDefault();}
+  else if(e.key==='ArrowRight'){freq=Math.min(900,freq+20);e.preventDefault();}
+  else if(e.key===' '){frozen=!frozen;e.preventDefault();}
+});
+c.addEventListener('pointerdown',function(e){dragging=true;pdx=e.clientX;pdy=e.clientY;});
+c.addEventListener('pointermove',function(e){if(dragging){pdx=e.clientX;pdy=e.clientY;}});
+window.addEventListener('pointerup',function(){dragging=false;});
+
+/* ---------- helpers ---------- */
+function glow(col,b){g.shadowColor=col;g.shadowBlur=b;}
+function noglow(){g.shadowBlur=0;}
+function txt(s,x,y,col,size,al){g.fillStyle=col;g.font=(size||11)+'px ui-monospace,Menlo,monospace';
+  g.textAlign=al||'left';g.fillText(s,x,y);g.textAlign='left';}
+
+/* ---------- main loop ---------- */
+var meanI=1, phase=0;
+function frame(){
+  var now=performance.now()/1000;T=now-t0;var dt=Math.min(.05,T-prevT);prevT=T;
+  if(!frozen)phase+=dt*freq*2*Math.PI;
+  var A=ampNM*1e-9;
+  var mod=Math.sin(phase);              // the TRUE injected waveform
+  // mode shape: drum-like, so different cells move by different amounts
+  function disp(u,v){
+    return A*mod*Math.sin(Math.PI*Math.min(1,Math.max(0,u)))*Math.sin(Math.PI*Math.min(1,Math.max(0,v)));
+  }
+  meanI=computeField(disp);
+
+  g.fillStyle='#050308';g.fillRect(0,0,W,H);
+
+  // ---- blit speckle to the wall rect ----
+  var wx=wallX(),wy=wallY(),ww=wallW(),wh=wallH();
+  renderField(meanI);
+  // capture then draw scaled (putImageData ignores transform → use temp canvas via drawImage of self)
+  var tmp=frame.tmp||(frame.tmp=document.createElement('canvas'));
+  if(tmp.width!==GW||tmp.height!==GH){tmp.width=GW;tmp.height=GH;}
+  tmp.getContext('2d').putImageData(img,0,0);
+  g.fillStyle='#050308';g.fillRect(0,0,W,H); // clear the putImageData smear
+  g.imageSmoothingEnabled=!coherent;         // crisp grain for laser, soft for lamp
+  glow(coherent?'#ff2a4a':'#ffe9c0',coherent?26:18);
+  g.drawImage(tmp,0,0,GW,GH,wx,wy,ww,wh);
+  noglow();
+  g.strokeStyle=coherent?'rgba(255,90,120,.5)':'rgba(255,235,200,.35)';g.lineWidth=1.5;
+  g.strokeRect(wx+.5,wy+.5,ww-1,wh-1);
+  txt(coherent?'ROUGH WALL · COHERENT SPECKLE (real Σ phasors, φ=4πd/λ)':'ROUGH WALL · INCOHERENT LAMP (intensities add — no speckle)',
+    wx,wy-8,coherent?'#ff8fa3':'#ffe9c0',11);
+
+  // ---- source + beam ----
+  var sxp=60,syp=H*0.42;
+  glow(coherent?'#f04':'#fe8',22);
+  g.fillStyle=coherent?'#ff3355':'#ffeec0';
+  g.beginPath();g.arc(sxp,syp,9,0,7);g.fill();noglow();
+  var bg=g.createLinearGradient(sxp,syp,wx,wy+wh/2);
+  if(coherent){bg.addColorStop(0,'rgba(255,40,70,.55)');bg.addColorStop(1,'rgba(255,40,70,.10)');}
+  else{bg.addColorStop(0,'rgba(255,235,190,.40)');bg.addColorStop(1,'rgba(255,235,190,.06)');}
+  g.fillStyle=bg;g.beginPath();
+  g.moveTo(sxp,syp-(coherent?4:7));g.lineTo(wx,wy+wh*0.06);g.lineTo(wx,wy+wh*0.94);
+  g.lineTo(sxp,syp+(coherent?4:7));g.closePath();g.fill();
+  txt(coherent?'LASER 650 nm':'LAMP (broadband)',sxp-14,syp+26,coherent?'#ff8fa3':'#ffe9c0',10);
+  txt(coherent?'coherence length ≫ roughness':'coherence length ≈ 2 µm ≪ roughness',sxp-14,syp+39,'#a88',9);
+
+  // ---- photodiode aperture ----
+  var pu=(pdx-wx)/ww, pv=(pdy-wy)/wh;
+  pu=Math.max(0.02,Math.min(.98,pu));pv=Math.max(0.02,Math.min(.98,pv));
+  var ppx=wx+pu*ww, ppy=wy+pv*wh;
+  // aperture integrates a small disc → average over cells inside PDR
+  var acc=0,cnt=0,rad=PDR/ww*GW;
+  var ccx=pu*GW,ccy=pv*GH;
+  for(var yy=Math.floor(ccy-rad);yy<=ccy+rad;yy++)for(var xx=Math.floor(ccx-rad);xx<=ccx+rad;xx++){
+    if(xx<0||yy<0||xx>=GW||yy>=GH)continue;
+    if((xx-ccx)*(xx-ccx)+(yy-ccy)*(yy-ccy)>rad*rad)continue;
+    acc+=I[yy*GW+xx];cnt++;}
+  var pdI=cnt?acc/cnt:0;
+  var pdN=pdI/Math.max(1e-9,meanI);
+  glow('#7fe9ff',16);g.strokeStyle='#7fe9ff';g.lineWidth=2;
+  g.beginPath();g.arc(ppx,ppy,PDR,0,7);g.stroke();noglow();
+  g.strokeStyle='rgba(127,233,255,.35)';g.lineWidth=1;
+  g.beginPath();g.arc(ppx,ppy,PDR+7,0,7);g.stroke();
+  txt('photodiode',ppx+PDR+6,ppy-4,'#7fe9ff',10);
+  txt('I/⟨I⟩ = '+pdN.toFixed(2),ppx+PDR+6,ppy+9,'#7fe9ff',10);
+
+  trace.push(pdN);truth.push(mod);
+  if(trace.length>TRACE){trace.shift();truth.shift();}
+
+  // ---- speckle statistics (contrast) ----
+  var n=GW*GH,m=0,s2=0;
+  for(var i=0;i<n;i++)m+=I[i];m/=n;
+  for(i=0;i<n;i++){var d2=I[i]-m;s2+=d2*d2;}
+  var sd=Math.sqrt(s2/n), contrast=sd/Math.max(1e-12,m);
+
+  // ---- correlation of recovered vs injected ----
+  var corr=correlate(trace,truth);
+
+  drawTracePanel(corr);
+  drawStaircase();
+  drawContrastPanel(contrast,m);
+
+  // readouts
+  document.getElementById('r_src').textContent=coherent?'COHERENT LASER λ=650 nm':'INCOHERENT LAMP (deaf)';
+  document.getElementById('r_amp').textContent=ampNM+' nm';
+  document.getElementById('r_frac').textContent='1/'+Math.round(650/ampNM)+' λ';
+  document.getElementById('r_f').textContent=freq+' Hz'+(frozen?' (FROZEN)':'');
+  document.getElementById('r_i').textContent=pdN.toFixed(3)+' ×⟨I⟩';
+  document.getElementById('r_mean').textContent=m.toFixed(2);
+  document.getElementById('r_cn').textContent=contrast.toFixed(3)+(coherent?' ✓':' — lamp: 0');
+  document.getElementById('r_corr').textContent=(coherent?Math.abs(corr).toFixed(3):'0.000 (deaf)');
+  document.getElementById('r_cap').textContent=coherent
+    ?'Laser-microphone-on-a-window. Wi-Fi CSI is the same physics at λ=12 cm.'
+    :'COHERENCE WAS THE SENSOR. Kill it and the microphone goes deaf.';
+  requestAnimationFrame(frame);
+}
+
+function correlate(a,b){
+  var n=Math.min(a.length,b.length);if(n<20)return 0;
+  var ma=0,mb=0;for(var i=0;i<n;i++){ma+=a[i];mb+=b[i];}ma/=n;mb/=n;
+  var sa=0,sb=0,sab=0;
+  for(i=0;i<n;i++){var da=a[i]-ma,db=b[i]-mb;sa+=da*da;sb+=db*db;sab+=da*db;}
+  if(sa<=0||sb<=0)return 0;return sab/Math.sqrt(sa*sb);
+}
+
+function drawTracePanel(corr){
+  var w=Math.min(330,W*0.28),h=210,x=W-w-14,y=14;
+  g.fillStyle='rgba(8,4,12,.86)';g.fillRect(x,y,w,h);
+  g.strokeStyle='rgba(255,90,120,.28)';g.strokeRect(x+.5,y+.5,w-1,h-1);
+  txt('RECOVERED  vs  TRUE MODULATION',x+8,y+15,'#ff5d7a',11);
+
+  var px=x+8,py=y+24,pw=w-16,ph=78;
+  g.fillStyle='rgba(20,0,8,.6)';g.fillRect(px,py,pw,ph);
+  g.strokeStyle='rgba(255,90,120,.18)';g.strokeRect(px+.5,py+.5,pw-1,ph-1);
+  txt('photodiode intensity (what you MEASURE)',px+4,py+11,'#a88',9);
+  // auto-scale
+  var mn=1e9,mx=-1e9;for(var i=0;i<trace.length;i++){if(trace[i]<mn)mn=trace[i];if(trace[i]>mx)mx=trace[i];}
+  if(mx-mn<1e-6){mn-=.5;mx+=.5;}
+  glow('#7fe9ff',8);g.strokeStyle='#7fe9ff';g.lineWidth=1.4;g.beginPath();
+  for(i=0;i<trace.length;i++){var xx=px+i/(TRACE-1)*pw,yy=py+ph-4-((trace[i]-mn)/(mx-mn))*(ph-16);
+    if(i===0)g.moveTo(xx,yy);else g.lineTo(xx,yy);}
+  g.stroke();noglow();
+
+  var qy=py+ph+8;
+  g.fillStyle='rgba(0,16,10,.6)';g.fillRect(px,qy,pw,ph);
+  g.strokeStyle='rgba(120,255,180,.18)';g.strokeRect(px+.5,qy+.5,pw-1,ph-1);
+  txt('true wall motion (ground truth, '+ampNM+' nm peak)',px+4,qy+11,'#a88',9);
+  glow('#7fffb0',8);g.strokeStyle='#7fffb0';g.lineWidth=1.4;g.beginPath();
+  for(i=0;i<truth.length;i++){var xx2=px+i/(TRACE-1)*pw,yy2=qy+ph/2-truth[i]*(ph/2-8);
+    if(i===0)g.moveTo(xx2,yy2);else g.lineTo(xx2,yy2);}
+  g.stroke();noglow();
+
+  var cc=Math.abs(corr);
+  txt('|correlation| = '+(coherent?cc.toFixed(3):'0.000'),x+8,y+h-8,
+    (coherent&&cc>0.5)?'#7fffb0':'#ff5d7a',11);
+  txt(coherent?(cc>0.5?'THE SPECKLE IS A MICROPHONE':'…hunting for a bright grain — drag me'):'lamp: no interference, no signal',
+    x+w-8,y+h-8,coherent?'#ffd36e':'#a88',10,'right');
+}
+
+function drawStaircase(){
+  var w=270,h=104,x=W-w-14,y=236;
+  g.fillStyle='rgba(8,4,12,.86)';g.fillRect(x,y,w,h);
+  g.strokeStyle='rgba(255,90,120,.28)';g.strokeRect(x+.5,y+.5,w-1,h-1);
+  txt('AMPLITUDE STAIRCASE  [1] [2] [3]',x+8,y+15,'#ff5d7a',11);
+  var steps=[10,50,500],lbl=['1/65 λ','1/13 λ','0.77 λ'];
+  for(var i=0;i<3;i++){
+    var bx=x+12+i*84,by=y+26,bw=74,bh=44;
+    var on=steps[i]===ampNM;
+    // modulation depth grows with amplitude: phase swing = 4πA/λ
+    var swing=4*Math.PI*steps[i]*1e-9/LAMBDA;
+    var depth=Math.min(1,swing/Math.PI);
+    g.fillStyle=on?'rgba(255,60,90,.20)':'rgba(255,255,255,.04)';g.fillRect(bx,by,bw,bh);
+    if(on){glow('#ff2a4a',12);g.strokeStyle='#ff5d7a';g.lineWidth=1.6;}
+    else{g.strokeStyle='rgba(255,120,150,.25)';g.lineWidth=1;}
+    g.strokeRect(bx+.5,by+.5,bw-1,bh-1);noglow();
+    // mini wiggle showing modulation depth
+    g.strokeStyle=on?'#7fe9ff':'rgba(127,233,255,.35)';g.lineWidth=1.2;g.beginPath();
+    for(var k=0;k<=40;k++){var xx=bx+4+k/40*(bw-8);
+      var yy=by+bh/2-Math.sin(k/40*8+T*4)*(bh/2-6)*depth;
+      if(k===0)g.moveTo(xx,yy);else g.lineTo(xx,yy);}
+    g.stroke();
+    txt(steps[i]+' nm',bx+bw/2,by+bh+12,on?'#fff':'#a88',10,'center');
+    txt(lbl[i],bx+bw/2,by-3,on?'#ffd36e':'#866',9,'center');
+  }
+  txt('phase swing = 4πA/λ = '+(4*Math.PI*ampNM*1e-9/LAMBDA).toFixed(2)+' rad  ·  λ=650 nm',
+    x+8,y+h-6,'#7fe9ff',9);
+}
+
+function drawContrastPanel(contrast,mean){
+  var w=270,h=124,x=W-w-14,y=352;
+  g.fillStyle='rgba(8,4,12,.86)';g.fillRect(x,y,w,h);
+  g.strokeStyle='rgba(255,90,120,.28)';g.strokeRect(x+.5,y+.5,w-1,h-1);
+  txt('SPECKLE STATISTICS (live)',x+8,y+15,'#ff5d7a',11);
+  // histogram of I/<I>
+  var bins=new Array(28).fill(0),n=GW*GH,mx=0;
+  for(var i=0;i<n;i++){var v=I[i]/Math.max(1e-12,mean);var b=Math.floor(v/4*28);
+    if(b>=0&&b<28){bins[b]++;if(bins[b]>mx)mx=bins[b];}}
+  var px=x+10,py=y+24,pw=w-20,ph=64;
+  for(i=0;i<28;i++){var bh2=bins[i]/Math.max(1,mx)*ph;
+    g.fillStyle='rgba(255,80,110,.65)';
+    g.fillRect(px+i/28*pw,py+ph-bh2,pw/28-1,bh2);}
+  // theoretical negative exponential p(I)=exp(-I/<I>)
+  g.strokeStyle='#7fe9ff';g.lineWidth=1.5;glow('#7fe9ff',8);g.beginPath();
+  for(i=0;i<=60;i++){var vv=i/60*4,pv=Math.exp(-vv);
+    var xx=px+vv/4*pw,yy=py+ph-pv*ph;
+    if(i===0)g.moveTo(xx,yy);else g.lineTo(xx,yy);}
+  g.stroke();noglow();
+  txt('p(I)=e^(−I/⟨I⟩)',px+pw-4,py+12,'#7fe9ff',9,'right');
+  txt('0',px,py+ph+10,'#a88',9);txt('4⟨I⟩',px+pw,py+ph+10,'#a88',9,'right');
+  var ok=coherent&&Math.abs(contrast-1)<0.25;
+  txt('contrast σ/⟨I⟩ = '+contrast.toFixed(3)+(ok?'  ✓ fully developed':(coherent?'  (finite N)':'  ← lamp kills it')),
+    x+8,y+h-6,ok?'#7fffb0':'#ffd36e',10);
+}
+
+resize();frame();
+</script>
