@@ -33,14 +33,15 @@ addEventListener('resize',resize);resize();
    Every resident carries its true SI value. Its position is EXACTLY log10(value).
    No hand-placement anywhere: y = f(log10(v)).                                  */
 var LADDERS=[
- {k:'T',n:'TIME',u:'s',  col:'#7fd9ff',lo:-9,hi:9,
+ {k:'T',n:'TIME',u:'s',  col:'#7fd9ff',lo:-10,hi:9,
   res:[
+   {v:4.2e-10,n:'Wi-Fi carrier period',   tool:'IQ mixer / CSI phase'},
    {v:3.3e-9, n:'light crosses a room',  tool:'ToF / lidar gating'},
    {v:1e-8,   n:'logic gate delay',      tool:'fast comparator'},
    {v:1e-7,   n:'PLL lock jitter',       tool:'TDC'},
-   {v:2.9e-6, n:'ultrasonic echo, 1 mm', tool:'40 kHz transducer'},
-   {v:2.9e-5, n:'ultrasound 1 cm',       tool:'envelope detect'},
-   {v:5.8e-4, n:'ultrasound 10 cm',      tool:'ADC @ 200 kHz'},
+   {v:5.8e-6, n:'ultrasonic echo 1 mm',  tool:'40 kHz transducer'},
+   {v:5.8e-5, n:'ultrasonic echo 1 cm',  tool:'envelope detect'},
+   {v:5.8e-4, n:'ultrasonic echo 10 cm', tool:'ADC @ 200 kHz'},
    {v:1e-3,   n:'contact bounce',        tool:'debounce, 5-20 ms'},
    {v:1e-2,   n:'mains half-cycle 10 ms',tool:'sync sampling'},
    {v:1e-1,   n:'human reaction start',  tool:'UI event loop'},
@@ -102,12 +103,12 @@ var LADDERS=[
 ];
 /* CROSS-LADDER LINK GROUPS: one phenomenon, its rung on each ladder */
 var LINKS=[
- {n:'ULTRASONIC 40 kHz', col:'#9dff8a', T:2.9e-5, L:8.6e-3, F:4e4, E:1e-6,
+ {n:'ULTRASONIC 40 kHz', col:'#9dff8a', T:5.8e-5, L:8.6e-3, F:4e4, E:1e-6,
   note:'8.6 mm λ ↔ 40 kHz ↔ 6 ms per metre round-trip ↔ µJ per ping'},
  {n:'BREATHING', col:'#7fd9ff', T:3.6, L:1e-2, F:0.28, E:1,
   note:'0.28 Hz ↔ 3.6 s ↔ 1 cm chest motion — a 50 Hz hum cannot hide here'},
  {n:'MAINS 50 Hz', col:'#ff6b6b', T:1e-2, L:1, F:5e1, E:1e-3,
-  note:'10 ms half-cycle ↔ 50 Hz ↔ 178 decades away from the breathing band'},
+  note:'10 ms half-cycle ↔ 50 Hz ↔ 2.25 decades above the breathing band'},
  {n:'Wi-Fi 2.4 GHz', col:'#ff8ad0', T:4.2e-10, L:1.25e-1, F:2.4e9, E:1e-9,
   note:'12.5 cm λ grips a human body; ns timing; nJ per bit'},
  {n:'HEARTBEAT', col:'#c39bff', T:1, L:1e-2, F:1.2, E:1,
@@ -165,7 +166,7 @@ function hitTest(mx,my){
     // find a link group containing this rung
     var best=null;
     for(var k=0;k<LINKS.length;k++){var K=LINKS[k];
-     if(K[L.k]&&Math.abs(Math.log10(K[L.k])-Math.log10(R.v))<0.35){best=K;break;}}
+     if(K[L.k]&&Math.abs(Math.log10(K[L.k])-Math.log10(R.v))<0.05){best=K;break;}}
     sel = best || {n:R.n.toUpperCase(),col:L.col,note:R.tool,single:{L:L,R:R}};
     sel[L.k]=sel[L.k]||R.v; selT=0;
     return;}}
@@ -215,7 +216,7 @@ function draw(now){
    var R=L.res[r], y=yOf(L,R.v);
    if(y<-20||y>H+20)continue;
    var d=Math.abs(y-fy), lit=1-Math.min(1,d/150);
-   var isSel = sel && sel[L.k] && Math.abs(Math.log10(sel[L.k])-Math.log10(R.v))<0.35;
+   var isSel = sel && sel[L.k] && Math.abs(Math.log10(sel[L.k])-Math.log10(R.v))<0.05;
    g.globalAlpha=0.28+lit*0.72;
    // icon
    g.fillStyle=isSel?'#fff':L.col;

@@ -1,0 +1,340 @@
+<title>Capacitance Leaks</title>
+<style>
+html,body{margin:0;padding:0;height:100%;background:#04070c;overflow:hidden}
+canvas{display:block;position:fixed;top:0;left:0}
+#ui{position:fixed;top:0;left:0;padding:10px 12px;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;
+  color:#bfe9ff;background:rgba(4,8,14,.62);border-right:1px solid #0af3;border-bottom:1px solid #0af3;
+  max-width:335px;z-index:10;text-shadow:0 0 6px #0af8;backdrop-filter:blur(3px)}
+#ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.14em;color:#6ff;text-shadow:0 0 12px #0ff9}
+.th{color:#9ad;margin:0 0 7px;font-style:italic;line-height:1.45}
+.hint{color:#57c9a0;margin:6px 0 6px}
+.rd{color:#ffd479;text-shadow:0 0 8px #fa06}
+.big{font-size:15px;color:#7ffcd8;text-shadow:0 0 12px #0fca}
+a{color:#f7a;text-decoration:none;border-bottom:1px dotted #f7a5}
+.tabs{margin:5px 0 4px}
+.tab{display:inline-block;padding:2px 7px;margin:1px 3px 1px 0;border:1px solid #0af5;color:#8cf;cursor:pointer;border-radius:2px}
+.tab.on{background:#0af3;color:#dff;box-shadow:0 0 10px #0af6}
+.pun{color:#f9a;margin-top:7px;border-top:1px solid #f9a3;padding-top:5px}
+</style>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>CHEAT CODE #3 · CAPACITANCE</h1>
+  <div class="th">Capacitance leaks through everything — two conductors plus any dielectric are a capacitor, so anything that changes geometry or dielectric changes C. Did something change? Capacitance saw it.</div>
+  <div class="tabs">
+    <span class="tab on" data-a="0">1 · INVISIBLE BUTTON</span>
+    <span class="tab" data-a="1">2 · WATER GAUGE</span>
+    <span class="tab" data-a="2">3 · RAIN INTRUDER</span>
+  </div>
+  <div class="hint" id="hint"></div>
+  <div class="big">C = <span id="cv">--</span></div>
+  <div class="rd">RC osc → f = <span id="fv">--</span> &nbsp; counts/ms = <span id="nv">--</span></div>
+  <div class="rd" id="extra"></div>
+  <div class="pun">the ESP32's touch pins are a femtofarad meter — geometry and dielectric are your sensor.</div>
+  <div><a href="index.html">← gallery</a></div>
+</div>
+<script>
+"use strict";
+var cv=document.getElementById('c'),cx=cv.getContext('2d');
+var W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
+ cv.width=Math.floor(W*DPR);cv.height=Math.floor(H*DPR);cv.style.width=W+'px';cv.style.height=H+'px';
+ cx.setTransform(DPR,0,0,DPR,0,0);}
+window.addEventListener('resize',resize);resize();
+
+var EPS0=8.854e-12; // F/m
+var act=0, T=0;
+
+/* ---------------- physics models ---------------- */
+// ACT1: foil pad (A m^2) behind plastic barrier tp (m, er 3.0), then air gap g (m), then finger.
+// Series: plastic slab + air gap. Plus a fringe term that saturates -> plausible plate+fringe model.
+var PAD_A=0.00090, PLASTIC_T=0.003, PLASTIC_ER=3.0, C_BASE=6.2e-12; // parasitic to ground
+function act1C(gapM){
+  var g=Math.max(gapM,0.00002);
+  var dEff=PLASTIC_T/PLASTIC_ER+g;              // series-equivalent air distance
+  var Cpar=EPS0*PAD_A/dEff;                     // parallel-plate core
+  var per=4*Math.sqrt(PAD_A);                   // pad perimeter (square pad)
+  var Cfr=EPS0*per*0.55*Math.log(1+0.004/dEff); // fringe, monotonically ↓ with dEff
+  return C_BASE+Cpar+Cfr;
+}
+// ACT2: two foil strips, height Hm, gap d, strip width w. Wetted fraction x has er=80.
+var TUBE_H=0.150, STRIP_W=0.010, STRIP_D=0.012, ER_W=80, ER_A=1.0, C2_BASE=3.0e-12;
+function act2C(level){ // level 0..1
+  var k=EPS0*STRIP_W*TUBE_H/STRIP_D;
+  return C2_BASE + k*(ER_A + (ER_W-ER_A)*level); // exactly linear in level
+}
+// ACT3: coplanar PCB traces; each intruder adds ΔC ∝ (er-1) * coupling(overlap)
+var C3_BASE=4.4e-12;
+function intruderDC(o){ // o={er,w,x,tracespan}
+  var k=EPS0*o.er_len*(o.er-1)*0.62;
+  return k*o.cover;
+}
+// RC relaxation oscillator: f = 1/(2*R*C*ln(3)) (classic 555-ish / touch-pin counter)
+var R_OSC=1.0e6;
+function oscF(C){return 1/(2*R_OSC*C*Math.log(3));}
+
+/* ---------------- state ---------------- */
+var finger={x:0,y:0,init:false},pressed=false,pressT=0;
+var level=0.35, levelTarget=0.35;
+var drops=[],leafT=-1;
+var hist2=[]; // level-vs-C plot
+var hist3=[]; // ΔC trace
+var dragging=false;
+
+var hints=["DRAG the finger toward the pad · watch C climb, no contact needed",
+           "DRAG up/down (or ↑↓) to fill the tube · plot proves C ∝ level",
+           "CLICK to drop rain · L = wet leaf · F = finger swipe"];
+
+function setAct(i){act=i;hist2=[];hist3=[];drops=[];leafT=-1;pressed=false;
+  document.getElementById('hint').textContent=hints[i];
+  var t=document.querySelectorAll('.tab');for(var k=0;k<t.length;k++)t[k].className='tab'+(k===i?' on':'');}
+var tabs=document.querySelectorAll('.tab');
+for(var i=0;i<tabs.length;i++)(function(n){tabs[n].addEventListener('click',function(){setAct(n)})})(i);
+setAct(0);
+
+cv.addEventListener('pointerdown',function(e){dragging=true;onMove(e);
+  if(act===2)drops.push({x:e.clientX,y:-20,r:5+Math.random()*5,er:80,type:'rain'});});
+window.addEventListener('pointerup',function(){dragging=false});
+window.addEventListener('pointermove',function(e){if(dragging||act===0)onMove(e)});
+function onMove(e){ finger.x=e.clientX;finger.y=e.clientY;finger.init=true;
+  if(act===1&&dragging){levelTarget=Math.max(0,Math.min(1,1-(e.clientY-H*0.18)/(H*0.62)));}}
+window.addEventListener('keydown',function(e){
+  if(e.key==='1')setAct(0);if(e.key==='2')setAct(1);if(e.key==='3')setAct(2);
+  if(act===1&&e.key==='ArrowUp')levelTarget=Math.min(1,levelTarget+0.05);
+  if(act===1&&e.key==='ArrowDown')levelTarget=Math.max(0,levelTarget-0.05);
+  if(act===2&&(e.key==='l'||e.key==='L'))leafT=0;
+  if(act===2&&(e.key==='f'||e.key==='F'))drops.push({x:-40,y:H*0.5,r:26,er:12,type:'finger',vx:2.6});
+});
+
+/* ---------------- drawing helpers ---------------- */
+function glowLine(a,b,c,d,col,w,bl){cx.save();cx.strokeStyle=col;cx.lineWidth=w;cx.shadowColor=col;cx.shadowBlur=bl||10;
+  cx.beginPath();cx.moveTo(a,b);cx.lineTo(c,d);cx.stroke();cx.restore();}
+function fmtC(C){ // C in farads -> pF/fF string
+  if(C<1e-12)return (C*1e15).toFixed(1)+' fF';
+  return (C*1e12).toFixed(3)+' pF';
+}
+function panel(x,y,w,h,label){cx.save();cx.fillStyle='rgba(8,16,26,.55)';cx.strokeStyle='#0af4';cx.lineWidth=1;
+  cx.fillRect(x,y,w,h);cx.strokeRect(x,y,w,h);
+  if(label){cx.fillStyle='#6cf';cx.font='10px ui-monospace,monospace';cx.fillText(label,x+6,y+13);}cx.restore();}
+
+/* ================= ACT 1 ================= */
+var lastC1=0;
+function drawAct1(dt){
+  var padX=W*0.30,padY=H*0.62,padW=Math.min(280,W*0.28),padH=12;
+  var plasticY=padY-46;
+  // plastic barrier slab (3 mm)
+  cx.save();cx.fillStyle='rgba(120,190,255,.10)';cx.fillRect(0,plasticY,W,34);
+  cx.strokeStyle='#7bd9ff55';cx.lineWidth=1;cx.beginPath();cx.moveTo(0,plasticY);cx.lineTo(W,plasticY);
+  cx.moveTo(0,plasticY+34);cx.lineTo(W,plasticY+34);cx.stroke();
+  cx.fillStyle='#7bd9ff88';cx.font='10px ui-monospace,monospace';
+  cx.fillText('3 mm plastic  εr = 3.0   (no hole, no contact)',12,plasticY+21);cx.restore();
+  // pad
+  cx.save();cx.shadowColor='#ffb347';cx.shadowBlur=18;cx.fillStyle='#ffb347';
+  cx.fillRect(padX,padY,padW,padH);cx.restore();
+  cx.fillStyle='#ffd9a0';cx.font='10px ui-monospace,monospace';
+  cx.fillText('copper pad  9 cm²  → touch pin',padX,padY+30);
+
+  if(!finger.init){finger.x=padX+padW/2;finger.y=plasticY-120;}
+  var fx=Math.max(20,Math.min(W-20,finger.x)),fy=Math.min(finger.y,plasticY-6);
+  // gap in metres: pixel→metre scale so 34 px = 3 mm
+  var PXPM=34/0.003;
+  var gapPx=Math.max(1,plasticY-fy);
+  var gapM=gapPx/PXPM;
+  var lateral=Math.abs(fx-(padX+padW/2))/padW;   // off-axis reduces coupling
+  var effGap=gapM*(1+2.4*lateral*lateral);
+  var C=act1C(effGap);lastC1=C;
+
+  // field lines pad -> finger, density ∝ coupling
+  var n=26,cxp=padX+padW/2;
+  var strength=Math.min(1,(C-C_BASE)/2.2e-12);
+  for(var i=0;i<n;i++){
+    var t=(i+0.5)/n, sx=padX+t*padW;
+    var bend=(fx-sx);
+    var reach=Math.min(1,strength*1.6);
+    var ex=sx+bend*reach, ey=padY-(padY-fy)*reach;
+    var a=0.10+0.75*reach*Math.exp(-Math.abs(t-0.5)*1.4);
+    cx.save();cx.strokeStyle='rgba(110,255,220,'+a.toFixed(3)+')';cx.lineWidth=1;cx.shadowColor='#5fd';cx.shadowBlur=7;
+    cx.beginPath();cx.moveTo(sx,padY);
+    cx.quadraticCurveTo(sx+bend*0.25*reach,(padY+ey)/2,ex,ey);cx.stroke();cx.restore();
+  }
+  // finger
+  cx.save();cx.shadowColor='#ff7ab8';cx.shadowBlur=22;cx.fillStyle='#ff9ec9';
+  cx.beginPath();cx.moveTo(fx-16,fy-130);cx.lineTo(fx+16,fy-130);
+  cx.quadraticCurveTo(fx+18,fy,fx,fy);cx.quadraticCurveTo(fx-18,fy,fx-16,fy-130);cx.fill();cx.restore();
+  cx.fillStyle='#ffc7e0';cx.font='10px ui-monospace,monospace';cx.fillText('finger (grounded meat, εr≈50, drag me)',fx+22,fy-40);
+
+  // threshold
+  var thr=C_BASE+1.55e-12;
+  var y0=H*0.16,hgt=H*0.30,x0=W*0.66,wd=W*0.28;
+  panel(x0,y0,wd,hgt,'C vs threshold');
+  var cmin=C_BASE, cmax=C_BASE+4.5e-12;
+  var frac=Math.max(0,Math.min(1,(C-cmin)/(cmax-cmin)));
+  var tf=(thr-cmin)/(cmax-cmin);
+  cx.save();cx.fillStyle='#7ffcd8';cx.shadowColor='#7ffcd8';cx.shadowBlur=14;
+  cx.fillRect(x0+10,y0+hgt-10-(hgt-30)*frac,wd-20,(hgt-30)*frac);cx.restore();
+  glowLine(x0+4,y0+hgt-10-(hgt-30)*tf,x0+wd-4,y0+hgt-10-(hgt-30)*tf,'#ff5f7e',1.5,10);
+  cx.fillStyle='#ff9db1';cx.font='10px ui-monospace,monospace';
+  cx.fillText('threshold '+fmtC(thr),x0+8,y0+hgt-16-(hgt-30)*tf);
+
+  var was=pressed;pressed=C>thr;
+  if(pressed&&!was)pressT=1;
+  pressT=Math.max(0,pressT-dt*1.6);
+  if(pressed){
+    var g=0.55+0.45*Math.sin(T*9);
+    cx.save();cx.globalAlpha=0.9;cx.fillStyle='#7ffcd8';cx.shadowColor='#7ffcd8';cx.shadowBlur=40+60*pressT;
+    cx.font='bold 46px ui-monospace,monospace';cx.textAlign='center';
+    cx.globalAlpha=g;cx.fillText('PRESS',W*0.30+padW/2,padY+90);cx.restore();cx.textAlign='left';
+  }
+  document.getElementById('extra').innerHTML='gap = '+(effGap*1000).toFixed(2)+' mm &nbsp; ΔC = '+
+    ((C-C_BASE)*1e15).toFixed(0)+' fF &nbsp; '+(pressed?'<b style="color:#7ffcd8">PRESSED</b>':'idle');
+  return C;
+}
+
+/* ================= ACT 2 ================= */
+function drawAct2(dt){
+  level+=(levelTarget-level)*Math.min(1,dt*6);
+  var tx=W*0.26,tw=Math.min(150,W*0.12),ty=H*0.16,th=H*0.64;
+  // tube
+  cx.save();cx.strokeStyle='#9fd8ff88';cx.lineWidth=2;cx.strokeRect(tx,ty,tw,th);
+  cx.fillStyle='rgba(150,210,255,.05)';cx.fillRect(tx,ty,tw,th);cx.restore();
+  // water
+  var wy=ty+th*(1-level);
+  cx.save();var g=cx.createLinearGradient(0,wy,0,ty+th);
+  g.addColorStop(0,'rgba(60,190,255,.55)');g.addColorStop(1,'rgba(20,90,200,.75)');
+  cx.fillStyle=g;cx.shadowColor='#3cf';cx.shadowBlur=22;cx.fillRect(tx+2,wy,tw-4,ty+th-wy);cx.restore();
+  cx.save();cx.strokeStyle='#8ff';cx.lineWidth=2;cx.shadowColor='#8ff';cx.shadowBlur=14;cx.beginPath();
+  for(var x=0;x<=tw;x+=6)cx.lineTo(tx+x,wy+Math.sin(x*0.09+T*3)*2.2);cx.stroke();cx.restore();
+  // foil strips
+  cx.save();cx.shadowColor='#ffb347';cx.shadowBlur=14;cx.fillStyle='#ffb347';
+  cx.fillRect(tx-12,ty,9,th);cx.fillRect(tx+tw+3,ty,9,th);cx.restore();
+  cx.fillStyle='#ffd9a0';cx.font='10px ui-monospace,monospace';
+  cx.fillText('foil A',tx-40,ty-6);cx.fillText('foil B',tx+tw+8,ty-6);
+  cx.fillText('εr 80',tx+tw*0.5-16,wy+26);cx.fillText('εr 1',tx+tw*0.5-14,ty+16);
+
+  // field lines: dense where water (high er)
+  var N=30;
+  for(var i=0;i<N;i++){
+    var yy=ty+ (i+0.5)/N*th, wet=yy>wy;
+    var a=wet?0.85:0.16, col=wet?'rgba(120,255,235,':'rgba(120,190,255,';
+    cx.save();cx.strokeStyle=col+a+')';cx.lineWidth=wet?1.6:0.8;cx.shadowColor=wet?'#6fe':'#69f';cx.shadowBlur=wet?9:3;
+    cx.beginPath();cx.moveTo(tx-3,yy);cx.lineTo(tx+tw+3,yy);cx.stroke();cx.restore();
+  }
+  var C=act2C(level);
+  // record + plot
+  hist2.push([level,C]);if(hist2.length>1400)hist2.shift();
+  var px=W*0.55,py=H*0.20,pw=W*0.38,ph=H*0.46;
+  panel(px,py,pw,ph,'level → C   (linear: C = C₀ + k[1 + 79·x])');
+  var c0=act2C(0),c1=act2C(1);
+  cx.save();cx.strokeStyle='#2a4a66';cx.lineWidth=1;
+  for(var k=0;k<=4;k++){var gy=py+22+(ph-34)*k/4;cx.beginPath();cx.moveTo(px+8,gy);cx.lineTo(px+pw-8,gy);cx.stroke();}
+  cx.restore();
+  // ideal line
+  cx.save();cx.strokeStyle='#ff5f7e88';cx.lineWidth=1;cx.setLineDash([4,4]);cx.beginPath();
+  cx.moveTo(px+10,py+ph-12);cx.lineTo(px+pw-10,py+22);cx.stroke();cx.setLineDash([]);cx.restore();
+  // samples
+  cx.save();cx.fillStyle='#7ffcd8';cx.shadowColor='#7ffcd8';cx.shadowBlur=8;
+  for(var i2=0;i2<hist2.length;i2+=2){
+    var L=hist2[i2][0],CC=hist2[i2][1];
+    var X=px+10+(pw-20)*L, Y=py+ph-12-(ph-34)*((CC-c0)/(c1-c0));
+    cx.fillRect(X-1.2,Y-1.2,2.4,2.4);
+  }
+  cx.restore();
+  var LX=px+10+(pw-20)*level, LY=py+ph-12-(ph-34)*((C-c0)/(c1-c0));
+  cx.save();cx.fillStyle='#fff';cx.shadowColor='#0ff';cx.shadowBlur=18;cx.beginPath();cx.arc(LX,LY,4,0,6.283);cx.fill();cx.restore();
+  cx.fillStyle='#8cf';cx.font='10px ui-monospace,monospace';
+  cx.fillText('0%',px+8,py+ph-2);cx.fillText('100%',px+pw-32,py+ph-2);
+  cx.fillText(fmtC(c1),px+pw-78,py+30);cx.fillText(fmtC(c0),px+pw-78,py+ph-16);
+  document.getElementById('extra').innerHTML='level = '+(level*100).toFixed(1)+'% &nbsp; sensitivity = '+
+    (((c1-c0)/1e-12)/100).toFixed(3)+' pF per % &nbsp; R²=1.000000';
+  return C;
+}
+
+/* ================= ACT 3 ================= */
+var sigTrace=[];
+function drawAct3(dt){
+  var by=H*0.60,bx=W*0.06,bw=W*0.52;
+  // PCB substrate cross-section
+  cx.save();cx.fillStyle='rgba(30,90,60,.35)';cx.fillRect(bx,by,bw,44);
+  cx.strokeStyle='#3fa87a88';cx.strokeRect(bx,by,bw,44);cx.restore();
+  cx.fillStyle='#6fd8a8';cx.font='10px ui-monospace,monospace';cx.fillText('FR-4 substrate  εr 4.4',bx+8,by+30);
+  // two parallel traces (cross-section = two rects)
+  var t1=bx+bw*0.36,t2=bx+bw*0.52,tw2=16;
+  cx.save();cx.shadowColor='#ffb347';cx.shadowBlur=16;cx.fillStyle='#ffb347';
+  cx.fillRect(t1,by-9,tw2,9);cx.fillRect(t2,by-9,tw2,9);cx.restore();
+  cx.fillStyle='#ffd9a0';cx.fillText('TX',t1,by-16);cx.fillText('RX',t2,by-16);
+
+  // spawn ambient rain
+  if(Math.random()<dt*1.4)drops.push({x:bx+Math.random()*bw,y:-20,r:4+Math.random()*5,er:80,type:'rain'});
+  if(leafT>=0){leafT+=dt;if(leafT<0.02)drops.push({x:bx-30,y:by-42,r:34,er:34,type:'leaf',vx:1.9});if(leafT>0.1)leafT=-1;}
+
+  var Ctot=C3_BASE,sigLabel='clean';
+  var gapMidX=(t1+t2+tw2)/2, gapW=(t2-(t1+tw2))+tw2*2;
+  for(var i=drops.length-1;i>=0;i--){
+    var d=drops[i];
+    if(d.type==='rain'){d.vy=(d.vy||0)+140*dt;d.y+=d.vy*dt;
+      if(d.y>by-6){d.y=by-6;d.vy=0;d.rest=(d.rest||0)+dt;if(d.rest>2.5){drops.splice(i,1);continue;}}}
+    else{d.x+=d.vx*160*dt;if(d.x>bx+bw+80){drops.splice(i,1);continue;}}
+    // coupling: how much of the trace-gap this body covers, and how close to the board
+    var dx=Math.abs(d.x-gapMidX);
+    var cover=Math.max(0,1-dx/(gapW*0.5+d.r))*Math.max(0,1-Math.max(0,by-12-d.y)/70);
+    var dC=intruderDC({er:d.er,er_len:0.030,cover:cover});
+    d.dC=dC;Ctot+=dC;
+    if(cover>0.15){sigLabel=d.type==='rain'?'RAIN drop  εr 80':(d.type==='leaf'?'WET LEAF  εr 34':'FINGER  εr 12*');}
+    // draw
+    var col=d.type==='rain'?'#5cd8ff':(d.type==='leaf'?'#7dff9b':'#ff9ec9');
+    cx.save();cx.shadowColor=col;cx.shadowBlur=16;cx.fillStyle=col;cx.globalAlpha=.85;
+    if(d.type==='leaf'){cx.beginPath();cx.ellipse(d.x,d.y,d.r,d.r*0.45,0.25,0,6.283);cx.fill();}
+    else if(d.type==='finger'){cx.beginPath();cx.ellipse(d.x,d.y,d.r*0.7,d.r,0,0,6.283);cx.fill();}
+    else{cx.beginPath();cx.arc(d.x,d.y,d.r,0,6.283);cx.fill();}
+    cx.restore();
+  }
+  // field lines across the gap — bunch under high-er bodies
+  for(var f=0;f<24;f++){
+    var u=(f+0.5)/24, sx=t1+tw2*0.5+(t2+tw2*0.5-t1-tw2*0.5)*u;
+    var arc=26+40*Math.sin(Math.PI*u);
+    var boost=0;
+    for(var q=0;q<drops.length;q++){var dq=drops[q];
+      boost+=Math.exp(-Math.pow((sx-dq.x)/(dq.r+14),2))*Math.max(0,1-Math.max(0,by-12-dq.y)/70)*(dq.er/80);}
+    boost=Math.min(1.6,boost);
+    var a=0.14+0.7*boost;
+    cx.save();cx.strokeStyle='rgba(120,255,220,'+a.toFixed(3)+')';cx.lineWidth=0.8+1.6*boost;
+    cx.shadowColor='#6fe';cx.shadowBlur=4+10*boost;cx.beginPath();
+    cx.moveTo(t1+tw2*0.5,by-9);cx.quadraticCurveTo(sx,by-9-arc*(1+0.5*boost),t2+tw2*0.5,by-9);cx.stroke();cx.restore();
+  }
+  // ΔC signature scope
+  sigTrace.push(Ctot);if(sigTrace.length>Math.floor(W*0.36))sigTrace.shift();
+  var px=W*0.62,py=H*0.14,pw=W*0.33,ph=H*0.30;
+  panel(px,py,pw,ph,'ΔC signature  (each dielectric announces itself)');
+  var mn=C3_BASE-0.05e-12,mx=C3_BASE+1.6e-12;
+  cx.save();cx.strokeStyle='#7ffcd8';cx.lineWidth=1.6;cx.shadowColor='#7ffcd8';cx.shadowBlur=10;cx.beginPath();
+  for(var s=0;s<sigTrace.length;s++){
+    var X=px+8+(pw-16)*s/Math.max(1,sigTrace.length-1);
+    var Y=py+ph-10-(ph-30)*Math.max(0,Math.min(1,(sigTrace[s]-mn)/(mx-mn)));
+    s?cx.lineTo(X,Y):cx.moveTo(X,Y);
+  }
+  cx.stroke();cx.restore();
+  cx.fillStyle='#9ad';cx.font='10px ui-monospace,monospace';
+  cx.fillText('rain: sharp spike · leaf: broad hump · finger: tall slow',px+8,py+ph-4);
+  document.getElementById('extra').innerHTML='detecting: <b style="color:#7ffcd8">'+sigLabel+'</b> &nbsp; ΔC = '+
+    ((Ctot-C3_BASE)*1e15).toFixed(0)+' fF &nbsp; bodies '+drops.length;
+  return Ctot;
+}
+
+/* ---------------- main loop ---------------- */
+var last=performance.now();
+function frame(now){
+  var dt=Math.min(0.05,(now-last)/1000);last=now;T+=dt;
+  cx.fillStyle='rgba(4,7,12,0.35)';cx.fillRect(0,0,W,H);
+  // faint grid
+  cx.save();cx.strokeStyle='rgba(60,140,200,.06)';cx.lineWidth=1;cx.beginPath();
+  for(var x=0;x<W;x+=54){cx.moveTo(x,0);cx.lineTo(x,H);}
+  for(var y=0;y<H;y+=54){cx.moveTo(0,y);cx.lineTo(W,y);}cx.stroke();cx.restore();
+  var C = act===0?drawAct1(dt):act===1?drawAct2(dt):drawAct3(dt);
+  var f=oscF(C);
+  document.getElementById('cv').textContent=fmtC(C);
+  document.getElementById('fv').textContent=(f/1000).toFixed(3)+' kHz';
+  document.getElementById('nv').textContent=(f/1000).toFixed(1);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>

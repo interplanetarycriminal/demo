@@ -61,16 +61,16 @@ var M=[
 ];
 M.forEach(function(m){m.lam=m.v/m.f;});   // λ = v/f  — everything downstream derives from this
 
-/* per-material transmission (amplitude 0..1) — the "what stops it" column */
+/* per-material transmission (amplitude 0..1) — the "what stops it" column.
+   `cloth` = can it reach the chest through clothing? (decides breathing sensing) */
 var MAT={
-/*            wall  glass  water  metal  fog   person */
- sound: {wall:0.30,glass:0.35,water:0.15,metal:0.05,fog:1.00,person:0.55},
- us:    {wall:0.02,glass:0.05,water:0.30,metal:0.02,fog:0.98,person:0.02},
- subg:  {wall:0.80,glass:0.95,water:0.45,metal:0.02,fog:1.00,person:0.60},
- wifi:  {wall:0.45,glass:0.90,water:0.06,metal:0.02,fog:0.99,person:0.10},
- mmw:   {wall:0.04,glass:0.30,water:0.01,metal:0.01,fog:0.85,person:0.02},
- ir:    {wall:0.00,glass:0.02,water:0.02,metal:0.00,fog:0.55,person:0.02},
- vis:   {wall:0.00,glass:0.92,water:0.75,metal:0.02,fog:0.06,person:0.02}
+ sound: {wall:0.30,glass:0.35,water:0.15,metal:0.05,fog:1.00,person:0.55,cloth:0.90},
+ us:    {wall:0.02,glass:0.05,water:0.30,metal:0.02,fog:0.98,person:0.02,cloth:0.50},
+ subg:  {wall:0.80,glass:0.95,water:0.45,metal:0.02,fog:1.00,person:0.60,cloth:0.95},
+ wifi:  {wall:0.45,glass:0.90,water:0.06,metal:0.02,fog:0.99,person:0.10,cloth:0.90},
+ mmw:   {wall:0.04,glass:0.30,water:0.01,metal:0.01,fog:0.85,person:0.02,cloth:0.85},
+ ir:    {wall:0.00,glass:0.02,water:0.02,metal:0.00,fog:0.55,person:0.02,cloth:0.05},
+ vis:   {wall:0.00,glass:0.92,water:0.75,metal:0.02,fog:0.06,person:0.02,cloth:0.02}
 };
 /* refractive index in water (speed change -> refraction bend) */
 var NWATER={sound:0.23,us:0.23,subg:9.0,wifi:9.0,mmw:9.0,ir:1.32,vis:1.33};
@@ -153,11 +153,19 @@ function traceRay(x,y,ang,m,mat,t){
 function score(k){
  var m=M.filter(function(a){return a.k===k;})[0], mat=MAT[k];
  if(target==='wall')  return mat.wall*100;
- if(target==='breath'){ // need λ small enough that ~4 mm chest motion is a real phase fraction
-   var res=Math.min(1, 0.004/(m.lam/8));   // motion / (λ/8) — phase sensitivity
-   return res*100*Math.max(mat.person,0.02)*4 + res*60;
+ if(target==='breath'){
+   // two independent requirements, multiplied:
+   //  (a) phase sensitivity: 4 mm of chest motion must be a real fraction of λ/8
+   //  (b) reach: the wave must get through clothing to the chest and back
+   var sens=Math.min(1, 0.004/(m.lam/8));
+   return 100*sens*mat.cloth;
  }
- if(target==='fog')   return mat.fog*100;
+ if(target==='fog'){
+   // transmission through fog × how much detail the λ can still resolve
+   // (this is why automotive fog sensing is mmWave radar, not a LoRa link)
+   var resv=Math.max(0.30,Math.min(1, 1-(Math.log10(m.lam)-Math.log10(5e-3))/2.5));
+   return 100*mat.fog*resv;
+ }
  if(target==='range'){ // free-space path loss favours long λ; sound dies in air
    var atmos = (m.v<1e6)? (k==='us'?0.02:0.35) : 1;
    return Math.min(100, atmos*100*Math.pow(m.lam/0.35,0.30));

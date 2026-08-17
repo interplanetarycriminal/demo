@@ -83,7 +83,7 @@ el('lam').oninput=function(){LAM=+this.value;el('lLam').textContent=LAM;reset();
 el('spd').oninput=function(){SPD=+this.value;el('lSpd').textContent=SPD;};
 el('tgt').oninput=function(){TGT=+this.value;el('lTgt').textContent=TGT.toFixed(1);};
 el('bRst').onclick=reset;
-el('bPerf').onclick=function(){perfect=!perfect;this.className=perfect?'':'on';
+el('bPerf').onclick=function(){perfect=!perfect;this.className=perfect?'on':'';
  this.textContent=perfect?'PERFECT DETECTOR (scatter unchanged!)':'BLAME THE INSTRUMENT';};
 el('bPhot').onclick=function(){photon=!photon;this.className=photon?'alt on':'alt';};
 addEventListener('keydown',function(e){if(e.key==='b')el('bPerf').click();if(e.key==='p')el('bPhot').click();if(e.key==='r')reset();});
@@ -97,22 +97,29 @@ function instrument(nTrue){
 }
 
 // ================= STATISTICS: relative error vs N (log-log) =================
+// c4(k): the sample std of k samples is biased LOW by this factor. Without it the
+// long-integration points sag and the fitted slope comes out steeper than -0.5.
+function c4(k){if(k<2)return 1;return Math.sqrt(2/(k-1))*Math.exp(lgamma(k/2)-lgamma((k-1)/2));}
 function relErrPoints(arr){
  var pts=[],n=arr.length;if(n<8)return pts;
- for(var m=1;m<=n/4;m*=2){
+ for(var m=1;m<=n/8;m*=2){
   var k=Math.floor(n/m),s=0,s2=0;
   for(var i=0;i<k;i++){var sum=0;for(var j=0;j<m;j++)sum+=arr[i*m+j];s+=sum;s2+=sum*sum;}
-  var mean=s/k;if(mean<=0||k<3)continue;
+  var mean=s/k;if(mean<=0||k<8)continue;
   var varr=(s2-k*mean*mean)/(k-1);if(varr<0)varr=0;
-  pts.push({N:mean,e:Math.sqrt(varr)/mean,k:k,m:m});
+  pts.push({N:mean,e:Math.sqrt(varr)/c4(k)/mean,k:k,m:m});
  }
  return pts;
 }
+// inverse-variance weighted least squares: var of log(s) ~ 1/(2(k-1))
 function fitSlope(pts){
  if(pts.length<3)return NaN;
- var sx=0,sy=0,sxx=0,sxy=0,n=pts.length;
- for(var i=0;i<n;i++){var x=Math.log10(pts[i].N),y=Math.log10(pts[i].e);sx+=x;sy+=y;sxx+=x*x;sxy+=x*y;}
- return (n*sxy-sx*sy)/(n*sxx-sx*sx);
+ var sw=0,sx=0,sy=0,sxx=0,sxy=0;
+ for(var i=0;i<pts.length;i++){
+  var w=pts[i].k-1,x=Math.log10(pts[i].N),y=Math.log10(pts[i].e);
+  sw+=w;sx+=w*x;sy+=w*y;sxx+=w*x*x;sxy+=w*x*y;}
+ var den=sw*sxx-sx*sx;if(Math.abs(den)<1e-12)return NaN;
+ return (sw*sxy-sx*sy)/den;
 }
 window.__SQRTN={expWait:expWait,relErrPoints:relErrPoints,fitSlope:fitSlope,poissonPmf:poissonPmf};
 
@@ -135,7 +142,6 @@ function frame(now){
   binTrue++;N++;
   ticks.push({t:simT+nextEvt,a:1});
   if(ticks.length>600)ticks.shift();
-  if(guard<40)flashes.push({a:1,x:Math.random(),y:Math.random()});
   flash=1;
   nextEvt+=expWait(LAM);
  }
@@ -267,7 +273,6 @@ function frame(now){
   for(var i=0;i<NB;i++){var xx=bx2+(i+0.5)*bwid2,yy=by2+bh2-bh2*theo[i]/top2;
    if(i===0)g.moveTo(xx,yy);else g.lineTo(xx,yy);}
   g.stroke();g.shadowBlur=0;
-  txt('— Poisson(μ='+m2.toFixed(0)+')','' ,0,'#ff8ad0',9,false);
   txt('— Poisson(μ='+m2.toFixed(0)+')',bx2+4,by2+12,'#ff8ad0',9,true);
   txt('bars: '+nb+' observed bins',bx2+4,by2+24,'rgba(180,210,230,.7)',9,false);
   txt('variance/mean = '+(meanP>0?(vP/meanP).toFixed(3):'—')+'  (Poisson ⇒ 1.000)',bx2+4,R2r.y+R2r.h-10,'#7fd0ff',10,true);

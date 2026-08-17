@@ -169,9 +169,12 @@ function frame(now){
  for(var x=0;x<W;x+=44){g.beginPath();g.moveTo(x,0);g.lineTo(x,H);g.stroke();}
  for(var y=0;y<H;y+=44){g.beginPath();g.moveTo(0,y);g.lineTo(W,y);g.stroke();}
 
- var narrow=W<980;
- var bw=narrow?W*0.86:Math.min(560,W*0.44), bh=Math.min(H*0.52,420);
- var bx=narrow?W*0.5:W*0.30, by=narrow?H*0.42:H*0.52;
+ var narrow=W<1080;
+ var LM=narrow?12:388;                      // keep clear of the overlay panel
+ var colW=(narrow?W-24:W*0.565-LM-16);
+ var bw=Math.max(180,Math.min(narrow?520:520,colW-30));
+ var bh=Math.min(narrow?H*0.30:H*0.46, narrow?280:380);
+ var bx=narrow?W*0.5:LM+16+bw/2, by=narrow?H*0.42:H*0.50;
  // diamond nodes
  var C={x:bx,y:by-bh/2},Dn={x:bx,y:by+bh/2},A={x:bx-bw/2,y:by},B={x:bx+bw/2,y:by};
  // arms  C-A=R1, A-D=R2, C-B=R3(knob), B-D=Rx(sensor)
@@ -213,11 +216,8 @@ function frame(now){
  else glowText('Δ = '+(d0*1000).toFixed(2)+' mV',mid.x,mid.y+gr+20,'rgba(160,200,230,.7)',11,false,'center');
 
  // ---- ACT 1 drifting voltmeter, hung off node B
- var vmx=narrow?W*0.5:B.x+ (W-B.x)*0.0+110, vmy=B.y+ (narrow?150:130);
- if(!narrow){
-  vmx=Math.min(W-140,B.x+120);
-  wire(B.x,B.y,vmx,B.y,'rgba(255,120,120,.4)');wire(vmx,B.y,vmx,vmy-34,'rgba(255,120,120,.4)');
- }
+ var vmx=bx+bw*0.26, vmy=Dn.y+62;
+ wire(B.x,B.y,B.x,vmy,'rgba(255,120,120,.4)');wire(B.x,vmy,vmx+64,vmy,'rgba(255,120,120,.4)');
  g.save();g.translate(vmx,vmy);
  g.strokeStyle='rgba(255,120,120,.8)';g.lineWidth=1.6;g.shadowBlur=12;g.shadowColor='#ff6a6a';
  g.beginPath();g.roundRect(-64,-32,128,64,8);g.stroke();g.shadowBlur=0;
@@ -228,8 +228,8 @@ function frame(now){
  g.restore();
 
  // ================= RIGHT PANEL: traces + math =================
- var px0=narrow?12:W*0.575, pw=narrow?W-24:W*0.40, py0=narrow?12:70, ph=Math.min(240,H*0.30);
- if(narrow){py0=H-330;ph=150;}
+ var px0=narrow?12:W*0.575, pw=narrow?W-24:W*0.41, py0=narrow?12:64, ph=Math.min(240,H*0.30);
+ if(narrow){py0=H-336;ph=142;}
  // frame
  g.strokeStyle='rgba(120,200,255,.22)';g.lineWidth=1;
  g.fillStyle='rgba(6,12,20,.62)';g.beginPath();g.roundRect(px0,py0,pw,ph+96,8);g.fill();g.stroke();
