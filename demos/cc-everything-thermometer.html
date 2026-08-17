@@ -97,13 +97,13 @@ function layout(){
 function step(dt){
   for(var i=0;i<PARTS.length;i++){
     var p=PARTS[i],target=TAMB;
-    if(calStage>0&&i===1){ target=(calStage===1)?0:(calStage>=2?100:TAMB); if(calStage===3)target=100; }
+    if(calStage>0&&calStage<3&&i===1){ target=(calStage===1)?0:100; }
     else if(pointerIn){
       var dx=px-p.x,dy=py-p.y,d2=dx*dx+dy*dy;
       var cpl=Math.exp(-d2/(2*SIG*SIG));
       target=TAMB+cpl*((gunCold?TGUN_COLD:TGUN_HOT)-TAMB);
     }
-    var tau=(calStage>0&&i===1)?0.9:p.tau;           // liquid bath couples hard
+    var tau=(calStage>0&&calStage<3&&i===1)?0.9:p.tau;   // liquid bath couples hard
     p.T+=(target-p.T)*(1-Math.exp(-dt/tau));
   }
   hn=(hn+1)%NH; ambHist[hn]=TAMB;
@@ -111,7 +111,7 @@ function step(dt){
   if(calStage===1&&Math.abs(PARTS[1].T-0)<0.25){calHold+=dt;if(calHold>0.9)calAdvance();}
   if(calStage===2&&Math.abs(PARTS[1].T-100)<0.25){calHold+=dt;if(calHold>0.9)calAdvance();}
   for(var b=calBub.length-1;b>=0;b--){var B=calBub[b];B.y-=B.v*dt*60;B.life-=dt;if(B.life<0)calBub.splice(b,1);}
-  if(calStage>=2&&Math.random()<0.55)calBub.push({x:(Math.random()-0.5)*44,y:56,v:0.9+Math.random()*1.5,r:1.5+Math.random()*3,life:1.4});
+  if(calStage===2&&Math.random()<0.55)calBub.push({x:(Math.random()-0.5)*44,y:56,v:0.9+Math.random()*1.5,r:1.5+Math.random()*3,life:1.4});
 }
 
 // ---------- drawing helpers ----------
@@ -244,6 +244,7 @@ function drawGun(){
 function drawCal(){
   if(calStage===0)return;
   var d=PARTS[1];
+  if(calStage<3){
   // beaker under the diode
   var bx=d.x, by=d.y+118;
   ctx.save();ctx.translate(bx,by);
@@ -261,6 +262,7 @@ function drawCal(){
   ctx.fillStyle=isIce?'#bfe9ff':'#ffd6b0';ctx.font='700 10px ui-monospace,monospace';ctx.textAlign='center';
   ctx.fillText(isIce?'ICE BATH · 0.00 °C':'BOILING · 100.00 °C',0,60);
   ctx.restore();
+  }
   // fit panel
   var X=calBox.x,Y=calBox.y,PW=calBox.w,PH=calBox.h;
   ctx.save();

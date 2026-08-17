@@ -245,9 +245,16 @@ function sync(){
   vV.textContent=(vscale*100).toFixed(0)+' %';
 }
 sChaos.oninput=sV.oninput=sync;sync();
+// fill one full DFT window instantly so the display is alive the moment you switch
+function prefill(){
+  bufI.fill(0);bufQ.fill(0);bHead=0;bFill=0;
+  var per=1/P.prf;
+  for(var i=0;i<M;i++){pushSample(simT,1);simT+=per;}
+  acc=0;
+}
 window.addEventListener('keydown',function(e){
-  if(SCN[e.key]){cur=e.key;P=SCN[e.key];bufI.fill(0);bufQ.fill(0);bFill=0;bHead=0;initSpec();
-    ampHist.fill(0);velHist.fill(0);velTrue.fill(0);ampHead=0;}
+  if(SCN[e.key]){cur=e.key;P=SCN[e.key];initSpec();
+    ampHist.fill(0);velHist.fill(0);velTrue.fill(0);ampHead=0;lastEst=null;prefill();}
 });
 
 // ================= LAYOUT =================
@@ -524,5 +531,6 @@ function updateRead(){
 }
 
 resize();
+prefill();
 requestAnimationFrame(frame);
 </script>

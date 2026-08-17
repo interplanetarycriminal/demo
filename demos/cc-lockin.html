@@ -3,23 +3,23 @@
 <style>
   html,body{margin:0;padding:0;background:#04060a;overflow:hidden;height:100%}
   canvas{display:block;position:fixed;inset:0}
-  #ui{position:fixed;top:10px;left:10px;z-index:10;width:370px;max-width:calc(100vw - 24px);
-      background:rgba(4,10,16,.72);border:1px solid #0ff3;border-radius:8px;padding:10px 12px;
+  #ui{position:fixed;top:10px;left:10px;z-index:10;width:372px;max-width:calc(100vw - 24px);
+      background:rgba(4,10,16,.74);border:1px solid #0ff3;border-radius:8px;padding:10px 12px;
       font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#9fe8ff;
       box-shadow:0 0 24px #00e5ff22, inset 0 0 40px #00e5ff08;backdrop-filter:blur(3px)}
-  #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.12em;color:#5ff;text-shadow:0 0 10px #0ff8}
+  #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.11em;color:#5ff;text-shadow:0 0 10px #0ff8}
   .cc{color:#ffd166;text-shadow:0 0 8px #ffd16655;margin:0 0 7px;font-size:10.5px;line-height:1.45}
   .row{display:flex;align-items:center;gap:6px;margin:3px 0}
-  .row label{width:96px;color:#6fb8cc;flex:none}
+  .row label{width:92px;color:#6fb8cc;flex:none}
   .row input[type=range]{flex:1;height:14px;accent-color:#0ff;background:transparent}
-  .row .v{width:74px;text-align:right;color:#bfffe8}
+  .row .v{width:76px;text-align:right;color:#bfffe8}
   .hint{color:#5b8a99;margin-top:6px;font-size:10px}
   .rd{margin-top:6px;border-top:1px solid #0ff2;padding-top:5px;font-size:10.5px}
   .rd b{color:#7dffb0;font-weight:600}
   .big{color:#ff6ec7;text-shadow:0 0 10px #ff6ec788}
   a{color:#5ff;text-decoration:none;border-bottom:1px dotted #0ff6}
   button{background:#0ff2;border:1px solid #0ff5;color:#bff;font:10px ui-monospace,monospace;
-         padding:3px 7px;border-radius:4px;cursor:pointer}
+         padding:3px 7px;border-radius:4px;cursor:pointer;margin-right:3px}
   button:hover{background:#0ff4}
 </style>
 <body>
@@ -30,14 +30,15 @@
   <p class="cc">Modulate YOUR excitation, multiply the return by the same reference, average: everything not in step with you dies — a million-to-one rejection for the price of a square wave.</p>
   <div class="row"><label>interference</label><input id="sI" type="range" min="0" max="3" step="0.01" value="2"><span class="v" id="vI">100×</span></div>
   <div class="row"><label>ref phase φ</label><input id="sP" type="range" min="-180" max="180" step="1" value="0"><span class="v" id="vP">0°</span></div>
-  <div class="row"><label>time const τ</label><input id="sT" type="range" min="1" max="400" step="1" value="120"><span class="v" id="vT">120 ms</span></div>
-  <div class="row"><label>LED msg</label><input id="sM" type="range" min="0" max="2" step="1" value="1"><span class="v" id="vM">slow ramp</span></div>
+  <div class="row"><label>time const τ</label><input id="sT" type="range" min="1" max="1000" step="1" value="300"><span class="v" id="vT">300 ms</span></div>
+  <div class="row"><label>LED message</label><input id="sM" type="range" min="0" max="2" step="1" value="1"><span class="v" id="vM">slow ramp</span></div>
   <div class="rd">
-    SNR in <b id="rSin">—</b> &nbsp;→&nbsp; SNR out <b id="rSout">—</b> &nbsp; gain <span class="big" id="rG">—</span><br>
-    true A <b id="rAt">—</b> &nbsp; locked A <b id="rAr">—</b> &nbsp; err <b id="rE">—</b><br>
-    X <b id="rX">—</b> &nbsp; Y <b id="rY">—</b> &nbsp; cos φ <b id="rC">—</b>
+    SNR in <b id="rSin">—</b> → out <b id="rSout">—</b> &nbsp; recovered gain <span class="big" id="rG">—</span><br>
+    true A·cosφ <b id="rAt">—</b> &nbsp; locked X <b id="rAr">—</b> &nbsp; err <b id="rE">—</b><br>
+    X <b id="rX">—</b> &nbsp; Y <b id="rY">—</b> &nbsp; R=√(X²+Y²) <b id="rR">—</b> &nbsp; cosφ <b id="rC">—</b>
   </div>
-  <div class="hint">drag φ to 90° → signal vanishes (phase-sensitive detection, a feature) · <button id="bZ">zero φ</button> <button id="bK">key "SOS"</button> · <a href="index.html">← gallery</a></div>
+  <div class="hint">drag φ to 90° → output nulls (phase-sensitive detection — a feature; R survives)<br>
+    <button id="bZ">φ=0</button><button id="bQ">φ=90</button><button id="bK">key "SOS"</button> · <a href="index.html">← gallery</a></div>
 </div>
 <script>
 "use strict";
@@ -46,31 +47,30 @@ function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth
  c.width=Math.round(W*DPR);c.height=Math.round(H*DPR);c.style.width=W+'px';c.style.height=H+'px';
  g.setTransform(DPR,0,0,DPR,0,0);}
 window.addEventListener('resize',resize);resize();
+var el=function(i){return document.getElementById(i)};
 
-// ---- physics constants (real units) ----
-var FS=100000;            // 100 kS/s photodiode sampling
-var FMOD=1000;            // 1 kHz LED chop
-var FMAINS=50;            // mains hum
-var DT=1/FS;
-var CHUNK=1200;           // samples advanced per animation frame (12 ms of sim per frame)
-var t=0;                  // simulation time (s)
+// ================= physics =================
+var FS=100000, DT=1/FS;      // 100 kS/s transimpedance front end
+var FMOD=1000;               // 1 kHz LED chop
+var CHUNK=2000;              // 20 ms of physics per animation frame
+var t=0, SIGA=1.0;           // nominal LED photocurrent (arb.)
+var TWOPI=Math.PI*2, HALFPI=Math.PI/2;
 
-// gaussian noise
 var sp=null;
 function gauss(){ if(sp!==null){var v=sp;sp=null;return v;}
   var u=0,w=0,s=0; do{u=Math.random()*2-1;w=Math.random()*2-1;s=u*u+w*w;}while(s>=1||s===0);
   var m=Math.sqrt(-2*Math.log(s)/s); sp=w*m; return u*m; }
+function sq(ph){ return (ph-Math.floor(ph))<0.5 ? 1 : -1; }   // LED drive: on/off
 
-// UI state
-var el=function(i){return document.getElementById(i)};
+// ambient interference basis (rms of the sum, for normalisation)
+var A_DRIFT=0.9, A_MAINS=0.7, A_FLICK=0.35, A_TONE=0.25;
+var AMB_RMS=Math.sqrt((A_DRIFT*A_DRIFT+A_MAINS*A_MAINS+A_FLICK*A_FLICK+A_TONE*A_TONE)/2);
+
+var interf=100, phiDeg=0, tau=0.300, msgMode=1, msgKeyStart=-1;
+var MORSE=[1,1,1,0,3,3,3,0,1,1,1,0,0];   // S O S
 var sI=el('sI'),sP=el('sP'),sT=el('sT'),sM=el('sM');
-var interf=100, phiDeg=0, tau=0.120, msgMode=1;
-var SIGA=1.0;             // nominal LED photocurrent amplitude (arb. units, "1.0 nA")
-var msgKeyStart=-1;
-var MORSE=[1,1,1,0,3,3,3,0,1,1,1,0,0]; // S O S in dot/dash units (0 = gap)
-
 function readUI(){
-  interf=Math.pow(10,parseFloat(sI.value));  // 1 .. 1000
+  interf=Math.pow(10,parseFloat(sI.value));
   phiDeg=parseFloat(sP.value);
   tau=parseFloat(sT.value)/1000;
   msgMode=parseInt(sM.value,10);
@@ -81,221 +81,180 @@ function readUI(){
 }
 [sI,sP,sT,sM].forEach(function(s){s.addEventListener('input',readUI)});
 el('bZ').onclick=function(){sP.value=0;readUI();};
+el('bQ').onclick=function(){sP.value=90;readUI();};
 el('bK').onclick=function(){sM.value=2;readUI();msgKeyStart=t;};
 readUI();
 
-// true LED amplitude at time t (the "message")
 function trueAmp(tt){
   if(msgMode===0) return SIGA;
-  if(msgMode===1) return SIGA*(0.55+0.45*Math.sin(2*Math.PI*tt/6.0));
-  // keyed: 0.25 s per unit
-  var u=0.28, base=(msgKeyStart<0?0:msgKeyStart);
-  var k=Math.floor(((tt-base)%(MORSE.length*u))/u);
-  if(k<0)k=0;
-  var on=MORSE[k%MORSE.length];
-  return SIGA*(on>0? (on===3?1.0:1.0) : 0.12);
+  if(msgMode===1) return SIGA*(0.55+0.45*Math.sin(TWOPI*tt/6.0));
+  var u=0.30, base=(msgKeyStart<0?0:msgKeyStart);
+  var k=Math.floor(((tt-base)%(MORSE.length*u)+MORSE.length*u)/u)%MORSE.length;
+  return SIGA*(MORSE[k]>0?1.0:0.12);
 }
 
-// square-wave chop: returns ±1
-function sq(ph){ return (ph-Math.floor(ph))<0.5 ? 1 : -1; }
-
-// ---- ring buffers for display ----
-var NRAW=1400;
-var rawBuf=new Float32Array(NRAW), refBuf=new Float32Array(NRAW), prodBuf=new Float32Array(NRAW);
-var rIdx=0, rFilled=0;
-// slow traces (per-frame)
-var NSLOW=520;
-var outHist=new Float32Array(NSLOW), trueHist=new Float32Array(NSLOW), rawRmsHist=new Float32Array(NSLOW);
-var sIdx=0, sFilled=0;
-
-// lock-in state (single-pole lowpass on X and Y)
-var X=0, Y=0;
-// stats
-var sigPow=0, noisePow=0, outVar=0, outMean=0;
-var lastR=0;
+// scope windows (contiguous samples -> the 1 kHz chop is drawn crisply)
+var NW=640;
+var wRaw=new Float32Array(NW), wDrv=new Float32Array(NW), wRef=new Float32Array(NW), wPrd=new Float32Array(NW);
+// slow history
+var NS=560;
+var hOut=new Float32Array(NS), hTrue=new Float32Array(NS), hR=new Float32Array(NS);
+var sIdx=0, sFill=0;
+// two-pole cascaded lowpass state
+var X1=0,X2=0,Y1=0,Y2=0;
+var sigPow=1, noisePow=1, sigmaBB=1;
 
 function stepSim(){
-  var n=CHUNK;
-  var phiR=phiDeg*Math.PI/180;
-  var alpha=1-Math.exp(-DT/Math.max(tau,1e-4));   // exact single-pole coefficient
-  var sumS=0,sumN=0;
-  // pick display decimation so ~2.5 modulation periods fill the raw panel
-  var dec=Math.max(1,Math.floor(n/60));
-  for(var i=0;i<n;i++){
+  var alpha=1-Math.exp(-DT/Math.max(tau,1e-4));
+  var ambScale=interf*SIGA/AMB_RMS;         // ambient rms = interf x signal rms
+  sigmaBB=1.5+0.012*interf;                 // detector broadband floor
+  var phR=phiDeg*Math.PI/180;
+  var sumS=0,sumN=0, wStart=CHUNK-NW;
+  for(var i=0;i<CHUNK;i++){
     var tt=t+i*DT;
     var A=trueAmp(tt);
-    // --- true LED signal: square-chopped photocurrent, phase 0 ---
-    var s=A*sq(FMOD*tt);
-    // --- interference: sunlight drift + 50 Hz mains + harmonic + lamp flicker + broadband ---
-    var noise = 0.9*Math.sin(2*Math.PI*0.13*tt+0.7)          // slow sunlight drift
-              + 0.7*Math.sin(2*Math.PI*FMAINS*tt)            // mains
-              + 0.35*Math.sin(2*Math.PI*2*FMAINS*tt+1.1)     // 100 Hz lamp flicker
-              + 0.25*Math.sin(2*Math.PI*137*tt+2.2)          // random tone
-              + 1.0*gauss();                                 // broadband
-    noise*=interf*0.55;
-    var v=s+noise;
-    sumS+=s*s; sumN+=noise*noise;
-    // --- lock-in: multiply by reference square wave at same freq, phase φ ---
-    var refI=sq(FMOD*tt+phiDeg/360);
-    var p=v*refI;
-    X+=alpha*(p-X);
-    // quadrature channel (reference shifted 90°)
-    var refQ=sq(FMOD*tt+phiDeg/360+0.25);
-    Y+=alpha*(v*refQ-Y);
-    if(i%dec===0){
-      rawBuf[rIdx]=v; refBuf[rIdx]=refI; prodBuf[rIdx]=p;
-      rIdx=(rIdx+1)%NRAW; if(rFilled<NRAW)rFilled++;
-    }
+    var drv=sq(FMOD*tt);                    // the chopper you built
+    var s=A*drv;                            // photocurrent from YOUR LED
+    var amb=A_DRIFT*Math.sin(TWOPI*0.13*tt+0.7)      // sunlight drift
+           +A_MAINS*Math.sin(TWOPI*50*tt)            // 50 Hz mains
+           +A_FLICK*Math.sin(TWOPI*100*tt+1.1)       // lamp flicker
+           +A_TONE *Math.sin(TWOPI*137*tt+2.2);      // stray tone
+    var n=amb*ambScale + sigmaBB*gauss();
+    var v=s+n;
+    sumS+=s*s; sumN+=n*n;
+    // demodulate against the FUNDAMENTAL of your own chop.
+    // <sq(ft) * (pi/2)sin(2pi f t + phi)> = cos(phi)  exactly.
+    var ang=TWOPI*FMOD*tt+phR;
+    var refI=HALFPI*Math.sin(ang), refQ=HALFPI*Math.cos(ang);
+    var pI=v*refI, pQ=v*refQ;
+    X1+=alpha*(pI-X1); X2+=alpha*(X1-X2);   // 2-pole, 12 dB/oct
+    Y1+=alpha*(pQ-Y1); Y2+=alpha*(Y1-Y2);
+    if(i>=wStart){var j=i-wStart; wRaw[j]=v; wDrv[j]=drv; wRef[j]=refI/HALFPI; wPrd[j]=pI;}
   }
-  t+=n*DT;
-  sigPow=sumS/n; noisePow=sumN/n;
-  // square-wave demod of a square signal: <s*ref> = A*cos-like; for pure square×square in phase = A
-  lastR=X;
+  t+=CHUNK*DT; sigPow=sumS/CHUNK; noisePow=sumN/CHUNK;
+  var A2=trueAmp(t), cf=Math.cos(phiDeg*Math.PI/180);
+  hOut[sIdx]=X2; hTrue[sIdx]=A2*cf; hR[sIdx]=Math.sqrt(X2*X2+Y2*Y2);
+  sIdx=(sIdx+1)%NS; if(sFill<NS)sFill++;
 }
 
-function pushSlow(){
-  var A=trueAmp(t);
-  outHist[sIdx]=lastR; trueHist[sIdx]=A*Math.cos(phiDeg*Math.PI/180);
-  rawRmsHist[sIdx]=Math.sqrt(noisePow);
-  sIdx=(sIdx+1)%NSLOW; if(sFilled<NSLOW)sFilled++;
+// live output-noise estimate from first differences of the settled output
+function outNoise(){
+  if(sFill<24)return 1e-9;
+  var m=Math.min(sFill,90), acc=0;
+  for(var i=1;i<m;i++){
+    var a=hOut[(sIdx-1-i+NS*2)%NS], b=hOut[(sIdx-i+NS*2)%NS];
+    acc+=(b-a)*(b-a);
+  }
+  return Math.sqrt(acc/(m-1)/2);
 }
 
-// ---- drawing helpers ----
+// ================= drawing =================
 function panel(x,y,w,h,title,col){
-  g.save();
-  g.fillStyle='rgba(8,16,24,.55)';
-  g.strokeStyle=col+'44'; g.lineWidth=1;
+  g.save(); g.fillStyle='rgba(8,16,24,.55)'; g.strokeStyle=col+'44'; g.lineWidth=1;
   g.beginPath(); g.rect(x,y,w,h); g.fill(); g.stroke();
-  g.fillStyle=col; g.font='10px ui-monospace,monospace'; g.globalAlpha=.9;
-  g.fillText(title,x+8,y+13);
-  g.restore();
+  g.fillStyle=col; g.font='10px ui-monospace,monospace'; g.globalAlpha=.92;
+  g.fillText(title,x+8,y+13); g.restore();
 }
-function traceRing(buf,filled,idx,x,y,w,h,scale,col,glow,mid){
-  if(filled<3)return;
-  g.save();
-  g.beginPath(); g.rect(x,y,w,h); g.clip();
-  g.lineWidth=1.2; g.strokeStyle=col;
-  if(glow){g.shadowColor=col;g.shadowBlur=glow;}
-  g.beginPath();
-  var cy=y+(mid===undefined?h/2:mid);
-  for(var i=0;i<filled;i++){
-    var v=buf[(idx-filled+i+buf.length*2)%buf.length];
-    var px=x+ i/(filled-1)*w;
-    var py=cy - v*scale;
-    if(py<y-2000)py=y-2000; if(py>y+h+2000)py=y+h+2000;
+function win(buf,x,y,w,h,sc,col,glow,lw){
+  g.save(); g.beginPath(); g.rect(x,y,w,h); g.clip();
+  g.strokeStyle=col; g.lineWidth=lw||1.3; if(glow){g.shadowColor=col;g.shadowBlur=glow;}
+  g.beginPath(); var cy=y+h/2;
+  for(var i=0;i<NW;i++){
+    var px=x+i/(NW-1)*w, py=cy-buf[i]*sc;
+    if(py<y-3000)py=y-3000; if(py>y+h+3000)py=y+h+3000;
     if(i===0)g.moveTo(px,py); else g.lineTo(px,py);
   }
   g.stroke(); g.restore();
 }
-function hline(x,y,w,col,dash){
-  g.save(); g.strokeStyle=col; g.lineWidth=1; if(dash)g.setLineDash(dash);
-  g.beginPath(); g.moveTo(x,y); g.lineTo(x+w,y); g.stroke(); g.restore();
+function hist(buf,x,y,w,h,base,sc,col,glow,lw,dash){
+  if(sFill<3)return;
+  g.save(); g.beginPath(); g.rect(x,y,w,h); g.clip();
+  g.strokeStyle=col; g.lineWidth=lw||1.5; if(glow){g.shadowColor=col;g.shadowBlur=glow;}
+  if(dash)g.setLineDash(dash);
+  g.beginPath();
+  for(var i=0;i<sFill;i++){
+    var v=buf[(sIdx-sFill+i+NS*2)%NS];
+    var px=x+i/(sFill-1)*w, py=base-v*sc;
+    if(py<y-3000)py=y-3000; if(py>y+h+3000)py=y+h+3000;
+    if(i===0)g.moveTo(px,py); else g.lineTo(px,py);
+  }
+  g.stroke(); g.restore();
 }
+function mid(x,y,w){g.save();g.strokeStyle='#ffffff18';g.beginPath();g.moveTo(x,y);g.lineTo(x+w,y);g.stroke();g.restore();}
 
-var startT=performance.now();
 function draw(){
-  var L=Math.min(400,W*0.30)+34;   // left margin under the UI panel
-  var pad=14;
-  var x0=L, wA=W-L-pad;
-  var top=16, hAll=H-top-pad;
-  var ph=(hAll-3*8)/4;
-
+  var L=Math.min(400,W*0.30)+32, pad=14;
+  var x0=L, wA=W-L-pad, top=16, hAll=H-top-pad, ph=(hAll-3*8)/4;
   g.fillStyle='#04060a'; g.fillRect(0,0,W,H);
-  // faint grid
-  g.save(); g.strokeStyle='#0ff'; g.globalAlpha=.045; g.lineWidth=1;
+  g.save(); g.strokeStyle='#0ff'; g.globalAlpha=.042;
   for(var gx=x0;gx<x0+wA;gx+=48){g.beginPath();g.moveTo(gx,top);g.lineTo(gx,top+hAll);g.stroke();}
   for(var gy=top;gy<top+hAll;gy+=48){g.beginPath();g.moveTo(x0,gy);g.lineTo(x0+wA,gy);g.stroke();}
   g.restore();
 
   var rawRms=Math.sqrt(sigPow+noisePow)||1;
-  // 1 — raw photodiode
+
   var y1=top;
-  panel(x0,y1,wA,ph,'1 · PHOTODIODE — raw (signal invisible)','#ff5d73');
-  hline(x0,y1+ph/2,wA,'#ffffff18');
-  traceRing(rawBuf,rFilled,rIdx,x0,y1,wA,ph,(ph*0.34)/rawRms,'#ff5d73',10);
+  panel(x0,y1,wA,ph,'1 · PHOTODIODE — raw, 6.4 ms window. Signal is in there. You cannot see it.','#ff5d73');
+  mid(x0,y1+ph/2,wA);
+  win(wRaw,x0,y1,wA,ph,(ph*0.36)/rawRms,'#ff5d73',10);
 
-  // 2 — reference
   var y2=y1+ph+8;
-  panel(x0,y2,wA,ph,'2 · REFERENCE — your own 1 kHz square, phase φ='+phiDeg.toFixed(0)+'°','#7dffb0');
-  hline(x0,y2+ph/2,wA,'#ffffff18');
-  traceRing(refBuf,rFilled,rIdx,x0,y2,wA,ph,ph*0.32,'#7dffb0',10);
+  panel(x0,y2,wA,ph,'2 · YOUR REFERENCE — the square chop you drive the LED with, and its sine fundamental at φ='+phiDeg.toFixed(0)+'°','#7dffb0');
+  mid(x0,y2+ph/2,wA);
+  win(wDrv,x0,y2,wA,ph,ph*0.30,'#3f7f5f',0,2.4);
+  win(wRef,x0,y2,wA,ph,ph*0.30,'#7dffb0',12,1.6);
 
-  // 3 — product
   var y3=y2+ph+8;
-  panel(x0,y3,wA,ph,'3 · PRODUCT  v(t)·ref(t) — signal rectified to DC, everything else still zero-mean','#ffd166');
-  hline(x0,y3+ph/2,wA,'#ffffff18');
-  traceRing(prodBuf,rFilled,rIdx,x0,y3,wA,ph,(ph*0.34)/rawRms,'#ffd166',10);
+  panel(x0,y3,wA,ph,'3 · PRODUCT  v(t)·ref(t) — your signal is rectified to DC; everything else stays zero-mean','#ffd166');
+  mid(x0,y3+ph/2,wA);
+  win(wPrd,x0,y3,wA,ph,(ph*0.30)/rawRms,'#ffd166',10);
 
-  // 4 — lock-in output vs truth
   var y4=y3+ph+8;
-  panel(x0,y4,wA,ph,'4 · LOCK-IN OUTPUT  ⟨v·ref⟩ (τ='+(tau*1000).toFixed(0)+' ms)  vs TRUE LED brightness','#5ff');
-  var base=y4+ph-16, sc=(ph-30)/1.35;
-  hline(x0,base,wA,'#ffffff20');
-  // true (dashed)
-  if(sFilled>2){
-    g.save(); g.beginPath(); g.rect(x0,y4,wA,ph); g.clip();
-    g.setLineDash([5,4]); g.strokeStyle='#ffffff88'; g.lineWidth=1.4; g.beginPath();
-    for(var i=0;i<sFilled;i++){
-      var v=trueHist[(sIdx-sFilled+i+NSLOW*2)%NSLOW];
-      var px=x0+i/(sFilled-1)*wA, py=base-v*sc;
-      if(i===0)g.moveTo(px,py);else g.lineTo(px,py);
-    }
-    g.stroke(); g.restore();
-    // recovered (solid glow)
-    g.save(); g.beginPath(); g.rect(x0,y4,wA,ph); g.clip();
-    g.strokeStyle='#5ff'; g.shadowColor='#5ff'; g.shadowBlur=14; g.lineWidth=2; g.beginPath();
-    for(var j=0;j<sFilled;j++){
-      var v2=outHist[(sIdx-sFilled+j+NSLOW*2)%NSLOW];
-      var px2=x0+j/(sFilled-1)*wA, py2=base-v2*sc;
-      if(j===0)g.moveTo(px2,py2);else g.lineTo(px2,py2);
-    }
-    g.stroke(); g.restore();
-  }
-  g.fillStyle='#fff9'; g.font='9.5px ui-monospace,monospace';
-  g.fillText('- - true',x0+wA-120,y4+14); g.fillStyle='#5ff'; g.fillText('—— recovered',x0+wA-64,y4+14);
+  panel(x0,y4,wA,ph,'4 · LOCK-IN OUTPUT ⟨v·ref⟩ 2-pole τ='+(tau*1000).toFixed(0)+' ms — tracks the LED message THROUGH the wall','#5ff');
+  var base=y4+ph-16, sc=(ph-32)/1.35;
+  g.save();g.strokeStyle='#ffffff20';g.beginPath();g.moveTo(x0,base);g.lineTo(x0+wA,base);g.stroke();g.restore();
+  hist(hTrue,x0,y4,wA,ph,base,sc,'#ffffff88',0,1.4,[5,4]);
+  hist(hR,   x0,y4,wA,ph,base,sc,'#ff6ec766',0,1.2,[2,3]);
+  hist(hOut, x0,y4,wA,ph,base,sc,'#5ff',16,2.2);
+  g.font='9.5px ui-monospace,monospace';
+  g.fillStyle='#fff9'; g.fillText('- - true A·cosφ',x0+wA-196,y4+14);
+  g.fillStyle='#ff6ec7'; g.fillText('·· R',x0+wA-104,y4+14);
+  g.fillStyle='#5ff'; g.fillText('—— locked X',x0+wA-72,y4+14);
 
   // phase dial
-  var dR=Math.min(46,ph*0.42), dcx=x0+wA-dR-16, dcy=y2+ph/2;
+  var dR=Math.min(44,ph*0.40), dcx=x0+wA-dR-18, dcy=y2+ph/2, pr=phiDeg*Math.PI/180;
   g.save();
   g.strokeStyle='#7dffb055'; g.lineWidth=1; g.beginPath(); g.arc(dcx,dcy,dR,0,7); g.stroke();
-  var pr=phiDeg*Math.PI/180;
   g.strokeStyle='#7dffb0'; g.shadowColor='#7dffb0'; g.shadowBlur=12; g.lineWidth=2;
   g.beginPath(); g.moveTo(dcx,dcy); g.lineTo(dcx+Math.cos(pr)*dR,dcy-Math.sin(pr)*dR); g.stroke();
   g.shadowBlur=0; g.fillStyle='#7dffb0'; g.font='9px ui-monospace,monospace';
-  g.fillText('cos φ='+Math.cos(pr).toFixed(3),dcx-dR,dcy+dR+11);
+  g.fillText('cos φ = '+Math.cos(pr).toFixed(3),dcx-dR-4,dcy+dR+11);
   g.restore();
 
-  // punchline
-  g.save();
-  g.fillStyle='#ff6ec7'; g.globalAlpha=.85; g.font='12px ui-monospace,monospace';
+  g.save(); g.fillStyle='#ff6ec7'; g.globalAlpha=.88; g.font='12px ui-monospace,monospace';
   g.shadowColor='#ff6ec7'; g.shadowBlur=12;
   g.fillText('"stop shielding, start chopping."',x0+8,y4+ph-4);
   g.restore();
 }
 
 function updateReadouts(){
-  var A=trueAmp(t), cf=Math.cos(phiDeg*Math.PI/180);
-  var expected=A*cf;
+  var A=trueAmp(t), cf=Math.cos(phiDeg*Math.PI/180), expected=A*cf;
   var snrIn=10*Math.log10(sigPow/Math.max(noisePow,1e-12));
-  // output noise: bandwidth of single-pole = 1/(4τ); improvement ≈ input BW / output BW
-  var bwIn=FS/2, bwOut=1/(4*Math.max(tau,1e-4));
-  var snrOut=snrIn+10*Math.log10(bwIn/bwOut);
-  var err=Math.abs(lastR-expected)/Math.max(Math.abs(A),1e-6)*100;
+  var sn=outNoise(), R=Math.sqrt(X2*X2+Y2*Y2);
+  var snrOut=20*Math.log10(Math.max(R,1e-9)/Math.max(sn,1e-12));
   el('rSin').textContent=snrIn.toFixed(1)+' dB';
-  el('rSout').textContent=snrOut.toFixed(1)+' dB';
-  el('rG').textContent='+'+(snrOut-snrIn).toFixed(1)+' dB';
+  el('rSout').textContent=(isFinite(snrOut)?snrOut.toFixed(1):'—')+' dB';
+  el('rG').textContent=(isFinite(snrOut)?'+'+(snrOut-snrIn).toFixed(1):'—')+' dB';
   el('rAt').textContent=expected.toFixed(4);
-  el('rAr').textContent=lastR.toFixed(4);
-  el('rE').textContent=err.toFixed(2)+'%';
-  el('rX').textContent=X.toFixed(4);
-  el('rY').textContent=Y.toFixed(4);
+  el('rAr').textContent=X2.toFixed(4);
+  el('rE').textContent=(Math.abs(X2-expected)/Math.max(A,1e-6)*100).toFixed(2)+'%';
+  el('rX').textContent=X2.toFixed(4);
+  el('rY').textContent=Y2.toFixed(4);
+  el('rR').textContent=R.toFixed(4);
   el('rC').textContent=cf.toFixed(3);
 }
 
-function frame(){
-  stepSim(); pushSlow(); draw(); updateReadouts();
-  requestAnimationFrame(frame);
-}
+function frame(){ stepSim(); draw(); updateReadouts(); requestAnimationFrame(frame); }
 requestAnimationFrame(frame);
 </script>
 </body>

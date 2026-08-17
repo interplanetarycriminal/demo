@@ -118,10 +118,12 @@ function clearWaves(){
 }
 var PULSE=[],PLEN=0,PCEN=0;
 function makePulse(){
-  PULSE=[];var n=34;
+  // Gaussian-windowed COSINE burst: unique, POSITIVE main lobe at the centre, so the
+  // sign of the recorded echo peak is exactly the sign of R at the boundary.
+  PULSE=[];var n=35;
   for(var i=0;i<n;i++){
-    var x=(i-n/2)/(n/5.2);
-    PULSE.push(Math.exp(-x*x)*Math.sin(2*Math.PI*(i-n/2)/(n/2.6)));
+    var x=(i-(n-1)/2)/(n/5.2);
+    PULSE.push(Math.exp(-x*x)*Math.cos(2*Math.PI*(i-(n-1)/2)/(n/2.6)));
   }
   var mx=0,mi=0;
   for(var j=0;j<n;j++)if(Math.abs(PULSE[j])>mx){mx=Math.abs(PULSE[j]);mi=j;}

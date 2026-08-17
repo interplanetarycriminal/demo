@@ -221,7 +221,8 @@ function drawVenturi(dt,T){
   for(var i=0;i<P.length;i++){
     var p=P[i];
     var v=vAt(p.t);
-    p.t+=(v/ (D1*24)) *dt*0.25;   // screen advection ∝ local velocity (continuity)
+    // screen advection ∝ local velocity — this IS continuity, visible
+    p.t+=Math.min(0.09,v*0.5*dt);
     if(p.t>1){p.t-=1;p.y=Math.random()*2-1;}
     var hx=halfAt(p.t);
     var px=xOf(p.t),py=cy+p.y*hx*0.92;

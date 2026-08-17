@@ -220,7 +220,7 @@ function drawIcon(kind,x,y,s,col,T){
 
 // ---------------- panel 1: area vs volume ----------------
 function panelAV(x,y,w,h,T){
-  panel(x,y,w,h,'① AREA L²  vs  VOLUME L³',' #7ef0ff'.trim(),0);
+  panel(x,y,w,h,'① AREA L²  vs  VOLUME L³','#7ef0ff',0);
   var l=L(),A=area(l),V=volume(l);
   var bx=x+16,by=y+34,bw=w-120,bh=16;
   // log-normalized bars: fraction of the 6-decade span (A spans 12 decades, V spans 18)
@@ -397,7 +397,7 @@ function frame(now){
   var dt=Math.min(0.05,(now-last)/1000);last=now;Tg+=dt;
   stepAuto(dt);
   var l=L();
-  zlabel.textContent='L = '+eng(l,'m',3)+'      ('+ (l>=1?'human scale':'') + resLabel(l) +')';
+  zlabel.textContent='L = '+eng(l,'m',3)+'      ('+resLabel(l)+')';
 
   g.fillStyle='rgba(4,4,12,0.34)';g.fillRect(0,0,W,H);
   // starfield-ish scale grid
