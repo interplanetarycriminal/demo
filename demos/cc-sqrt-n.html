@@ -44,7 +44,7 @@ button.alt.on{background:rgba(90,180,255,.95);color:#031018}
   <input type="range" id="spd" min="1" max="60" step="1" value="12">
   <label>TARGET ACCURACY ±<span class="v" id="lTgt">1.0</span>%  →  need N = <span class="v" id="rNeed">10000</span>, t = <span class="v" id="rTime">250 s</span></label>
   <input type="range" id="tgt" min="0.2" max="20" step="0.1" value="1">
-  <div><button id="bPerf" class="on">BLAME THE INSTRUMENT</button><button id="bPhot" class="alt">PHOTON MODE</button><button id="bRst">RESET</button></div>
+  <div><button id="bPerf">BLAME THE INSTRUMENT</button><button id="bPhot" class="alt">PHOTON MODE</button><button id="bRst">RESET</button></div>
   <div class="hint">events are true Poisson draws (exponential waits). Press BLAME THE INSTRUMENT to swap in a perfect noiseless detector — the scatter does not change. <a href="index.html">← gallery</a></div>
 </div>
 <div id="pun">the noise itself reports how many quanta you caught — and more time is the only amplifier</div>

@@ -38,7 +38,7 @@ input[type=range]{width:100%;accent-color:#5cffcf;margin:4px 0 0}
   <div class="row"><span class="k">detector state</span><span class="v" id="rSab" style="color:#ffb0b0">clean</span></div>
   <hr>
   <div class="k">REFERENCE KNOB R3 = <span class="v" id="rKnob">100.00 Ω</span></div>
-  <input type="range" id="knob" min="60" max="160" step="0.001" value="100">
+  <input type="range" id="knob" min="100" max="135" step="0.001" value="118">
   <div>
     <button id="bAuto">AUTO-BALANCE: OFF</button><button id="bTare">TARE ZERO</button><button id="bReset">RESET DETECTOR</button>
   </div>
@@ -68,7 +68,8 @@ function VA(){return VS*R2/(R1+R2);}
 function VB(R3,Rx){return VS*Rx/(R3+Rx);}
 function dV(R3,Rx){return VA()-VB(R3,Rx);}      // detector input, zero at R1/R2 = R3/Rx
 // detector: gain-scaled, cubic-compressed, offset, noise.  ODD in dV -> zero-preserving.
-var D={gain:1400, nl:-2.6e5, offset:0, noise:0.004, tare:0, sabG:0,sabO:0,sabN:0};
+// full-scale needle at ~2 ohm of bridge mismatch.
+var D={gain:40, nl:-16, offset:0, noise:0.006, tare:0, sabG:0,sabO:0,sabN:0};
 function detRaw(x){return D.gain*x + D.nl*x*x*x + D.offset;}
 function detOut(x,noise){return detRaw(x)-D.tare + (noise?(Math.random()+Math.random()+Math.random()-1.5)*D.noise*2:0);}
 // exact balance knob position: dV=0  =>  R3 = Rx*R1/R2
@@ -79,9 +80,10 @@ function meterRead(v){return M.g*v+M.o;}
 function inferDirect(vm,R3){return R3*vm/(VS-vm);} // invert divider assuming a PERFECT meter
 
 // ================= STATE =================
-var knob=parseFloat(document.getElementById('knob').value), auto=false, t=0, sabEvents=[];
+var KLO=100,KHI=135;
+var knob=parseFloat(document.getElementById('knob').value), auto=true, t=0, sabEvents=[];
 var TR=[],TRMAX=520, msg=null, needle=0, needleV=0;
-function setKnob(v){knob=Math.max(60,Math.min(160,v));document.getElementById('knob').value=knob.toFixed(3);}
+function setKnob(v){knob=Math.max(KLO,Math.min(KHI,v));document.getElementById('knob').value=knob.toFixed(3);}
 document.getElementById('knob').oninput=function(){knob=parseFloat(this.value);auto=false;syncAuto();};
 function syncAuto(){var b=document.getElementById('bAuto');b.textContent='AUTO-BALANCE: '+(auto?'ON':'OFF');b.className=auto?'on':'';}
 document.getElementById('bAuto').onclick=function(){auto=!auto;syncAuto();say(auto?'servo engaged — the knob now tracks Rx by itself':'servo off');};
@@ -89,8 +91,9 @@ document.getElementById('bTare').onclick=function(){D.tare=D.offset;say('detecto
 document.getElementById('bReset').onclick=function(){D.gain=1400;D.nl=-2.6e5;D.offset=0;D.noise=0.004;D.tare=0;
  D.sabG=0;D.sabO=0;D.sabN=0;say('detector restored');};
 function mark(label){sabEvents.push({t:t,label:label});if(sabEvents.length>10)sabEvents.shift();say('SABOTAGE: '+label+'  → watch the green trace NOT move');}
-document.getElementById('bG').onclick=function(){D.gain*=0.5;D.sabG++;mark('gain ×0.5');};
-document.getElementById('bO').onclick=function(){D.offset+=0.35;D.sabO++;mark('offset +0.35 V (tare it)');};
+document.getElementById('bG').onclick=function(){D.gain*=0.5;D.sabG++;mark('gain ×0.5 — a null needs no calibrated gain');};
+document.getElementById('bO').onclick=function(){D.offset+=0.35;D.tare=D.offset;D.sabO++;
+ mark('offset +0.35 — auto-tared (zero-check is the ONE thing a null still needs)');};
 document.getElementById('bN').onclick=function(){D.noise*=3.2;D.sabN++;mark('noise ×3.2');};
 function say(s){msg={s:s,a:1};}
 addEventListener('keydown',function(e){
@@ -106,7 +109,7 @@ function down(e){var p=pt(e);if(Math.hypot(p.x-dial.x,p.y-dial.y)<dial.r*1.25){d
 function move(e){if(!dragging)return;var p=pt(e);var a=Math.atan2(p.y-dial.y,p.x-dial.x);
  a=(a+Math.PI*2.5)%(Math.PI*2); // 0 at top, cw
  var frac=a/(Math.PI*2); // full turn = full range
- setKnob(60+frac*100);e.preventDefault();}
+ setKnob(KLO+frac*(KHI-KLO));e.preventDefault();}
 function up(){dragging=false;}
 c.addEventListener('mousedown',down);addEventListener('mousemove',move);addEventListener('mouseup',up);
 c.addEventListener('touchstart',down,{passive:false});addEventListener('touchmove',move,{passive:false});addEventListener('touchend',up);
@@ -147,15 +150,16 @@ function frame(now){
  M.o=0.045*Math.sin(t*0.21+2.0)+0.006*Math.sin(t*3.7);
  // servo
  var d0=dV(knob,Rx), det=detOut(d0,true);
- if(auto){ setKnob(knob + det*0.0016*Math.min(1,dt*60)*3.2); }
+ // sigma-delta / force-balance servo: SIGN-driven, so its slew rate does not depend on detector gain
+ if(auto){ setKnob(knob - Math.tanh(det*3)*7.0*dt); }
  // needle physics (2nd order, critically-ish damped)
  var target=Math.max(-1,Math.min(1,det*0.9));
  needleV+= (target-needle)*46*dt - needleV*8.5*dt; needle+=needleV*dt;
  // traces
  var vm=meterRead(VB(knob,Rx));
  var Rdir=inferDirect(vm,knob);
- var Rnull=balanceKnob(Rx); // what the knob reads AT balance = the null answer
- TR.push({t:t,dir:Rdir,nul:auto?knob:Rnull,tru:Rx});if(TR.length>TRMAX)TR.shift();
+ var Rnull=knob;            // THE KNOB IS THE ANSWER (exact when the needle is centred)
+ TR.push({t:t,dir:Rdir,nul:Rnull,tru:Rx});if(TR.length>TRMAX)TR.shift();
 
  // ---- render
  g.setTransform(DPR,0,0,DPR,0,0);
@@ -171,7 +175,7 @@ function frame(now){
  // diamond nodes
  var C={x:bx,y:by-bh/2},Dn={x:bx,y:by+bh/2},A={x:bx-bw/2,y:by},B={x:bx+bw/2,y:by};
  // arms  C-A=R1, A-D=R2, C-B=R3(knob), B-D=Rx(sensor)
- var bal=Math.abs(knob-Rx)<0.05;
+ var bal=Math.abs(knob-Rx)<0.20;
  resistor(C.x,C.y,A.x,A.y,'#7fb6ff','R1','1000 Ω',false);
  resistor(A.x,A.y,Dn.x,Dn.y,'#7fb6ff','R2','1000 Ω',false);
  resistor(C.x,C.y,B.x,B.y,'#5cffcf','R3 (KNOB)',knob.toFixed(2)+' Ω',true);
@@ -297,9 +301,9 @@ function frame(now){
 
  // ---- HTML readouts
  document.getElementById('rTrue').textContent=Rx.toFixed(3)+' Ω  ('+S.T.toFixed(2)+' °C)';
- var errD=(Rdir-Rx)/Rx*100, errN=((auto?knob:Rnull)-Rx)/Rx*100;
+ var errD=(Rdir-Rx)/Rx*100, errN=(knob-Rx)/Rx*100;
  document.getElementById('rDir').textContent=Rdir.toFixed(3)+' Ω  ('+(errD>=0?'+':'')+errD.toFixed(2)+'%)';
- document.getElementById('rNull').textContent=(auto?knob:Rnull).toFixed(3)+' Ω  ('+(errN>=0?'+':'')+errN.toFixed(3)+'%)';
+ document.getElementById('rNull').textContent=knob.toFixed(3)+' Ω  ('+(errN>=0?'+':'')+errN.toFixed(3)+'%)'+(bal?'':'  ⟵ not nulled');
  document.getElementById('rDet').textContent=det.toFixed(4)+(bal?'  ⟵ NULL':'');
  document.getElementById('rKnob').textContent=knob.toFixed(2)+' Ω';
  var sb=[];if(D.sabG)sb.push('gain×'+Math.pow(0.5,D.sabG).toFixed(3));if(D.sabO)sb.push('offset+'+D.offset.toFixed(2));
@@ -307,6 +311,7 @@ function frame(now){
  document.getElementById('rSab').textContent=sb.length?sb.join(' · '):'clean';
  requestAnimationFrame(frame);
 }
+syncAuto();
 say('ACT 1 — the red meter drifts ±5%. You cannot tell sensor from meter.');
 setTimeout(function(){say('ACT 2 — turn the knob until the needle centres. Then sabotage the detector.');},7000);
 requestAnimationFrame(frame);

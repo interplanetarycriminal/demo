@@ -1,0 +1,306 @@
+<title>Decade Ladders</title>
+<style>
+html,body{margin:0;padding:0;background:#03040a;overflow:hidden;font-family:ui-monospace,Menlo,Consolas,monospace}
+canvas{display:block;position:fixed;inset:0}
+#ui{position:fixed;top:0;left:0;padding:10px 12px;color:#cfe8ff;background:rgba(3,5,12,.66);
+ font:11px/1.45 ui-monospace,Menlo,Consolas,monospace;max-width:380px;z-index:10;
+ border-right:1px solid #12406033;border-bottom:1px solid #12406033;backdrop-filter:blur(3px)}
+#ui h1{margin:0 0 3px;font-size:14px;letter-spacing:.16em;color:#9df;text-shadow:0 0 12px #08f}
+.th{color:#9fb6c9;margin:0 0 7px;font-style:italic}
+a{color:#6fe;text-decoration:none}a:hover{text-shadow:0 0 8px #0ff}
+#rd{margin-top:6px;border-top:1px solid #1a3a52;padding-top:5px;white-space:pre-wrap;color:#8fe;font-size:10px}
+#rule{margin-top:6px;color:#ffd479;font-size:10px;min-height:28px;font-style:italic}
+.hint{color:#5f7d94;margin-top:6px}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+ <h1>DECADE LADDERS</h1>
+ <p class="th">Physics intuition is knowing which decade things live in — place a phenomenon on the ladders first and half your design questions answer themselves.</p>
+ <div id="rd"></div>
+ <div id="rule"></div>
+ <p class="hint">wheel = zoom · drag = pan · click a resident = cross-ladder threads · <a href="index.html">← gallery</a></p>
+</div>
+<script>
+'use strict';
+var c=document.getElementById('c'),g=c.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,devicePixelRatio||1);W=innerWidth;H=innerHeight;
+ c.width=W*DPR|0;c.height=H*DPR|0;c.style.width=W+'px';c.style.height=H+'px';g.setTransform(DPR,0,0,DPR,0,0);}
+addEventListener('resize',resize);resize();
+
+/* ============ THE FOUR LADDERS ============
+   Every resident carries its true SI value. Its position is EXACTLY log10(value).
+   No hand-placement anywhere: y = f(log10(v)).                                  */
+var LADDERS=[
+ {k:'T',n:'TIME',u:'s',  col:'#7fd9ff',lo:-9,hi:9,
+  res:[
+   {v:3.3e-9, n:'light crosses a room',  tool:'ToF / lidar gating'},
+   {v:1e-8,   n:'logic gate delay',      tool:'fast comparator'},
+   {v:1e-7,   n:'PLL lock jitter',       tool:'TDC'},
+   {v:2.9e-6, n:'ultrasonic echo, 1 mm', tool:'40 kHz transducer'},
+   {v:2.9e-5, n:'ultrasound 1 cm',       tool:'envelope detect'},
+   {v:5.8e-4, n:'ultrasound 10 cm',      tool:'ADC @ 200 kHz'},
+   {v:1e-3,   n:'contact bounce',        tool:'debounce, 5-20 ms'},
+   {v:1e-2,   n:'mains half-cycle 10 ms',tool:'sync sampling'},
+   {v:1e-1,   n:'human reaction start',  tool:'UI event loop'},
+   {v:1,      n:'heartbeat ~1 s',        tool:'PPG, 25 Hz sampling'},
+   {v:3.6,    n:'one breath cycle',      tool:'chest band / radar'},
+   {v:1e2,    n:'kettle boils',          tool:'thermistor logger'},
+   {v:3.6e3,  n:'room thermal mass',     tool:'1-min logging'},
+   {v:8.6e4,  n:'day / diurnal cycle',   tool:'daily baseline'},
+   {v:3.2e7,  n:'year — sensor drift',   tool:'recalibration plan'},
+   {v:3.2e8,  n:'decade — aging',        tool:'lifetime spec'}
+  ]},
+ {k:'L',n:'LENGTH',u:'m',col:'#9dff8a',lo:-9,hi:7,
+  res:[
+   {v:5e-10,  n:'atom / bond',           tool:'STM, XRD'},
+   {v:1e-8,   n:'thin film 10 nm',       tool:'ellipsometry'},
+   {v:5e-7,   n:'visible λ 500 nm',      tool:'optical microscope'},
+   {v:1e-5,   n:'speckle grain, µm',     tool:'laser speckle'},
+   {v:1e-4,   n:'human hair 100 µm',     tool:'camera + macro'},
+   {v:8.6e-3, n:'ultrasound λ, 40 kHz',  tool:'8.6 mm → mm ranging'},
+   {v:1e-2,   n:'chest motion, cm',      tool:'mmWave radar'},
+   {v:1.25e-1,n:'Wi-Fi λ 2.4 GHz',       tool:'CSI sensing'},
+   {v:1,      n:'room / door scale',     tool:'audible sound'},
+   {v:1e1,    n:'building',              tool:'ToF lidar'},
+   {v:3.5e-1, n:'sub-GHz λ 868 MHz',     tool:'LoRa antenna'},
+   {v:1e3,    n:'km — LoRa link',        tool:'LPWAN'},
+   {v:1e4,    n:'city 10 km',            tool:'cellular'},
+   {v:1e6,    n:'Mm — earth radius×',    tool:'GNSS constellation'}
+  ]},
+ {k:'E',n:'ENERGY',u:'J',col:'#ff8ad0',lo:-19,hi:10,
+  res:[
+   {v:3.6e-19,n:'single visible photon', tool:'SPAD / PMT'},
+   {v:1.6e-19,n:'1 eV — bandgap',        tool:'photodiode'},
+   {v:4.1e-21,n:'kT at 300 K',           tool:'the noise floor itself'},
+   {v:1e-12,  n:'pJ — one CMOS switch',  tool:'energy-per-op budget'},
+   {v:1e-9,   n:'nJ — BLE bit',          tool:'radio energy budget'},
+   {v:1e-6,   n:'µJ — ultrasonic ping',  tool:'transducer drive'},
+   {v:1e-3,   n:'mJ — static spark',     tool:'ESD protection'},
+   {v:1,      n:'J — 1 W for 1 s',       tool:'power meter'},
+   {v:1e3,    n:'kJ — AA cell ~10 kJ',   tool:'battery life sums'},
+   {v:3e5,    n:'kettle boil 300 kJ',    tool:'thermal budget'},
+   {v:1e9,    n:'GJ — household/year',   tool:'utility metering'}
+  ]},
+ {k:'F',n:'FREQUENCY',u:'Hz',col:'#ffd479',lo:-9,hi:11,
+  res:[
+   {v:3.2e-8, n:'nHz — yearly drift',    tool:'long-term logging'},
+   {v:1.2e-5, n:'daily cycle',           tool:'24 h baseline'},
+   {v:2.8e-4, n:'room thermal, hourly',  tool:'slow PID'},
+   {v:0.28,   n:'breathing 0.28 Hz',     tool:'0.1-0.5 Hz bandpass'},
+   {v:1.2,    n:'heart rate 1.2 Hz',     tool:'PPG'},
+   {v:1e1,    n:'1/f corner, 10 Hz',     tool:'chop above this'},
+   {v:5e1,    n:'MAINS 50 Hz',           tool:'notch / shielding'},
+   {v:1e3,    n:'audio kHz',             tool:'microphone'},
+   {v:4e4,    n:'ultrasound 40 kHz',     tool:'piezo transducer'},
+   {v:1e6,    n:'MHz — medical US',      tool:'imaging array'},
+   {v:8.68e8, n:'868 MHz LoRa',          tool:'sub-GHz radio'},
+   {v:2.4e9,  n:'2.4 GHz Wi-Fi',         tool:'CSI / RSSI'},
+   {v:6e10,   n:'60 GHz mmWave',         tool:'FMCW radar'}
+  ]}
+];
+/* CROSS-LADDER LINK GROUPS: one phenomenon, its rung on each ladder */
+var LINKS=[
+ {n:'ULTRASONIC 40 kHz', col:'#9dff8a', T:2.9e-5, L:8.6e-3, F:4e4, E:1e-6,
+  note:'8.6 mm λ ↔ 40 kHz ↔ 6 ms per metre round-trip ↔ µJ per ping'},
+ {n:'BREATHING', col:'#7fd9ff', T:3.6, L:1e-2, F:0.28, E:1,
+  note:'0.28 Hz ↔ 3.6 s ↔ 1 cm chest motion — a 50 Hz hum cannot hide here'},
+ {n:'MAINS 50 Hz', col:'#ff6b6b', T:1e-2, L:1, F:5e1, E:1e-3,
+  note:'10 ms half-cycle ↔ 50 Hz ↔ 178 decades away from the breathing band'},
+ {n:'Wi-Fi 2.4 GHz', col:'#ff8ad0', T:4.2e-10, L:1.25e-1, F:2.4e9, E:1e-9,
+  note:'12.5 cm λ grips a human body; ns timing; nJ per bit'},
+ {n:'HEARTBEAT', col:'#c39bff', T:1, L:1e-2, F:1.2, E:1,
+  note:'1 s ↔ 1.2 Hz — sample 10× faster: 25 Hz PPG is the rule, not the guess'},
+ {n:'THERMAL ROOM', col:'#ffd479', T:3.6e3, L:1e1, F:2.8e-4, E:3e5,
+  note:'1 hour ↔ 0.28 mHz — log 10× longer than this or you see a ramp, not a cycle'}
+];
+var RULES=[
+ 'sample 10× faster than your phenomenon; log 10× longer than its slowest cycle',
+ '50 Hz hum cannot hide in a 0.1 Hz breathing band — separation IS the filter',
+ 'λ must be comparable to the feature you want to grip: bigger λ = blinder to detail',
+ 'if two effects sit 3+ decades apart, a filter separates them for free',
+ 'most design errors are decade errors — not sign errors, not algebra errors',
+ 'energy per measurement × rate = power. Put both on the ladder before choosing a battery',
+ 'when stuck, ask: which decade am I actually in?'
+];
+
+/* ---- view: one shared log-decade axis, inertial zoom ---- */
+var focus=0.0;          // the decade currently under the focus line (normalized 0..1 of each ladder)
+var zoom=52;            // pixels per decade
+var vzoom=0, vfocus=0;  // velocities (inertia)
+var sel=null, selT=0;
+var ruleIdx=0, ruleT=0;
+
+/* each ladder maps its own [lo,hi] onto the SAME normalized 0..1 axis, so a
+   horizontal focus line crosses all four at the same fractional depth. */
+function norm(L,val){var e=Math.log10(val);return (e-L.lo)/(L.hi-L.lo);}
+/* (norm - focus)*(hi-lo) = how many DECADES this value sits below the focus
+   line on its own ladder; × zoom (px per decade) = pixels. Uniform px/decade
+   across all four ladders, so one wheel gesture zooms them together. */
+function yOf(L,val){return H/2 + (norm(L,val)-focus)*(L.hi-L.lo)*zoom;}
+function decadeAt(L){ // which exponent sits on the focus line for ladder L
+ return L.lo + focus*(L.hi-L.lo);}
+
+addEventListener('wheel',function(e){
+ vzoom += (e.deltaY<0?1:-1)*zoom*0.06;
+ e.preventDefault();
+},{passive:false});
+var dragging=false,lastY=0;
+c.onmousedown=function(e){dragging=true;lastY=e.clientY;hitTest(e.clientX,e.clientY);};
+c.onmousemove=function(e){if(!dragging)return;
+ var dy=e.clientY-lastY;lastY=e.clientY;
+ vfocus -= dy/(zoom*2.4)*0.9;};
+addEventListener('mouseup',function(){dragging=false;});
+addEventListener('keydown',function(e){
+ if(e.key==='ArrowDown')vfocus+=0.02; if(e.key==='ArrowUp')vfocus-=0.02;});
+
+var COLW=0,COL0=0;
+function colX(i){return COL0+i*COLW+COLW/2;}
+function hitTest(mx,my){
+ for(var i=0;i<LADDERS.length;i++){var L=LADDERS[i],cx=colX(i);
+  if(Math.abs(mx-cx)>COLW*0.45)continue;
+  for(var r=0;r<L.res.length;r++){var R=L.res[r],y=yOf(L,R.v);
+   if(Math.abs(my-y)<9){
+    // find a link group containing this rung
+    var best=null;
+    for(var k=0;k<LINKS.length;k++){var K=LINKS[k];
+     if(K[L.k]&&Math.abs(Math.log10(K[L.k])-Math.log10(R.v))<0.35){best=K;break;}}
+    sel = best || {n:R.n.toUpperCase(),col:L.col,note:R.tool,single:{L:L,R:R}};
+    sel[L.k]=sel[L.k]||R.v; selT=0;
+    return;}}
+ }
+ sel=null;
+}
+
+/* ---- draw ---- */
+var t0=performance.now();
+function draw(now){
+ var dt=Math.min(0.05,(now-t0)/1000);t0=now;
+ // inertia
+ zoom=Math.max(16,Math.min(420,zoom+vzoom*dt*6)); vzoom*=Math.pow(0.0016,dt);
+ focus=Math.max(-0.15,Math.min(1.15,focus+vfocus*dt*6)); vfocus*=Math.pow(0.0016,dt);
+ if(!dragging&&Math.abs(vfocus)<1e-4)vfocus+=0; // idle
+ selT+=dt; ruleT+=dt; if(ruleT>6.5){ruleT=0;ruleIdx=(ruleIdx+1)%RULES.length;}
+
+ g.fillStyle='#03040a';g.fillRect(0,0,W,H);
+ COL0=430; COLW=(W-COL0-90)/4;
+
+ var fy=H/2;
+ // focus band glow
+ var grd=g.createLinearGradient(0,fy-42,0,fy+42);
+ grd.addColorStop(0,'#00e5ff00');grd.addColorStop(.5,'#00e5ff18');grd.addColorStop(1,'#00e5ff00');
+ g.fillStyle=grd;g.fillRect(COL0-30,fy-42,W-COL0-40,84);
+
+ for(var i=0;i<LADDERS.length;i++){
+  var L=LADDERS[i], cx=colX(i);
+  var span=zoom*(L.hi-L.lo)/10;   // px for the full ladder
+  // spine
+  g.strokeStyle=L.col+'33';g.lineWidth=1;
+  g.beginPath();g.moveTo(cx,0);g.lineTo(cx,H);g.stroke();
+  // decade rungs
+  for(var e=L.lo;e<=L.hi;e++){
+   var y=yOf(L,Math.pow(10,e));
+   if(y<-30||y>H+30)continue;
+   var near=1-Math.min(1,Math.abs(y-fy)/220);
+   g.strokeStyle=L.col;g.globalAlpha=0.10+near*0.55;
+   g.lineWidth=Math.abs(y-fy)<24?1.8:0.7;
+   g.beginPath();g.moveTo(cx-COLW*0.40,y);g.lineTo(cx+COLW*0.40,y);g.stroke();
+   g.globalAlpha=0.30+near*0.7;g.fillStyle=L.col;g.font='9px monospace';
+   g.fillText('10'+sup(e)+' '+L.u,cx-COLW*0.40,y-3);
+   g.globalAlpha=1;
+  }
+  // residents
+  for(var r=0;r<L.res.length;r++){
+   var R=L.res[r], y=yOf(L,R.v);
+   if(y<-20||y>H+20)continue;
+   var d=Math.abs(y-fy), lit=1-Math.min(1,d/150);
+   var isSel = sel && sel[L.k] && Math.abs(Math.log10(sel[L.k])-Math.log10(R.v))<0.35;
+   g.globalAlpha=0.28+lit*0.72;
+   // icon
+   g.fillStyle=isSel?'#fff':L.col;
+   g.shadowBlur=isSel?16:(lit>0.6?10:0);g.shadowColor=isSel?'#fff':L.col;
+   g.beginPath();g.arc(cx,y,isSel?5:2.4+lit*2.2,0,7);g.fill();g.shadowBlur=0;
+   // label
+   g.fillStyle=isSel?'#fff':(lit>0.35?'#dbeaf5':'#4a6478');
+   g.font=(isSel?'bold ':'')+(9+lit*2.5).toFixed(0)+'px monospace';
+   g.fillText(R.n,cx+9,y+3.5);
+   if(lit>0.55){g.fillStyle=L.col;g.globalAlpha=(lit-0.55)/0.45*0.8;
+    g.font='8px monospace';g.fillText('→ '+R.tool,cx+9,y+14);}
+   g.globalAlpha=1;
+  }
+  // header
+  g.fillStyle=L.col;g.font='bold 12px monospace';g.shadowBlur=10;g.shadowColor=L.col;
+  g.fillText(L.n,cx-COLW*0.40,26);g.shadowBlur=0;
+  g.fillStyle='#4a6478';g.font='9px monospace';
+  g.fillText('10'+sup(L.lo)+' … 10'+sup(L.hi)+' '+L.u,cx-COLW*0.40,40);
+ }
+
+ // ---- cross-ladder threads ----
+ if(sel){
+  var pts=[];
+  for(var i2=0;i2<LADDERS.length;i2++){var L2=LADDERS[i2];
+   if(sel[L2.k]) pts.push({x:colX(i2),y:yOf(L2,sel[L2.k]),L:L2,v:sel[L2.k]});}
+  if(pts.length>1){
+   g.strokeStyle=sel.col;g.lineWidth=1.4;g.shadowBlur=14;g.shadowColor=sel.col;
+   g.globalAlpha=0.55+0.25*Math.sin(selT*3);
+   g.beginPath();
+   for(var p=0;p<pts.length;p++){
+    if(p===0)g.moveTo(pts[p].x,pts[p].y);
+    else{var a=pts[p-1],b=pts[p],mx=(a.x+b.x)/2;
+     g.bezierCurveTo(mx,a.y,mx,b.y,b.x,b.y);}
+   }
+   g.stroke();g.shadowBlur=0;g.globalAlpha=1;
+   pts.forEach(function(P){g.fillStyle=sel.col;g.shadowBlur=12;g.shadowColor=sel.col;
+    g.beginPath();g.arc(P.x,P.y,4,0,7);g.fill();g.shadowBlur=0;});
+  }
+ }
+
+ // ---- focus line ----
+ g.strokeStyle='#00e5ff';g.lineWidth=1;g.globalAlpha=.75;
+ g.setLineDash([6,5]);g.beginPath();g.moveTo(COL0-40,fy);g.lineTo(W-40,fy);g.stroke();
+ g.setLineDash([]);g.globalAlpha=1;
+
+ // ---- minimap ----
+ var mmx=W-30,mmy=70,mmh=H-150;
+ g.strokeStyle='#1a3a52';g.strokeRect(mmx,mmy,12,mmh);
+ LADDERS.forEach(function(L,i){
+  L.res.forEach(function(R){var f=norm(L,R.v);
+   g.fillStyle=L.col;g.globalAlpha=.5;
+   g.fillRect(mmx+1+i*2.6,mmy+f*mmh,2.2,1.6);g.globalAlpha=1;});});
+ // viewport height = screen decades / widest ladder span, in minimap units
+ var vh=Math.max(6,Math.min(mmh, mmh*(H/zoom)/29));
+ g.strokeStyle='#00e5ff';g.globalAlpha=.9;
+ g.strokeRect(mmx-1,mmy+focus*mmh-vh/2,14,vh);g.globalAlpha=1;
+ g.fillStyle='#3a5a72';g.font='8px monospace';
+ g.save();g.translate(mmx-4,mmy+mmh+8);g.fillText('minimap',0,0);g.restore();
+
+ // ---- readouts ----
+ var lines=['FOCUS LINE — the decade you are standing in:'];
+ LADDERS.forEach(function(L){
+  var e=decadeAt(L);
+  // nearest resident to the focus line on this ladder
+  var best=null,bd=1e9;
+  L.res.forEach(function(R){var d=Math.abs(Math.log10(R.v)-e);if(d<bd){bd=d;best=R;}});
+  lines.push('  '+L.n.padEnd(9)+' 10'+sup(Math.round(e))+' '+L.u.padEnd(3)+
+   (bd<0.9?' · '+best.n+'  ['+best.tool+']':' · —'));
+ });
+ lines.push('');
+ lines.push('zoom '+zoom.toFixed(0)+' px/decade');
+ if(sel){lines.push('');lines.push('LINKED: '+sel.n);lines.push('  '+sel.note);}
+ document.getElementById('rd').textContent=lines.join('\n');
+ var rEl=document.getElementById('rule');
+ rEl.textContent='“'+RULES[ruleIdx]+'”';
+ rEl.style.opacity=Math.min(1,Math.min(ruleT,6.5-ruleT)*3).toFixed(2);
+
+ // punchline
+ g.fillStyle='#3a5a72';g.font='10px monospace';
+ g.fillText('when stuck, ask: which decade am I actually in?',COL0,H-18);
+ requestAnimationFrame(draw);
+}
+function sup(e){var m={'-':'⁻','0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹'};
+ return String(e).split('').map(function(ch){return m[ch]||ch;}).join('');}
+// gentle idle drift so it is alive immediately
+vfocus=0.012;
+requestAnimationFrame(draw);
+</script>
