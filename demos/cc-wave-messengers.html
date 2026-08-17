@@ -1,0 +1,296 @@
+<title>Wave Messengers</title>
+<style>
+html,body{margin:0;padding:0;background:#03050a;overflow:hidden;font-family:ui-monospace,Menlo,Consolas,monospace}
+canvas{display:block;position:fixed;inset:0}
+#ui{position:fixed;top:0;left:0;padding:10px 12px;color:#cfe8ff;background:rgba(3,6,12,.66);
+ font:11px/1.45 ui-monospace,Menlo,Consolas,monospace;max-width:400px;z-index:10;
+ border-right:1px solid #12406033;border-bottom:1px solid #12406033;backdrop-filter:blur(3px)}
+#ui h1{margin:0 0 3px;font-size:14px;letter-spacing:.16em;color:#8ef;text-shadow:0 0 12px #0ff8}
+.th{color:#9fb6c9;margin:0 0 7px;font-style:italic}
+a{color:#6fe;text-decoration:none}a:hover{text-shadow:0 0 8px #0ff}
+.chips{display:flex;flex-wrap:wrap;gap:4px;margin:5px 0}
+.chip{padding:2px 6px;border:1px solid #2a4a63;border-radius:9px;cursor:pointer;user-select:none;
+ color:#8aa;font-size:10px;transition:.14s}
+.chip.on{color:#03050a;font-weight:bold}
+#sb{margin-top:6px;border-top:1px solid #1a3a52;padding-top:5px;white-space:pre;color:#8fe;font-size:10px}
+.hint{color:#5f7d94;margin-top:6px}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+ <h1>WAVE MESSENGERS</h1>
+ <p class="th">Every remote measurement rides a wave, and all waves obey the same five behaviors — choosing a sensing wave is choosing (speed, λ, what-stops-it).</p>
+ <div><b style="color:#6ad">MESSENGER</b></div>
+ <div class="chips" id="msg"></div>
+ <div><b style="color:#6ad">TARGET</b> (ranks below)</div>
+ <div class="chips" id="tgt"></div>
+ <div id="sb"></div>
+ <p class="hint">click scene to move emitter · drag person · <a href="index.html">← gallery</a></p>
+</div>
+<script>
+'use strict';
+var c=document.getElementById('c'),g=c.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,devicePixelRatio||1);W=innerWidth;H=innerHeight;
+ c.width=W*DPR|0;c.height=H*DPR|0;c.style.width=W+'px';c.style.height=H+'px';g.setTransform(DPR,0,0,DPR,0,0);}
+addEventListener('resize',resize);resize();
+
+/* ---- world (metres). scene is 12 m wide x 8 m tall ---- */
+var WORLD_W=12, WORLD_H=8;
+function sx(x){return PADX + x*SCALE;} function sy(y){return PADY + y*SCALE;}
+var PADX=470,PADY=90,SCALE=1;
+function layout(){SCALE=Math.min((W-PADX-40)/WORLD_W,(H-PADY-60)/WORLD_H);}
+
+/* wall at x=5 with doorway from y=3.2..4.4 (1.2 m door) */
+var WALLX=5, DOOR0=3.2, DOOR1=4.4, DOORW=DOOR1-DOOR0;
+var GLASSX=7.4, GLASS0=0.5, GLASS1=2.6;          // glass pane (IR stopper)
+var METAL={x:9.6,y0:5.4,y1:7.4};                  // metal sheet (RF reflector)
+var WATER={x0:6.2,y0:5.6,x1:8.6,y1:7.6};          // water region (refraction + 2.4G absorber)
+var FOG  ={x0:8.2,y0:0.4,x1:11.4,y1:3.4};         // fog patch
+var person={x:7.0,y:4.2,vx:0.55,breath:0};
+
+/* ---- SEVEN messengers: real numbers ---- */
+var M=[
+ {k:'sound', n:'audible sound', f:1e3,   v:343,   col:'#7fd9ff'},
+ {k:'us',    n:'40 kHz ultrasound', f:4e4, v:343,  col:'#9dff8a'},
+ {k:'subg',  n:'sub-GHz RF', f:8.68e8, v:3e8,     col:'#ffd479'},
+ {k:'wifi',  n:'2.4 GHz Wi-Fi', f:2.4e9, v:3e8,   col:'#ff8ad0'},
+ {k:'mmw',   n:'60 GHz mmWave', f:6e10, v:3e8,    col:'#c39bff'},
+ {k:'ir',    n:'IR 10 µm', f:3e13, v:3e8,         col:'#ff6b6b'},
+ {k:'vis',   n:'visible light', f:5.4e14, v:3e8,  col:'#ffffff'}
+];
+M.forEach(function(m){m.lam=m.v/m.f;});   // λ = v/f  — everything downstream derives from this
+
+/* per-material transmission (amplitude 0..1) — the "what stops it" column */
+var MAT={
+/*            wall  glass  water  metal  fog   person */
+ sound: {wall:0.30,glass:0.35,water:0.15,metal:0.05,fog:1.00,person:0.55},
+ us:    {wall:0.02,glass:0.05,water:0.30,metal:0.02,fog:0.98,person:0.02},
+ subg:  {wall:0.80,glass:0.95,water:0.45,metal:0.02,fog:1.00,person:0.60},
+ wifi:  {wall:0.45,glass:0.90,water:0.06,metal:0.02,fog:0.99,person:0.10},
+ mmw:   {wall:0.04,glass:0.30,water:0.01,metal:0.01,fog:0.85,person:0.02},
+ ir:    {wall:0.00,glass:0.02,water:0.02,metal:0.00,fog:0.55,person:0.02},
+ vis:   {wall:0.00,glass:0.92,water:0.75,metal:0.02,fog:0.06,person:0.02}
+};
+/* refractive index in water (speed change -> refraction bend) */
+var NWATER={sound:0.23,us:0.23,subg:9.0,wifi:9.0,mmw:9.0,ir:1.32,vis:1.33};
+var cur='sound', target='wall';
+var TARGETS=[
+ {k:'wall',  n:'see through the wall'},
+ {k:'breath',n:'see the breathing'},
+ {k:'fog',   n:'see in fog'},
+ {k:'range', n:'reach 200 m outdoors'}
+];
+
+/* ------- ray tracing: N rays from emitter, each accumulates amplitude ------- */
+var EM={x:0.5,y:4.0};
+var RAYS=190;
+function traceAll(t){
+ var m=M.filter(function(a){return a.k===cur;})[0], mat=MAT[cur];
+ var out=[];
+ for(var r=0;r<RAYS;r++){
+  var a0=(-Math.PI/2.3)+(Math.PI*2/2.3)*r/(RAYS-1);
+  out.push(traceRay(EM.x,EM.y,a0,m,mat,t));
+ }
+ return out;
+}
+function inBox(x,y,B){return x>=B.x0&&x<=B.x1&&y>=B.y0&&y<=B.y1;}
+
+/* DIFFRACTION MODEL (stated): a slit of width D illuminated by wavelength λ
+   spreads energy into a half-angle θ = asin(min(1, λ/D)).  λ>=D => full 90°
+   fan (sound through a 1.2 m door); λ<<D => a pencil (light, mmWave).
+   Applied as an angular kick sampled inside ±θ when the ray clears the door. */
+function diffractAngle(lam,D){return Math.asin(Math.min(1,lam/D));}
+
+function traceRay(x,y,ang,m,mat,t){
+ var pts=[{x:x,y:y,a:1}], amp=1, step=0.055, dx=Math.cos(ang),dy=Math.sin(ang),
+     inWater=false, diffracted=false, doorKick=0, hitMetal=false, dopp=0, hitPerson=false;
+ for(var s=0;s<620;s++){
+  var nx=x+dx*step, ny=y+dy*step;
+  // --- wall / doorway ---
+  if(x<WALLX && nx>=WALLX){
+   if(ny>DOOR0&&ny<DOOR1){
+    // through the doorway -> DIFFRACT by λ/D
+    if(!diffracted){diffracted=true;
+     var th=diffractAngle(m.lam,DOORW);
+     doorKick=(Math.random()*2-1)*th;
+     ang+=doorKick;dx=Math.cos(ang);dy=Math.sin(ang);}
+   } else { amp*=mat.wall; if(amp<0.012)break; }
+  }
+  // --- glass pane ---
+  if(x<GLASSX&&nx>=GLASSX&&ny>GLASS0&&ny<GLASS1){amp*=mat.glass;if(amp<0.012)break;}
+  // --- metal sheet: REFLECT ---
+  if(x<METAL.x&&nx>=METAL.x&&ny>METAL.y0&&ny<METAL.y1){
+   if(mat.metal<0.2){ dx=-dx; ang=Math.atan2(dy,dx); amp*=0.92; hitMetal=true; nx=x-0.02; }
+   else amp*=mat.metal;
+  }
+  // --- water: REFRACT at entry (Snell), attenuate inside ---
+  var wasW=inWater; inWater=inBox(nx,ny,WATER);
+  if(inWater&&!wasW){
+   var n=NWATER[cur], th1=Math.atan2(dy,dx);
+   var sn=Math.sin(th1)/n; if(Math.abs(sn)<1){var th2=Math.asin(sn);
+     ang=th2;dx=Math.cos(ang);dy=Math.sin(ang);} else {dy=-dy;ang=Math.atan2(dy,dx);}
+   amp*=0.9;
+  }
+  if(inWater) amp*=Math.pow(mat.water,step*0.9);
+  // --- fog: scatter/ATTENUATE ---
+  if(inBox(nx,ny,FOG)) amp*=Math.pow(mat.fog,step*1.3);
+  // --- person: DOPPLER + block ---
+  var pd=Math.hypot(nx-person.x,ny-person.y);
+  if(pd<0.32){ hitPerson=true;
+   dopp = person.vx*Math.cos(ang)/m.v;                 // Δf/f = v_r/c
+   amp*=mat.person;
+   if(amp<0.012)break;
+  }
+  x=nx;y=ny;
+  if(x<0||x>WORLD_W||y<0||y>WORLD_H||amp<0.012)break;
+  if(s%3===0)pts.push({x:x,y:y,a:amp});
+ }
+ return {pts:pts,amp:amp,dopp:dopp,metal:hitMetal,person:hitPerson,diff:diffracted};
+}
+
+/* ---- scoring: how well does each messenger serve the chosen target ---- */
+function score(k){
+ var m=M.filter(function(a){return a.k===k;})[0], mat=MAT[k];
+ if(target==='wall')  return mat.wall*100;
+ if(target==='breath'){ // need λ small enough that ~4 mm chest motion is a real phase fraction
+   var res=Math.min(1, 0.004/(m.lam/8));   // motion / (λ/8) — phase sensitivity
+   return res*100*Math.max(mat.person,0.02)*4 + res*60;
+ }
+ if(target==='fog')   return mat.fog*100;
+ if(target==='range'){ // free-space path loss favours long λ; sound dies in air
+   var atmos = (m.v<1e6)? (k==='us'?0.02:0.35) : 1;
+   return Math.min(100, atmos*100*Math.pow(m.lam/0.35,0.30));
+ }
+ return 0;
+}
+
+/* ---- UI ---- */
+var msgEl=document.getElementById('msg'),tgtEl=document.getElementById('tgt'),sb=document.getElementById('sb');
+M.forEach(function(m){var d=document.createElement('div');d.className='chip';
+ d.textContent=m.n;d.onclick=function(){cur=m.k;sync();};msgEl.appendChild(d);m.el=d;});
+TARGETS.forEach(function(t){var d=document.createElement('div');d.className='chip';
+ d.textContent=t.n;d.onclick=function(){target=t.k;sync();};tgtEl.appendChild(d);t.el=d;});
+function sync(){M.forEach(function(m){var on=m.k===cur;m.el.classList.toggle('on',on);
+  m.el.style.background=on?m.col:'transparent';m.el.style.borderColor=m.col;});
+ TARGETS.forEach(function(t){var on=t.k===target;t.el.classList.toggle('on',on);
+  t.el.style.background=on?'#6ad':'transparent';t.el.style.borderColor='#6ad';});}
+sync();
+var dragPerson=false;
+c.onmousedown=function(e){var wx=(e.clientX-PADX)/SCALE, wy=(e.clientY-PADY)/SCALE;
+ if(Math.hypot(wx-person.x,wy-person.y)<0.5){dragPerson=true;return;}
+ if(wx>0&&wx<WORLD_W&&wy>0&&wy<WORLD_H){EM.x=Math.max(0.2,Math.min(4.6,wx));EM.y=wy;}};
+c.onmousemove=function(e){if(!dragPerson)return;
+ person.x=Math.max(.4,Math.min(WORLD_W-.4,(e.clientX-PADX)/SCALE));
+ person.y=Math.max(.4,Math.min(WORLD_H-.4,(e.clientY-PADY)/SCALE));};
+addEventListener('mouseup',function(){dragPerson=false;});
+
+/* ---- draw ---- */
+var T=0;
+function draw(){
+ T+=1/60; layout();
+ if(!dragPerson){person.x+=person.vx*0.008;
+  if(person.x>9.2||person.x<5.6)person.vx*=-1;}
+ person.breath=0.004*Math.sin(2*Math.PI*0.28*T);   // 4 mm chest motion @ 0.28 Hz
+ var m=M.filter(function(a){return a.k===cur;})[0];
+ g.fillStyle='#03050a';g.fillRect(0,0,W,H);
+ // frame
+ g.strokeStyle='#12304a';g.lineWidth=1;g.strokeRect(sx(0),sy(0),WORLD_W*SCALE,WORLD_H*SCALE);
+ // ---- materials ----
+ function box(B,fill,stroke,label){g.fillStyle=fill;
+  g.fillRect(sx(B.x0),sy(B.y0),(B.x1-B.x0)*SCALE,(B.y1-B.y0)*SCALE);
+  g.strokeStyle=stroke;g.strokeRect(sx(B.x0),sy(B.y0),(B.x1-B.x0)*SCALE,(B.y1-B.y0)*SCALE);
+  g.fillStyle=stroke;g.font='10px monospace';g.fillText(label,sx(B.x0)+5,sy(B.y0)+13);}
+ box(WATER,'#0a3a5a55','#3aa0d0','water  n='+NWATER[cur]);
+ box(FOG,'#8899aa1a','#8899aa','fog');
+ // wall + door
+ g.fillStyle='#1a2a3a';g.strokeStyle='#3a5a7a';
+ g.fillRect(sx(WALLX)-3,sy(0),6,(DOOR0-0)*SCALE);
+ g.fillRect(sx(WALLX)-3,sy(DOOR1),6,(WORLD_H-DOOR1)*SCALE);
+ g.fillStyle='#5a8aaa';g.font='10px monospace';
+ g.save();g.translate(sx(WALLX)-9,sy(1.6));g.rotate(-Math.PI/2);g.fillText('wall',0,0);g.restore();
+ g.fillStyle='#6ad';g.fillText('door '+DOORW.toFixed(1)+' m',sx(WALLX)+7,sy(DOOR1)+12);
+ // glass
+ g.strokeStyle='#7fe0ff';g.lineWidth=3;g.globalAlpha=.7;
+ g.beginPath();g.moveTo(sx(GLASSX),sy(GLASS0));g.lineTo(sx(GLASSX),sy(GLASS1));g.stroke();
+ g.globalAlpha=1;g.lineWidth=1;g.fillStyle='#7fe0ff';g.fillText('glass',sx(GLASSX)+5,sy(GLASS0)+12);
+ // metal
+ g.strokeStyle='#d0d8e0';g.lineWidth=4;g.shadowBlur=8;g.shadowColor='#fff';
+ g.beginPath();g.moveTo(sx(METAL.x),sy(METAL.y0));g.lineTo(sx(METAL.x),sy(METAL.y1));g.stroke();
+ g.shadowBlur=0;g.lineWidth=1;g.fillStyle='#d0d8e0';g.fillText('metal',sx(METAL.x)-40,sy(METAL.y0)-4);
+
+ // ---- rays ----
+ var rays=traceAll(T), doorSpread=0, doorN=0, maxDop=0, personHits=0;
+ g.lineWidth=1;
+ for(var i=0;i<rays.length;i++){var R=rays[i];
+  var col=m.col;
+  if(R.person&&Math.abs(R.dopp)>0){ // DOPPLER colour shift
+   var sh=R.dopp>0?1:-1; col = sh>0? '#ff5c7a':'#5cffd0'; maxDop=Math.max(maxDop,Math.abs(R.dopp)*m.f); personHits++;}
+  g.strokeStyle=col;
+  g.beginPath();var st=false;
+  for(var p=0;p<R.pts.length;p++){var P=R.pts[p];
+   var X=sx(P.x),Y=sy(P.y);if(!st){g.moveTo(X,Y);st=true;}else g.lineTo(X,Y);}
+  g.globalAlpha=Math.min(.55,0.06+R.amp*0.5);
+  g.shadowBlur=6;g.shadowColor=col;g.stroke();g.shadowBlur=0;
+  if(R.diff){var last=R.pts[R.pts.length-1];
+   doorSpread+=Math.abs(Math.atan2(last.y-((DOOR0+DOOR1)/2),last.x-WALLX));doorN++;}
+ }
+ g.globalAlpha=1;
+ // ---- travelling wavefront rings (shows speed + λ) ----
+ var ringPeriod = 1.1;
+ for(var k=0;k<4;k++){
+  var ph=((T/ringPeriod)+k*0.25)%1;
+  var rad=ph*7.5;
+  g.strokeStyle=m.col;g.globalAlpha=(1-ph)*0.30;
+  g.beginPath();g.arc(sx(EM.x),sy(EM.y),rad*SCALE,-Math.PI/2.3,Math.PI/2.3);g.stroke();
+ }
+ g.globalAlpha=1;
+ // emitter
+ g.fillStyle=m.col;g.shadowBlur=16;g.shadowColor=m.col;
+ g.beginPath();g.arc(sx(EM.x),sy(EM.y),6,0,7);g.fill();g.shadowBlur=0;
+ g.fillStyle='#8ac';g.fillText('emitter',sx(EM.x)-20,sy(EM.y)+20);
+ // person (with breathing radius)
+ var pr=(0.30+person.breath*8)*SCALE;
+ g.strokeStyle='#ffd479';g.lineWidth=2;g.shadowBlur=10;g.shadowColor='#ffd479';
+ g.beginPath();g.arc(sx(person.x),sy(person.y),pr,0,7);g.stroke();g.shadowBlur=0;g.lineWidth=1;
+ g.fillStyle='#ffd479';g.fillText('person v='+person.vx.toFixed(2)+' m/s',sx(person.x)-40,sy(person.y)-pr-6);
+
+ // ---- scoreboard ----
+ var ranked=M.map(function(a){return {m:a,s:score(a.k)};}).sort(function(a,b){return b.s-a.s;});
+ var bx=W-300,by=90;
+ g.fillStyle='rgba(3,8,16,.72)';g.fillRect(bx-10,by-24,290,ranked.length*20+44);
+ g.strokeStyle='#1a3a52';g.strokeRect(bx-10,by-24,290,ranked.length*20+44);
+ g.fillStyle='#8ef';g.font='11px monospace';
+ g.fillText('TARGET: '+TARGETS.filter(function(t){return t.k===target;})[0].n,bx,by-8);
+ ranked.forEach(function(r,i){
+  g.fillStyle=r.m.k===cur?'#fff':'#7a97ad';g.font='10px monospace';
+  g.fillText((i+1)+'. '+r.m.n,bx,by+14+i*20);
+  g.fillStyle=r.m.col;g.globalAlpha=r.m.k===cur?1:.55;
+  g.fillRect(bx+150,by+6+i*20,Math.max(2,r.s*1.2),9);g.globalAlpha=1;
+  g.fillStyle='#456';g.fillText(r.s.toFixed(0),bx+150+Math.max(2,r.s*1.2)+4,by+14+i*20);});
+ g.fillStyle='#5f7d94';g.font='10px monospace';
+ g.fillText('same instrument, different clothes',bx,by+ranked.length*20+10);
+
+ // ---- readouts ----
+ var th=diffractAngle(m.lam,DOORW)*180/Math.PI;
+ var mat=MAT[cur];
+ sb.textContent=
+  'λ = v/f  = '+fmt(m.lam)+' m      v = '+fmt(m.v)+' m/s\n'+
+  'λ/D door = '+(m.lam/DOORW).toFixed(4)+'  → diffract ±'+th.toFixed(1)+'°\n'+
+  'DIFFRACT   '+bar(th/90)+'\n'+
+  'wall τ '+mat.wall.toFixed(2)+'  glass τ '+mat.glass.toFixed(2)+'  fog τ '+mat.fog.toFixed(2)+'\n'+
+  'water n = '+NWATER[cur]+' → REFRACT bend at entry\n'+
+  'metal → REFLECT (τ='+mat.metal.toFixed(2)+')\n'+
+  'DOPPLER Δf = '+(maxDop>0?fmt(maxDop)+' Hz':'—')+'  (v_r/c ·f, v='+person.vx.toFixed(2)+')\n'+
+  'breath 4 mm = '+(0.004/m.lam).toFixed(4)+' λ  → '+
+    (0.004/m.lam>0.02?'READABLE':'invisible');
+ requestAnimationFrame(draw);
+}
+function bar(f){f=Math.max(0,Math.min(1,f));var n=Math.round(f*18);
+ return '█'.repeat(n)+'·'.repeat(18-n);}
+function fmt(v){if(v===0)return '0';
+ var e=Math.floor(Math.log10(Math.abs(v)));
+ if(e>=-3&&e<4)return (+v.toPrecision(3)).toString();
+ return (v/Math.pow(10,e)).toFixed(2)+'e'+e;}
+requestAnimationFrame(draw);
+</script>
