@@ -1,0 +1,424 @@
+<title>Impedance Echo</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+html,body{margin:0;padding:0;height:100%;background:#04060a;overflow:hidden;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#bfe9ff}
+canvas{display:block;position:fixed;inset:0}
+#ui{position:fixed;top:0;left:0;max-width:445px;padding:11px 13px;
+  background:rgba(4,8,14,.74);border-right:1px solid #0d3a4d;border-bottom:1px solid #0d3a4d;
+  font-size:11.5px;line-height:1.5;z-index:10;backdrop-filter:blur(3px)}
+h1{margin:0 0 4px;font-size:13px;letter-spacing:.16em;color:#5ff2ff;
+  text-shadow:0 0 12px #0ff8,0 0 26px #0ff4}
+.cc{color:#ffd85e;text-shadow:0 0 10px #fb08;margin:0 0 7px;font-size:11px}
+.hint{color:#5d8ba0;margin:6px 0 5px;font-size:10.5px}
+.keys{color:#8fd6ee;font-size:10.5px;margin:2px 0 5px}
+.keys b{color:#ffd85e;font-weight:400}
+#read{margin-top:6px;padding-top:6px;border-top:1px solid #123a4a;font-size:10.5px;color:#8fd6ee}
+#read b{color:#7dffc0;font-weight:400}
+.pun{color:#ff8ad8;text-shadow:0 0 10px #f4a8;margin-top:6px;font-size:10.5px}
+a{color:#5ff2ff;text-decoration:none;font-size:10.5px}
+a:hover{text-shadow:0 0 8px #5ff2ff}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>IMPEDANCE ECHO</h1>
+<div class="cc">CHEAT CODE #35 — Echoes happen at boundaries, not in the middle of things: find the echo, find the boundary.</div>
+<div class="keys">
+<b>1</b> cracked pipe &nbsp; <b>2</b> layered wall &nbsp; <b>3</b> cable: water + break (TDR)<br>
+<b>4</b> fuel over water &nbsp; <b>5</b> open vs capped pipe (polarity)
+</div>
+<div class="hint">CLICK anywhere to fire · DRAG a ▼ boundary handle to move it · [SPACE] fire · [A] auto-fire · [+/-] speed</div>
+<div id="read"></div>
+<div class="pun">time × speed = position. the echo train IS the map.</div>
+<a href="index.html">← gallery</a>
+</div>
+<script>
+'use strict';
+var c=document.getElementById('c'),g=c.getContext('2d');
+var W=0,H=0,DPR=1;
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  W=window.innerWidth;H=window.innerHeight;
+  c.width=Math.round(W*DPR);c.height=Math.round(H*DPR);
+  c.style.width=W+'px';c.style.height=H+'px';
+  g.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize',resize);
+
+var N=900;                 // cells per lane
+var read=document.getElementById('read');
+
+// ---------- scenes ----------
+// segs: {f: fraction of total length, Z, col, name}   rEnd: end reflection coeff (+1 hard, -1 free, 0 matched)
+function scene(title,len,unit,speed,tunit,segs,rEnd,endName,lanes){
+  return {title:title,len:len,unit:unit,speed:speed,tunit:tunit,segs:segs,rEnd:rEnd,endName:endName,lanes:lanes||null};
+}
+var SCENES={};
+SCENES['1']=scene('CRACKED PIPE (steel, ultrasonic)',2.40,'m',5900,'µs',
+  [{f:.34,Z:45.4,col:'#3d5f78',name:'steel'},
+   {f:.03,Z:0.00041,col:'#1a1108',name:'CRACK (air)'},
+   {f:.63,Z:45.4,col:'#3d5f78',name:'steel'}],
+  -1,'open end');
+SCENES['2']=scene('LAYERED WALL (acoustic sounding)',0.42,'m',1200,'ms',
+  [{f:.12,Z:5.6,col:'#6a5c44',name:'plaster'},
+   {f:.16,Z:0.00041,col:'#0d1218',name:'air cavity'},
+   {f:.46,Z:7.4,col:'#7a3f34',name:'brick'},
+   {f:.10,Z:0.00041,col:'#0d1218',name:'void'},
+   {f:.16,Z:5.6,col:'#6a5c44',name:'plaster'}],
+  -1,'far face');
+SCENES['3']=scene('COAX CABLE — WATER INGRESS + BREAK (TDR)',120,'m',2.0e8,'ns',
+  [{f:.30,Z:50,col:'#2f4f4f',name:'50Ω dry'},
+   {f:.14,Z:30,col:'#1d5a6e',name:'WATER (Z↓30Ω)'},
+   {f:.30,Z:50,col:'#2f4f4f',name:'50Ω dry'}],
+  +1,'BREAK (open, Z→∞)');
+SCENES['4']=scene('FUEL OVER WATER TANK (ullage gauging)',3.10,'m',1400,'ms',
+  [{f:.30,Z:0.00041,col:'#0d1218',name:'air / ullage'},
+   {f:.34,Z:1.05,col:'#6b5a1e',name:'fuel'},
+   {f:.30,Z:1.48,col:'#134a63',name:'WATER (heavier)'},
+   {f:.06,Z:45.4,col:'#3d5f78',name:'steel floor'}],
+  +1,'tank bottom');
+SCENES['5']=scene('OPEN vs CAPPED PIPE — POLARITY',1.60,'m',343,'ms',
+  [{f:1.0,Z:0.00041,col:'#213c4a',name:'air column'}],
+  -1,'end',
+  [{rEnd:-1,label:'OPEN END  (Z₂ < Z₁)  →  R = −1  ECHO FLIPS'},
+   {rEnd:+1,label:'CAPPED END (Z₂ > Z₁) →  R = +1  ECHO KEEPS POLARITY'}]);
+
+var cur='1',S=null;
+var lanes=[];      // each: {Z:Float64Array, wp:Float64Array, wm:Float64Array, ascan:Float64Array, rEnd, label, bnd:[]}
+var ASCAN=1900;    // steps recorded
+var step=0,firing=false,autoFire=true,simSpeed=3;
+var dragB=-1,dragLane=0;
+
+function buildScene(key){
+  cur=key;S=SCENES[key];
+  var lspecs=S.lanes||[{rEnd:S.rEnd,label:S.endName}];
+  lanes=[];
+  for(var li=0;li<lspecs.length;li++){
+    var Z=new Float64Array(N);
+    var bnd=[];  // boundary cell indices (start of each segment after the first)
+    var acc=0;
+    for(var s=0;s<S.segs.length;s++){
+      var a=Math.round(acc*N);acc+=S.segs[s].f;var b=Math.round(Math.min(1,acc)*N);
+      if(s>0)bnd.push(a);
+      for(var i=a;i<b;i++)Z[i]=S.segs[s].Z;
+    }
+    for(var i2=0;i2<N;i2++)if(!Z[i2])Z[i2]=S.segs[S.segs.length-1].Z;
+    lanes.push({Z:Z,wp:new Float64Array(N+1),wm:new Float64Array(N+1),
+      ascan:new Float64Array(ASCAN),rEnd:lspecs[li].rEnd,label:lspecs[li].label,bnd:bnd,peaks:[]});
+  }
+  fire();
+}
+
+function clearWaves(){
+  for(var li=0;li<lanes.length;li++){
+    lanes[li].wp.fill(0);lanes[li].wm.fill(0);lanes[li].ascan.fill(0);lanes[li].peaks=[];
+  }
+}
+var PULSE=[],PLEN=0;
+function makePulse(){
+  PULSE=[];var n=34;
+  for(var i=0;i<n;i++){
+    var x=(i-n/2)/(n/5.2);
+    PULSE.push(Math.exp(-x*x)*Math.sin(2*Math.PI*(i-n/2)/(n/2.6)));
+  }
+  var mx=0;for(var j=0;j<n;j++)mx=Math.max(mx,Math.abs(PULSE[j]));
+  for(var k=0;k<n;k++)PULSE[k]/=mx;
+  PLEN=n;
+}
+makePulse();
+
+function fire(){clearWaves();step=0;firing=true;computePredictions();}
+
+// ---- exact digital-waveguide step (Kelly-Lochbaum scattering) ----
+// pressure waves: r = (Z2-Z1)/(Z2+Z1);  reflected = r*a + (1-r)*b ; transmitted = (1+r)*a - r*b
+function stepLane(L){
+  var wp=L.wp,wm=L.wm,Z=L.Z;
+  // 1. propagate: shift right-going right, left-going left
+  for(var i=N;i>0;i--)wp[i]=wp[i-1];
+  for(var j=0;j<N;j++)wm[j]=wm[j+1];
+  wp[0]=0;wm[N]=0;
+  // 2. inject source at cell 0 (matched transducer: absorbs the return)
+  if(step<PLEN)wp[0]+=PULSE[step];
+  // 3. scatter at every internal junction i|i+1 where Z changes
+  for(var k=0;k<N-1;k++){
+    var z1=Z[k],z2=Z[k+1];
+    if(z1===z2)continue;
+    var r=(z2-z1)/(z2+z1);
+    var a=wp[k+1];      // right-going that just arrived at the junction (now in cell k+1)
+    var b=wm[k];        // left-going that just arrived at the junction (now in cell k)
+    var refl=r*a+(1-r)*b;      // goes left, back into medium 1
+    var trans=(1+r)*a-r*b;     // goes right, into medium 2
+    wm[k]=refl;wp[k+1]=trans;
+  }
+  // 4. terminate the far end
+  wm[N-1]+=L.rEnd*wp[N];wp[N]=0;
+  // 5. record what comes back to the transducer face
+  var ret=wm[0];
+  if(step<ASCAN)L.ascan[step]=ret;
+  wm[0]=0; // matched receiver, no re-reflection
+}
+
+// analytic prediction of echo arrival + amplitude for labelling
+function computePredictions(){
+  for(var li=0;li<lanes.length;li++){
+    var L=lanes[li],Z=L.Z,pk=[];
+    var amp=1;
+    var segStartZ=Z[0];
+    for(var bi=0;bi<L.bnd.length;bi++){
+      var k=L.bnd[bi]-1;
+      var z1=Z[k],z2=Z[k+1];
+      var r=(z2-z1)/(z2+z1);
+      pk.push({cell:L.bnd[bi],t:2*L.bnd[bi],r:r,amp:amp*r,
+        name:S.segs[bi].name+' │ '+S.segs[bi+1].name});
+      amp*=(1+r)*(1-r);      // two-way transmission through this interface
+      segStartZ=z2;
+    }
+    pk.push({cell:N,t:2*N,r:L.rEnd,amp:amp*L.rEnd,name:(L.label||S.endName)});
+    L.peaks=pk;
+  }
+}
+
+// ---------- layout ----------
+function LO(){
+  var top=Math.max(160,H*0.19);
+  var nl=lanes.length||1;
+  var avail=H-top-24;
+  var lh=avail/nl;
+  return {x0:Math.max(30,W*0.045),x1:W-Math.max(30,W*0.045),top:top,lh:lh,nl:nl};
+}
+function laneGeom(li){
+  var l=LO();
+  var y=l.top+li*l.lh;
+  var chH=Math.min(76,l.lh*0.32);
+  return {x0:l.x0,x1:l.x1,w:l.x1-l.x0,cy:y,ch:chH,ay:y+chH+40,ah:Math.max(50,l.lh-chH-70)};
+}
+
+// ---------- interaction ----------
+function pointer(e){var r=c.getBoundingClientRect();
+  return {x:(e.clientX!==undefined?e.clientX:e.touches[0].clientX)-r.left,
+          y:(e.clientY!==undefined?e.clientY:e.touches[0].clientY)-r.top};}
+function down(e){
+  var p=pointer(e);
+  // boundary handles
+  for(var li=0;li<lanes.length;li++){
+    var G=laneGeom(li),L=lanes[li];
+    if(p.y>G.cy-22&&p.y<G.cy+G.ch+8){
+      for(var bi=0;bi<L.bnd.length;bi++){
+        var px=G.x0+(L.bnd[bi]/N)*G.w;
+        if(Math.abs(p.x-px)<11){dragB=bi;dragLane=li;e.preventDefault();return;}
+      }
+    }
+  }
+  if(p.y>90)fire();
+}
+function move(e){
+  if(dragB<0)return;
+  var p=pointer(e),G=laneGeom(dragLane);
+  var cell=Math.round(((p.x-G.x0)/G.w)*N);
+  for(var li=0;li<lanes.length;li++){
+    var L=lanes[li];if(dragB>=L.bnd.length)continue;
+    var lo=(dragB>0?L.bnd[dragB-1]:0)+14, hi=(dragB<L.bnd.length-1?L.bnd[dragB+1]:N)-14;
+    L.bnd[dragB]=Math.max(lo,Math.min(hi,cell));
+    // rebuild Z from boundaries
+    var edges=[0].concat(L.bnd,[N]);
+    for(var s=0;s<S.segs.length;s++)
+      for(var i=edges[s];i<edges[s+1];i++)L.Z[i]=S.segs[s].Z;
+  }
+  e.preventDefault();
+}
+function up(){if(dragB>=0){dragB=-1;fire();}}
+c.addEventListener('mousedown',down);window.addEventListener('mousemove',move);window.addEventListener('mouseup',up);
+c.addEventListener('touchstart',down,{passive:false});
+window.addEventListener('touchmove',move,{passive:false});
+window.addEventListener('touchend',up);
+window.addEventListener('keydown',function(e){
+  var k=e.key;
+  if(SCENES[k]){buildScene(k);return;}
+  if(k===' '){fire();e.preventDefault();}
+  if(k==='a'||k==='A')autoFire=!autoFire;
+  if(k==='+'||k==='=')simSpeed=Math.min(12,simSpeed+1);
+  if(k==='-'||k==='_')simSpeed=Math.max(1,simSpeed-1);
+});
+
+// ---------- render ----------
+function zcol(Z,seg){return seg.col;}
+function draw(){
+  g.clearRect(0,0,W,H);
+  var bg=g.createLinearGradient(0,0,0,H);bg.addColorStop(0,'#04070c');bg.addColorStop(1,'#020408');
+  g.fillStyle=bg;g.fillRect(0,0,W,H);
+
+  if(firing){
+    for(var s=0;s<simSpeed;s++){
+      for(var li=0;li<lanes.length;li++)stepLane(lanes[li]);
+      step++;
+      if(step>=ASCAN){firing=false;break;}
+    }
+  } else if(autoFire){ if(++idle>70){idle=0;fire();} }
+
+  for(var l2=0;l2<lanes.length;l2++)drawLane(l2);
+  drawHeader();
+  updateRead();
+  requestAnimationFrame(draw);
+}
+var idle=0;
+
+function drawHeader(){
+  g.font='11px monospace';g.fillStyle='#5ff2ff';
+  g.save();g.shadowColor='#5ff2ff';g.shadowBlur=10;
+  g.fillText(S.title,LO().x0,LO().top-58);
+  g.restore();
+  g.font='10px monospace';g.fillStyle='#5d8ba0';
+  g.fillText('total '+S.len+' '+S.unit+'   ·   v = '+(S.speed>1e6?(S.speed/1e6).toFixed(0)+'e6':S.speed)+' m/s   ·   R = (Z₂−Z₁)/(Z₂+Z₁)',
+     LO().x0,LO().top-44);
+}
+
+function tToUnit(t){ // t in steps -> physical time in scene's tunit
+  var dtCell=(S.len/N)/S.speed;      // seconds per cell
+  var sec=t*dtCell;
+  if(S.tunit==='ns')return sec*1e9;
+  if(S.tunit==='µs')return sec*1e6;
+  return sec*1e3;
+}
+
+function drawLane(li){
+  var L=lanes[li],G=laneGeom(li);
+
+  // ---- channel with impedance segments ----
+  var edges=[0].concat(L.bnd,[N]);
+  for(var s=0;s<S.segs.length;s++){
+    var xa=G.x0+(edges[s]/N)*G.w, xb=G.x0+(edges[s+1]/N)*G.w;
+    g.fillStyle=S.segs[s].col;g.globalAlpha=.55;
+    g.fillRect(xa,G.cy,xb-xa,G.ch);g.globalAlpha=1;
+    // density hatching ~ log Z
+    var dens=Math.max(1,Math.min(14,Math.round(2+Math.log10(S.segs[s].Z+1e-6)*2.2+7)));
+    g.strokeStyle='rgba(255,255,255,.055)';g.lineWidth=1;
+    for(var hx=xa;hx<xb;hx+=Math.max(3,20-dens)){g.beginPath();g.moveTo(hx,G.cy);g.lineTo(hx,G.cy+G.ch);g.stroke();}
+    g.font='9px monospace';g.fillStyle='#a9d9ec';
+    if(xb-xa>52)g.fillText(S.segs[s].name,xa+4,G.cy+G.ch-5);
+    if(xb-xa>52)g.fillText('Z='+(S.segs[s].Z<0.01?S.segs[s].Z.toExponential(1):S.segs[s].Z),xa+4,G.cy+11);
+  }
+  g.strokeStyle='#0e4a60';g.lineWidth=1;g.strokeRect(G.x0,G.cy,G.w,G.ch);
+
+  // ---- live pressure field on top of the channel ----
+  var mid=G.cy+G.ch/2, amp=G.ch*0.44;
+  g.save();g.shadowColor='#5ff2ff';g.shadowBlur=12;
+  g.strokeStyle='#5ff2ff';g.lineWidth=1.6;g.beginPath();
+  var stepPx=Math.max(1,Math.floor(N/Math.max(1,G.w)));
+  for(var i=0;i<N;i+=stepPx){
+    var p=L.wp[i]+L.wm[i];
+    var px=G.x0+(i/N)*G.w, py=mid-p*amp;
+    if(i===0)g.moveTo(px,py);else g.lineTo(px,py);
+  }
+  g.stroke();g.restore();
+  // colour the left-going (echo) component in magenta so returns are obvious
+  g.save();g.shadowColor='#ff5ac8';g.shadowBlur=10;
+  g.strokeStyle='rgba(255,90,200,.9)';g.lineWidth=1.3;g.beginPath();
+  for(var i2=0;i2<N;i2+=stepPx){
+    var px2=G.x0+(i2/N)*G.w, py2=mid-L.wm[i2]*amp;
+    if(i2===0)g.moveTo(px2,py2);else g.lineTo(px2,py2);
+  }
+  g.stroke();g.restore();
+
+  // ---- boundary handles ----
+  for(var bi=0;bi<L.bnd.length;bi++){
+    var bx=G.x0+(L.bnd[bi]/N)*G.w;
+    var z1=L.Z[L.bnd[bi]-1],z2=L.Z[L.bnd[bi]];
+    var r=(z2-z1)/(z2+z1);
+    var col=r>0?'#7dffc0':'#ff9c5a';
+    g.save();g.shadowColor=col;g.shadowBlur=10;
+    g.strokeStyle=col;g.lineWidth=1.4;
+    g.beginPath();g.moveTo(bx,G.cy-14);g.lineTo(bx,G.cy+G.ch);g.stroke();
+    g.fillStyle=col;g.beginPath();
+    g.moveTo(bx-6,G.cy-20);g.lineTo(bx+6,G.cy-20);g.lineTo(bx,G.cy-11);g.closePath();g.fill();
+    g.restore();
+    g.font='9px monospace';g.fillStyle=col;
+    g.fillText('R='+(r>=0?'+':'')+r.toFixed(2),bx-16,G.cy-24);
+  }
+  // transducer
+  g.save();g.shadowColor='#5ff2ff';g.shadowBlur=14;
+  g.fillStyle='#0a2f3d';g.strokeStyle='#5ff2ff';g.lineWidth=2;
+  g.beginPath();g.rect(G.x0-13,G.cy+G.ch/2-16,13,32);g.fill();g.stroke();g.restore();
+  // end cap
+  var ecol=L.rEnd>0?'#7dffc0':'#ff9c5a';
+  g.save();g.shadowColor=ecol;g.shadowBlur=12;g.strokeStyle=ecol;g.lineWidth=L.rEnd>0?4:1.4;
+  g.beginPath();g.moveTo(G.x1,G.cy-8);g.lineTo(G.x1,G.cy+G.ch+8);
+  if(L.rEnd<0)g.setLineDash([4,4]);g.stroke();g.setLineDash([]);g.restore();
+  g.font='9px monospace';g.fillStyle=ecol;
+  var lbl=(L.label||S.endName);
+  g.fillText(lbl,Math.max(G.x0,G.x1-g.measureText(lbl).width-2),G.cy-24);
+
+  // ---- A-SCAN, x-axis = DEPTH (t/2) so echoes sit under their boundary ----
+  g.strokeStyle='#0e3346';g.lineWidth=1;g.strokeRect(G.x0,G.ay,G.w,G.ah);
+  var amid=G.ay+G.ah/2;
+  g.strokeStyle='rgba(60,120,150,.35)';g.beginPath();
+  g.moveTo(G.x0,amid);g.lineTo(G.x1,amid);g.stroke();
+  g.font='9px monospace';g.fillStyle='#5d8ba0';
+  g.fillText('A-SCAN   echo amplitude vs time  (x also = depth, because depth = v·t/2)',G.x0,G.ay-8);
+
+  // trace
+  g.save();g.shadowColor='#ffd85e';g.shadowBlur=8;
+  g.strokeStyle='#ffd85e';g.lineWidth=1.4;g.beginPath();
+  var shown=Math.min(step,ASCAN);
+  var maxT=2*N;
+  for(var t=0;t<shown&&t<maxT;t++){
+    var px3=G.x0+(t/maxT)*G.w, py3=amid-L.ascan[t]*(G.ah/2-6);
+    if(t===0)g.moveTo(px3,py3);else g.lineTo(px3,py3);
+  }
+  g.stroke();g.restore();
+
+  // predicted echo labels
+  for(var pi=0;pi<L.peaks.length;pi++){
+    var P=L.peaks[pi];
+    if(P.t>maxT)continue;
+    var pxL=G.x0+(P.t/maxT)*G.w;
+    var arrived=step>=P.t;
+    var pcol=P.amp>=0?'#7dffc0':'#ff9c5a';
+    g.save();g.globalAlpha=arrived?1:.25;
+    g.strokeStyle=pcol;g.lineWidth=1;g.setLineDash([2,3]);
+    g.beginPath();g.moveTo(pxL,G.ay);g.lineTo(pxL,G.ay+G.ah);g.stroke();g.setLineDash([]);
+    // tie-line up to the boundary that made it
+    g.strokeStyle='rgba(125,255,192,.22)';
+    g.beginPath();g.moveTo(pxL,G.ay);g.lineTo(G.x0+(P.cell/N)*G.w,G.cy+G.ch);g.stroke();
+    g.font='9px monospace';g.fillStyle=pcol;
+    var lab=P.name+'  '+(P.amp>=0?'+':'−')+Math.abs(P.amp).toFixed(3);
+    var lw=g.measureText(lab).width;
+    var lx=Math.min(G.x1-lw-2,pxL+4);
+    g.fillText(lab,lx,G.ay+14+(pi%3)*12);
+    g.fillText(tToUnit(P.t).toFixed(P.t>0?2:0)+' '+S.tunit,lx,G.ay+G.ah-6-(pi%2)*11);
+    g.restore();
+  }
+  // sweep cursor
+  if(firing){
+    var sx=G.x0+(Math.min(step,maxT)/maxT)*G.w;
+    g.strokeStyle='rgba(95,242,255,.55)';g.lineWidth=1;
+    g.beginPath();g.moveTo(sx,G.ay);g.lineTo(sx,G.ay+G.ah);g.stroke();
+  }
+  if(lanes.length>1){
+    g.font='10px monospace';g.fillStyle=L.rEnd>0?'#7dffc0':'#ff9c5a';
+    g.save();g.shadowColor=L.rEnd>0?'#7dffc0':'#ff9c5a';g.shadowBlur=8;
+    g.fillText(L.label,G.x0,G.cy-38);g.restore();
+  }
+}
+
+function updateRead(){
+  var L=lanes[0];
+  var rows='';
+  for(var i=0;i<L.peaks.length;i++){
+    var P=L.peaks[i];
+    var depth=(P.cell/N)*S.len;
+    rows+='<br>&nbsp;'+tToUnit(P.t).toFixed(2)+' '+S.tunit+' → <b>'+depth.toFixed(S.len>10?1:3)+' '+S.unit+
+          '</b> · R=<b>'+(P.r>=0?'+':'')+P.r.toFixed(3)+'</b> '+
+          (P.r<0?'<span style="color:#ff9c5a">flipped</span>':'<span style="color:#7dffc0">upright</span>')+
+          ' · '+P.name;
+  }
+  read.innerHTML='<span style="color:#5d8ba0">echo train → structure map:</span>'+rows+
+    '<br><span style="color:#5d8ba0">higher Z ahead → echo keeps polarity · lower Z ahead → echo inverts</span>'+
+    '<br>sim '+(firing?'FIRING':'idle')+' · step '+step+' · auto '+(autoFire?'ON':'off')+' · speed '+simSpeed+'×';
+}
+
+resize();
+buildScene('1');
+requestAnimationFrame(draw);
+</script>

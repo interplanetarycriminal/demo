@@ -1,0 +1,468 @@
+<meta charset="utf-8">
+<title>CC#68 — Bernoulli</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;background:#04060a;overflow:hidden}
+  canvas{display:block;position:fixed;inset:0}
+  #ui{position:fixed;left:12px;top:12px;z-index:10;width:352px;max-height:calc(100vh - 24px);
+      overflow:auto;background:rgba(6,10,18,.72);border:1px solid rgba(80,220,255,.28);
+      border-radius:8px;padding:10px 12px;color:#bfe9ff;
+      font:11px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+      box-shadow:0 0 28px rgba(0,180,255,.16), inset 0 0 40px rgba(0,60,110,.25);
+      backdrop-filter:blur(3px)}
+  #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.9px;color:#7ef0ff;text-shadow:0 0 10px #16b7ff}
+  .cheat{color:#ffd98a;border-left:2px solid #ffb347;padding-left:7px;margin:6px 0 8px;text-shadow:0 0 8px rgba(255,170,60,.35)}
+  .hint{color:#7fa6bd;margin:6px 0}
+  label{display:block;margin:5px 0 1px;color:#8fd7ff}
+  input[type=range]{width:100%;height:16px;accent-color:#2ee6ff;background:transparent}
+  .row{display:flex;justify-content:space-between;gap:8px}
+  .k{color:#6f97ad}.v{color:#eafcff}
+  .ok{color:#66ffa8}.warn{color:#ff9f6b}
+  .sec{margin-top:8px;border-top:1px solid rgba(80,220,255,.16);padding-top:6px}
+  .tabs{display:flex;gap:4px;margin:6px 0}
+  .tabs button{flex:1;background:rgba(20,50,75,.7);border:1px solid rgba(80,220,255,.3);
+    color:#9fe4ff;font:10px/1.4 ui-monospace,monospace;padding:4px 2px;border-radius:4px;cursor:pointer}
+  .tabs button.on{background:rgba(0,190,255,.28);color:#eafcff;box-shadow:0 0 10px rgba(0,190,255,.5)}
+  a{color:#7ef0ff;text-decoration:none;border-bottom:1px dotted #3b8fae}
+  a:hover{color:#fff}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>CHEAT CODE #68 — BERNOULLI</h1>
+  <div class="cheat">Fast fluid is low pressure — a pressure tap reads velocity (pitot), a constriction reads flow (venturi); the geometry does the calculus.</div>
+  <div class="tabs">
+    <button id="t0" class="on">1 VENTURI</button><button id="t1">2 PITOT</button><button id="t2">3 DRAFT</button>
+  </div>
+  <div class="hint" id="hint">drag the throat walls · sliders below · keys 1/2/3</div>
+  <div id="ctl"></div>
+  <div class="sec" id="out"></div>
+  <div class="sec" style="color:#ffd98a">"every speed question has a pressure answer."</div>
+  <div style="margin-top:6px"><a href="index.html">← gallery</a></div>
+</div>
+<script>
+'use strict';
+var c=document.getElementById('c'),g=c.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
+  c.width=Math.round(W*DPR);c.height=Math.round(H*DPR);c.style.width=W+'px';c.style.height=H+'px';
+  g.setTransform(DPR,0,0,DPR,0,0);}
+window.addEventListener('resize',resize);resize();
+
+// ---------------- physics constants ----------------
+var RHO=1000;      // water, kg/m^3  (venturi)
+var RHO_AIR=1.225; // kg/m^3         (pitot)
+var Gg=9.81;
+var P_ATM=101325;
+
+var S={act:0, Q:0.020, throat:0.35, wind:30, blow:12, dbg:0};
+// Q = volumetric flow m^3/s ; throat = area ratio A2/A1 ; wind = m/s ; blow = m/s
+
+// pipe geometry (SI): pipe is a square duct of side D1
+var D1=0.10;                 // 10 cm inlet side
+function A1(){return D1*D1;} // m^2
+function A2(){return A1()*S.throat;}
+
+// ---------------- venturi physics ----------------
+function venturi(){
+  var a1=A1(),a2=A2();
+  var v1=S.Q/a1, v2=S.Q/a2;
+  // static gauge pressures, taking inlet static as reference p1
+  var p1=8000;                       // Pa gauge at inlet (pump head)
+  var p2=p1+0.5*RHO*(v1*v1-v2*v2);   // Bernoulli
+  var p3=p2+0.5*RHO*(v2*v2-v1*v1);   // ideal full recovery -> p3 == p1
+  var dP=p1-p2;
+  // venturi meter inversion: Q = A2*sqrt(2*dP/(rho*(1-(A2/A1)^2)))
+  var beta2=(a2/a1)*(a2/a1);
+  var Qrec=a2*Math.sqrt(Math.max(0,2*dP/(RHO*(1-beta2))));
+  return {v1:v1,v2:v2,p1:p1,p2:p2,p3:p3,dP:dP,Qrec:Qrec,a1:a1,a2:a2};
+}
+// ---------------- pitot physics ----------------
+function pitot(){
+  var v=S.wind;
+  var q=0.5*RHO_AIR*v*v;            // dynamic pressure Pa
+  var pStag=P_ATM+q, pStat=P_ATM;
+  var vSolved=Math.sqrt(2*q/RHO_AIR);
+  return {q:q,pStag:pStag,pStat:pStat,v:vSolved};
+}
+// ---------------- chimney / draft physics ----------------
+function draft(){
+  var v=S.blow;
+  var dP=0.5*RHO_AIR*v*v;           // suction at the top of the tube
+  var h=dP/(RHO*Gg);                // liquid rise, m of water
+  return {dP:dP,h:h,v:v};
+}
+
+// ---------------- pipe profile in SCREEN space ----------------
+var PIPE={x0:0,x1:0,cy:0,halfIn:0};
+function layoutPipe(){
+  PIPE.x0=Math.max(390,W*0.30); PIPE.x1=W-70; PIPE.cy=H*0.36;
+  PIPE.halfIn=Math.min(74,H*0.11);
+}
+// area ratio profile along normalized x in [0,1]: smooth cosine constriction
+function areaRatio(t){
+  var cL=0.34,cR=0.62,mid=(cL+cR)/2;
+  if(t<cL||t>cR)return 1;
+  var u=(t-cL)/(cR-cL);                 // 0..1
+  var s=0.5-0.5*Math.cos(2*Math.PI*u);  // 0..1..0
+  return 1-(1-S.throat)*s;
+}
+function halfAt(t){return PIPE.halfIn*areaRatio(t);}
+function xOf(t){return PIPE.x0+t*(PIPE.x1-PIPE.x0);}
+function tOf(x){return (x-PIPE.x0)/(PIPE.x1-PIPE.x0);}
+// local velocity from continuity: v(t) = Q/(A1*ratio)
+function vAt(t){return S.Q/(A1()*areaRatio(t));}
+
+// ---------------- particles ----------------
+var P=[];
+for(var i=0;i<620;i++)P.push({t:Math.random(),y:Math.random()*2-1,life:Math.random()});
+var AIR=[];for(i=0;i<420;i++)AIR.push({x:Math.random(),y:Math.random(),s:Math.random()});
+var SMOKE=[];for(i=0;i<300;i++)SMOKE.push({x:Math.random(),y:Math.random(),s:Math.random()});
+
+function speedColor(v,vmax){
+  var u=Math.max(0,Math.min(1,v/vmax));
+  var hue=205-165*u;               // cyan -> magenta/red
+  return 'hsl('+hue+',100%,'+(52+22*u)+'%)';
+}
+
+// ---------------- UI ----------------
+var ctl=document.getElementById('ctl'),out=document.getElementById('out'),hint=document.getElementById('hint');
+function slider(id,label,min,max,step,val){
+  return '<label>'+label+' <span class="v" id="lab_'+id+'"></span></label>'+
+   '<input type="range" id="'+id+'" min="'+min+'" max="'+max+'" step="'+step+'" value="'+val+'">';
+}
+function buildCtl(){
+  var h='';
+  if(S.act===0){
+    h+=slider('sQ','flow rate Q',2,60,0.5,S.Q*1000);
+    h+=slider('sT','throat area ratio A₂/A₁',0.12,0.95,0.01,S.throat);
+    hint.textContent='drag throat walls vertically · sliders · keys 1/2/3';
+  }else if(S.act===1){
+    h+=slider('sW','airspeed (wind)',1,90,0.5,S.wind);
+    hint.textContent='pitot: stagnation − static = ½ρv² · keys 1/2/3';
+  }else{
+    h+=slider('sB','cross-flow over chimney',0,45,0.5,S.blow);
+    hint.textContent='flow across the top sucks liquid UP · keys 1/2/3';
+  }
+  ctl.innerHTML=h;
+  bind('sQ',function(v){S.Q=v/1000;});
+  bind('sT',function(v){S.throat=v;});
+  bind('sW',function(v){S.wind=v;});
+  bind('sB',function(v){S.blow=v;});
+}
+function bind(id,fn){var e=document.getElementById(id);if(!e)return;
+  e.addEventListener('input',function(){fn(parseFloat(e.value));});fn(parseFloat(e.value));}
+function setAct(a){S.act=a;for(var i=0;i<3;i++)document.getElementById('t'+i).className=(i===a?'on':'');buildCtl();}
+for(var ti=0;ti<3;ti++)(function(k){document.getElementById('t'+k).onclick=function(){setAct(k);};})(ti);
+window.addEventListener('keydown',function(e){if(e.key==='1')setAct(0);if(e.key==='2')setAct(1);if(e.key==='3')setAct(2);});
+buildCtl();
+
+// throat dragging
+var dragging=false;
+c.addEventListener('pointerdown',function(e){
+  if(S.act!==0)return;
+  var t=tOf(e.clientX);
+  if(t>0.34&&t<0.62&&Math.abs(e.clientY-PIPE.cy)<PIPE.halfIn*1.5){dragging=true;c.setPointerCapture(e.pointerId);}
+});
+c.addEventListener('pointermove',function(e){
+  if(!dragging)return;
+  var r=Math.abs(e.clientY-PIPE.cy)/PIPE.halfIn;
+  S.throat=Math.max(0.12,Math.min(0.95,r));
+  var el=document.getElementById('sT');if(el)el.value=S.throat;
+});
+window.addEventListener('pointerup',function(){dragging=false;});
+
+// ---------------- drawing helpers ----------------
+function glowText(txt,x,y,col,size,align){
+  g.save();g.font=(size||12)+'px ui-monospace,Menlo,monospace';g.textAlign=align||'left';
+  g.fillStyle=col;g.shadowColor=col;g.shadowBlur=10;g.fillText(txt,x,y);g.restore();
+}
+function manometer(x,yBase,hpx,pGauge,label,col,maxH){
+  var w=15,tubeH=maxH;
+  g.save();
+  g.strokeStyle='rgba(140,200,230,.45)';g.lineWidth=1.5;
+  g.strokeRect(x-w/2,yBase-tubeH,w,tubeH);
+  var lv=Math.max(2,Math.min(tubeH-2,hpx));
+  var grd=g.createLinearGradient(0,yBase-lv,0,yBase);
+  grd.addColorStop(0,col);grd.addColorStop(1,'rgba(0,60,110,.9)');
+  g.fillStyle=grd;g.shadowColor=col;g.shadowBlur=14;
+  g.fillRect(x-w/2+1.5,yBase-lv,w-3,lv);
+  g.shadowBlur=0;
+  g.fillStyle='rgba(255,255,255,.9)';g.fillRect(x-w/2+1.5,yBase-lv-2,w-3,2);
+  g.restore();
+  glowText(label,x,yBase+14,'#8fd7ff',10,'center');
+  glowText((pGauge/1000).toFixed(2)+' kPa',x,yBase+26,col,10,'center');
+}
+
+// ================= ACT 1: VENTURI =================
+function drawVenturi(dt,T){
+  layoutPipe();
+  var V=venturi();
+  var vmax=Math.max(V.v2,0.1);
+  var x0=PIPE.x0,x1=PIPE.x1,cy=PIPE.cy;
+
+  // pipe body
+  g.save();
+  g.beginPath();g.moveTo(x0,cy-halfAt(0));
+  for(var t=0;t<=1.0001;t+=0.005)g.lineTo(xOf(t),cy-halfAt(t));
+  for(t=1;t>=-0.0001;t-=0.005)g.lineTo(xOf(t),cy+halfAt(t));
+  g.closePath();
+  var pg=g.createLinearGradient(0,cy-PIPE.halfIn,0,cy+PIPE.halfIn);
+  pg.addColorStop(0,'rgba(0,70,120,.30)');pg.addColorStop(.5,'rgba(0,120,180,.18)');pg.addColorStop(1,'rgba(0,70,120,.30)');
+  g.fillStyle=pg;g.fill();
+  g.strokeStyle='rgba(120,235,255,.85)';g.lineWidth=2;g.shadowColor='#2ee6ff';g.shadowBlur=16;g.stroke();
+  g.restore();
+
+  // particles
+  g.save();g.globalCompositeOperation='lighter';
+  for(var i=0;i<P.length;i++){
+    var p=P[i];
+    var v=vAt(p.t);
+    p.t+=(v/ (D1*24)) *dt*0.25;   // screen advection ∝ local velocity (continuity)
+    if(p.t>1){p.t-=1;p.y=Math.random()*2-1;}
+    var hx=halfAt(p.t);
+    var px=xOf(p.t),py=cy+p.y*hx*0.92;
+    var col=speedColor(v,vmax);
+    // streak length ∝ speed
+    var vp=vAt(Math.max(0,p.t-0.012));
+    var pxPrev=xOf(Math.max(0,p.t-0.012)), pyPrev=cy+p.y*halfAt(Math.max(0,p.t-0.012))*0.92;
+    g.strokeStyle=col;g.lineWidth=1.6;g.globalAlpha=.75;
+    g.beginPath();g.moveTo(pxPrev,pyPrev);g.lineTo(px,py);g.stroke();
+    g.globalAlpha=1;g.fillStyle=col;g.beginPath();g.arc(px,py,1.5,0,6.2832);g.fill();
+    void vp;
+  }
+  g.restore();
+
+  // pressure taps + manometers
+  var taps=[{t:0.14,p:V.p1,l:'TAP 1  inlet',c:'#4fd2ff'},
+            {t:0.48,p:V.p2,l:'TAP 2  THROAT',c:'#ff5fa8'},
+            {t:0.86,p:V.p3,l:'TAP 3  outlet',c:'#4fd2ff'}];
+  var maxH=Math.min(200,H*0.26);
+  var pmax=12000;
+  for(i=0;i<taps.length;i++){
+    var tp=taps[i],x=xOf(tp.t),yTop=cy-halfAt(tp.t);
+    var base=cy-PIPE.halfIn-24;
+    // tap stub
+    g.save();g.strokeStyle='rgba(150,220,255,.6)';g.lineWidth=2;
+    g.beginPath();g.moveTo(x,yTop);g.lineTo(x,base);g.stroke();g.restore();
+    var lvl=Math.max(0,Math.min(1,tp.p/pmax))*maxH;
+    manometer(x,base,lvl,tp.p,tp.l,tp.c,maxH);
+  }
+  // arrow annotation on the drop
+  var xa=xOf(0.48);
+  glowText('▼ LOW P',xa,cy-PIPE.halfIn-24-maxH-16,'#ff8fc4',11,'center');
+  glowText('v = Q/A  ⟹  fast ⟹  low P',xOf(0.48),cy+PIPE.halfIn+34,'#ffd98a',12,'center');
+
+  // local velocity profile strip
+  g.save();g.globalAlpha=.9;
+  g.beginPath();
+  for(t=0;t<=1.0001;t+=0.004){
+    var yy=cy+PIPE.halfIn+90-(vAt(t)/vmax)*54;
+    if(t===0)g.moveTo(xOf(t),yy);else g.lineTo(xOf(t),yy);
+  }
+  g.strokeStyle='#ff5fa8';g.lineWidth=2;g.shadowColor='#ff5fa8';g.shadowBlur=12;g.stroke();
+  g.beginPath();
+  for(t=0;t<=1.0001;t+=0.004){
+    var vv=vAt(t);var pst=V.p1+0.5*RHO*(V.v1*V.v1-vv*vv);
+    var y2=cy+PIPE.halfIn+90-(pst/pmax)*54;
+    if(t===0)g.moveTo(xOf(t),y2);else g.lineTo(xOf(t),y2);
+  }
+  g.strokeStyle='#4fd2ff';g.lineWidth=2;g.shadowColor='#4fd2ff';g.shadowBlur=12;g.stroke();
+  g.restore();
+  glowText('v(x)',x1+8,cy+PIPE.halfIn+90-(vAt(1)/vmax)*54,'#ff5fa8',10);
+  glowText('P(x)',x1+8,cy+PIPE.halfIn+112,'#4fd2ff',10);
+
+  var err=Math.abs(V.Qrec-S.Q)/S.Q*100;
+  out.innerHTML=
+   row('inlet  A₁',(V.a1*1e4).toFixed(1)+' cm²')+
+   row('throat A₂',(V.a2*1e4).toFixed(1)+' cm²  (β²='+((V.a2/V.a1)*(V.a2/V.a1)).toFixed(3)+')')+
+   row('v₁ inlet',V.v1.toFixed(3)+' m/s')+
+   row('v₂ throat',V.v2.toFixed(3)+' m/s  <span class="ok">×'+(V.v2/V.v1).toFixed(2)+'</span>')+
+   row('continuity A₁v₁',(V.a1*V.v1*1000).toFixed(3)+' = '+(V.a2*V.v2*1000).toFixed(3)+' L/s')+
+   row('P₁ static',(V.p1/1000).toFixed(3)+' kPa')+
+   row('P₂ throat','<span class="warn">'+(V.p2/1000).toFixed(3)+' kPa</span>')+
+   row('ΔP = P₁−P₂',(V.dP/1000).toFixed(3)+' kPa')+
+   '<div class="sec"></div>'+
+   row('TRUE Q',(S.Q*1000).toFixed(3)+' L/s')+
+   row('Q recovered from ΔP','<span class="ok">'+(V.Qrec*1000).toFixed(3)+' L/s</span>')+
+   row('meter error',(err<1?'<span class="ok">':'<span class="warn">')+err.toFixed(4)+' %</span>');
+}
+function row(k,v){return '<div class="row"><span class="k">'+k+'</span><span class="v">'+v+'</span></div>';}
+
+// ================= ACT 2: PITOT =================
+function drawPitot(dt,T){
+  var Pt=pitot();
+  var cx=W*0.30,cy=H*0.5, streamTop=cy-H*0.22, streamBot=cy+H*0.22;
+  // open stream field
+  g.save();g.globalCompositeOperation='lighter';
+  for(var i=0;i<AIR.length;i++){
+    var a=AIR[i];
+    a.x+=(S.wind/90)*dt*0.55*(0.6+0.8*a.s);
+    if(a.x>1){a.x-=1;a.y=Math.random();}
+    var px=a.x*W, py=streamTop+a.y*(streamBot-streamTop);
+    // deflect around the probe head
+    var hx=W*0.56, dx=px-hx, dy=py-cy;
+    var r=Math.sqrt(dx*dx+dy*dy)+1e-6;
+    if(r<70&&dx<10){py+=(dy/r)*(70-r)*0.55;}
+    var len=6+ (S.wind/90)*46*(0.5+a.s);
+    var col=speedColor(S.wind*(0.6+0.8*a.s),95);
+    g.strokeStyle=col;g.globalAlpha=.6;g.lineWidth=1.3;
+    g.beginPath();g.moveTo(px-len,py);g.lineTo(px,py);g.stroke();
+  }
+  g.restore();
+  // stream bounds
+  g.save();g.strokeStyle='rgba(80,200,255,.25)';g.setLineDash([6,8]);g.lineWidth=1;
+  g.beginPath();g.moveTo(0,streamTop);g.lineTo(W,streamTop);g.moveTo(0,streamBot);g.lineTo(W,streamBot);g.stroke();g.restore();
+
+  // pitot probe: L-shaped tube facing into flow at x=W*0.56
+  var hx=W*0.56;
+  g.save();
+  g.strokeStyle='#9fe4ff';g.lineWidth=8;g.lineCap='round';g.shadowColor='#2ee6ff';g.shadowBlur=18;
+  g.beginPath();g.moveTo(hx,cy);g.lineTo(hx+150,cy);g.lineTo(hx+150,cy+150);g.stroke();
+  g.lineWidth=3;g.strokeStyle='#04060a';
+  g.beginPath();g.moveTo(hx,cy);g.lineTo(hx+150,cy);g.lineTo(hx+150,cy+150);g.stroke();
+  g.restore();
+  // stagnation mouth
+  glowText('◀ STAGNATION port  (v→0, P = P₀ + ½ρv²)',hx-14,cy-16,'#ff5fa8',12,'right');
+  // static ports on the side
+  g.save();g.fillStyle='#4fd2ff';g.shadowColor='#4fd2ff';g.shadowBlur=10;
+  for(i=0;i<3;i++){g.beginPath();g.arc(hx+52+i*16,cy-6,2.6,0,6.2832);g.fill();}
+  g.restore();
+  glowText('STATIC ports (flow parallel → P₀)',hx+56,cy-22,'#4fd2ff',11);
+
+  // stagnation point glow
+  g.save();var rg=g.createRadialGradient(hx,cy,0,hx,cy,44);
+  rg.addColorStop(0,'rgba(255,95,168,.55)');rg.addColorStop(1,'rgba(255,95,168,0)');
+  g.fillStyle=rg;g.beginPath();g.arc(hx,cy,44,0,6.2832);g.fill();g.restore();
+
+  // differential manometer (U-tube): deflection ∝ q
+  var mx=W*0.80,my=H*0.30,mh=Math.min(230,H*0.30),mw=90;
+  var qmax=0.5*RHO_AIR*90*90;
+  var d=Math.min(1,Pt.q/qmax)*(mh*0.42);
+  g.save();g.strokeStyle='rgba(150,220,255,.5)';g.lineWidth=2;
+  g.beginPath();
+  g.moveTo(mx-mw/2,my);g.lineTo(mx-mw/2,my+mh);g.lineTo(mx+mw/2,my+mh);g.lineTo(mx+mw/2,my);
+  g.stroke();g.restore();
+  var mid=my+mh*0.55;
+  // left limb = stagnation (pushes down), right = static (rises)
+  drawLiquid(mx-mw/2,my,mh,mid+d,'#ff5fa8');
+  drawLiquid(mx+mw/2,my,mh,mid-d,'#4fd2ff');
+  g.save();g.strokeStyle='rgba(255,255,255,.25)';g.setLineDash([3,4]);
+  g.beginPath();g.moveTo(mx-mw/2-16,mid);g.lineTo(mx+mw/2+16,mid);g.stroke();g.restore();
+  glowText('Δh ∝ ½ρv²',mx,my-10,'#ffd98a',12,'center');
+  glowText('stag',mx-mw/2,my+mh+18,'#ff5fa8',10,'center');
+  glowText('static',mx+mw/2,my+mh+18,'#4fd2ff',10,'center');
+  // big airspeed
+  glowText(Pt.v.toFixed(2)+' m/s',W*0.80,H*0.76,'#66ffa8',44,'center');
+  glowText('AIRSPEED solved from ΔP alone',W*0.80,H*0.80,'#8fd7ff',12,'center');
+  glowText((Pt.v*3.6).toFixed(1)+' km/h   ·   '+(Pt.v*1.94384).toFixed(1)+' kt',W*0.80,H*0.835,'#7fa6bd',12,'center');
+
+  out.innerHTML=
+   row('ρ air',RHO_AIR.toFixed(3)+' kg/m³')+
+   row('true wind v',S.wind.toFixed(2)+' m/s')+
+   row('P static',(Pt.pStat/1000).toFixed(3)+' kPa')+
+   row('P stagnation','<span class="warn">'+(Pt.pStag/1000).toFixed(3)+' kPa</span>')+
+   row('q = ½ρv² (dynamic)','<span class="ok">'+Pt.q.toFixed(2)+' Pa</span>')+
+   row('solved v = √(2q/ρ)','<span class="ok">'+Pt.v.toFixed(4)+' m/s</span>')+
+   row('error',(Math.abs(Pt.v-S.wind)/Math.max(1e-9,S.wind)*100).toFixed(6)+' %')+
+   row('Δh water column',(Pt.q/(RHO*Gg)*1000).toFixed(3)+' mm');
+}
+function drawLiquid(x,top,h,levelY,col){
+  var w=14;
+  g.save();
+  var bot=top+h;
+  var lv=Math.max(top+2,Math.min(bot-1,levelY));
+  var grd=g.createLinearGradient(0,lv,0,bot);
+  grd.addColorStop(0,col);grd.addColorStop(1,'rgba(0,50,100,.85)');
+  g.fillStyle=grd;g.shadowColor=col;g.shadowBlur=16;
+  g.fillRect(x-w/2,lv,w,bot-lv);
+  g.shadowBlur=0;g.fillStyle='rgba(255,255,255,.9)';g.fillRect(x-w/2,lv-2,w,2);
+  g.restore();
+}
+
+// ================= ACT 3: CHIMNEY / DRAFT =================
+function drawDraft(dt,T){
+  var D=draft();
+  var tx=W*0.52, topY=H*0.26, botY=H*0.82, tubeW=34;
+  // cross flow over the top
+  g.save();g.globalCompositeOperation='lighter';
+  for(var i=0;i<SMOKE.length;i++){
+    var s=SMOKE[i];
+    s.x+=(S.blow/45)*dt*0.7*(0.5+s.s);
+    if(s.x>1){s.x-=1;s.y=Math.random();}
+    var py=topY-8-s.y*Math.min(120,H*0.16);
+    var px=s.x*W;
+    var dxp=px-tx;
+    // accelerate as it passes over the mouth (local constriction of streamtube)
+    var boost=Math.exp(-(dxp*dxp)/(2*90*90));
+    var len=5+(S.blow/45)*40*(0.5+s.s)*(1+0.9*boost);
+    py-=boost*12;
+    g.strokeStyle=speedColor(S.blow*(1+0.9*boost),52);
+    g.globalAlpha=.6;g.lineWidth=1.3;
+    g.beginPath();g.moveTo(px-len,py);g.lineTo(px,py);g.stroke();
+  }
+  g.restore();
+
+  // reservoir
+  var resY=botY, resTop=resY-46;
+  g.save();
+  g.fillStyle='rgba(0,90,150,.35)';g.fillRect(W*0.30,resTop,W*0.44,46);
+  g.strokeStyle='rgba(120,235,255,.6)';g.lineWidth=2;g.strokeRect(W*0.30,resTop,W*0.44,46);
+  g.restore();
+
+  // rise: scale so full slider ~ nice visual, but report REAL mm
+  var maxRise=(botY-topY)-70;
+  var hRef=0.5*RHO_AIR*45*45/(RHO*Gg);      // rise at max blow, m
+  var rise=Math.min(1,D.h/hRef)*maxRise;
+  var levelY=resTop-rise;
+
+  // tube
+  g.save();
+  g.strokeStyle='rgba(150,225,255,.75)';g.lineWidth=2;g.shadowColor='#2ee6ff';g.shadowBlur=14;
+  g.strokeRect(tx-tubeW/2,topY,tubeW,resTop-topY);
+  g.restore();
+  // liquid in tube
+  var lgrd=g.createLinearGradient(0,levelY,0,resTop);
+  lgrd.addColorStop(0,'#66ffa8');lgrd.addColorStop(1,'rgba(0,90,60,.9)');
+  g.save();g.fillStyle=lgrd;g.shadowColor='#66ffa8';g.shadowBlur=18;
+  g.fillRect(tx-tubeW/2+2,levelY,tubeW-4,resTop-levelY);
+  g.shadowBlur=0;g.fillStyle='rgba(255,255,255,.92)';g.fillRect(tx-tubeW/2+2,levelY-2.5,tubeW-4,2.5);
+  g.restore();
+  // suction arrows
+  for(i=0;i<4;i++){
+    var yy=levelY+18+i*26;if(yy>resTop-6)break;
+    g.save();g.strokeStyle='rgba(102,255,168,.5)';g.lineWidth=1.6;
+    g.beginPath();g.moveTo(tx,yy+10);g.lineTo(tx,yy);g.lineTo(tx-4,yy+5);g.moveTo(tx,yy);g.lineTo(tx+4,yy+5);g.stroke();g.restore();
+  }
+  glowText('flow across the mouth ⟹ P drops ⟹ liquid climbs',tx,topY-Math.min(150,H*0.19),'#ffd98a',13,'center');
+  glowText('DRAFT GAUGE',tx,resY+26,'#8fd7ff',11,'center');
+  glowText((D.dP).toFixed(2)+' Pa suction',tx,resY+42,'#66ffa8',12,'center');
+  glowText((D.h*1000).toFixed(3)+' mm H₂O',tx+230,levelY+4,'#66ffa8',20,'left');
+
+  out.innerHTML=
+   row('cross-flow v',D.v.toFixed(2)+' m/s')+
+   row('½ρv² suction','<span class="ok">'+D.dP.toFixed(3)+' Pa</span>')+
+   row('h = ΔP/(ρ_w g)',(D.h*1000).toFixed(4)+' mm')+
+   row('inverted: v = √(2ρ_w g h/ρ_a)','<span class="ok">'+Math.sqrt(2*RHO*Gg*D.h/RHO_AIR).toFixed(4)+' m/s</span>')+
+   row('this is a chimney','draft ∝ v² of the wind')+
+   row('same physics','straw-over-blow, carburettor, spray gun');
+}
+
+// ---------------- loop ----------------
+var last=performance.now();
+function frame(now){
+  var dt=Math.min(0.05,(now-last)/1000);last=now;
+  var T=now/1000;
+  g.fillStyle='rgba(4,6,10,0.35)';g.fillRect(0,0,W,H);
+  // subtle grid
+  g.save();g.strokeStyle='rgba(40,110,150,.09)';g.lineWidth=1;
+  for(var x=0;x<W;x+=56){g.beginPath();g.moveTo(x,0);g.lineTo(x,H);g.stroke();}
+  for(var y=0;y<H;y+=56){g.beginPath();g.moveTo(0,y);g.lineTo(W,y);g.stroke();}
+  g.restore();
+  if(S.act===0)drawVenturi(dt,T);
+  else if(S.act===1)drawPitot(dt,T);
+  else drawDraft(dt,T);
+  glowText('P + ½ρv² + ρgh = constant',W-16,H-16,'rgba(255,217,138,.75)',13,'right');
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>

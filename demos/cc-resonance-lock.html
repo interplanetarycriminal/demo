@@ -1,0 +1,231 @@
+<meta charset="utf-8">
+<title>Cheat Code #40 — Resonance Is a Lock and Key</title>
+<style>
+  html,body{margin:0;padding:0;background:#04060a;overflow:hidden;height:100%}
+  canvas{display:block;position:fixed;inset:0;cursor:crosshair}
+  #ui{position:fixed;top:10px;left:10px;z-index:10;background:rgba(6,10,16,.72);
+      border:1px solid rgba(255,150,60,.3);border-radius:8px;padding:10px 12px;
+      font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#ffd9b0;max-width:400px;
+      backdrop-filter:blur(6px);box-shadow:0 0 24px rgba(255,140,40,.14)}
+  #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.12em;color:#ffb14e;text-shadow:0 0 10px #f806}
+  .code{color:#8ef0c0;margin:0 0 6px;font-style:italic;text-shadow:0 0 8px #0f86}
+  .hint{color:#8a7a6a;margin:6px 0 4px}
+  .row{display:flex;gap:6px;align-items:center;margin:5px 0;flex-wrap:wrap}
+  button{background:rgba(120,60,0,.4);color:#ffcf99;border:1px solid #a06a30;border-radius:5px;
+    padding:3px 8px;font:11px ui-monospace,monospace;cursor:pointer}
+  button:hover{background:rgba(200,110,20,.5);box-shadow:0 0 10px #f906}
+  button.on{background:#8a4d0d;color:#fff3e0;box-shadow:0 0 12px #fa04}
+  input[type=range]{width:150px;accent-color:#ff9a2e;vertical-align:middle}
+  #rd{color:#ffe0a8;white-space:pre;margin-top:5px;font-size:11px}
+  a{color:#ffb14e}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>CHEAT CODE #40 · RESONANT LOCK</h1>
+  <p class="code">Tuning is a lock and key — an LC tank accepts energy ONLY at its own frequency.</p>
+  <div class="row"><button id="auto" class="on">AUTO-SWEEP</button><button id="reset">reset disc</button></div>
+  <div class="row">f<input type="range" id="fs" min="60" max="260" step="0.25" value="60"><span id="fv">60.0 kHz</span></div>
+  <div class="row">Q<input type="range" id="qs" min="4" max="90" step="1" value="34"><span id="qv">34</span></div>
+  <div class="hint">DRAG THE METAL DISC onto a tank → its f₀ shifts → the key stops working</div>
+  <div id="rd"></div>
+  <div style="margin-top:6px"><a href="index.html">← gallery</a></div>
+</div>
+<script>
+"use strict";
+var c=document.getElementById('c'),x=c.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;
+  c.width=W*DPR|0;c.height=H*DPR|0;c.style.width=W+'px';c.style.height=H+'px';x.setTransform(DPR,0,0,DPR,0,0);layout();}
+addEventListener('resize',resize);
+
+/* ---------- tanks ---------- */
+// amplitude of a driven damped oscillator: A(w) = F / sqrt((w0^2-w^2)^2 + (gamma*w)^2), gamma = w0/Q
+var TANKS=[];
+[78,104,140,182,228].forEach(function(f0,i){TANKS.push({f0:f0,base:f0,amp:0,phase:Math.random()*7,x:0,y:0,dL:0,i:i});});
+var Q=34,fDrive=60,auto=true,sweepDir=1,t=0;
+var disc={x:0,y:0,drag:false,home:{x:0,y:0}};
+function layout(){
+  var n=TANKS.length,pad=W*0.07,span=W-pad*2;
+  for(var i=0;i<n;i++){TANKS[i].x=pad+span*(i+0.5)/n;TANKS[i].y=H*0.30;}
+  disc.home.x=W*0.5;disc.home.y=H*0.055;
+  if(!disc.init){disc.x=disc.home.x;disc.y=disc.home.y;disc.init=1;}
+}
+resize();
+
+function amp(f0,f,q){var w0=f0,w=f,g=w0/q;var d=(w0*w0-w*w);return (w0*w0)/Math.sqrt(d*d+g*g*w*w);}
+// normalized so peak ≈ q  (at resonance A = w0^2/(g*w0)=w0/g = q)
+
+/* ---------- UI ---------- */
+var fs=document.getElementById('fs'),qs=document.getElementById('qs');
+fs.oninput=function(){auto=false;document.getElementById('auto').classList.remove('on');fDrive=+fs.value;};
+qs.oninput=function(){Q=+qs.value;document.getElementById('qv').textContent=Q;};
+document.getElementById('auto').onclick=function(){auto=!auto;this.classList.toggle('on',auto);};
+document.getElementById('reset').onclick=function(){disc.x=disc.home.x;disc.y=disc.home.y;};
+function pos(e){var r=c.getBoundingClientRect();var p=(e.touches&&e.touches[0])||e;return{x:p.clientX-r.left,y:p.clientY-r.top};}
+c.addEventListener('mousedown',function(e){var p=pos(e);if(Math.hypot(p.x-disc.x,p.y-disc.y)<40)disc.drag=true;});
+addEventListener('mousemove',function(e){if(disc.drag){var p=pos(e);disc.x=p.x;disc.y=p.y;}});
+addEventListener('mouseup',function(){disc.drag=false;});
+c.addEventListener('touchstart',function(e){var p=pos(e);if(Math.hypot(p.x-disc.x,p.y-disc.y)<60){disc.drag=true;e.preventDefault();}},{passive:false});
+addEventListener('touchmove',function(e){if(disc.drag){var p=pos(e);disc.x=p.x;disc.y=p.y;e.preventDefault();}},{passive:false});
+addEventListener('touchend',function(){disc.drag=false;});
+
+function glow(col,b,fn){x.save();x.shadowColor=col;x.shadowBlur=b;fn();x.restore();}
+
+/* ---------- drawing ---------- */
+function drawCoil(cx,cy,r,lit,col,shift){
+  glow(col,6+26*lit,function(){
+    x.strokeStyle=col;x.lineWidth=2.4;x.globalAlpha=.45+.55*lit;
+    for(var i=0;i<5;i++){x.beginPath();x.arc(cx-r+ i*(r*0.5), cy, r*0.30,-Math.PI*0.75,Math.PI*0.75);x.stroke();}
+    x.beginPath();x.moveTo(cx-r-r*0.35,cy);x.lineTo(cx-r,cy);
+    x.moveTo(cx+r,cy);x.lineTo(cx+r+r*0.35,cy);x.stroke();
+  });
+  if(shift){glow('#ff6bd0',14,function(){x.strokeStyle='#ff6bd0';x.lineWidth=1.2;x.setLineDash([3,3]);
+    x.beginPath();x.arc(cx,cy,r*0.9,0,7);x.stroke();x.setLineDash([]);});}
+}
+function drawCap(cx,cy,w,lit,col,v){
+  glow(col,6+22*lit,function(){
+    x.strokeStyle=col;x.lineWidth=2.6;x.globalAlpha=.5+.5*lit;
+    x.beginPath();x.moveTo(cx-3,cy-w);x.lineTo(cx-3,cy+w);x.moveTo(cx+3,cy-w);x.lineTo(cx+3,cy+w);x.stroke();
+  });
+  // charge dots proportional to instantaneous voltage
+  var n=Math.round(Math.abs(v)*5);
+  for(var i=0;i<n;i++){var yy=cy-w+ (2*w)*(i+0.5)/Math.max(1,n);
+    glow(v>0?'#7ef9ff':'#ff9a2e',10,function(){x.beginPath();x.arc(cx+(v>0?-8:8),yy,1.8,0,7);
+      x.fillStyle=v>0?'#7ef9ff':'#ff9a2e';x.fill();});}
+}
+function tankBox(T,lit,inst){
+  var w=Math.min(150,W/7),h=126,cx=T.x,cy=T.y;
+  var col=lit>0.72?'#8ef0c0':(lit>0.3?'#ffd76a':'#4d7f96');
+  x.save();
+  x.fillStyle='rgba(9,14,20,.82)';x.strokeStyle='rgba(255,160,60,'+(0.18+0.6*lit)+')';x.lineWidth=1.4;
+  glow(col,4+30*lit,function(){x.beginPath();x.rect(cx-w/2,cy-h/2,w,h);x.fill();x.stroke();});
+  drawCoil(cx,cy-24,w*0.28,lit,col,T.dL>0.001);
+  drawCap(cx,cy+26,20,lit,col,inst);
+  // wires
+  x.strokeStyle=col;x.globalAlpha=.5;x.lineWidth=1.6;x.beginPath();
+  var r=w*0.28;
+  x.moveTo(cx-r-r*0.35,cy-24);x.lineTo(cx-w*0.40,cy-24);x.lineTo(cx-w*0.40,cy+26);x.lineTo(cx-3,cy+26);
+  x.moveTo(cx+r+r*0.35,cy-24);x.lineTo(cx+w*0.40,cy-24);x.lineTo(cx+w*0.40,cy+26);x.lineTo(cx+3,cy+26);
+  x.stroke();x.globalAlpha=1;
+  // energy bar
+  var bw=w-16,bx=cx-bw/2,by=cy+h/2+8;
+  x.fillStyle='rgba(8,14,20,.8)';x.strokeStyle='rgba(120,160,190,.35)';x.beginPath();x.rect(bx,by,bw,10);x.fill();x.stroke();
+  glow(col,14,function(){x.fillStyle=col;x.fillRect(bx+1,by+1,(bw-2)*Math.min(1,lit),8);});
+  x.textAlign='center';x.font='11px ui-monospace,monospace';
+  x.fillStyle=T.dL>0.001?'#ff6bd0':'#9fc5d8';
+  x.fillText('f₀ '+T.f0.toFixed(1)+' kHz',cx,cy-h/2-10);
+  if(T.dL>0.001){x.font='9px ui-monospace,monospace';x.fillStyle='#ff6bd0';
+    x.fillText('was '+T.base.toFixed(1)+'  Δ'+((T.f0-T.base)).toFixed(1),cx,cy-h/2-22);}
+  if(lit>0.72){x.font='bold 12px ui-monospace,monospace';
+    glow('#8ef0c0',16,function(){x.fillStyle='#8ef0c0';x.fillText('◉ TAG FOUND',cx,by+26);});}
+  x.restore();
+}
+
+function drawTx(){
+  var cx=W*0.5,cy=H*0.075;
+  glow('#ff9a2e',18,function(){
+    x.strokeStyle='#ff9a2e';x.lineWidth=2.4;
+    x.beginPath();x.moveTo(cx-46,cy+12);x.lineTo(cx,cy-16);x.lineTo(cx+46,cy+12);x.stroke();
+    x.beginPath();x.arc(cx,cy-16,5,0,7);x.fillStyle='#ffca7a';x.fill();});
+  x.textAlign='center';x.font='11px ui-monospace,monospace';x.fillStyle='#ffb14e';
+  x.fillText('READER · '+fDrive.toFixed(2)+' kHz',cx,cy+30);
+}
+var waves=[];
+function updateWaves(dt){
+  if(Math.random()<0.55)waves.push({r:10,a:1});
+  for(var i=waves.length-1;i>=0;i--){waves[i].r+=250*dt;waves[i].a-=dt*0.55;if(waves[i].a<=0)waves.splice(i,1);}
+}
+function drawWaves(){
+  var cx=W*0.5,cy=H*0.075;x.save();x.globalCompositeOperation='lighter';
+  for(var i=0;i<waves.length;i++){var w=waves[i];
+    x.strokeStyle='rgba(255,154,46,'+(w.a*0.42)+')';x.lineWidth=1.6;
+    x.beginPath();x.arc(cx,cy,w.r,0.12,Math.PI-0.12);x.stroke();}
+  x.restore();
+}
+
+/* ---------- resonance curve plot ---------- */
+function plot(){
+  var px=W*0.06,py=H*0.63,pw=W*0.88,ph=H*0.28;
+  x.fillStyle='rgba(8,14,20,.86)';x.strokeStyle='rgba(255,160,60,.28)';x.lineWidth=1;
+  x.beginPath();x.rect(px,py,pw,ph);x.fill();x.stroke();
+  var f0=+fs.min,f1=+fs.max;
+  var peak=Q*1.06;
+  x.strokeStyle='rgba(255,160,60,.09)';
+  for(var i=1;i<4;i++){x.beginPath();x.moveTo(px,py+ph*i/4);x.lineTo(px+pw,py+ph*i/4);x.stroke();}
+  TANKS.forEach(function(T){
+    var col=T.dL>0.001?'#ff6bd0':(T.hi?'#8ef0c0':'#4fa8ff');
+    x.save();x.beginPath();x.rect(px,py,pw,ph);x.clip();
+    glow(col,10,function(){
+      x.strokeStyle=col;x.lineWidth=1.7;x.globalAlpha=T.hi?1:0.62;x.beginPath();
+      for(var s=0;s<=260;s++){var f=f0+(f1-f0)*s/260;
+        var a=amp(T.f0,f,Q);
+        var yy=py+ph-ph*Math.min(1,a/peak)*0.94;
+        s?x.lineTo(px+pw*s/260,yy):x.moveTo(px+pw*s/260,yy);}
+      x.stroke();});
+    x.restore();
+    // label
+    var lx=px+pw*(T.f0-f0)/(f1-f0);
+    if(lx>px+4&&lx<px+pw-4){x.font='9px ui-monospace,monospace';x.textAlign='center';
+      x.fillStyle=col;x.globalAlpha=.8;x.fillText(T.f0.toFixed(0),lx,py+ph-4);x.globalAlpha=1;}
+  });
+  // moving cursor
+  var cxp=px+pw*(fDrive-f0)/(f1-f0);
+  glow('#ffffff',12,function(){x.strokeStyle='#fff';x.lineWidth=1.4;x.globalAlpha=.85;
+    x.beginPath();x.moveTo(cxp,py);x.lineTo(cxp,py+ph);x.stroke();});
+  x.font='10px ui-monospace,monospace';x.textAlign='left';x.fillStyle='#9fc5d8';
+  x.fillText('response  A(ω)=1/√((ω₀²−ω²)² + (γω)²)   γ=ω₀/Q   —  drive cursor sweeps →',px+6,py+13);
+  x.textAlign='right';x.fillStyle='#7d93a8';x.fillText(f1+' kHz',px+pw-4,py+ph+13);
+  x.textAlign='left';x.fillText(f0+' kHz',px+4,py+ph+13);
+}
+
+/* ---------- main ---------- */
+var last=performance.now();
+function frame(now){
+  var dt=Math.min(0.05,(now-last)/1000);last=now;t+=dt;
+  if(auto){fDrive+=sweepDir*dt*26;
+    if(fDrive>+fs.max){fDrive=+fs.max;sweepDir=-1;}
+    if(fDrive<+fs.min){fDrive=+fs.min;sweepDir=1;}
+    fs.value=fDrive;}
+  document.getElementById('fv').textContent=fDrive.toFixed(2)+' kHz';
+  x.fillStyle='#04060a';x.fillRect(0,0,W,H);
+  x.strokeStyle='rgba(160,110,50,.06)';
+  for(var gx=0;gx<W;gx+=56){x.beginPath();x.moveTo(gx,0);x.lineTo(gx,H);x.stroke();}
+  for(var gy=0;gy<H;gy+=56){x.beginPath();x.moveTo(0,gy);x.lineTo(W,gy);x.stroke();}
+  updateWaves(dt);drawWaves();drawTx();
+  // metal disc → eddy-current inductance change on nearest tank(s)
+  var best=null,bestA=0;
+  TANKS.forEach(function(T){
+    var d=Math.hypot(disc.x-T.x,disc.y-T.y);
+    var infl=Math.max(0,1-d/130);            // proximity coupling
+    T.dL=infl*infl*0.30;                      // ΔL/L (eddy currents REDUCE L → f₀ rises)
+    T.f0=T.base*(1+T.dL*0.55);
+    var a=amp(T.f0,fDrive,Q)/Q;               // 0..~1
+    T.amp+= (a-T.amp)*Math.min(1,dt*9);
+    T.hi=false;
+    if(T.amp>bestA){bestA=T.amp;best=T;}
+  });
+  if(best)best.hi=true;
+  TANKS.forEach(function(T){
+    T.phase+=dt*T.f0*0.55;
+    tankBox(T,Math.min(1,T.amp),Math.sin(T.phase)*Math.min(1,T.amp));
+  });
+  // disc
+  glow('#ff6bd0',disc.drag?26:14,function(){
+    var g=x.createRadialGradient(disc.x-6,disc.y-6,2,disc.x,disc.y,22);
+    g.addColorStop(0,'#ffd0ee');g.addColorStop(1,'#8a2f66');
+    x.beginPath();x.arc(disc.x,disc.y,20,0,7);x.fillStyle=g;x.fill();
+    x.strokeStyle='#ff6bd0';x.lineWidth=1.6;x.stroke();});
+  x.textAlign='center';x.font='9px ui-monospace,monospace';x.fillStyle='#ff9ad8';
+  x.fillText('METAL',disc.x,disc.y+32);
+  plot();
+  var b=best||TANKS[0];
+  var det=TANKS.filter(function(T){return T.dL>0.001;});
+  document.getElementById('rd').textContent=
+    'drive f    '+fDrive.toFixed(2)+' kHz\nbest tank  f₀='+b.f0.toFixed(2)+'  ring='+(b.amp*100).toFixed(0)+'%\nlock       '+(b.amp>0.72?'OPEN — tag found':'closed (key ≠ lock)')+
+    '\nQ          '+Q+'   bandwidth ≈ '+(b.f0/Q).toFixed(2)+' kHz'+
+    (det.length?'\nMETAL      tank '+(det[0].i+1)+'  ΔL/L −'+(det[0].dL*100).toFixed(0)+'%  → f₀ '+det[0].base.toFixed(1)+'→'+det[0].f0.toFixed(1)+' kHz  ★ THE SHIFT IS THE DETECTION':'');
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>

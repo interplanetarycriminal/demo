@@ -1,0 +1,336 @@
+<meta charset="utf-8">
+<title>Cheat Code #2 — Everything Is A Thermometer</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;background:#05070c;overflow:hidden}
+  canvas{display:block;position:fixed;inset:0}
+  #ui{position:fixed;top:12px;left:12px;z-index:10;max-width:430px;
+      font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#bfe9ff;
+      background:rgba(6,10,18,.72);border:1px solid rgba(90,200,255,.28);
+      border-radius:8px;padding:10px 12px;backdrop-filter:blur(6px);
+      box-shadow:0 0 26px rgba(0,140,220,.16)}
+  #ui h1{margin:0 0 5px;font-size:12.5px;letter-spacing:.14em;color:#8ff0ff;
+      text-shadow:0 0 12px rgba(90,230,255,.7)}
+  .cc{color:#ffd27a;text-shadow:0 0 10px rgba(255,180,60,.5);margin:0 0 7px}
+  .hint{color:#7f93ab;margin:6px 0 0}
+  kbd{background:rgba(120,220,255,.14);border:1px solid rgba(120,220,255,.32);
+      border-radius:3px;padding:0 4px;color:#cfefff}
+  #rd{margin-top:7px;border-top:1px solid rgba(90,200,255,.2);padding-top:6px;color:#9fdcc8;white-space:pre}
+  a{color:#7fe0ff;text-decoration:none;border-bottom:1px dotted rgba(127,224,255,.5)}
+  a:hover{color:#fff}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>CHEAT CODE #2 · EVERYTHING IS A THERMOMETER</h1>
+  <p class="cc">Every "temperature error" in a datasheet is a temperature sensor wearing a disguise.</p>
+  <div class="hint">move pointer = <b>heat gun</b> · <kbd>X</kbd> cold spray · <kbd>C</kbd> calibrate the diode · <kbd>R</kbd> reset · <kbd>space</kbd> pause</div>
+  <div id="rd"></div>
+  <div class="hint"><a href="index.html">← gallery</a></div>
+</div>
+<script>
+"use strict";
+var cv=document.getElementById('c'),ctx=cv.getContext('2d'),rdEl=document.getElementById('rd');
+var W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
+  cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);cv.style.width=W+'px';cv.style.height=H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);layout();}
+window.addEventListener('resize',resize);
+
+var TAMB=22, TGUN_HOT=165, TGUN_COLD=-42, SIG=95;
+var gunCold=false, paused=false;
+var px=-9999,py=-9999,pointerIn=false;
+
+// ---------- the five disguises ----------
+function ntcR(T){return 10*Math.exp(3950*(1/(T+273.15)-1/298.15));}   // kOhm, beta=3950, R25=10k
+var PARTS=[
+ {id:'ntc',  name:'NTC 10k',    sym:'R(T)', tau:0.8,  unit:'kΩ',  dig:2, log:true,  lo:0.15, hi:120,
+  law:'R = 10k·e^(β(1/T−1/T₂₅)),  β=3950',
+  val:ntcR, col:'#ff7ad9'},
+ {id:'diode',name:'Si DIODE',   sym:'Vf',   tau:2.6,  unit:'mV',  dig:1, log:false, lo:400,  hi:790,
+  law:'Vf = 650mV − 2.00 mV/°C·ΔT',
+  val:function(T){return 650-2.0*(T-25);}, col:'#7ef7c8'},
+ {id:'coil', name:'Cu COIL',    sym:'R',    tau:6.5,  unit:'Ω',   dig:2, log:false, lo:78,   hi:158,
+  law:'R = 100Ω·(1 + 0.393%/°C·ΔT)',
+  val:function(T){return 100*(1+0.00393*(T-25));}, col:'#ffb03a'},
+ {id:'xtal', name:'QUARTZ 32k', sym:'Δf',   tau:15,   unit:'ppm', dig:1, log:false, lo:-95,  hi:6,
+  law:'Δf/f = −0.034 ppm/°C²·ΔT²   (tuning-fork parabola)',
+  val:function(T){return -0.034*(T-25)*(T-25);}, col:'#8fb4ff'},
+ {id:'batt', name:'CELL OCV',   sym:'Voc',  tau:31,   unit:'V',   dig:4, log:false, lo:1.487,hi:1.562,
+  law:'Voc = 1.5000V + 0.40 mV/°C·ΔT',
+  val:function(T){return 1.5+0.0004*(T-25);}, col:'#c9a6ff'}
+];
+var NH=620, hist=[], ambHist=new Float32Array(NH), hn=0;
+for(var i=0;i<PARTS.length;i++){PARTS[i].T=TAMB;PARTS[i].h=new Float32Array(NH);PARTS[i].hT=new Float32Array(NH);}
+function resetAll(){for(var i=0;i<PARTS.length;i++){PARTS[i].T=TAMB;PARTS[i].h.fill(TAMB);PARTS[i].hT.fill(TAMB);}
+  ambHist.fill(TAMB);hn=0;calStage=0;calPts=[];calFit=null;calHold=0;}
+
+// ---------- calibration act ----------
+var calStage=0, calPts=[], calFit=null, calHold=0, calBub=[];
+function calAdvance(){
+  if(calStage===0){calStage=1;calHold=0;calPts=[];calFit=null;}
+  else if(calStage===1){calPts=[{T:0,V:PARTS[1].val(0)}];calStage=2;calHold=0;}
+  else if(calStage===2){calPts.push({T:100,V:PARTS[1].val(100)});fit();calStage=3;}
+  else {calStage=0;}
+}
+function fit(){
+  if(calPts.length<2)return;
+  var m=(calPts[1].V-calPts[0].V)/(calPts[1].T-calPts[0].T);
+  calFit={m:m,b:calPts[0].V-m*calPts[0].T};
+}
+
+// ---------- layout ----------
+var bench={},plotBox={},calBox={};
+function layout(){
+  var topPad=Math.max(120,H*0.16);
+  bench.y=topPad+Math.min(120,H*0.13);
+  bench.x0=Math.max(150,W*0.10); bench.x1=W-Math.max(40,W*0.05);
+  if(W<900){bench.x0=Math.max(30,W*0.05);}
+  bench.gap=(bench.x1-bench.x0)/PARTS.length;
+  for(var i=0;i<PARTS.length;i++){PARTS[i].x=bench.x0+bench.gap*(i+0.5);PARTS[i].y=bench.y;}
+  plotBox.x=Math.max(24,W*0.035); plotBox.w=W-plotBox.x*2;
+  plotBox.y=bench.y+Math.min(110,H*0.12); plotBox.h=Math.max(160,H-plotBox.y-30);
+  calBox.w=Math.min(300,W*0.28); calBox.x=W-calBox.w-18; calBox.y=Math.max(14,H*0.02); calBox.h=190;
+}
+
+// ---------- physics step ----------
+function step(dt){
+  for(var i=0;i<PARTS.length;i++){
+    var p=PARTS[i],target=TAMB;
+    if(calStage>0&&i===1){ target=(calStage===1)?0:(calStage>=2?100:TAMB); if(calStage===3)target=100; }
+    else if(pointerIn){
+      var dx=px-p.x,dy=py-p.y,d2=dx*dx+dy*dy;
+      var cpl=Math.exp(-d2/(2*SIG*SIG));
+      target=TAMB+cpl*((gunCold?TGUN_COLD:TGUN_HOT)-TAMB);
+    }
+    var tau=(calStage>0&&i===1)?0.9:p.tau;           // liquid bath couples hard
+    p.T+=(target-p.T)*(1-Math.exp(-dt/tau));
+  }
+  hn=(hn+1)%NH; ambHist[hn]=TAMB;
+  for(var j=0;j<PARTS.length;j++){PARTS[j].h[hn]=PARTS[j].val(PARTS[j].T);PARTS[j].hT[hn]=PARTS[j].T;}
+  if(calStage===1&&Math.abs(PARTS[1].T-0)<0.25){calHold+=dt;if(calHold>0.9)calAdvance();}
+  if(calStage===2&&Math.abs(PARTS[1].T-100)<0.25){calHold+=dt;if(calHold>0.9)calAdvance();}
+  for(var b=calBub.length-1;b>=0;b--){var B=calBub[b];B.y-=B.v*dt*60;B.life-=dt;if(B.life<0)calBub.splice(b,1);}
+  if(calStage>=2&&Math.random()<0.55)calBub.push({x:(Math.random()-0.5)*44,y:56,v:0.9+Math.random()*1.5,r:1.5+Math.random()*3,life:1.4});
+}
+
+// ---------- drawing helpers ----------
+function tcol(T,a){ // cold blue -> ambient grey -> hot orange/white
+  var t=(T-TAMB)/(TGUN_HOT-TAMB);
+  if(T>=TAMB){var r=255,g=Math.round(220-150*Math.min(1,t*1.5)),b=Math.round(150-150*Math.min(1,t*1.9));
+    return 'rgba('+r+','+g+','+Math.max(0,b)+','+a+')';}
+  var u=Math.min(1,(TAMB-T)/(TAMB-TGUN_COLD));
+  return 'rgba('+Math.round(150-110*u)+','+Math.round(215-40*u)+',255,'+a+')';
+}
+function glowDot(x,y,r,col,blur){ctx.save();ctx.shadowColor=col;ctx.shadowBlur=blur;ctx.fillStyle=col;
+  ctx.beginPath();ctx.arc(x,y,r,0,6.2832);ctx.fill();ctx.restore();}
+function fmt(v,d){return (Math.abs(v)>=1e4?v.toFixed(0):v.toFixed(d));}
+function norm(p,v){ if(p.log){var a=Math.log(Math.max(1e-6,v)),lo=Math.log(p.lo),hi=Math.log(p.hi);
+    return Math.max(0,Math.min(1,(a-lo)/(hi-lo)));}
+  return Math.max(0,Math.min(1,(v-p.lo)/(p.hi-p.lo)));}
+
+// ---------- component glyphs ----------
+function drawGlyph(p,i){
+  var x=p.x,y=p.y,g=tcol(p.T,1),hot=Math.max(0,Math.min(1,(p.T-TAMB)/90));
+  ctx.save();ctx.translate(x,y);
+  // thermal halo
+  var rg=ctx.createRadialGradient(0,0,2,0,0,60);
+  rg.addColorStop(0,tcol(p.T,0.42*(0.25+Math.abs(p.T-TAMB)/70)));rg.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=rg;ctx.beginPath();ctx.arc(0,0,60,0,6.2832);ctx.fill();
+  ctx.lineWidth=2;ctx.strokeStyle=p.col;ctx.shadowColor=p.col;ctx.shadowBlur=12;
+  ctx.fillStyle='rgba(8,14,24,.9)';
+  if(p.id==='diode'){ // triangle + bar
+    ctx.beginPath();ctx.moveTo(-14,-13);ctx.lineTo(-14,13);ctx.lineTo(10,0);ctx.closePath();ctx.fill();ctx.stroke();
+    ctx.beginPath();ctx.moveTo(10,-14);ctx.lineTo(10,14);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(-26,0);ctx.lineTo(-14,0);ctx.moveTo(10,0);ctx.lineTo(26,0);ctx.stroke();
+  }else if(p.id==='coil'){ // helix
+    ctx.beginPath();ctx.moveTo(-28,0);
+    for(var k=0;k<=64;k++){var t=k/64,xx=-22+44*t;ctx.lineTo(xx,-13*Math.sin(t*Math.PI*5));}
+    ctx.lineTo(28,0);ctx.stroke();
+  }else if(p.id==='xtal'){ // crystal can
+    ctx.beginPath();ctx.moveTo(-16,-13);ctx.lineTo(16,-13);ctx.lineTo(22,0);ctx.lineTo(16,13);
+    ctx.lineTo(-16,13);ctx.lineTo(-22,0);ctx.closePath();ctx.fill();ctx.stroke();
+    ctx.beginPath();ctx.moveTo(-6,-9);ctx.lineTo(-6,9);ctx.moveTo(6,-9);ctx.lineTo(6,9);ctx.stroke();
+  }else if(p.id==='ntc'){ // bead on leads
+    ctx.beginPath();ctx.moveTo(-24,10);ctx.lineTo(-6,4);ctx.moveTo(24,10);ctx.lineTo(6,4);ctx.stroke();
+    ctx.beginPath();ctx.ellipse(0,-2,11,13,0,0,6.2832);ctx.fill();ctx.stroke();
+  }else{ // battery
+    ctx.beginPath();ctx.rect(-18,-13,30,26);ctx.fill();ctx.stroke();
+    ctx.beginPath();ctx.rect(12,-6,6,12);ctx.fill();ctx.stroke();
+    ctx.beginPath();ctx.moveTo(-11,-4);ctx.lineTo(-11,4);ctx.moveTo(-15,0);ctx.lineTo(-7,0);ctx.stroke();
+  }
+  // hot ember overlay
+  if(hot>0.04){ctx.globalCompositeOperation='lighter';ctx.fillStyle='rgba(255,'+Math.round(150-90*hot)+',40,'+(hot*0.5)+')';
+    ctx.beginPath();ctx.arc(0,0,24,0,6.2832);ctx.fill();ctx.globalCompositeOperation='source-over';}
+  ctx.restore();
+
+  // labels
+  ctx.save();ctx.textAlign='center';ctx.shadowBlur=0;
+  ctx.font='600 10px ui-monospace,monospace';ctx.fillStyle='rgba(190,225,250,.85)';
+  ctx.fillText(p.name,x,y-40);
+  var v=p.val(p.T);
+  ctx.font='700 15px ui-monospace,monospace';ctx.fillStyle=p.col;
+  ctx.shadowColor=p.col;ctx.shadowBlur=14;
+  ctx.fillText(p.sym+' '+fmt(v,p.dig)+' '+p.unit,x,y+42);
+  ctx.shadowBlur=0;ctx.font='10px ui-monospace,monospace';ctx.fillStyle=tcol(p.T,0.95);
+  ctx.fillText(p.T.toFixed(1)+' °C   τ='+p.tau+'s',x,y+58);
+  if(p.id==='diode'&&calFit){
+    var Test=(v-calFit.b)/calFit.m;
+    ctx.fillStyle='#9dffd0';ctx.font='700 10px ui-monospace,monospace';
+    ctx.fillText('▸ THERMOMETER  '+(calFit.m*1).toFixed(2)+' mV/°C',x,y+74);
+    ctx.fillStyle='#eaffea';ctx.fillText('reads '+Test.toFixed(1)+' °C',x,y+88);
+  }
+  ctx.restore();
+}
+
+// ---------- traces ----------
+function drawPlot(){
+  var X=plotBox.x,Y=plotBox.y,PW=plotBox.w,PH=plotBox.h,n=PARTS.length;
+  var lh=PH/n;
+  ctx.save();
+  ctx.fillStyle='rgba(8,13,22,.55)';ctx.strokeStyle='rgba(90,180,240,.16)';ctx.lineWidth=1;
+  ctx.beginPath();ctx.rect(X,Y,PW,PH);ctx.fill();ctx.stroke();
+  for(var i=0;i<n;i++){
+    var p=PARTS[i],y0=Y+lh*i,y1=y0+lh;
+    ctx.strokeStyle='rgba(90,180,240,.10)';ctx.beginPath();ctx.moveTo(X,y1);ctx.lineTo(X+PW,y1);ctx.stroke();
+    // ghosted ambient / temperature trace behind
+    ctx.strokeStyle='rgba(140,170,200,.30)';ctx.lineWidth=1;ctx.setLineDash([3,4]);
+    ctx.beginPath();
+    for(var k=0;k<NH;k++){
+      var idx=(hn+1+k)%NH,tx=X+PW*(k/(NH-1));
+      var tn=Math.max(0,Math.min(1,(p.hT[idx]-(-30))/(175-(-30))));
+      var ty=y1-4-(lh-10)*tn;
+      if(k===0)ctx.moveTo(tx,ty);else ctx.lineTo(tx,ty);
+    }
+    ctx.stroke();ctx.setLineDash([]);
+    // the disguised signal
+    ctx.strokeStyle=p.col;ctx.lineWidth=1.9;ctx.shadowColor=p.col;ctx.shadowBlur=9;
+    ctx.beginPath();
+    for(var k2=0;k2<NH;k2++){
+      var id2=(hn+1+k2)%NH,vx=X+PW*(k2/(NH-1));
+      var vy=y1-4-(lh-10)*norm(p,p.h[id2]);
+      if(k2===0)ctx.moveTo(vx,vy);else ctx.lineTo(vx,vy);
+    }
+    ctx.stroke();ctx.shadowBlur=0;
+    var cy=y1-4-(lh-10)*norm(p,p.h[hn]);
+    glowDot(X+PW,cy,3,p.col,10);
+    ctx.font='10px ui-monospace,monospace';ctx.textAlign='left';
+    ctx.fillStyle=p.col;ctx.fillText(p.name+'  '+p.law,X+8,y0+13);
+    ctx.fillStyle='rgba(150,180,205,.55)';ctx.textAlign='right';
+    ctx.fillText('ghost = its true T',X+PW-8,y0+13);
+  }
+  ctx.textAlign='center';ctx.fillStyle='rgba(255,210,122,.85)';ctx.font='11px ui-monospace,monospace';
+  ctx.fillText('five different physics · one temperature story',X+PW/2,Y+PH+16);
+  ctx.restore();
+}
+
+// ---------- heat gun ----------
+function drawGun(){
+  if(!pointerIn)return;
+  var col=gunCold?'rgba(120,215,255,':'rgba(255,150,40,';
+  ctx.save();ctx.globalCompositeOperation='lighter';
+  var g=ctx.createRadialGradient(px,py,2,px,py,SIG*1.5);
+  g.addColorStop(0,col+'0.55)');g.addColorStop(0.35,col+'0.16)');g.addColorStop(1,col+'0)');
+  ctx.fillStyle=g;ctx.beginPath();ctx.arc(px,py,SIG*1.5,0,6.2832);ctx.fill();
+  ctx.globalCompositeOperation='source-over';
+  ctx.strokeStyle=col+'0.75)';ctx.lineWidth=1.2;
+  for(var k=0;k<3;k++){var r=SIG*(0.45+k*0.32);ctx.beginPath();ctx.arc(px,py,r,0,6.2832);ctx.stroke();}
+  ctx.fillStyle=col+'0.95)';ctx.font='700 10px ui-monospace,monospace';ctx.textAlign='center';
+  ctx.fillText(gunCold?'❄ COLD SPRAY −42°C':'🔥 HEAT GUN 165°C',px,py-SIG*0.55-8);
+  ctx.restore();
+}
+
+// ---------- calibration panel ----------
+function drawCal(){
+  if(calStage===0)return;
+  var d=PARTS[1];
+  // beaker under the diode
+  var bx=d.x, by=d.y+118;
+  ctx.save();ctx.translate(bx,by);
+  var isIce=(calStage===1),liq=isIce?'rgba(90,190,255,':'rgba(255,120,60,';
+  ctx.fillStyle=liq+'0.22)';ctx.strokeStyle=liq+'0.85)';ctx.lineWidth=1.6;
+  ctx.shadowColor=liq+'0.7)';ctx.shadowBlur=16;
+  ctx.beginPath();ctx.moveTo(-34,-38);ctx.lineTo(-30,42);ctx.lineTo(30,42);ctx.lineTo(34,-38);ctx.stroke();
+  ctx.beginPath();ctx.rect(-32,-24,64,66);ctx.fill();ctx.shadowBlur=0;
+  if(isIce){for(var k=0;k<6;k++){var a=k*1.9+performance.now()/2600;
+      ctx.fillStyle='rgba(215,245,255,.72)';ctx.save();ctx.translate(Math.cos(a)*17,-14+Math.sin(a*1.4)*8);
+      ctx.rotate(a);ctx.fillRect(-6,-5,12,10);ctx.restore();}}
+  else{for(var b=0;b<calBub.length;b++){var B=calBub[b];
+      ctx.fillStyle='rgba(255,220,180,'+Math.max(0,B.life/1.4)*0.8+')';
+      ctx.beginPath();ctx.arc(B.x,B.y-24,B.r,0,6.2832);ctx.fill();}}
+  ctx.fillStyle=isIce?'#bfe9ff':'#ffd6b0';ctx.font='700 10px ui-monospace,monospace';ctx.textAlign='center';
+  ctx.fillText(isIce?'ICE BATH · 0.00 °C':'BOILING · 100.00 °C',0,60);
+  ctx.restore();
+  // fit panel
+  var X=calBox.x,Y=calBox.y,PW=calBox.w,PH=calBox.h;
+  ctx.save();
+  ctx.fillStyle='rgba(6,12,20,.82)';ctx.strokeStyle='rgba(126,247,200,.35)';ctx.lineWidth=1;
+  ctx.beginPath();ctx.rect(X,Y,PW,PH);ctx.fill();ctx.stroke();
+  ctx.fillStyle='#7ef7c8';ctx.font='700 10px ui-monospace,monospace';ctx.textAlign='left';
+  ctx.fillText('2-POINT CALIBRATION · Si DIODE Vf',X+10,Y+16);
+  var gx=X+40,gy=Y+30,gw=PW-58,gh=PH-72;
+  ctx.strokeStyle='rgba(126,247,200,.18)';ctx.strokeRect(gx,gy,gw,gh);
+  function px2(T){return gx+gw*(T+15)/130;} function py2(V){return gy+gh*(1-(V-380)/340);}
+  ctx.fillStyle='rgba(160,200,220,.6)';ctx.font='9px ui-monospace,monospace';
+  ctx.fillText('0°C',px2(0)-6,gy+gh+11);ctx.fillText('100°C',px2(100)-14,gy+gh+11);
+  ctx.save();ctx.translate(X+12,gy+gh/2);ctx.rotate(-Math.PI/2);ctx.textAlign='center';ctx.fillText('Vf (mV)',0,0);ctx.restore();
+  if(calFit){
+    ctx.strokeStyle='#7ef7c8';ctx.lineWidth=1.8;ctx.shadowColor='#7ef7c8';ctx.shadowBlur=10;
+    ctx.beginPath();ctx.moveTo(px2(-15),py2(calFit.b+calFit.m*-15));ctx.lineTo(px2(115),py2(calFit.b+calFit.m*115));ctx.stroke();ctx.shadowBlur=0;
+  }
+  for(var q=0;q<calPts.length;q++)glowDot(px2(calPts[q].T),py2(calPts[q].V),4,'#ffe27a',12);
+  glowDot(px2(d.T),py2(d.val(d.T)),3.5,'#ff7ad9',12);
+  ctx.textAlign='left';ctx.font='10px ui-monospace,monospace';
+  if(calFit){ctx.fillStyle='#eaffea';
+    ctx.fillText('slope = '+calFit.m.toFixed(3)+' mV/°C',X+10,Y+PH-24);
+    ctx.fillStyle='#ffd27a';ctx.fillText('the "error" IS the sensor →  '+(calFit.m<0?'−':'')+Math.abs(calFit.m).toFixed(2)+' mV/°C',X+10,Y+PH-10);
+  }else{ctx.fillStyle='rgba(190,225,250,.75)';
+    ctx.fillText(calStage===1?'hold at 0 °C…  (C to force)':'hold at 100 °C…  (C to force)',X+10,Y+PH-16);}
+  ctx.restore();
+}
+
+// ---------- title / hud ----------
+function drawHud(){
+  ctx.save();
+  ctx.font='700 12px ui-monospace,monospace';ctx.textAlign='center';
+  ctx.fillStyle='rgba(255,210,122,.75)';ctx.shadowColor='rgba(255,180,60,.5)';ctx.shadowBlur=12;
+  ctx.fillText('W O R K B E N C H   —   nobody here is a thermometer.   all of them are.',W/2,bench.y-92);
+  ctx.restore();
+}
+
+// ---------- main ----------
+var last=performance.now(),acc=0;
+function frame(now){
+  var dt=Math.min(0.05,(now-last)/1000);last=now;
+  if(!paused){acc+=dt;while(acc>1/60){step(1/60);acc-=1/60;}}
+  ctx.fillStyle='#05070c';ctx.fillRect(0,0,W,H);
+  // subtle grid
+  ctx.save();ctx.strokeStyle='rgba(70,140,200,.055)';ctx.lineWidth=1;
+  for(var gx=0;gx<W;gx+=46){ctx.beginPath();ctx.moveTo(gx,0);ctx.lineTo(gx,H);ctx.stroke();}
+  for(var gy=0;gy<H;gy+=46){ctx.beginPath();ctx.moveTo(0,gy);ctx.lineTo(W,gy);ctx.stroke();}
+  ctx.restore();
+  drawGun();drawHud();
+  for(var i=0;i<PARTS.length;i++)drawGlyph(PARTS[i],i);
+  drawPlot();drawCal();
+  var s='ambient '+TAMB.toFixed(1)+' °C   gun '+(gunCold?'COLD':'HOT')+'\n';
+  for(var j=0;j<PARTS.length;j++){var p=PARTS[j];
+    s+=p.name.padEnd(13)+p.T.toFixed(1).padStart(6)+' °C  '+p.sym+'='+fmt(p.val(p.T),p.dig)+' '+p.unit+'\n';}
+  s+=calFit?('diode calibrated: '+calFit.m.toFixed(3)+' mV/°C'):'diode uncalibrated — press C';
+  rdEl.textContent=s;
+  requestAnimationFrame(frame);
+}
+function move(e){var t=e.touches?e.touches[0]:e;px=t.clientX;py=t.clientY;pointerIn=true;}
+window.addEventListener('pointermove',move);
+window.addEventListener('pointerdown',move);
+window.addEventListener('pointerleave',function(){pointerIn=false;});
+window.addEventListener('touchmove',function(e){move(e);e.preventDefault();},{passive:false});
+window.addEventListener('keydown',function(e){
+  var k=e.key.toLowerCase();
+  if(k==='x'){gunCold=!gunCold;}
+  else if(k==='c'){calAdvance();}
+  else if(k==='r'){resetAll();}
+  else if(k===' '){paused=!paused;e.preventDefault();}
+});
+resetAll();resize();requestAnimationFrame(frame);
+</script>
+</body>

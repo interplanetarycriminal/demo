@@ -1,0 +1,374 @@
+<title>Interference Ruler</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+html,body{margin:0;padding:0;height:100%;background:#04060a;overflow:hidden;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#bfe9ff}
+canvas{display:block;position:fixed;inset:0}
+#ui{position:fixed;top:0;left:0;max-width:430px;padding:11px 13px;
+  background:rgba(4,8,14,.72);border-right:1px solid #0d3a4d;border-bottom:1px solid #0d3a4d;
+  font-size:11.5px;line-height:1.5;z-index:10;backdrop-filter:blur(3px)}
+h1{margin:0 0 4px;font-size:13px;letter-spacing:.16em;color:#5ff2ff;
+  text-shadow:0 0 12px #0ff8,0 0 26px #0ff4}
+.cc{color:#ffd85e;text-shadow:0 0 10px #fb08;margin:0 0 7px;font-size:11px}
+.hint{color:#5d8ba0;margin:6px 0 7px;font-size:10.5px}
+.row{display:flex;align-items:center;gap:7px;margin:3px 0}
+.row label{width:106px;color:#7fb6cd;font-size:10.5px}
+input[type=range]{flex:1;height:3px;-webkit-appearance:none;appearance:none;
+  background:linear-gradient(90deg,#0a4a5e,#1b8fae);outline:none;border-radius:2px}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:11px;
+  border-radius:50%;background:#5ff2ff;box-shadow:0 0 8px #5ff2ff;cursor:pointer}
+input[type=range]::-moz-range-thumb{width:11px;height:11px;border:0;border-radius:50%;
+  background:#5ff2ff;box-shadow:0 0 8px #5ff2ff;cursor:pointer}
+.val{width:78px;text-align:right;color:#7dffc0;font-size:10.5px}
+#read{margin-top:7px;padding-top:6px;border-top:1px solid #123a4a;font-size:10.5px;color:#8fd6ee}
+#read b{color:#7dffc0;font-weight:400}
+.pun{color:#ff8ad8;text-shadow:0 0 10px #f4a8;margin-top:6px;font-size:10.5px}
+a{color:#5ff2ff;text-decoration:none;font-size:10.5px}
+a:hover{text-shadow:0 0 8px #5ff2ff}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>INTERFERENCE RULER</h1>
+<div class="cc">CHEAT CODE #36 — Interference is a finer ruler: where two coherent waves overlap, the pattern moves a LOT when the geometry moves a LITTLE.</div>
+<div class="row"><label>transducer gap</label><input id="sGap" type="range" min="30" max="120" step="0.1" value="70"><span class="val" id="vGap"></span></div>
+<div class="row"><label>Δf (beat)</label><input id="sDf" type="range" min="0" max="300" step="1" value="120"><span class="val" id="vDf"></span></div>
+<div class="row"><label>mic x</label><input id="sMic" type="range" min="0" max="1000" step="1" value="500"><span class="val" id="vMic"></span></div>
+<div class="hint">DRAG the mic in the top field · sliders move geometry · [F] freeze · [T] trace clear</div>
+<div id="read"></div>
+<div class="pun">precision lives in the difference.</div>
+<a href="index.html">← gallery</a>
+</div>
+<script>
+'use strict';
+var c=document.getElementById('c'),g=c.getContext('2d');
+var W=0,H=0,DPR=1;
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  W=window.innerWidth;H=window.innerHeight;
+  c.width=Math.round(W*DPR);c.height=Math.round(H*DPR);
+  c.style.width=W+'px';c.style.height=H+'px';
+  g.setTransform(DPR,0,0,DPR,0,0);
+  buildField();
+}
+window.addEventListener('resize',resize);
+
+// ---- physics constants ----
+var C_SND=343.0;          // m/s
+var F0=40000.0;           // Hz  -> lambda = 8.575 mm
+var LAM=C_SND/F0;         // metres
+var LAM_MM=LAM*1000;      // 8.575 mm
+var NODE_MM=LAM_MM/2;     // 4.2875 mm  <-- node spacing
+
+var sGap=document.getElementById('sGap'),sDf=document.getElementById('sDf'),sMic=document.getElementById('sMic');
+var vGap=document.getElementById('vGap'),vDf=document.getElementById('vDf'),vMic=document.getElementById('vMic');
+var read=document.getElementById('read');
+
+var gapMM=70, dF=120, micFrac=0.5, frozen=false;
+var micDragging=false;
+
+// field image buffer (low-res, upscaled) on its own offscreen canvas
+var FW=0,FH=0,img=null,fbuf=null;
+var oc=document.createElement('canvas'),og=oc.getContext('2d');
+function buildField(){
+  FW=Math.max(120,Math.min(720,Math.floor(W/2)));
+  FH=Math.max(40,Math.min(200,Math.floor(fieldH()/2)));
+  oc.width=FW;oc.height=FH;
+  img=og.createImageData(FW,FH);
+  fbuf=img.data;
+  for(var i=3;i<fbuf.length;i+=4)fbuf[i]=255;
+}
+function fieldH(){return Math.max(120,Math.min(260,H*0.30));}
+
+// layout helpers
+function L(){
+  var padL=Math.max(24,W*0.05), padR=Math.max(24,W*0.05);
+  var fh=fieldH();
+  return {x0:padL,x1:W-padR,fy:Math.max(150,H*0.16),fh:fh,
+          ty:Math.max(150,H*0.16)+fh+56, th:Math.max(70,H*0.15),
+          by:Math.max(150,H*0.16)+fh+56+Math.max(70,H*0.15)+64,
+          bh:Math.max(80,H*0.20)};
+}
+
+// mic history trace
+var hist=new Float32Array(600),histPos=new Float32Array(600),hN=0,hHead=0;
+function pushHist(v,p){hist[hHead]=v;histPos[hHead]=p;hHead=(hHead+1)%600;if(hN<600)hN++;}
+
+var t=0,last=performance.now();
+
+function sync(){
+  gapMM=parseFloat(sGap.value);
+  dF=parseFloat(sDf.value)/1000; // slider 0..300 -> 0..0.3 Hz
+  micFrac=parseFloat(sMic.value)/1000;
+  vGap.textContent=gapMM.toFixed(1)+' mm';
+  vDf.textContent=(dF>0?dF.toFixed(3):'0.000')+' Hz';
+  vMic.textContent=(micFrac*gapMM).toFixed(3)+' mm';
+}
+sGap.oninput=sDf.oninput=sync;
+sMic.oninput=function(){sync();};
+sync();
+
+window.addEventListener('keydown',function(e){
+  var k=e.key.toLowerCase();
+  if(k==='f'){frozen=!frozen;}
+  if(k==='t'){hN=0;hHead=0;}
+});
+
+function micPix(){var l=L();return l.x0+micFrac*(l.x1-l.x0);}
+function pxToFrac(px){var l=L();return Math.max(0,Math.min(1,(px-l.x0)/(l.x1-l.x0)));}
+
+function pointer(e){
+  var r=c.getBoundingClientRect();
+  return {x:(e.clientX!==undefined?e.clientX:e.touches[0].clientX)-r.left,
+          y:(e.clientY!==undefined?e.clientY:e.touches[0].clientY)-r.top};
+}
+function down(e){
+  var p=pointer(e),l=L();
+  if(p.y>=l.fy-14&&p.y<=l.fy+l.fh+22){micDragging=true;setMic(p.x);e.preventDefault();}
+}
+function move(e){if(micDragging){var p=pointer(e);setMic(p.x);e.preventDefault();}}
+function up(){micDragging=false;}
+function setMic(px){micFrac=pxToFrac(px);sMic.value=Math.round(micFrac*1000);sync();}
+c.addEventListener('mousedown',down);window.addEventListener('mousemove',move);window.addEventListener('mouseup',up);
+c.addEventListener('touchstart',down,{passive:false});
+window.addEventListener('touchmove',move,{passive:false});
+window.addEventListener('touchend',up);
+
+// --- real superposition of two counter-propagating coherent waves ---
+// A: travels +x from left source at x=0 : sin(k(x)   - w t)
+// B: travels -x from right source at x=D: sin(k(D-x) - w t)
+// sum = 2 sin(k x - k D/2 ... ) ... we just evaluate numerically.
+var K=2*Math.PI/LAM;         // rad per metre
+var PHASE_SPEED=1;            // visual slow-motion factor for the carrier
+
+function fieldAt(xmm,tt){
+  var x=xmm/1000, D=gapMM/1000;
+  var w=2*Math.PI*F0*tt;         // already scaled outside
+  var a=Math.sin(K*x - w);
+  var b=Math.sin(K*(D-x) - w);
+  return a+b;
+}
+// Standing-wave ENVELOPE amplitude (time independent) = |2 cos(k(x - D/2))|
+function envAt(xmm){
+  var x=xmm/1000, D=gapMM/1000;
+  return Math.abs(2*Math.cos(K*(x-D/2)));
+}
+
+function draw(now){
+  var dt=Math.min(0.05,(now-last)/1000);last=now;
+  if(!frozen)t+=dt;
+  var l=L();
+  g.clearRect(0,0,W,H);
+  // background vignette
+  var bgGrad=g.createLinearGradient(0,0,0,H);
+  bgGrad.addColorStop(0,'#04070c');bgGrad.addColorStop(1,'#020407');
+  g.fillStyle=bgGrad;g.fillRect(0,0,W,H);
+
+  drawField(l);
+  drawMicPanel(l);
+  drawBeats(l);
+  updateReadout(l);
+  requestAnimationFrame(draw);
+}
+
+function drawField(l){
+  var fw=l.x1-l.x0,fh=l.fh;
+  // slow-mo carrier: 40 kHz would be invisible, so we time-dilate by 1e-4
+  var tc=t*1e-4;
+  var mm,v,e,idx=0,r,gg,b;
+  for(var yy=0;yy<FH;yy++){
+    var yn=(yy/(FH-1))*2-1;                 // -1..1 across channel
+    var falloff=1-0.35*yn*yn;
+    for(var xx=0;xx<FW;xx++){
+      mm=(xx/(FW-1))*gapMM;
+      v=fieldAt(mm,tc)*falloff;
+      e=envAt(mm)*falloff;
+      var a=Math.abs(v)/2, en=e/2;
+      // neon: cyan for instantaneous, magenta glow where envelope is high
+      r=Math.min(255,(en*en*180)+a*40);
+      gg=Math.min(255,a*230+en*40);
+      b=Math.min(255,a*255*0.9+en*150+18);
+      idx=(yy*FW+xx)*4;
+      fbuf[idx]=r;fbuf[idx+1]=gg;fbuf[idx+2]=b;
+    }
+  }
+  og.putImageData(img,0,0);
+  g.save();
+  g.imageSmoothingEnabled=true;
+  g.globalCompositeOperation='lighter';
+  g.drawImage(oc,0,0,FW,FH,l.x0,l.fy,fw,fh);
+  g.restore();
+
+  // node markers every lambda/2
+  g.save();
+  var nodes=[];
+  // nodes where cos(k(x-D/2))=0  ->  k(x-D/2)=pi/2 + n pi
+  var D=gapMM/1000;
+  for(var n=-400;n<400;n++){
+    var xm=D/2+(Math.PI/2+n*Math.PI)/K;
+    if(xm>=0&&xm<=D)nodes.push(xm*1000);
+  }
+  g.strokeStyle='rgba(255,90,200,.30)';g.lineWidth=1;
+  for(var i=0;i<nodes.length;i++){
+    var px=l.x0+(nodes[i]/gapMM)*fw;
+    g.beginPath();g.moveTo(px,l.fy);g.lineTo(px,l.fy+fh);g.stroke();
+  }
+  g.restore();
+
+  // channel frame + transducers
+  g.strokeStyle='#0e4a60';g.lineWidth=1;
+  g.strokeRect(l.x0,l.fy,fw,fh);
+  drawTransducer(l.x0,l.fy,fh,1);
+  drawTransducer(l.x1,l.fy,fh,-1);
+
+  // labels
+  g.font='10px monospace';g.fillStyle='#5d8ba0';
+  g.fillText('40 kHz  λ = '+LAM_MM.toFixed(3)+' mm   node spacing λ/2 = '+NODE_MM.toFixed(4)+' mm',l.x0,l.fy-8);
+  g.fillText(nodes.length+' nodes across '+gapMM.toFixed(1)+' mm gap',l.x1-190,l.fy-8);
+
+  // MIC
+  var mx=micPix(), mmPos=micFrac*gapMM, lvl=envAt(mmPos)/2;
+  g.save();
+  g.shadowColor='#7dffc0';g.shadowBlur=14;
+  g.strokeStyle='#7dffc0';g.lineWidth=2;
+  g.beginPath();g.moveTo(mx,l.fy-12);g.lineTo(mx,l.fy+fh+12);g.stroke();
+  g.fillStyle='#7dffc0';
+  g.beginPath();g.arc(mx,l.fy+fh/2,5+lvl*6,0,7);g.fill();
+  g.restore();
+  g.font='10px monospace';g.fillStyle='#7dffc0';
+  g.fillText('MIC '+mmPos.toFixed(3)+' mm',Math.min(W-110,mx+9),l.fy+fh+24);
+
+  pushHist(lvl,mmPos);
+}
+
+function drawTransducer(x,y,h,dir){
+  g.save();
+  g.shadowColor='#5ff2ff';g.shadowBlur=16;
+  g.fillStyle='#0a2f3d';g.strokeStyle='#5ff2ff';g.lineWidth=2;
+  g.beginPath();
+  g.rect(x-(dir>0?14:0),y+h/2-22,14,44);
+  g.fill();g.stroke();
+  g.restore();
+  g.font='9px monospace';g.fillStyle='#5ff2ff';
+  g.fillText('TX',x-(dir>0?18:-4),y+h/2+34);
+}
+
+function drawMicPanel(l){
+  var w=l.x1-l.x0,h=l.th,y=l.ty;
+  g.strokeStyle='#0e3346';g.lineWidth=1;g.strokeRect(l.x0,y,w,h);
+  g.font='10px monospace';g.fillStyle='#5d8ba0';
+  g.fillText('MIC LEVEL HISTORY  — swings node→antinode every '+NODE_MM.toFixed(3)+' mm',l.x0,y-7);
+
+  // envelope profile vs position (the "ruler")
+  g.save();g.globalAlpha=.55;
+  g.strokeStyle='#ff5ac8';g.lineWidth=1;g.beginPath();
+  for(var i=0;i<=300;i++){
+    var mm=(i/300)*gapMM, e=envAt(mm)/2;
+    var px=l.x0+(i/300)*w, py=y+h-e*h;
+    if(i===0)g.moveTo(px,py);else g.lineTo(px,py);
+  }
+  g.stroke();g.restore();
+
+  // history trace
+  g.save();g.shadowColor='#7dffc0';g.shadowBlur=8;
+  g.strokeStyle='#7dffc0';g.lineWidth=1.6;g.beginPath();
+  for(var k=0;k<hN;k++){
+    var idx=(hHead-hN+k+600)%600;
+    var px2=l.x0+(k/(599))*w, py2=y+h-hist[idx]*h;
+    if(k===0)g.moveTo(px2,py2);else g.lineTo(px2,py2);
+  }
+  g.stroke();g.restore();
+
+  var lvl=envAt(micFrac*gapMM)/2;
+  g.fillStyle='#7dffc0';
+  g.fillRect(l.x1-6,y+h-lvl*h,6,lvl*h);
+}
+
+// ---- BEATS ----
+var bhist=new Float32Array(900),bN=0,bHead=0,btime=0;
+function drawBeats(l){
+  var w=l.x1-l.x0,h=l.bh,y=l.by;
+  if(y+h>H-10)h=Math.max(50,H-14-y);
+  if(h<24)return;
+  g.strokeStyle='#0e3346';g.lineWidth=1;g.strokeRect(l.x0,y,w,h);
+
+  // sum of two tones f and f+df, sampled in a rolling window of real seconds
+  var span=Math.max(4,(dF>0?3/dF:12));           // show ~3 beat periods
+  span=Math.min(span,60);
+  var mid=y+h/2;
+
+  // carrier drawn as fast squiggle (visually representative), envelope is exact
+  g.save();g.globalAlpha=.85;
+  g.strokeStyle='#5ff2ff';g.lineWidth=1;g.beginPath();
+  var N=Math.min(1400,Math.floor(w));
+  for(var i=0;i<=N;i++){
+    var tau=t-span+(i/N)*span;                     // seconds (real)
+    var env=Math.cos(Math.PI*dF*tau);              // exact beat envelope
+    var carr=Math.sin(2*Math.PI*37*tau);           // visual stand-in carrier
+    var v=env*carr;
+    var px=l.x0+(i/N)*w, py=mid-v*(h/2-4);
+    if(i===0)g.moveTo(px,py);else g.lineTo(px,py);
+  }
+  g.stroke();g.restore();
+
+  // envelope in magenta
+  g.save();g.shadowColor='#ff5ac8';g.shadowBlur=10;
+  g.strokeStyle='#ff5ac8';g.lineWidth=1.7;
+  for(var s=-1;s<=1;s+=2){
+    g.beginPath();
+    for(var j=0;j<=N;j++){
+      var tau2=t-span+(j/N)*span;
+      var e2=Math.abs(Math.cos(Math.PI*dF*tau2))*s;
+      var px2=l.x0+(j/N)*w, py2=mid-e2*(h/2-4);
+      if(j===0)g.moveTo(px2,py2);else g.lineTo(px2,py2);
+    }
+    g.stroke();
+  }
+  g.restore();
+
+  var Tb=dF>0?1/dF:Infinity;
+  g.font='10px monospace';g.fillStyle='#5d8ba0';
+  g.fillText('BEATS: f = 40000.000 Hz   vs   f+Δf = '+(F0+dF).toFixed(3)+' Hz',l.x0,y-7);
+  g.fillStyle='#ffd85e';
+  g.fillText('beat period T = 1/Δf = '+(isFinite(Tb)?Tb.toFixed(2)+' s':'∞'),l.x1-200,y-7);
+
+  // mark beat nulls
+  if(dF>0){
+    g.strokeStyle='rgba(255,216,94,.35)';g.lineWidth=1;
+    var n0=Math.ceil((t-span)*dF-0.5);
+    for(var n=n0;n<(t*dF+1);n++){
+      var tn=(n+0.5)/dF;
+      var f=(tn-(t-span))/span;
+      if(f>=0&&f<=1){var pxn=l.x0+f*w;g.beginPath();g.moveTo(pxn,y);g.lineTo(pxn,y+h);g.stroke();}
+    }
+  }
+}
+
+function updateReadout(l){
+  var mmPos=micFrac*gapMM;
+  var lvl=envAt(mmPos)/2;
+  // distance to nearest node
+  var D=gapMM/1000,x=mmPos/1000;
+  var ph=K*(x-D/2);
+  var nEdge=Math.round((ph-Math.PI/2)/Math.PI);
+  var xn=(D/2+(Math.PI/2+nEdge*Math.PI)/K)*1000;
+  var dNode=Math.abs(mmPos-xn);
+  // sensitivity dLevel/dx at this point, in %/micron
+  var eps=0.001;
+  var dLdx=Math.abs(envAt(mmPos+eps)-envAt(mmPos-eps))/(2*eps)/2; // per mm
+  var perMicron=dLdx/1000*100;
+  var Tb=dF>0?1/dF:Infinity;
+  var ppm=dF/F0*100;
+  read.innerHTML=
+   'mic&nbsp;x&nbsp;<b>'+mmPos.toFixed(4)+' mm</b> &nbsp; level <b>'+(lvl*100).toFixed(1)+'%</b> '+
+   (lvl<0.08?'<span style="color:#ff5ac8">NODE</span>':(lvl>0.92?'<span style="color:#7dffc0">ANTINODE</span>':''))+
+   '<br>nearest node <b>'+dNode.toFixed(4)+' mm</b> away · node pitch <b>'+NODE_MM.toFixed(4)+' mm</b>'+
+   '<br>sensitivity <b>'+perMicron.toFixed(2)+' % / µm</b> — 8.6 mm waves reading µm steps'+
+   '<br>Δf <b>'+dF.toFixed(3)+' Hz</b> = <b>'+ppm.toFixed(6)+'%</b> of f → beat <b>'+(isFinite(Tb)?Tb.toFixed(2)+' s':'∞')+'</b>'+
+   '<br><span style="color:#5d8ba0">neither wave visibly drifts; their difference ticks like a clock.</span>';
+}
+
+resize();
+requestAnimationFrame(draw);
+</script>

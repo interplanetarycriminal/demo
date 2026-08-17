@@ -1,0 +1,423 @@
+<meta charset="utf-8">
+<title>Cheat Code 60 — Buckling</title>
+<style>
+  html,body{margin:0;padding:0;background:#04070c;overflow:hidden;height:100%}
+  canvas{display:block;position:fixed;inset:0}
+  #ui{position:fixed;top:10px;left:10px;z-index:10;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;
+      color:#bfe9ff;background:rgba(4,10,18,.62);border:1px solid rgba(90,220,255,.28);
+      border-radius:8px;padding:10px 12px;max-width:430px;backdrop-filter:blur(6px);
+      box-shadow:0 0 26px rgba(0,190,255,.14)}
+  #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.14em;color:#7ffcff;text-shadow:0 0 12px #12d6ff}
+  .code{color:#ffd27f;margin:0 0 6px;text-shadow:0 0 9px rgba(255,180,60,.45)}
+  .hint{color:#7fa8c0;margin:0 0 6px}
+  .row{display:flex;align-items:center;gap:6px;margin:2px 0}
+  .row label{width:96px;color:#8fd8ff}
+  input[type=range]{width:150px;accent-color:#33e6ff;background:transparent}
+  .rd{color:#a9ffd9}
+  .rd b{color:#fff;font-weight:600}
+  a{color:#69f0ff;text-decoration:none;border-bottom:1px dotted #69f0ff}
+  #ui .sn{color:#ff7ba8}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>CHEAT CODE #60 — BUCKLING</h1>
+  <p class="code">Buckling is nature's snap decision: a column holds firm until P<sub>cr</sub>=&pi;²EI/L², then flips sideways — a comparator with huge gain, whose trip point you set by geometry.</p>
+  <p class="hint">DRAG the weight down (or use FORCE) · L retunes the trip · press D to press the snap-dome · R resets</p>
+  <div class="row"><label>FORCE P</label><input id="sF" type="range" min="0" max="100" step="0.1" value="0"><span class="rd" id="vF">0 N</span></div>
+  <div class="row"><label>LENGTH L</label><input id="sL" type="range" min="0.30" max="1.20" step="0.005" value="0.90"><span class="rd" id="vL">0.90 m</span></div>
+  <div class="row"><label>DOME PRESS</label><input id="sD" type="range" min="0" max="100" step="0.5" value="0"><span class="rd" id="vD">0 %</span></div>
+  <div class="rd" id="ro1">P<sub>cr</sub> = &pi;²EI/L² = —</div>
+  <div class="rd" id="ro2">P/P<sub>cr</sub> = —</div>
+  <div class="rd" id="ro3">tip deflection &delta; = —</div>
+  <div class="sn" id="ro4">state: STRAIGHT</div>
+  <div style="margin-top:6px"><a href="index.html">← gallery</a></div>
+</div>
+<script>
+(function(){
+"use strict";
+var c=document.getElementById('c'),g=c.getContext('2d');
+var W=0,H=0,DPR=1;
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  W=window.innerWidth;H=window.innerHeight;
+  c.width=Math.round(W*DPR);c.height=Math.round(H*DPR);
+  c.style.width=W+'px';c.style.height=H+'px';
+  g.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize',resize);resize();
+
+// ---------- physics constants (steel ruler-ish strip) ----------
+var E=2.0e11;            // Pa
+var bW=0.0250;           // width  25 mm
+var hT=0.00075;          // thickness 0.75 mm
+var I=bW*hT*hT*hT/12;    // m^4  ~ 8.79e-13
+var PI2EI=Math.PI*Math.PI*E*I;
+function Pcr(L){return PI2EI/(L*L);}   // pinned-pinned Euler load
+
+// ---------- state ----------
+var S={
+  L:0.90, P:0, targetP:0, drag:false,
+  q:0,            // buckling amplitude (normalized mid-deflection / L)
+  qv:0,           // amplitude velocity
+  side:1,
+  shake:0, flash:0, snapped:false,
+  trail:[],       // {P,delta}
+  sweep:[],       // trip force vs length explored
+  dome:{u:0,tu:0,x:0,xv:0,inv:false,flash:0,loop:[]},
+  t:0
+};
+for(var i=0;i<220;i++)S.trail.push(null);
+
+var sF=document.getElementById('sF'),sL=document.getElementById('sL'),sD=document.getElementById('sD');
+var vF=document.getElementById('vF'),vL=document.getElementById('vL'),vD=document.getElementById('vD');
+var ro1=document.getElementById('ro1'),ro2=document.getElementById('ro2'),ro3=document.getElementById('ro3'),ro4=document.getElementById('ro4');
+
+function noteSweep(){
+  var L=S.L,p=Pcr(L);
+  for(var i=0;i<S.sweep.length;i++){ if(Math.abs(S.sweep[i].L-L)<0.004){S.sweep[i].P=p;return;} }
+  S.sweep.push({L:L,P:p});
+}
+noteSweep();
+
+sL.addEventListener('input',function(){ S.L=parseFloat(sL.value); noteSweep(); });
+sF.addEventListener('input',function(){ S.targetP=parseFloat(sF.value); });
+sD.addEventListener('input',function(){ S.dome.tu=parseFloat(sD.value)/100; });
+
+// weight drag
+var weightY=0, weightHome=0, dragging=false;
+c.addEventListener('pointerdown',function(e){
+  var y=e.clientY;
+  if(Math.abs(y-weightY)<80 && e.clientX>colX-140 && e.clientX<colX+140){dragging=true;c.setPointerCapture(e.pointerId);}
+});
+c.addEventListener('pointermove',function(e){
+  if(!dragging)return;
+  var push=Math.max(0,(e.clientY-weightHome));
+  S.targetP=Math.min(100,push*0.55);
+  sF.value=S.targetP.toFixed(1);
+});
+window.addEventListener('pointerup',function(){dragging=false;});
+window.addEventListener('keydown',function(e){
+  var k=e.key.toLowerCase();
+  if(k==='d'){ S.dome.tu=S.dome.tu>0.5?0:1; sD.value=(S.dome.tu*100).toFixed(0); }
+  if(k==='r'){ S.q=0;S.qv=0;S.targetP=0;sF.value=0;S.snapped=false;S.trail=[];S.dome.loop=[];S.sweep=[];noteSweep(); }
+});
+
+// ---------- column solve ----------
+// Post-buckling (elastica, small-ish amplitude): P/Pcr = 1 + (pi^2/8) q^2 ... inverted:
+// equilibrium amplitude q* = sqrt( 8/pi^2 * (P/Pcr - 1) ) for P>Pcr
+// Dynamics: over-damped-ish spring toward q*, with a huge gain near the trip -> visual "snap".
+function step(dt){
+  S.t+=dt;
+  // force follows target with a ramp (loading rate)
+  S.P += (S.targetP-S.P)*Math.min(1,dt*6);
+  var pc=Pcr(S.L), r=S.P/pc;
+
+  // potential-derived restoring: dU/dq = q*(1 - r) + (pi^2/8)*q^3*r   (Landau pitchfork)
+  var q=S.q;
+  var force = -( q*(1-r) + 0.30*q*q*q );
+  // tiny imperfection so it always picks a side (real columns are never perfect)
+  force += 0.0018*S.side*r;
+  var m=1.0,damp=2.6;
+  S.qv += (force/m)*dt*90;
+  S.qv *= Math.exp(-damp*dt);
+  S.q  += S.qv*dt;
+  if(S.q>0.62)S.q=0.62; if(S.q<-0.62)S.q=-0.62;
+
+  var wasSnapped=S.snapped;
+  S.snapped = Math.abs(S.q)>0.045;
+  if(S.snapped&&!wasSnapped){S.shake=1;S.flash=1;}
+  S.shake*=Math.exp(-6*dt); S.flash*=Math.exp(-4*dt);
+
+  // trail: force vs mid deflection (mm)
+  var delta=Math.abs(S.q)*S.L*1000*0.5;
+  S.trail.push({P:S.P,d:delta});
+  if(S.trail.length>900)S.trail.shift();
+
+  stepDome(dt);
+}
+
+// ---------- snap dome (bistable, with hysteresis) ----------
+function stepDome(dt){
+  var D=S.dome;
+  D.u += (D.tu-D.u)*Math.min(1,dt*2.2);        // finger travel 0..1
+  // dome is a bistable spring: F(x) = k*(x - a)*(x - b)*(x - cc) shape -> N-shaped force curve
+  // We drive by displacement (finger) and read force.
+  var x=D.u*1.0;
+  // N-shaped: F = A*x - B*x^2 + C*x^3 normalized so it peaks then dips negative
+  var A=42, B=150, C=132;
+  var F=A*x-B*x*x+C*x*x*x;
+  // snap-through: once past peak (x>0.30) go inverted; releases only below x<0.14 (hysteresis)
+  if(!D.inv && x>0.32){D.inv=true;D.flash=1;}
+  if(D.inv && x<0.13){D.inv=false;D.flash=1;}
+  if(D.inv)F=Math.max(1.5,F*0.42+1.5);          // collapsed branch: much lower force
+  D.x=x;D.F=F;
+  D.flash*=Math.exp(-5*dt);
+  D.loop.push({x:x,F:F});
+  if(D.loop.length>700)D.loop.shift();
+}
+
+// ---------- drawing ----------
+var colX=0,colTop=0,colBot=0;
+function glowLine(pts,col,w,blur){
+  g.save();g.strokeStyle=col;g.lineWidth=w;g.shadowColor=col;g.shadowBlur=blur;g.lineJoin='round';g.lineCap='round';
+  g.beginPath();for(var i=0;i<pts.length;i++){ if(i===0)g.moveTo(pts[i][0],pts[i][1]);else g.lineTo(pts[i][0],pts[i][1]); }
+  g.stroke();g.restore();
+}
+function txt(s,x,y,col,size,al){
+  g.save();g.fillStyle=col;g.font=(size||11)+'px ui-monospace,Menlo,Consolas,monospace';g.textAlign=al||'left';
+  g.shadowColor=col;g.shadowBlur=8;g.fillText(s,x,y);g.restore();
+}
+
+function drawColumn(){
+  var pad=70;
+  var stageW=Math.min(460,W*0.36);
+  colX=Math.max(200,W*0.26);
+  var maxLen=Math.min(H-260,520);
+  var pxPerM=maxLen/1.20;
+  var len=S.L*pxPerM;
+  colBot=H-140;
+  colTop=colBot-len;
+
+  var sh=S.shake*14;
+  g.save();
+  g.translate((Math.random()-0.5)*sh,(Math.random()-0.5)*sh);
+
+  // base plate
+  g.save();g.strokeStyle='#2c6a86';g.lineWidth=3;g.shadowColor='#2c6a86';g.shadowBlur=10;
+  g.beginPath();g.moveTo(colX-90,colBot);g.lineTo(colX+90,colBot);g.stroke();
+  for(var i=-4;i<=4;i++){g.beginPath();g.moveTo(colX+i*20,colBot);g.lineTo(colX+i*20-10,colBot+13);g.stroke();}
+  g.restore();
+
+  // elastica: half-sine bow, amplitude q*L, foreshorten so ends stay put
+  var N=64,pts=[];
+  var amp=S.q*len*0.55;
+  // axial shortening from bowing: ds = (pi^2 a^2)/(4L)
+  var shorten=(Math.PI*Math.PI*amp*amp)/(4*len);
+  var eff=len-shorten;
+  for(var i2=0;i2<=N;i2++){
+    var s=i2/N;
+    var y=colBot-eff*s;
+    var x=colX+amp*Math.sin(Math.PI*s);
+    pts.push([x,y]);
+  }
+  var stress=Math.min(1,S.P/Math.max(1e-9,Pcr(S.L)));
+  var hue=S.snapped?(10+40*(1-Math.min(1,Math.abs(S.q)/0.5))):(190-90*stress);
+  var col='hsl('+hue+',100%,'+(S.snapped?66:62)+'%)';
+  glowLine(pts,col,7,S.snapped?34:16);
+  glowLine(pts,'#ffffff',1.6,6);
+
+  // snap flash ring
+  if(S.flash>0.01){
+    g.save();g.globalAlpha=S.flash;g.strokeStyle='#ffb0d0';g.lineWidth=3;g.shadowColor='#ff5fa2';g.shadowBlur=40;
+    g.beginPath();g.arc(colX,colBot-eff*0.5,60+180*(1-S.flash),0,7);g.stroke();g.restore();
+  }
+
+  // load / weight block
+  var top=pts[N];
+  var wy=top[1];
+  weightY=wy-26; weightHome=colBot-len-26;
+  var wSize=26+S.P*0.42;
+  g.save();
+  g.fillStyle='rgba(255,190,90,.16)';g.strokeStyle='#ffb64d';g.lineWidth=2;g.shadowColor='#ffb64d';g.shadowBlur=18;
+  g.beginPath();g.rect(top[0]-wSize/2,wy-wSize*0.55,wSize,wSize*0.55);g.fill();g.stroke();g.restore();
+  txt(S.P.toFixed(1)+' N',top[0],wy-wSize*0.62-6,'#ffd27f',12,'center');
+  // arrow
+  glowLine([[top[0],wy-wSize*0.55-46],[top[0],wy-wSize*0.55-10]],'#ffb64d',2,10);
+  glowLine([[top[0]-6,wy-wSize*0.55-18],[top[0],wy-wSize*0.55-10],[top[0]+6,wy-wSize*0.55-18]],'#ffb64d',2,10);
+
+  txt('L = '+S.L.toFixed(3)+' m',colX-120,colBot-len/2,'#63c3e6',12,'right');
+  glowLine([[colX-108,colTop],[colX-108,colBot]],'rgba(90,190,230,.35)',1,0);
+  glowLine([[colX-114,colTop],[colX-102,colTop]],'rgba(90,190,230,.5)',1,0);
+  glowLine([[colX-114,colBot],[colX-102,colBot]],'rgba(90,190,230,.5)',1,0);
+
+  g.restore();
+
+  var lab=S.snapped?'BUCKLED':'STRAIGHT — holding';
+  txt(lab,colX,colBot+50,S.snapped?'#ff6fa5':'#5ef2c0',15,'center');
+}
+
+// ---------- plots ----------
+function panel(x,y,w,h,title){
+  g.save();
+  g.fillStyle='rgba(6,14,24,.55)';g.strokeStyle='rgba(80,200,240,.22)';g.lineWidth=1;
+  g.beginPath();g.rect(x,y,w,h);g.fill();g.stroke();g.restore();
+  txt(title,x+8,y+15,'#7fd8ff',11);
+}
+
+function drawPlots(){
+  var px=W*0.52, pw=Math.min(W-px-24,520);
+  if(pw<220){pw=Math.max(200,W-40);px=20;}
+  var ph=Math.min(180,(H-140)/3.2);
+  var gap=18;
+
+  // --- 1. Force vs deflection: flat flat CLIFF ---
+  var y0=24;
+  panel(px,y0,pw,ph,'FORCE  vs  MID-DEFLECTION   (flat · flat · CLIFF)');
+  var pc=Pcr(S.L);
+  var maxP=Math.max(pc*1.9,S.P*1.15,10);
+  var maxD=Math.max(60,S.L*1000*0.62*0.5);
+  function fx(d){return px+14+(d/maxD)*(pw-30);}
+  function fy(P){return y0+ph-16-(P/maxP)*(ph-34);}
+  // theoretical curve
+  var th=[];
+  for(var d=0;d<=maxD;d+=maxD/120){
+    var q=(d/ (S.L*1000*0.5));
+    var P=pc*(1+0.30*q*q);        // matches the pitchfork we integrate
+    if(P<=maxP) th.push([fx(d),fy(P)]);
+  }
+  // vertical pre-buckling leg
+  glowLine([[fx(0),fy(0)],[fx(0),fy(pc)]],'rgba(120,235,255,.35)',2,6);
+  glowLine(th,'rgba(120,235,255,.5)',2,8);
+  // Pcr line
+  glowLine([[px+8,fy(pc)],[px+pw-8,fy(pc)]],'rgba(255,110,165,.55)',1.4,10);
+  txt('P_cr '+pc.toFixed(1)+' N',px+pw-10,fy(pc)-6,'#ff8fb8',10,'right');
+  // live trail
+  var tp=[];for(var i=0;i<S.trail.length;i++){var t=S.trail[i];if(t)tp.push([fx(Math.min(t.d,maxD)),fy(Math.min(t.P,maxP))]);}
+  if(tp.length>1)glowLine(tp,'#ffd27f',2.4,14);
+  // live dot
+  var dnow=Math.abs(S.q)*S.L*1000*0.5;
+  g.save();g.fillStyle='#fff';g.shadowColor='#ffd27f';g.shadowBlur=18;
+  g.beginPath();g.arc(fx(Math.min(dnow,maxD)),fy(Math.min(S.P,maxP)),4,0,7);g.fill();g.restore();
+  txt('δ (mm) →',px+pw-12,y0+ph-4,'#4e93ad',10,'right');
+
+  // --- 2. Trip force vs length: P ∝ 1/L² ---
+  var y1=y0+ph+gap;
+  panel(px,y1,pw,ph,'TRIP FORCE  vs  LENGTH     P_cr ∝ 1/L²   (halve L → 4× the trip)');
+  var Lmin=0.30,Lmax=1.20;
+  var pMax=Pcr(Lmin)*1.05;
+  function gx(L){return px+14+((L-Lmin)/(Lmax-Lmin))*(pw-30);}
+  function gy(P){return y1+ph-16-(P/pMax)*(ph-34);}
+  var cur=[];for(var L=Lmin;L<=Lmax+1e-9;L+=(Lmax-Lmin)/140)cur.push([gx(L),gy(Pcr(L))]);
+  glowLine(cur,'rgba(90,255,200,.55)',2,10);
+  // explored points
+  for(var i3=0;i3<S.sweep.length;i3++){
+    var sp=S.sweep[i3];
+    g.save();g.fillStyle='rgba(160,255,220,.85)';g.shadowColor='#5effc8';g.shadowBlur=10;
+    g.beginPath();g.arc(gx(sp.L),gy(sp.P),2.4,0,7);g.fill();g.restore();
+  }
+  g.save();g.fillStyle='#fff';g.shadowColor='#5effc8';g.shadowBlur=18;
+  g.beginPath();g.arc(gx(S.L),gy(Pcr(S.L)),4.5,0,7);g.fill();g.restore();
+  txt('L (m) →',px+pw-12,y1+ph-4,'#3e9a80',10,'right');
+  txt('explored: '+S.sweep.length+' lengths',px+10,y1+ph-6,'#3e9a80',10);
+
+  // --- 3. Snap dome + hysteresis loop ---
+  var y2=y1+ph+gap;
+  var dw=pw*0.42, lw=pw-dw-12;
+  panel(px,y2,dw,ph,'SNAP-DOME  (press D)');
+  drawDome(px,y2,dw,ph);
+  panel(px+dw+12,y2,lw,ph,'DOME  F vs x — HYSTERESIS');
+  drawDomeLoop(px+dw+12,y2,lw,ph);
+}
+
+function drawDome(x,y,w,h){
+  var D=S.dome;
+  var cx=x+w/2, base=y+h-30, span=w*0.62, rise=h*0.30;
+  // dome cross-section
+  var pts=[],N=40;
+  var inv=D.inv?-1:1;
+  var sag=D.inv?0.62:1;
+  var press=Math.min(1,D.u*(D.inv?0.2:1.5));
+  for(var i=0;i<=N;i++){
+    var s=i/N, xx=cx-span/2+span*s;
+    var arc=Math.sin(Math.PI*s);
+    var yy=base-rise*arc*inv*sag + (D.inv?0:rise*0.35*arc*press);
+    pts.push([xx,yy]);
+  }
+  glowLine([[cx-span/2-16,base],[cx+span/2+16,base]],'#2c6a86',3,8);
+  glowLine(pts,D.inv?'#ff7ba8':'#66f0ff',5,D.flash>0.02?36:16);
+  // finger
+  var fy2=base-rise-30+D.u*(rise+26);
+  glowLine([[cx,fy2-40],[cx,fy2]],'#ffb64d',6,14);
+  g.save();g.fillStyle='rgba(255,182,77,.2)';g.strokeStyle='#ffb64d';g.shadowColor='#ffb64d';g.shadowBlur=14;
+  g.beginPath();g.arc(cx,fy2,9,0,7);g.fill();g.stroke();g.restore();
+  if(D.flash>0.02){
+    g.save();g.globalAlpha=D.flash;g.strokeStyle='#fff';g.lineWidth=2;g.shadowColor='#fff';g.shadowBlur=30;
+    g.beginPath();g.arc(cx,base-rise*0.4,26+90*(1-D.flash),0,7);g.stroke();g.restore();
+    txt('CLICK',cx,base-rise-46,'#ffffff',15,'center');
+  }
+  txt(D.inv?'INVERTED':'DOMED',cx,y+h-10,D.inv?'#ff7ba8':'#66f0ff',11,'center');
+}
+
+function drawDomeLoop(x,y,w,h){
+  var D=S.dome;
+  var fmax=14, xmax=1.0;
+  function lx(v){return x+16+(v/xmax)*(w-32);}
+  function ly(v){return y+h-16-(Math.max(0,v)/fmax)*(h-36);}
+  var p=[];for(var i=0;i<D.loop.length;i++){var q=D.loop[i];p.push([lx(q.x),ly(Math.min(q.F,fmax))]);}
+  if(p.length>1)glowLine(p,'rgba(255,160,200,.85)',2,12);
+  if(p.length)  {g.save();g.fillStyle='#fff';g.shadowColor='#ff7ba8';g.shadowBlur=16;g.beginPath();g.arc(p[p.length-1][0],p[p.length-1][1],3.5,0,7);g.fill();g.restore();}
+  txt('x →',x+w-12,y+h-4,'#8a5670',10,'right');
+  txt('F ↑',x+8,y+h-4,'#8a5670',10);
+  txt(D.loop.length>40?'up-path ≠ down-path':'cycle the dome…',x+w/2,y+16+12,'#c98fae',10,'center');
+}
+
+// ---------- captions ----------
+var caps=[
+ ['SNAP-DOME','a metal dish that inverts at its own force — the click in every keyboard'],
+ ['TAPE-MEASURE BLADE','curved cross-section holds… then collapses to a hinge at a set length'],
+ ['BISTABLE CLIP','two stable shapes, one energy hill: the snap IS the decision'],
+ ['SLAP BRACELET','a straight prestressed strip that buckles into a coil on contact'],
+ ['JUMPING POPPER','stored elastic energy released the instant the dome flips back']
+];
+function drawCaptions(){
+  var y=H-92;
+  txt('NATURE\'S COMPARATORS',24,y-16,'#6fb6d6',11);
+  var idx=Math.floor(S.t/3.4)%caps.length;
+  var fade=Math.min(1,(S.t/3.4%1)*4)*Math.min(1,(1-(S.t/3.4%1))*4+0.4);
+  g.save();g.globalAlpha=0.35+0.65*Math.min(1,fade);
+  txt(caps[idx][0],24,y+6,'#ffd27f',14);
+  txt(caps[idx][1],24,y+24,'#9fd0e4',11);
+  g.restore();
+  txt('"physics does the comparator; you choose the trip force by geometry."',24,H-18,'#7ffcff',13);
+}
+
+// ---------- readouts ----------
+function updateUI(){
+  var pc=Pcr(S.L);
+  vF.textContent=S.P.toFixed(1)+' N';
+  vL.textContent=S.L.toFixed(2)+' m';
+  vD.textContent=(S.dome.u*100).toFixed(0)+' %';
+  ro1.innerHTML='P<sub>cr</sub> = π²·'+(E/1e9).toFixed(0)+'GPa·'+(I*1e12).toFixed(2)+'e-12 / '+S.L.toFixed(2)+'² = <b>'+pc.toFixed(2)+' N</b>';
+  var r=S.P/pc;
+  ro2.innerHTML='P/P<sub>cr</sub> = <b>'+r.toFixed(3)+'</b>'+(r>1?'  ▲ over':'  ▼ under');
+  ro3.innerHTML='mid deflection δ = <b>'+(Math.abs(S.q)*S.L*1000*0.5).toFixed(1)+' mm</b>';
+  ro4.textContent='state: '+(S.snapped?'BUCKLED  ('+(S.q>0?'right':'left')+')':'STRAIGHT')+'   ·  dome: '+(S.dome.inv?'INVERTED':'domed');
+  ro4.style.color=S.snapped?'#ff6fa5':'#5ef2c0';
+}
+
+// ---------- loop ----------
+var last=performance.now();
+function frame(now){
+  var dt=Math.min(0.033,(now-last)/1000);last=now;
+  for(var k=0;k<2;k++)step(dt/2);
+  g.setTransform(DPR,0,0,DPR,0,0);
+  g.fillStyle='#04070c';g.fillRect(0,0,W,H);
+  // vignette grid
+  g.save();g.strokeStyle='rgba(40,110,150,.10)';g.lineWidth=1;
+  for(var x=0;x<W;x+=48){g.beginPath();g.moveTo(x,0);g.lineTo(x,H);g.stroke();}
+  for(var y=0;y<H;y+=48){g.beginPath();g.moveTo(0,y);g.lineTo(W,y);g.stroke();}
+  g.restore();
+  drawColumn();
+  drawPlots();
+  drawCaptions();
+  updateUI();
+  requestAnimationFrame(frame);
+}
+// auto-demo nudge so it's alive on load
+S.targetP=0;
+var demoT=0,demoOn=true;
+setInterval(function(){
+  if(!demoOn)return;
+  demoT+=1;
+  if(demoT<7){S.targetP=Math.min(100,Pcr(S.L)*(demoT/6.0)*1.25);sF.value=S.targetP.toFixed(1);}
+  else if(demoT<9){S.targetP=0;sF.value=0;}
+  else demoT=0;
+},420);
+['pointerdown','keydown'].forEach(function(ev){window.addEventListener(ev,function(){demoOn=false;},{once:true});});
+sF.addEventListener('pointerdown',function(){demoOn=false;});
+sL.addEventListener('pointerdown',function(){demoOn=false;});
+requestAnimationFrame(frame);
+})();
+</script>

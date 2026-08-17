@@ -1,0 +1,286 @@
+<meta charset="utf-8">
+<title>Cheat Code #1 — Every Emitter Is a Detector</title>
+<style>
+  html,body{margin:0;padding:0;background:#04060a;overflow:hidden;height:100%}
+  canvas{display:block;position:fixed;inset:0}
+  #ui{position:fixed;top:10px;left:10px;z-index:10;background:rgba(6,10,16,.72);
+      border:1px solid rgba(90,220,255,.28);border-radius:8px;padding:10px 12px;
+      font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#bfe9ff;max-width:390px;
+      backdrop-filter:blur(6px);box-shadow:0 0 24px rgba(0,180,255,.14)}
+  #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.12em;color:#7ef9ff;text-shadow:0 0 10px #0ff6}
+  .code{color:#ffe58a;margin:0 0 6px;font-style:italic;text-shadow:0 0 8px #fc06}
+  .hint{color:#7d93a8;margin:6px 0 4px}
+  .row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:5px 0}
+  button{background:rgba(0,80,120,.4);color:#9beaff;border:1px solid #2b7f9e;border-radius:5px;
+    padding:3px 8px;font:11px ui-monospace,monospace;cursor:pointer}
+  button:hover{background:rgba(0,140,200,.5);box-shadow:0 0 10px #0cf6}
+  button.on{background:#0a5e7d;color:#eaffff;box-shadow:0 0 12px #0ff8}
+  .chip{width:18px;height:18px;border-radius:50%;border:1px solid #444;cursor:pointer;padding:0}
+  .chip.sel{outline:2px solid #fff;outline-offset:1px}
+  input[type=range]{width:120px;accent-color:#25d0ff;vertical-align:middle}
+  #rd{color:#8ef0c0;white-space:pre;margin-top:5px;font-size:11px;text-shadow:0 0 6px #0f86}
+  a{color:#67d5ff}
+  .lab{color:#5d7near}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>CHEAT CODE #1 · TRANSDUCTION</h1>
+  <p class="code">Every emitter is a detector — transduction runs both ways.</p>
+  <div class="row">
+    <button id="actA" class="on">ACT A · LEDs</button>
+    <button id="actB">ACT B · SPEAKERS</button>
+    <button id="swap">⇄ SWAP ROLES</button>
+  </div>
+  <div class="row" id="rowDrive">drive <input type="range" id="drive" min="0" max="100" value="78"></div>
+  <div class="row" id="rowLed">
+    <span>emitter λ</span><span id="chipsE"></span>
+    <span style="margin-left:8px">detector λ</span><span id="chipsD"></span>
+  </div>
+  <div class="row" id="rowSpk" style="display:none">
+    wave <button class="w on" data-w="0">sine</button><button class="w" data-w="1">square</button><button class="w" data-w="2">chirp</button>
+    &nbsp;f <input type="range" id="freq" min="40" max="400" value="120">
+  </div>
+  <div class="hint">click chips · drag slider · SWAP reverses the parts</div>
+  <div id="rd"></div>
+  <div style="margin-top:6px"><a href="index.html">← gallery</a></div>
+</div>
+<script>
+"use strict";
+var c=document.getElementById('c'),x=c.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
+  c.width=W*DPR|0;c.height=H*DPR|0;c.style.width=W+'px';c.style.height=H+'px';x.setTransform(DPR,0,0,DPR,0,0);}
+window.addEventListener('resize',resize);resize();
+
+/* ---------- spectral model: LED emission = gaussian at λ, detection needs photon E >= bandgap ----------
+   A photodiode/LED only responds to photons with energy above its own bandgap, i.e. λ_photon <= λ_detector.
+   Response = ∫ Emit(λ) * D(λ) dλ, with D a soft step that turns on for λ < λ_det (+ small tail).      */
+var COLORS=[ {n:'blue',  lam:465, css:'#4fa8ff'},
+             {n:'green', lam:525, css:'#54ff9a'},
+             {n:'amber', lam:592, css:'#ffc23a'},
+             {n:'red',   lam:635, css:'#ff5555'},
+             {n:'IR',    lam:850, css:'#8b4b6b'} ];
+function emitSpec(lam,l){var s=22;var d=(l-lam)/s;return Math.exp(-0.5*d*d);}
+function detResp(lamD,l){ // responsivity of a detector with cutoff lamD, at wavelength l
+  var t=(lamD-l)/26;                 // soft absorption edge
+  var s=1/(1+Math.exp(-t));          // ~1 when l < lamD
+  return s*(0.35+0.65*(l/lamD));     // quantum-efficiency-ish weighting
+}
+function overlap(lamE,lamD){var sum=0,n=0;
+  for(var l=380;l<=1000;l+=2){sum+=emitSpec(lamE,l)*detResp(lamD,l);n++;}
+  return sum/ (function(){var a=0;for(var l=380;l<=1000;l+=2)a+=emitSpec(lamE,l);return a;})();
+}
+var eI=3,dI=3; // start matched: red/red
+
+/* ---------- state ---------- */
+var act='A',swapT=1,swapDir=0,flipped=false;
+var drive=document.getElementById('drive'),freqS=document.getElementById('freq');
+var wave=0,t=0;
+var photons=[],trace=[],TRN=260;for(var i=0;i<TRN;i++)trace.push(0);
+var spkTrace=[];for(i=0;i<TRN;i++)spkTrace.push(0);
+var pressure=[];// {r, amp, born}
+
+function chips(el,sel,cb){el.innerHTML='';COLORS.forEach(function(co,i){
+  var b=document.createElement('button');b.className='chip'+(i===sel()?' sel':'');
+  b.style.background=co.css;b.title=co.n+' '+co.lam+'nm';b.onclick=function(){cb(i);build();};el.appendChild(b);});}
+function build(){chips(document.getElementById('chipsE'),function(){return eI},function(i){eI=i});
+                 chips(document.getElementById('chipsD'),function(){return dI},function(i){dI=i});}
+build();
+
+document.getElementById('actA').onclick=function(){act='A';this.classList.add('on');document.getElementById('actB').classList.remove('on');
+  document.getElementById('rowLed').style.display='';document.getElementById('rowSpk').style.display='none';};
+document.getElementById('actB').onclick=function(){act='B';this.classList.add('on');document.getElementById('actA').classList.remove('on');
+  document.getElementById('rowLed').style.display='none';document.getElementById('rowSpk').style.display='';};
+document.getElementById('swap').onclick=function(){if(swapDir===0){swapDir=1;swapT=0;}};
+Array.prototype.forEach.call(document.querySelectorAll('.w'),function(b){b.onclick=function(){
+  wave=+b.dataset.w;document.querySelectorAll('.w').forEach(function(o){o.classList.remove('on')});b.classList.add('on');};});
+
+function glow(col,b,fn){x.save();x.shadowColor=col;x.shadowBlur=b;fn();x.restore();}
+
+/* ---------- LED drawing ---------- */
+function drawLED(cx,cy,col,lit,isDet,label,sub){
+  var r=30;
+  // body
+  x.save();x.translate(cx,cy);
+  glow(col,lit>0.02?38*lit+8:6,function(){
+    x.beginPath();x.moveTo(-r*0.75,r);x.lineTo(-r*0.75,-r*0.25);
+    x.arc(0,-r*0.25,r*0.75,Math.PI,0);x.lineTo(r*0.75,r);x.closePath();
+    var g=x.createLinearGradient(0,-r,0,r);
+    g.addColorStop(0,'rgba('+hex(col)+','+(0.25+0.75*lit)+')');
+    g.addColorStop(1,'rgba('+hex(col)+',0.12)');
+    x.fillStyle=g;x.fill();
+    x.strokeStyle=col;x.lineWidth=1.6;x.globalAlpha=.85;x.stroke();
+  });
+  // die
+  glow(col,20*lit+4,function(){x.beginPath();x.arc(0,0,5+4*lit,0,7);x.fillStyle=col;x.globalAlpha=.35+.65*lit;x.fill();});
+  // legs
+  x.strokeStyle='#7d8fa0';x.lineWidth=2;x.beginPath();
+  x.moveTo(-9,r);x.lineTo(-9,r+26);x.moveTo(9,r);x.lineTo(9,r+18);x.stroke();
+  x.restore();
+  x.font='bold 12px ui-monospace,monospace';x.textAlign='center';
+  x.fillStyle=isDet?'#8ef0c0':'#ffd76a';glow(x.fillStyle,10,function(){x.fillText(label,cx,cy-r-16);});
+  x.font='10px ui-monospace,monospace';x.fillStyle='#7d93a8';x.fillText(sub,cx,cy+r+42);
+}
+function hex(h){var n=parseInt(h.slice(1),16);return (n>>16&255)+','+(n>>8&255)+','+(n&255);}
+
+/* ---------- meter ---------- */
+function meter(cx,cy,w,h,val,max,unit,col){
+  x.save();x.translate(cx,cy);
+  x.fillStyle='rgba(8,14,20,.85)';x.strokeStyle='rgba(90,220,255,.3)';x.lineWidth=1;
+  x.beginPath();x.rect(-w/2,-h/2,w,h);x.fill();x.stroke();
+  // arc scale
+  var R=h*0.72,cyy=h*0.30;
+  x.strokeStyle='rgba(120,180,210,.45)';x.lineWidth=1.4;
+  x.beginPath();x.arc(0,cyy,R,Math.PI*1.18,Math.PI*1.82);x.stroke();
+  for(var i=0;i<=10;i++){var a=Math.PI*1.18+(Math.PI*0.64)*i/10;
+    x.beginPath();x.moveTo(Math.cos(a)*R,cyy+Math.sin(a)*R);
+    x.lineTo(Math.cos(a)*(R-(i%5?4:8)),cyy+Math.sin(a)*(R-(i%5?4:8)));x.stroke();}
+  var f=Math.max(0,Math.min(1,val/max)),an=Math.PI*1.18+Math.PI*0.64*f;
+  glow(col,16,function(){x.strokeStyle=col;x.lineWidth=2.4;x.beginPath();
+    x.moveTo(0,cyy);x.lineTo(Math.cos(an)*(R-3),cyy+Math.sin(an)*(R-3));x.stroke();
+    x.beginPath();x.arc(0,cyy,3.5,0,7);x.fillStyle=col;x.fill();});
+  x.textAlign='center';x.font='bold 14px ui-monospace,monospace';x.fillStyle=col;
+  glow(col,10,function(){x.fillText(val.toFixed(2)+' '+unit,0,h/2-8);});
+  x.restore();
+}
+function traceBox(px,py,w,h,arr,col,title,scale){
+  x.fillStyle='rgba(8,14,20,.8)';x.strokeStyle='rgba(90,220,255,.25)';
+  x.beginPath();x.rect(px,py,w,h);x.fill();x.stroke();
+  x.strokeStyle='rgba(90,220,255,.10)';
+  for(var i=1;i<4;i++){x.beginPath();x.moveTo(px,py+h*i/4);x.lineTo(px+w,py+h*i/4);x.stroke();}
+  x.save();x.beginPath();x.rect(px,py,w,h);x.clip();
+  glow(col,10,function(){x.strokeStyle=col;x.lineWidth=1.6;x.beginPath();
+    for(var i=0;i<arr.length;i++){var xx=px+w*i/(arr.length-1),yy=py+h/2-arr[i]*scale*h/2;
+      i?x.lineTo(xx,yy):x.moveTo(xx,yy);} x.stroke();});
+  x.restore();
+  x.font='10px ui-monospace,monospace';x.fillStyle='#7d93a8';x.textAlign='left';x.fillText(title,px+5,py+12);
+}
+
+/* ---------- ACT A ---------- */
+function actA(dt){
+  var lamE=COLORS[eI].lam,lamD=COLORS[dI].lam;
+  var colE=COLORS[eI].css,colD=COLORS[dI].css;
+  var d=+drive.value/100;
+  // swap animation param s: 0 = normal, 1 = mirrored
+  var s=flipped?1:0;var mix=swapDir?swapT:s;
+  var lx=W*0.24,rx=W*0.66,cy=H*0.42;
+  var eX=lx+(rx-lx)*mix, dX=rx+(lx-rx)*mix;
+  var resp=overlap(lamE,lamD);
+  var photocur=d*resp*4.2; // µA
+  // photons
+  if(d>0.02&&Math.random()<d*0.9){
+    photons.push({p:0,off:(Math.random()-.5)*46,sp:0.55+Math.random()*0.5,ph:Math.random()*7});
+  }
+  var dir=(dX-eX);
+  for(var i=photons.length-1;i>=0;i--){var pp=photons[i];pp.p+=pp.sp*dt*1.4;if(pp.p>1)photons.splice(i,1);}
+  // beam haze
+  x.save();x.globalCompositeOperation='lighter';
+  var g=x.createLinearGradient(eX,cy,dX,cy);
+  g.addColorStop(0,'rgba('+hex(colE)+','+(0.20*d)+')');g.addColorStop(1,'rgba('+hex(colE)+',0)');
+  x.fillStyle=g;x.fillRect(Math.min(eX,dX),cy-40,Math.abs(dX-eX),80);x.restore();
+  // photon particles (wavy)
+  x.save();x.globalCompositeOperation='lighter';
+  for(i=0;i<photons.length;i++){var p=photons[i];
+    var px=eX+dir*p.p, py=cy+p.off+Math.sin(p.p*22+p.ph)*7;
+    glow(colE,14,function(){x.beginPath();x.arc(px,py,2.4,0,7);x.fillStyle=colE;x.globalAlpha=.9*(1-p.p*0.25);x.fill();});
+    // little wavelength squiggle
+    x.strokeStyle=colE;x.globalAlpha=.35;x.lineWidth=1;x.beginPath();
+    for(var k=-8;k<=8;k+=2){x.lineTo(px+k*(dir>0?1:-1),py+Math.sin((p.p*22+p.ph)+k*0.9)*3);}x.stroke();
+  } x.restore();
+  drawLED(eX,cy,colE,d,false,'EMITTER (driven)',COLORS[eI].n+' · '+lamE+' nm');
+  drawLED(dX,cy,colD,photocur*0.03,true,'DETECTOR (read)',COLORS[dI].n+' · cutoff '+lamD+' nm');
+  // wire from detector down to meter
+  x.strokeStyle='#2f6d86';x.lineWidth=2;x.beginPath();
+  x.moveTo(dX+9,cy+48);x.lineTo(dX+9,H*0.60);x.lineTo(W*0.78,H*0.60);x.stroke();
+  meter(W*0.86,H*0.66,150,90,photocur,4.2,'µA','#8ef0c0');
+  trace.push(photocur/4.2*(0.85+0.15*Math.sin(t*6)));trace.shift();
+  traceBox(W*0.06,H*0.72,W*0.62,H*0.20,trace,'#8ef0c0','induced photocurrent (no battery on the detector)',0.9);
+  // spectral overlap bar
+  var bw=W*0.20,bx=W*0.06,by=H*0.60;
+  x.fillStyle='rgba(8,14,20,.8)';x.strokeStyle='rgba(90,220,255,.25)';x.beginPath();x.rect(bx,by,bw,14);x.fill();x.stroke();
+  glow('#ffd76a',12,function(){x.fillStyle=resp>0.6?'#8ef0c0':(resp>0.25?'#ffd76a':'#ff6b6b');
+    x.fillRect(bx+1,by+1,(bw-2)*Math.min(1,resp),12);});
+  x.font='10px ui-monospace,monospace';x.fillStyle='#7d93a8';x.textAlign='left';
+  x.fillText('spectral overlap '+(resp*100).toFixed(0)+'%  '+(resp>0.6?'MATCHED':(lamD<lamE?'detector too BLUE — photons too weak':'partial')),bx,by-6);
+  return {a:d,b:photocur,ov:resp};
+}
+
+/* ---------- ACT B ---------- */
+function wf(ph){ if(wave===0)return Math.sin(ph);
+  if(wave===1)return Math.sin(ph)>0?0.85:-0.85;
+  return Math.sin(ph*(1+0.5*Math.sin(t*0.5)));}
+function actB(dt){
+  var f=+freqS.value,d=+drive.value/100;
+  var mix=swapDir?swapT:(flipped?1:0);
+  var lx=W*0.24,rx=W*0.70,cy=H*0.42;
+  var eX=lx+(rx-lx)*mix,dX=rx+(lx-rx)*mix;
+  var ph=t*f*0.22;
+  var conePush=wf(ph)*d;
+  // emit pressure rings
+  if(Math.random()<0.6){pressure.push({r:34,a:Math.abs(conePush)*0.9+0.05,s:Math.sign(conePush)||1});}
+  var travel=Math.abs(dX-eX);
+  for(var i=pressure.length-1;i>=0;i--){var q=pressure[i];q.r+=170*dt;if(q.r>travel+70)pressure.splice(i,1);}
+  x.save();x.globalCompositeOperation='lighter';
+  for(i=0;i<pressure.length;i++){var p=pressure[i];
+    var al=p.a*Math.max(0,1-p.r/(travel+70))*0.9;
+    x.strokeStyle=p.s>0?'rgba(120,220,255,'+al+')':'rgba(255,120,190,'+al*0.8+')';
+    x.lineWidth=2.2;x.beginPath();x.arc(eX,cy,p.r,-1.1,1.1);x.stroke();}
+  x.restore();
+  // delayed induced signal (acoustic delay)
+  var delay=travel/340*0.9;
+  var induced=wf(ph-delay*f*0.22*2)*d*0.42;
+  drawSpeaker(eX,cy,conePush,'#ffd76a','SPEAKER (driven)','voice coil pushed by current');
+  drawSpeaker(dX,cy,induced*1.6,'#8ef0c0','SAME SPEAKER (read)','air pushes coil → voltage');
+  x.strokeStyle='#2f6d86';x.lineWidth=2;x.beginPath();x.moveTo(dX+34,cy+30);x.lineTo(dX+34,H*0.60);x.lineTo(W*0.80,H*0.60);x.stroke();
+  meter(W*0.87,H*0.66,150,90,Math.abs(induced)*38,16,'mV','#8ef0c0');
+  trace.push(wf(ph)*d);trace.shift();spkTrace.push(induced*2.2);spkTrace.shift();
+  traceBox(W*0.06,H*0.70,W*0.60,H*0.11,trace,'#ffd76a','DRIVE waveform → coil',0.9);
+  traceBox(W*0.06,H*0.83,W*0.60,H*0.11,spkTrace,'#8ef0c0','INDUCED voltage from the far cone = microphone',0.9);
+  return {a:d,b:Math.abs(induced)*38,ov:0};
+}
+function drawSpeaker(cx,cy,push,col,label,sub){
+  x.save();x.translate(cx,cy);
+  var R=44,p=Math.max(-1,Math.min(1,push))*9;
+  x.strokeStyle='rgba(120,160,190,.7)';x.lineWidth=2;
+  x.beginPath();x.rect(-R-8,-R-8,2*R+16,2*R+16);x.stroke();
+  glow(col,14+16*Math.abs(push),function(){
+    for(var i=3;i>=1;i--){var rr=R*i/3;
+      x.beginPath();x.ellipse(p*(i/3),0,rr*0.42+p*0.1,rr,0,0,7);
+      x.strokeStyle=col;x.globalAlpha=.28+.24*i/3;x.lineWidth=2;x.stroke();}
+    x.beginPath();x.arc(p,0,9,0,7);x.fillStyle=col;x.globalAlpha=.5+.5*Math.abs(push);x.fill();});
+  x.restore();
+  x.textAlign='center';x.font='bold 12px ui-monospace,monospace';x.fillStyle=col;
+  glow(col,10,function(){x.fillText(label,cx,cy-66);});
+  x.font='10px ui-monospace,monospace';x.fillStyle='#7d93a8';x.fillText(sub,cx,cy+72);
+}
+
+/* ---------- main ---------- */
+var last=performance.now();
+function frame(now){
+  var dt=Math.min(0.05,(now-last)/1000);last=now;t+=dt;
+  if(swapDir){swapT+=dt*1.4;if(swapT>=1){swapT=1;swapDir=0;flipped=!flipped;}}
+  x.fillStyle='#04060a';x.fillRect(0,0,W,H);
+  // grid
+  x.strokeStyle='rgba(60,120,160,.07)';x.lineWidth=1;
+  for(var gx=0;gx<W;gx+=54){x.beginPath();x.moveTo(gx,0);x.lineTo(gx,H);x.stroke();}
+  for(var gy=0;gy<H;gy+=54){x.beginPath();x.moveTo(0,gy);x.lineTo(W,gy);x.stroke();}
+  // split divider
+  x.strokeStyle='rgba(90,220,255,.13)';x.setLineDash([6,8]);
+  x.beginPath();x.moveTo(W/2,H*0.10);x.lineTo(W/2,H*0.58);x.stroke();x.setLineDash([]);
+  var r = act==='A'?actA(dt):actB(dt);
+  // banner
+  x.textAlign='center';x.font='bold 15px ui-monospace,monospace';
+  glow('#ffe58a',14,function(){x.fillStyle='#ffe58a';
+    x.fillText('look at any OUTPUT device and ask what you get if you READ it instead.',W/2,H-14);});
+  if(swapDir){x.font='bold 20px ui-monospace,monospace';
+    glow('#7ef9ff',20,function(){x.fillStyle='#7ef9ff';x.globalAlpha=Math.sin(swapT*Math.PI);
+      x.fillText('SAME PARTS · OPPOSITE JOBS',W/2,H*0.14);});}
+  document.getElementById('rd').textContent =
+    act==='A'
+    ? 'drive      '+(+drive.value).toFixed(0)+' %\ninduced    '+r.b.toFixed(2)+' µA  (detector has NO supply)\noverlap    '+(r.ov*100).toFixed(0)+' %   λe '+COLORS[eI].lam+' → λd '+COLORS[dI].lam+'\nroles      '+(flipped?'RIGHT drives LEFT':'LEFT drives RIGHT')
+    : 'drive      '+(+drive.value).toFixed(0)+' %  @ '+freqS.value+' Hz\ninduced    '+r.b.toFixed(2)+' mV across the far coil\ncoupling   air pressure ↔ coil motion ↔ EMF\nroles      '+(flipped?'RIGHT drives LEFT':'LEFT drives RIGHT');
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>

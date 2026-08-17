@@ -1,0 +1,353 @@
+<meta charset="utf-8">
+<title>Cheat Code #47 — The Universe Hums in Eigenfrequencies</title>
+<style>
+  html,body{margin:0;padding:0;background:#04060a;overflow:hidden;height:100%}
+  canvas{display:block;position:fixed;inset:0}
+  #ui{position:fixed;top:10px;left:10px;z-index:10;background:rgba(6,10,16,.74);
+      border:1px solid rgba(150,120,255,.32);border-radius:8px;padding:10px 12px;
+      font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#d9d0ff;max-width:410px;
+      backdrop-filter:blur(6px);box-shadow:0 0 24px rgba(140,110,255,.16)}
+  #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.11em;color:#b79bff;text-shadow:0 0 10px #94f8}
+  .code{color:#8ef0c0;margin:0 0 6px;font-style:italic;text-shadow:0 0 8px #0f86}
+  .hint{color:#8a83a8;margin:6px 0 4px}
+  .row{display:flex;gap:6px;align-items:center;margin:5px 0;flex-wrap:wrap}
+  button{background:rgba(70,50,140,.42);color:#cfc0ff;border:1px solid #6b56b0;border-radius:5px;
+    padding:3px 8px;font:11px ui-monospace,monospace;cursor:pointer}
+  button:hover{background:rgba(110,80,220,.5);box-shadow:0 0 10px #96f6}
+  button.on{background:#5a3fb0;color:#f2ecff;box-shadow:0 0 12px #a7f8}
+  input[type=range]{width:130px;accent-color:#a78bfa;vertical-align:middle}
+  #rd{color:#a8f0d8;white-space:pre;margin-top:5px;font-size:11px}
+  #fo{color:#ffe58a;font-size:11px;margin-top:4px}
+  a{color:#b79bff}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>CHEAT CODE #47 · EIGENFREQUENCY</h1>
+  <p class="code">Ambient noise rings every structure's bell — a drifting peak is mass changing or stiffness failing.</p>
+  <div class="row">
+    <button class="st on" data-s="0">SHELF</button><button class="st" data-s="1">TREE</button><button class="st" data-s="2">WIRE</button>
+  </div>
+  <div class="row" id="ctl"></div>
+  <div class="row">ambient <input type="range" id="amb" min="0" max="100" value="55"></div>
+  <div class="hint">nothing is ever struck — only footsteps &amp; wind</div>
+  <div id="fo"></div>
+  <div id="rd"></div>
+  <div style="margin-top:6px"><a href="index.html">← gallery</a></div>
+</div>
+<script>
+"use strict";
+var c=document.getElementById('c'),x=c.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,devicePixelRatio||1);W=innerWidth;H=innerHeight;
+  c.width=W*DPR|0;c.height=H*DPR|0;c.style.width=W+'px';c.style.height=H+'px';x.setTransform(DPR,0,0,DPR,0,0);}
+addEventListener('resize',resize);resize();
+function glow(col,b,fn){x.save();x.shadowColor=col;x.shadowBlur=b;fn();x.restore();}
+
+/* ================= real radix-2 FFT ================= */
+function fft(re,im){
+  var n=re.length,i,j=0,k,m,t;
+  for(i=1;i<n;i++){var bit=n>>1;
+    for(;j&bit;bit>>=1)j^=bit; j^=bit;
+    if(i<j){t=re[i];re[i]=re[j];re[j]=t;t=im[i];im[i]=im[j];im[j]=t;}}
+  for(m=2;m<=n;m<<=1){
+    var ang=-2*Math.PI/m,wr=Math.cos(ang),wi=Math.sin(ang);
+    for(i=0;i<n;i+=m){var cr=1,ci=0;
+      for(k=0;k<m/2;k++){
+        var ar=re[i+k],ai=im[i+k];
+        var br=re[i+k+m/2]*cr-im[i+k+m/2]*ci;
+        var bi=re[i+k+m/2]*ci+im[i+k+m/2]*cr;
+        re[i+k]=ar+br;im[i+k]=ai+bi;
+        re[i+k+m/2]=ar-br;im[i+k+m/2]=ai-bi;
+        var ncr=cr*wr-ci*wi;ci=cr*wi+ci*wr;cr=ncr;}}}
+}
+/* ================= simulation ================= */
+var FS=600;               // simulated sample rate (Hz)
+var N=1024;               // FFT size  → bin = 0.586 Hz
+var BINS=N/2;
+var ring=new Float32Array(N),rp=0;
+var spec=new Float32Array(BINS);     // averaged magnitude
+var win=new Float32Array(N);
+for(var i=0;i<N;i++)win[i]=0.5-0.5*Math.cos(2*Math.PI*i/(N-1));  // Hann
+
+/* structures: each is a set of modes {k, m, zeta, w(disp weight)} */
+function mkShelf(){return{name:'SHELF ON BRACKETS',books:0,crack:0,tension:0,
+  modes:[{k:9000,m:6,z:0.018,w:1},{k:9000*6.3,m:6,z:0.030,w:0.30}],
+  base:{k:9000,m:6}};}
+function mkTree(){return{name:'TREE',books:0,crack:0,tension:0,
+  modes:[{k:2600,m:52,z:0.045,w:1},{k:2600*11,m:52,z:0.06,w:0.22}],
+  base:{k:2600,m:52}};}
+function mkWire(){return{name:'TENSIONED WIRE',books:0,crack:0,tension:0.5,
+  modes:[{k:41000,m:0.9,z:0.010,w:1},{k:41000*4,m:0.9,z:0.014,w:0.35},{k:41000*9,m:0.9,z:0.02,w:0.16}],
+  base:{k:41000,m:0.9}};}
+var S=[mkShelf(),mkTree(),mkWire()],cur=0;
+var st=[];  // oscillator states per mode
+
+function applyMods(){
+  var s=S[cur];
+  if(cur===0){ // shelf: books add mass, crack removes stiffness
+    var m=s.base.m+s.books*2.6;
+    var k=s.base.k*(1-s.crack*0.62);
+    s.modes[0].k=k;s.modes[0].m=m;s.modes[0].z=0.018+s.crack*0.055;
+    s.modes[1].k=k*6.3;s.modes[1].m=m;s.modes[1].z=0.030+s.crack*0.06;
+  } else if(cur===1){ // tree: "leaves out" = mass, "rot" = stiffness
+    var m2=s.base.m*(1+s.books*0.16);
+    var k2=s.base.k*(1-s.crack*0.55);
+    s.modes[0].k=k2;s.modes[0].m=m2;s.modes[0].z=0.045+s.crack*0.05;
+    s.modes[1].k=k2*11;s.modes[1].m=m2;s.modes[1].z=0.06+s.crack*0.05;
+  } else { // wire: tension raises effective stiffness, f ∝ √T
+    var k3=s.base.k*(0.35+1.55*s.tension);
+    s.modes[0].k=k3;s.modes[1].k=k3*4;s.modes[2].k=k3*9;
+  }
+  // sync oscillator array
+  st=s.modes.map(function(mo,i){return (st[i]&&st[i].x!==undefined)?st[i]:{x:0,v:0};});
+}
+function f0(mo){return Math.sqrt(mo.k/mo.m)/(2*Math.PI);}
+
+/* ambient impulse sparks */
+var sparks=[],impulseQ=[];
+function ambient(dt){
+  var lvl=+document.getElementById('amb').value/100;
+  var rate=(cur===1?26:14)*lvl;                 // wind is busier than footsteps
+  if(Math.random()<rate*dt){
+    var mag=(0.5+Math.random())*lvl;
+    impulseQ.push(mag*(Math.random()<0.5?-1:1));
+    sparks.push({x:Math.random(),y:Math.random(),a:1,r:2+Math.random()*4});
+  }
+  for(var i=sparks.length-1;i>=0;i--){sparks[i].a-=dt*1.5;if(sparks[i].a<=0)sparks.splice(i,1);}
+  return lvl;
+}
+
+/* integrate the modes at FS with a broadband ambient force */
+var acc=0,dispNow=0;
+function step(dt,lvl){
+  var s=S[cur];
+  var h=1/FS,steps=Math.min(Math.round(dt*FS),60);
+  for(var n=0;n<steps;n++){
+    // broadband force: white-ish noise + occasional impulse
+    var F=(Math.random()*2-1)*24*lvl;
+    if(impulseQ.length&&Math.random()<0.25){F+=impulseQ.pop()*900;}
+    var disp=0;
+    for(var i2=0;i2<s.modes.length;i2++){
+      var mo=s.modes[i2],o=st[i2];
+      var w0=Math.sqrt(mo.k/mo.m),g=2*mo.z*w0;
+      // semi-implicit Euler (stable at these rates)
+      var a=(F*mo.w - g*mo.v*mo.m - mo.k*o.x)/mo.m;
+      o.v+=a*h;o.x+=o.v*h;
+      disp+=o.x*mo.w;
+    }
+    ring[rp]=disp;rp=(rp+1)%N;
+    acc++;
+  }
+  dispNow=0;for(var i3=0;i3<s.modes.length;i3++)dispNow+=st[i3].x*s.modes[i3].w;
+}
+/* FFT the ring buffer, exponentially average */
+var specCol=[],SPECW=150;
+var peakHz=0,peakMag=0;
+function analyze(){
+  var re=new Float64Array(N),im=new Float64Array(N);
+  for(var i=0;i<N;i++){re[i]=ring[(rp+i)%N]*win[i];}
+  fft(re,im);
+  var mx=1e-12,col=new Float32Array(BINS);
+  for(i=0;i<BINS;i++){var mg=Math.sqrt(re[i]*re[i]+im[i]*im[i])/N;
+    spec[i]=spec[i]*0.80+mg*0.20;col[i]=mg;if(spec[i]>mx)mx=spec[i];}
+  // find peak bin (parabolic interpolation for sub-bin accuracy)
+  var bi=1,bv=0;
+  for(i=1;i<BINS-1;i++)if(spec[i]>bv){bv=spec[i];bi=i;}
+  var a=spec[bi-1],b=spec[bi],cc=spec[bi+1];
+  var d=(a-cc)/(2*(a-2*b+cc)||1e-9);
+  peakHz=(bi+Math.max(-1,Math.min(1,d)))*FS/N;peakMag=bv;
+  specCol.push(col);if(specCol.length>SPECW)specCol.shift();
+  return mx;
+}
+
+/* ================= UI ================= */
+function ctlHTML(){
+  var s=S[cur];
+  var e=document.getElementById('ctl');e.innerHTML='';
+  function btn(t,fn){var b=document.createElement('button');b.textContent=t;b.onclick=fn;e.appendChild(b);}
+  if(cur===0){btn('+ ADD BOOKS',function(){s.books=Math.min(9,s.books+1);applyMods();});
+              btn('− remove',function(){s.books=Math.max(0,s.books-1);applyMods();});
+              btn('⚡ CRACK BRACKET',function(){s.crack=Math.min(1,s.crack+0.34);applyMods();});
+              btn('repair',function(){s.crack=0;applyMods();});}
+  else if(cur===1){btn('+ LEAVES/SNOW (mass)',function(){s.books=Math.min(8,s.books+1);applyMods();});
+              btn('− shed',function(){s.books=Math.max(0,s.books-1);applyMods();});
+              btn('⚡ ROT THE TRUNK',function(){s.crack=Math.min(1,s.crack+0.3);applyMods();});
+              btn('heal',function(){s.crack=0;applyMods();});}
+  else {btn('▲ TIGHTEN WIRE',function(){s.tension=Math.min(1,s.tension+0.14);applyMods();});
+        btn('▼ loosen',function(){s.tension=Math.max(0.02,s.tension-0.14);applyMods();});}
+}
+document.querySelectorAll('.st').forEach(function(b){b.onclick=function(){
+  cur=+b.dataset.s;document.querySelectorAll('.st').forEach(function(o){o.classList.remove('on')});
+  b.classList.add('on');st=[];applyMods();ctlHTML();
+  ring.fill(0);spec.fill(0);specCol.length=0;};});
+applyMods();ctlHTML();
+
+/* ================= drawing ================= */
+function drawShelf(cx,cy,d){
+  var s=S[cur],sag=d*260;
+  x.save();x.translate(cx,cy);
+  // wall
+  x.fillStyle='rgba(20,26,38,.7)';x.fillRect(-190,-150,380,300);
+  x.strokeStyle='rgba(150,120,255,.14)';for(var i=-150;i<150;i+=26){x.beginPath();x.moveTo(-190,i);x.lineTo(190,i);x.stroke();}
+  // brackets
+  for(var b=-1;b<=1;b+=2){
+    var col=s.crack>0.05?'#ff6b6b':'#8fa8c0';
+    glow(col,s.crack>0.05?14:4,function(){x.strokeStyle=col;x.lineWidth=4;
+      x.beginPath();x.moveTo(b*120,-8);x.lineTo(b*120,52);x.lineTo(b*95,52);x.stroke();});
+    if(s.crack>0.05){glow('#ff6b6b',16,function(){x.strokeStyle='#ff6b6b';x.lineWidth=2;
+      x.beginPath();x.moveTo(b*120-9,10+ -6);x.lineTo(b*120+7,20);x.lineTo(b*120-6,30);x.stroke();});}
+  }
+  // shelf plank (bends)
+  glow('#b79bff',16,function(){
+    x.strokeStyle='#c9b8ff';x.lineWidth=9;x.lineCap='round';x.beginPath();
+    for(var i=-140;i<=140;i+=8){var f=1-(i/140)*(i/140);x.lineTo(i,-8+sag*f);}x.stroke();});
+  // books
+  for(var i=0;i<s.books;i++){var bx=-120+i*26,f=1-(bx/140)*(bx/140);
+    var hh=32+((i*37)%14);
+    glow('#8ef0c0',8,function(){x.fillStyle=['#8ef0c0','#ffd76a','#7ec8ff','#ff9ad8'][i%4];
+      x.globalAlpha=.85;x.fillRect(bx,-14+sag*f-hh,20,hh);});}
+  x.restore();
+  x.textAlign='center';x.font='10px ui-monospace,monospace';x.fillStyle='#8a83a8';
+  x.fillText('books '+s.books+'  ·  crack '+(s.crack*100).toFixed(0)+'%',cx,cy+180);
+}
+function drawTree(cx,cy,d){
+  var s=S[cur];
+  x.save();x.translate(cx,cy+140);
+  function branch(len,ang,w,depth,off){
+    if(depth<=0||len<6)return;
+    var sway=d*160*(depth/5)*(1+off*0.3);
+    var a=ang+sway*0.02;
+    var ex=Math.sin(a)*len,ey=-Math.cos(a)*len;
+    var col=s.crack>0.05&&depth>=5?'#ff6b6b':'#a78bfa';
+    glow(col,6,function(){x.strokeStyle=col;x.lineWidth=w;x.lineCap='round';
+      x.beginPath();x.moveTo(0,0);x.lineTo(ex,ey);x.stroke();});
+    x.save();x.translate(ex,ey);
+    branch(len*0.72,a+0.42,w*0.66,depth-1,off+1);
+    branch(len*0.70,a-0.40,w*0.66,depth-1,off-1);
+    if(depth<=2&&s.books>0){glow('#8ef0c0',8,function(){x.fillStyle='rgba(142,240,192,'+(0.25+0.07*s.books)+')';
+      x.beginPath();x.arc(0,0,4+s.books*1.5,0,7);x.fill();});}
+    x.restore();
+  }
+  branch(76,0,10,6,0);
+  x.restore();
+  x.textAlign='center';x.font='10px ui-monospace,monospace';x.fillStyle='#8a83a8';
+  x.fillText('foliage mass '+s.books+'  ·  rot '+(s.crack*100).toFixed(0)+'%',cx,cy+190);
+}
+function drawWire(cx,cy){
+  var s=S[cur];
+  x.save();x.translate(cx,cy);
+  x.strokeStyle='#6b7a90';x.lineWidth=6;
+  x.beginPath();x.moveTo(-165,-60);x.lineTo(-165,60);x.moveTo(165,-60);x.lineTo(165,60);x.stroke();
+  glow('#7ef9ff',14,function(){x.strokeStyle='#9df3ff';x.lineWidth=2.6;x.beginPath();
+    for(var i=-160;i<=160;i+=4){
+      var u=(i+160)/320,y=0;
+      for(var m=0;m<st.length;m++)y+=st[m].x*S[cur].modes[m].w*260*Math.sin((m+1)*Math.PI*u);
+      x.lineTo(i,y);}
+    x.stroke();});
+  x.restore();
+  x.textAlign='center';x.font='10px ui-monospace,monospace';x.fillStyle='#8a83a8';
+  x.fillText('tension '+(S[2].tension*100).toFixed(0)+'%',cx,cy+150);
+}
+
+function drawSparks(px,py,pw,ph){
+  x.save();x.globalCompositeOperation='lighter';
+  for(var i=0;i<sparks.length;i++){var s=sparks[i];
+    var sx=px+s.x*pw,sy=py+s.y*ph;
+    x.fillStyle='rgba(255,229,138,'+(s.a*0.8)+')';
+    glow('#ffe58a',12,function(){x.beginPath();x.arc(sx,sy,s.r*s.a,0,7);x.fill();});}
+  x.restore();
+}
+
+function drawSpectrogram(px,py,pw,ph,mx){
+  x.fillStyle='rgba(6,9,14,.9)';x.fillRect(px,py,pw,ph);
+  var MAXBIN=Math.min(BINS,Math.round(60/(FS/N)));   // show 0..60 Hz
+  var colW=pw/SPECW;
+  for(var t2=0;t2<specCol.length;t2++){
+    var col=specCol[t2];
+    for(var b=1;b<MAXBIN;b++){
+      var v=Math.min(1,Math.pow(col[b]/(mx*1.2+1e-9),0.42));
+      if(v<0.05)continue;
+      var r=Math.round(255*Math.min(1,v*1.9)),g=Math.round(90*v+165*Math.max(0,v-0.5)*2),bl=Math.round(255*(1-v*0.55));
+      x.fillStyle='rgb('+r+','+g+','+bl+')';
+      x.fillRect(px+t2*colW,py+ph-(b/MAXBIN)*ph,colW+0.6,ph/MAXBIN+0.6);
+    }
+  }
+  x.strokeStyle='rgba(150,120,255,.3)';x.lineWidth=1;x.strokeRect(px,py,pw,ph);
+  x.font='10px ui-monospace,monospace';x.fillStyle='#b0a8d0';x.textAlign='left';
+  x.fillText('SPECTROGRAM (time →)   0–60 Hz',px+6,py+13);
+  // peak line
+  var yy=py+ph-(peakHz/60)*ph;
+  if(yy>py&&yy<py+ph){glow('#8ef0c0',10,function(){x.strokeStyle='rgba(142,240,192,.85)';
+    x.setLineDash([4,4]);x.beginPath();x.moveTo(px,yy);x.lineTo(px+pw,yy);x.stroke();x.setLineDash([]);});}
+}
+function drawSpectrum(px,py,pw,ph,mx){
+  x.fillStyle='rgba(6,9,14,.9)';x.strokeStyle='rgba(150,120,255,.3)';
+  x.beginPath();x.rect(px,py,pw,ph);x.fill();x.stroke();
+  var MAXBIN=Math.min(BINS,Math.round(60/(FS/N)));
+  x.save();x.beginPath();x.rect(px,py,pw,ph);x.clip();
+  glow('#b79bff',12,function(){
+    x.beginPath();x.moveTo(px,py+ph);
+    for(var b=1;b<MAXBIN;b++){
+      var v=Math.min(1,spec[b]/(mx+1e-12));
+      x.lineTo(px+pw*b/MAXBIN,py+ph-v*ph*0.92);}
+    x.lineTo(px+pw,py+ph);x.closePath();
+    var g=x.createLinearGradient(0,py,0,py+ph);
+    g.addColorStop(0,'rgba(183,155,255,.85)');g.addColorStop(1,'rgba(120,80,220,.12)');
+    x.fillStyle=g;x.fill();
+    x.strokeStyle='#cdb8ff';x.lineWidth=1.5;x.stroke();});
+  // peak marker
+  var pxp=px+pw*(peakHz/60);
+  glow('#8ef0c0',16,function(){x.strokeStyle='#8ef0c0';x.lineWidth=1.6;
+    x.beginPath();x.moveTo(pxp,py+6);x.lineTo(pxp,py+ph);x.stroke();});
+  x.restore();
+  x.textAlign='center';x.font='bold 12px ui-monospace,monospace';
+  glow('#8ef0c0',12,function(){x.fillStyle='#8ef0c0';
+    x.fillText('◆ NAME-NOTE '+peakHz.toFixed(2)+' Hz',Math.max(px+80,Math.min(px+pw-80,pxp)),py-8);});
+  x.textAlign='left';x.font='10px ui-monospace,monospace';x.fillStyle='#b0a8d0';
+  x.fillText('AVERAGED FFT  (N='+N+', bin '+(FS/N).toFixed(2)+' Hz)',px+6,py+13);
+  x.textAlign='right';x.fillStyle='#8a83a8';x.fillText('60 Hz',px+pw-4,py+ph+13);
+  x.textAlign='left';x.fillText('0',px+4,py+ph+13);
+}
+
+/* ================= main ================= */
+var last=performance.now(),tt=0,anaT=0,mxHold=1e-9;
+function frame(now){
+  var dt=Math.min(0.05,(now-last)/1000);last=now;tt+=dt;
+  var lvl=ambient(dt);
+  step(dt,lvl);
+  anaT+=dt;if(anaT>0.09){anaT=0;mxHold=Math.max(analyze(),mxHold*0.985);}
+  x.fillStyle='#04060a';x.fillRect(0,0,W,H);
+  x.strokeStyle='rgba(120,100,190,.06)';
+  for(var gx=0;gx<W;gx+=58){x.beginPath();x.moveTo(gx,0);x.lineTo(gx,H);x.stroke();}
+  for(var gy=0;gy<H;gy+=58){x.beginPath();x.moveTo(0,gy);x.lineTo(W,gy);x.stroke();}
+  var LW=W*0.44,cx=W*0.25,cy=H*0.46;
+  drawSparks(W*0.03,H*0.12,LW,H*0.76);
+  if(cur===0)drawShelf(cx,cy,dispNow);
+  else if(cur===1)drawTree(cx,cy-30,dispNow);
+  else drawWire(cx,cy);
+  // right panel
+  var px=W*0.52,pw=W*0.44;
+  drawSpectrogram(px,H*0.12,pw,H*0.36,mxHold);
+  drawSpectrum(px,H*0.57,pw,H*0.30,mxHold);
+  // formula with live numbers
+  var s=S[cur],mo=s.modes[0],theo=f0(mo);
+  x.textAlign='left';x.font='13px ui-monospace,monospace';
+  glow('#ffe58a',10,function(){x.fillStyle='#ffe58a';
+    x.fillText('f = (1/2π)·√(k/m) = (1/2π)·√('+mo.k.toFixed(0)+' / '+mo.m.toFixed(2)+') = '+theo.toFixed(2)+' Hz',px,H*0.955);});
+  x.font='11px ui-monospace,monospace';x.fillStyle='#8a83a8';
+  x.fillText('measured from ambient noise alone: '+peakHz.toFixed(2)+' Hz   (err '+
+    (Math.abs(peakHz-theo)).toFixed(2)+' Hz ≤ bin '+(FS/N).toFixed(2)+')',px,H*0.985);
+  // title on the structure side
+  x.textAlign='center';x.font='bold 13px ui-monospace,monospace';
+  glow('#b79bff',12,function(){x.fillStyle='#cdb8ff';x.fillText(s.name,cx,H*0.10);});
+  x.font='11px ui-monospace,monospace';x.fillStyle='#8a83a8';
+  x.fillText('excited only by ambient micro-impulses ✦',cx,H*0.135);
+  document.getElementById('fo').textContent='k = '+mo.k.toFixed(0)+' N/m   m = '+mo.m.toFixed(2)+' kg   ζ = '+mo.z.toFixed(3)+'   Q ≈ '+(1/(2*mo.z)).toFixed(0);
+  document.getElementById('rd').textContent=
+    'theoretical f₀   '+theo.toFixed(2)+' Hz\nFFT peak         '+peakHz.toFixed(2)+' Hz\nhigher modes     '+
+    s.modes.slice(1).map(function(m){return f0(m).toFixed(1);}).join(', ')+' Hz\nambient level    '+(lvl*100).toFixed(0)+'%  (never struck)';
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>

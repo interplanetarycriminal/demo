@@ -1,0 +1,372 @@
+<meta charset="utf-8">
+<title>CC#92-II — Matched Filter</title>
+<style>
+  html,body{margin:0;padding:0;background:#04060a;overflow:hidden;height:100%}
+  canvas{display:block;position:fixed;inset:0}
+  #ui{position:fixed;top:10px;left:10px;z-index:10;width:378px;max-width:calc(100vw - 24px);
+      background:rgba(4,10,16,.72);border:1px solid #0f83;border-radius:8px;padding:10px 12px;
+      font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#a8ffd8;
+      box-shadow:0 0 24px #00ff9922, inset 0 0 40px #00ff9908;backdrop-filter:blur(3px)}
+  #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.1em;color:#5fffb0;text-shadow:0 0 10px #0f8a}
+  .cc{color:#ffd166;text-shadow:0 0 8px #ffd16655;margin:0 0 7px;font-size:10.5px;line-height:1.45}
+  .row{display:flex;align-items:center;gap:6px;margin:3px 0}
+  .row label{width:96px;color:#68b899;flex:none}
+  .row input[type=range]{flex:1;height:14px;accent-color:#0f9;background:transparent}
+  .row .v{width:78px;text-align:right;color:#d8ffe8}
+  .hint{color:#5b8a75;margin-top:6px;font-size:10px}
+  .rd{margin-top:6px;border-top:1px solid #0f82;padding-top:5px;font-size:10.5px}
+  .rd b{color:#7dffb0;font-weight:600}
+  .big{color:#ff6ec7;text-shadow:0 0 10px #ff6ec788}
+  a{color:#5fffb0;text-decoration:none;border-bottom:1px dotted #0f96}
+  button{background:#0f92;border:1px solid #0f95;color:#bfe;font:10px ui-monospace,monospace;
+         padding:3px 7px;border-radius:4px;cursor:pointer;margin-right:3px}
+  button:hover{background:#0f94} button.on{background:#f0a3;border-color:#f6cf;color:#ffd}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>CHEAT CODE #92-II — MATCHED FILTER</h1>
+  <p class="cc">If you know its shape, you can find it under the noise — GPS arrives at −130 dBm, below the thermal floor, and is recovered because the receiver knows exactly which pseudo-random sequence to look for.</p>
+  <div class="row"><label>SNR</label><input id="sS" type="range" min="-25" max="10" step="0.5" value="-18"><span class="v" id="vS">-18.0 dB</span></div>
+  <div class="row"><label>hidden pos</label><input id="sO" type="range" min="0" max="1" step="0.001" value="0.42"><span class="v" id="vO">—</span></div>
+  <div class="row"><label>chips N</label><input id="sN" type="range" min="7" max="127" step="1" value="31"><span class="v" id="vN">31</span></div>
+  <div class="hint">
+    <button id="bR">reroll noise</button><button id="bW">wrong code (CDMA)</button><button id="bA">ultrasonic act</button><br>
+    drag anywhere on the RECEIVED panel to move the buried echo · <a href="index.html">← gallery</a>
+  </div>
+  <div class="rd">
+    processing gain <span class="big" id="rPG">—</span> = 10·log10(N)<br>
+    true offset <b id="rT">—</b> &nbsp; peak found <b id="rF">—</b> &nbsp; <b id="rM">—</b><br>
+    peak / noise-σ <b id="rP">—</b> &nbsp; post-corr SNR <b id="rQ">—</b>
+  </div>
+</div>
+<script>
+"use strict";
+var c=document.getElementById('c'),g=c.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
+ c.width=Math.round(W*DPR);c.height=Math.round(H*DPR);c.style.width=W+'px';c.style.height=H+'px';
+ g.setTransform(DPR,0,0,DPR,0,0);}
+window.addEventListener('resize',resize);resize();
+var el=function(i){return document.getElementById(i)};
+
+// ---- maximal-length LFSR PRN generator (real m-sequence) ----
+var TAPS={7:[3,2],15:[4,3],31:[5,3],63:[6,5],127:[7,6]};
+function nearestLen(n){var ks=[7,15,31,63,127],b=ks[0];for(var i=0;i<ks.length;i++)if(Math.abs(ks[i]-n)<Math.abs(b-n))b=ks[i];return b;}
+function mseq(len,seed){
+  var t=TAPS[len]||TAPS[31], m=t[0], fb=t[1];
+  var reg=[]; for(var i=0;i<m;i++)reg.push(((seed>>i)&1)||(i===0?1:0));
+  if(reg.every(function(x){return x===0}))reg[0]=1;
+  var out=new Float32Array(len);
+  for(var k=0;k<len;k++){
+    out[k]=reg[m-1]?1:-1;
+    var nb=reg[m-1]^reg[fb-1];
+    for(var j=m-1;j>0;j--)reg[j]=reg[j-1];
+    reg[0]=nb;
+  }
+  return out;
+}
+// Barker-13
+var BARKER13=new Float32Array([1,1,1,1,1,-1,-1,1,1,-1,1,-1,1]);
+
+var sp=null;
+function gauss(){ if(sp!==null){var v=sp;sp=null;return v;}
+  var u=0,w=0,s=0; do{u=Math.random()*2-1;w=Math.random()*2-1;s=u*u+w*w;}while(s>=1||s===0);
+  var m=Math.sqrt(-2*Math.log(s)/s); sp=w*m; return u*m; }
+
+// ---- state ----
+var N=31, SPC=6;               // chips, samples per chip
+var TOTAL=1024;                // received record length in samples
+var code=mseq(N,1), wrong=mseq(N,13);
+var tmpl=null, tmplW=null;     // sample-rate templates
+var rx=new Float32Array(TOTAL);
+var corr=new Float32Array(TOTAL);
+var snrDb=-18, offFrac=0.42, useWrong=false, act='prn';
+var noiseSeq=new Float32Array(TOTAL);
+var trueOff=0, foundOff=0, peakVal=0, corrSigma=1;
+var sweep=0;                   // animated correlation sweep index
+
+function upsample(ch,spc){
+  var out=new Float32Array(ch.length*spc);
+  for(var i=0;i<ch.length;i++)for(var j=0;j<spc;j++)out[i*spc+j]=ch[i];
+  return out;
+}
+function buildTemplates(){
+  if(act==='ping'){ // ultrasonic: template is the shaped ping / barker burst
+    tmpl=upsample(BARKER13,SPC); tmplW=upsample(BARKER13,SPC);
+  } else {
+    tmpl=upsample(code,SPC); tmplW=upsample(wrong,SPC);
+  }
+}
+function rerollNoise(){ for(var i=0;i<TOTAL;i++)noiseSeq[i]=gauss(); }
+
+// energy-normalised amplitude for given SNR (per-sample signal power / noise power)
+function buildRx(){
+  buildTemplates();
+  var L=tmpl.length;
+  var maxOff=TOTAL-L-4;
+  trueOff=Math.max(2,Math.round(offFrac*maxOff));
+  var amp=Math.sqrt(Math.pow(10,snrDb/10));   // noise σ = 1
+  for(var i=0;i<TOTAL;i++) rx[i]=noiseSeq[i];
+  if(act==='ping'){
+    // single ping of equal TOTAL energy: energy = amp^2 * L  → concentrated in SPC samples
+    var pl=SPC;                       // short ping, same total energy
+    var pa=amp*Math.sqrt(L/pl);
+    for(var k=0;k<pl;k++) rx[trueOff+k]+= pa*Math.sin(Math.PI*k/pl);
+    // and place the coded burst further along for comparison
+    for(var q=0;q<L;q++) rx[trueOff+q]+=0; // coded drawn separately in act
+  } else {
+    for(var m=0;m<L;m++) rx[trueOff+m]+= amp*tmpl[m];
+  }
+}
+
+// separate buffers for the ultrasonic act (ping vs barker at equal energy)
+var rxPing=new Float32Array(TOTAL), rxCode=new Float32Array(TOTAL);
+var corrPing=new Float32Array(TOTAL), corrCode=new Float32Array(TOTAL);
+var noise2=new Float32Array(TOTAL);
+function buildAct(){
+  var bl=BARKER13.length*SPC, bt=upsample(BARKER13,SPC);
+  var amp=Math.sqrt(Math.pow(10,snrDb/10));
+  var E=amp*amp*bl;                       // total echo energy, shared
+  var pl=SPC*2;                           // single ping duration
+  var pa=Math.sqrt(E/(pl*0.5));           // sin^2 average = 0.5
+  var maxOff=TOTAL-bl-4; trueOff=Math.max(2,Math.round(offFrac*maxOff));
+  for(var i=0;i<TOTAL;i++){ rxPing[i]=noiseSeq[i]; rxCode[i]=noise2[i]; }
+  for(var k=0;k<pl;k++) rxPing[trueOff+k]+= pa*Math.sin(Math.PI*k/pl);
+  for(var m=0;m<bl;m++) rxCode[trueOff+m]+= amp*bt[m];
+  // matched filters
+  var pt=new Float32Array(pl); for(var q=0;q<pl;q++)pt[q]=Math.sin(Math.PI*q/pl);
+  correlate(rxPing,pt,corrPing);
+  correlate(rxCode,bt,corrCode);
+}
+
+function correlate(sig,tp,out){
+  var L=tp.length, n=sig.length-L;
+  var norm=0; for(var i=0;i<L;i++)norm+=tp[i]*tp[i];
+  norm=Math.sqrt(norm)||1;
+  for(var k=0;k<out.length;k++)out[k]=0;
+  for(var s=0;s<=n;s++){
+    var a=0;
+    for(var j=0;j<L;j++) a+=sig[s+j]*tp[j];
+    out[s]=a/norm;              // unit-noise normalised: noise σ stays 1
+  }
+  return n;
+}
+
+function recompute(){
+  if(act==='ping'){ buildAct(); return; }
+  buildRx();
+  var tp=useWrong?tmplW:tmpl;
+  var n=correlate(rx,tp,corr);
+  // peak + noise sigma away from the peak
+  peakVal=-1e9; foundOff=0;
+  for(var i=0;i<=n;i++){ if(Math.abs(corr[i])>Math.abs(peakVal)){peakVal=corr[i];foundOff=i;} }
+  var acc=0,cnt=0;
+  for(var j=0;j<=n;j++){ if(Math.abs(j-foundOff)>tmpl.length){acc+=corr[j]*corr[j];cnt++;} }
+  corrSigma=Math.sqrt(acc/Math.max(cnt,1))||1;
+  sweep=0;
+}
+
+// ---- UI ----
+var sS=el('sS'),sO=el('sO'),sN=el('sN');
+function readUI(re){
+  snrDb=parseFloat(sS.value); offFrac=parseFloat(sO.value);
+  var nn=nearestLen(parseInt(sN.value,10));
+  if(nn!==N){N=nn;code=mseq(N,1);wrong=mseq(N,13);}
+  el('vS').textContent=snrDb.toFixed(1)+' dB';
+  el('vN').textContent=N+' (m-seq)';
+  el('vO').textContent=trueOff+' smp';
+  if(re!==false) recompute();
+  el('vO').textContent=trueOff+' smp';
+}
+[sS,sO,sN].forEach(function(s){s.addEventListener('input',function(){readUI()})});
+el('bR').onclick=function(){rerollNoise();for(var i=0;i<TOTAL;i++)noise2[i]=gauss();recompute();};
+el('bW').onclick=function(){useWrong=!useWrong;this.className=useWrong?'on':'';recompute();};
+el('bA').onclick=function(){act=(act==='ping'?'prn':'ping');this.className=(act==='ping')?'on':'';
+  for(var i=0;i<TOTAL;i++)noise2[i]=gauss(); recompute();};
+
+// drag on received panel
+var geom={rx0:0,rw:0,ry:0,rh:0};
+var dragging=false;
+function ptFromEvt(e){var r=c.getBoundingClientRect();
+  var cx=(e.touches?e.touches[0].clientX:e.clientX)-r.left;
+  var cy=(e.touches?e.touches[0].clientY:e.clientY)-r.top; return [cx,cy];}
+function tryDrag(e){
+  var p=ptFromEvt(e);
+  if(p[1]>=geom.ry&&p[1]<=geom.ry+geom.rh&&p[0]>=geom.rx0){
+    var f=(p[0]-geom.rx0)/geom.rw; f=Math.max(0,Math.min(1,f));
+    sO.value=f.toFixed(3); readUI(); return true;
+  } return false;
+}
+c.addEventListener('mousedown',function(e){dragging=tryDrag(e)});
+c.addEventListener('mousemove',function(e){if(dragging)tryDrag(e)});
+window.addEventListener('mouseup',function(){dragging=false});
+c.addEventListener('touchstart',function(e){if(tryDrag(e)){dragging=true;e.preventDefault();}},{passive:false});
+c.addEventListener('touchmove',function(e){if(dragging){tryDrag(e);e.preventDefault();}},{passive:false});
+window.addEventListener('touchend',function(){dragging=false});
+
+rerollNoise(); for(var ii=0;ii<TOTAL;ii++)noise2[ii]=gauss();
+readUI();
+
+// ---- draw ----
+function panel(x,y,w,h,title,col){
+  g.save(); g.fillStyle='rgba(8,18,14,.5)'; g.strokeStyle=col+'44'; g.lineWidth=1;
+  g.beginPath(); g.rect(x,y,w,h); g.fill(); g.stroke();
+  g.fillStyle=col; g.font='10px ui-monospace,monospace'; g.globalAlpha=.92;
+  g.fillText(title,x+8,y+13); g.restore();
+}
+function plotArr(arr,n,x,y,w,h,sc,col,glow,cyOff){
+  g.save(); g.beginPath(); g.rect(x,y,w,h); g.clip();
+  g.strokeStyle=col; g.lineWidth=1.2; if(glow){g.shadowColor=col;g.shadowBlur=glow;}
+  g.beginPath(); var cy=y+(cyOff===undefined?h/2:cyOff);
+  var step=Math.max(1,Math.floor(n/Math.max(w*2,1)));
+  for(var i=0;i<n;i+=step){
+    var px=x+i/(n-1)*w, py=cy-arr[i]*sc;
+    if(py<y-3000)py=y-3000; if(py>y+h+3000)py=y+h+3000;
+    if(i===0)g.moveTo(px,py); else g.lineTo(px,py);
+  }
+  g.stroke(); g.restore();
+}
+function chips(ch,x,y,w,h,col){
+  g.save(); g.strokeStyle=col; g.lineWidth=1.6; g.shadowColor=col; g.shadowBlur=8;
+  g.beginPath(); var cy=y+h/2, a=h*0.32, cw=w/ch.length, prev=null;
+  for(var i=0;i<ch.length;i++){
+    var yy=cy-ch[i]*a, x1=x+i*cw, x2=x1+cw;
+    if(prev!==null&&prev!==ch[i])g.lineTo(x1,yy); else g.moveTo(x1,yy);
+    g.lineTo(x2,yy); prev=ch[i];
+  }
+  g.stroke(); g.restore();
+}
+
+function draw(){
+  var L=Math.min(406,W*0.31)+30, pad=14;
+  var x0=L, wA=W-L-pad, top=16, hAll=H-top-pad;
+  g.fillStyle='#04060a'; g.fillRect(0,0,W,H);
+  g.save(); g.strokeStyle='#0f9'; g.globalAlpha=.04;
+  for(var gx=x0;gx<x0+wA;gx+=48){g.beginPath();g.moveTo(gx,top);g.lineTo(gx,top+hAll);g.stroke();}
+  for(var gy=top;gy<top+hAll;gy+=48){g.beginPath();g.moveTo(x0,gy);g.lineTo(x0+wA,gy);g.stroke();}
+  g.restore();
+
+  if(act==='ping'){ drawAct(x0,top,wA,hAll); return; }
+
+  var hT=hAll*0.17, hR=hAll*0.30, hC=hAll-hT-hR-24;
+  // template
+  panel(x0,top,wA,hT,'TEMPLATE · known '+N+'-chip PRN m-sequence'+(useWrong?'  [correlating with WRONG code]':''),'#5fffb0');
+  chips(useWrong?wrong:code,x0+6,top+6,wA-12,hT-12,useWrong?'#ff6ec7':'#5fffb0');
+
+  // received
+  var ry=top+hT+8;
+  geom={rx0:x0,rw:wA,ry:ry,rh:hR};
+  panel(x0,ry,wA,hR,'RECEIVED · code buried at SNR '+snrDb.toFixed(1)+' dB — pure snow (drag to move it)','#ff5d73');
+  var rms=0; for(var i=0;i<TOTAL;i++)rms+=rx[i]*rx[i]; rms=Math.sqrt(rms/TOTAL)||1;
+  plotArr(rx,TOTAL,x0,ry,wA,hR,(hR*0.36)/(rms*2.6),'#ff5d73',8);
+  // faint true-position marker
+  g.save(); g.strokeStyle='#ffffff20'; g.setLineDash([3,4]);
+  var tx=x0+trueOff/(TOTAL-1)*wA; g.beginPath(); g.moveTo(tx,ry+4); g.lineTo(tx,ry+hR-4); g.stroke(); g.restore();
+
+  // correlation
+  var cy0=ry+hR+8;
+  panel(x0,cy0,wA,hC,'CROSS-CORRELATION  Σ rx[s+j]·tmpl[j]  — the spike stabs out of the flat noise','#5ff');
+  var nvalid=TOTAL-tmpl.length;
+  var base=cy0+hC-18;
+  var sc=(hC-34)/Math.max(Math.abs(peakVal),3*corrSigma+1);
+  // ±3σ band
+  g.save(); g.fillStyle='#ffffff10';
+  g.fillRect(x0,base-3*corrSigma*sc,wA,6*corrSigma*sc); g.restore();
+  g.save(); g.strokeStyle='#ffffff28'; g.beginPath(); g.moveTo(x0,base); g.lineTo(x0+wA,base); g.stroke(); g.restore();
+  // animated sweep reveal
+  sweep=Math.min(nvalid,sweep+Math.max(6,nvalid/45));
+  var nshow=Math.floor(sweep);
+  g.save(); g.beginPath(); g.rect(x0,cy0,wA,hC); g.clip();
+  g.strokeStyle=useWrong?'#ff6ec7':'#5ff'; g.shadowColor=useWrong?'#ff6ec7':'#5ff'; g.shadowBlur=14; g.lineWidth=1.6;
+  g.beginPath();
+  for(var k=0;k<nshow;k++){
+    var px=x0+k/(nvalid-1)*wA, py=base-corr[k]*sc;
+    if(k===0)g.moveTo(px,py); else g.lineTo(px,py);
+  }
+  g.stroke(); g.restore();
+  // sweep cursor + sliding template ghost
+  if(nshow<nvalid){
+    var cx=x0+nshow/(nvalid-1)*wA;
+    g.save(); g.strokeStyle='#ffd166aa'; g.lineWidth=1; g.beginPath();
+    g.moveTo(cx,cy0+3); g.lineTo(cx,cy0+hC-3); g.stroke(); g.restore();
+  }
+  // markers
+  if(nshow>foundOff){
+    var fx=x0+foundOff/(nvalid-1)*wA;
+    g.save(); g.strokeStyle='#7dffb0'; g.setLineDash([4,3]); g.lineWidth=1.2;
+    g.beginPath(); g.moveTo(fx,cy0+4); g.lineTo(fx,base); g.stroke();
+    g.shadowColor='#7dffb0'; g.shadowBlur=12; g.fillStyle='#7dffb0';
+    g.beginPath(); g.arc(fx,base-peakVal*sc,4,0,7); g.fill();
+    g.setLineDash([]); g.font='10px ui-monospace,monospace';
+    g.fillText('peak @ '+foundOff,fx+6,base-peakVal*sc-8);
+    g.restore();
+  }
+  var txc=x0+trueOff/(nvalid-1)*wA;
+  g.save(); g.strokeStyle='#ffd166'; g.setLineDash([2,4]); g.lineWidth=1;
+  g.beginPath(); g.moveTo(txc,cy0+4); g.lineTo(txc,cy0+hC-4); g.stroke();
+  g.fillStyle='#ffd166'; g.font='9.5px ui-monospace,monospace';
+  g.fillText('actual '+trueOff,txc+5,cy0+hC-6); g.restore();
+
+  if(useWrong){
+    g.save(); g.fillStyle='#ff6ec7'; g.font='12px ui-monospace,monospace';
+    g.shadowColor='#ff6ec7'; g.shadowBlur=12; g.globalAlpha=.95;
+    g.fillText('WRONG CODE → no spike. This is CDMA: every GPS satellite shares one frequency,',x0+10,cy0+30);
+    g.fillText('separated only by which sequence you correlate against.',x0+10,cy0+46);
+    g.restore();
+  }
+  g.save(); g.fillStyle='#ff6ec7'; g.globalAlpha=.85; g.font='12px ui-monospace,monospace';
+  g.shadowColor='#ff6ec7'; g.shadowBlur=12;
+  g.fillText('"when a signal is buried, don’t amplify — correlate."',x0+8,top+hAll-2);
+  g.restore();
+}
+
+function drawAct(x0,top,wA,hAll){
+  var h=(hAll-24)/2;
+  var bl=BARKER13.length*SPC, pl=SPC*2;
+  // ping
+  panel(x0,top,wA,h,'ULTRASONIC · single short PING (equal echo energy) + matched filter','#ff5d73');
+  var rmsP=0;for(var i=0;i<TOTAL;i++)rmsP+=rxPing[i]*rxPing[i];rmsP=Math.sqrt(rmsP/TOTAL)||1;
+  plotArr(rxPing,TOTAL,x0,top+16,wA,h*0.45,(h*0.16)/rmsP,'#ff5d73',8);
+  var bp=top+h-14, pk=0,pi=0,np=TOTAL-pl;
+  for(var j=0;j<np;j++)if(Math.abs(corrPing[j])>Math.abs(pk)){pk=corrPing[j];pi=j;}
+  var scP=(h*0.40)/Math.max(Math.abs(pk),3);
+  g.save();g.strokeStyle='#ffffff22';g.beginPath();g.moveTo(x0,bp);g.lineTo(x0+wA,bp);g.stroke();g.restore();
+  plotArr(corrPing,np,x0,top+h*0.5,wA,h*0.5,scP,'#ff9d5d',10,h*0.5-14);
+  g.fillStyle='#ff9d5d';g.font='10px ui-monospace,monospace';
+  g.fillText('ping peak @ '+pi+(Math.abs(pi-trueOff)<=SPC?'  ✓':'  ✗ LOST IN NOISE (true '+trueOff+')'),x0+10,top+h-2);
+
+  // barker
+  var y2=top+h+16;
+  panel(x0,y2,wA,h,'ULTRASONIC · 13-bit BARKER-coded burst, SAME total energy + matched filter','#5fffb0');
+  var rmsC=0;for(var k=0;k<TOTAL;k++)rmsC+=rxCode[k]*rxCode[k];rmsC=Math.sqrt(rmsC/TOTAL)||1;
+  plotArr(rxCode,TOTAL,x0,y2+16,wA,h*0.45,(h*0.16)/rmsC,'#5fffb0',8);
+  var pk2=0,pi2=0,nb=TOTAL-bl;
+  for(var m=0;m<nb;m++)if(Math.abs(corrCode[m])>Math.abs(pk2)){pk2=corrCode[m];pi2=m;}
+  var scC=(h*0.40)/Math.max(Math.abs(pk2),3);
+  var b2=y2+h-14;
+  g.save();g.strokeStyle='#ffffff22';g.beginPath();g.moveTo(x0,b2);g.lineTo(x0+wA,b2);g.stroke();g.restore();
+  plotArr(corrCode,nb,x0,y2+h*0.5,wA,h*0.5,scC,'#5ff',12,h*0.5-14);
+  g.fillStyle='#5ff';g.font='10px ui-monospace,monospace';
+  g.fillText('coded peak @ '+pi2+(Math.abs(pi2-trueOff)<=SPC?'  ✓ echo found':'  ✗')+'   (true '+trueOff+')',x0+10,y2+h-2);
+  g.save(); g.fillStyle='#ffd166'; g.font='11px ui-monospace,monospace'; g.globalAlpha=.9;
+  g.fillText('Equal energy, equal peak power budget — but the coded echo spreads in time and compresses to a spike '+(BARKER13.length)+'× taller vs noise.',x0+10,y2+h+12);
+  g.restore();
+}
+
+function updateReadouts(){
+  var pg=10*Math.log10(N*SPC/SPC);   // processing gain from N chips
+  el('rPG').textContent='+'+(10*Math.log10(N)).toFixed(1)+' dB';
+  el('rT').textContent=trueOff;
+  el('rF').textContent=foundOff;
+  var ok=Math.abs(foundOff-trueOff)<=SPC;
+  el('rM').textContent=useWrong?'no spike (wrong PRN)':(ok?'MATCH ✓':'miss ✗');
+  el('rM').style.color=useWrong?'#ff6ec7':(ok?'#7dffb0':'#ff5d73');
+  el('rP').textContent=(Math.abs(peakVal)/Math.max(corrSigma,1e-9)).toFixed(1)+'σ';
+  el('rQ').textContent=(snrDb+10*Math.log10(N)).toFixed(1)+' dB';
+}
+
+function frame(){ draw(); updateReadouts(); requestAnimationFrame(frame); }
+requestAnimationFrame(frame);
+</script>
+</body>
