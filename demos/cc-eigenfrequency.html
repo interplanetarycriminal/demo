@@ -119,7 +119,7 @@ function ambient(dt){
 }
 
 /* integrate the modes at FS with a broadband ambient force */
-var acc=0,dispNow=0;
+var acc=0,dispNow=0,env=1e-6;      // env = slow envelope, used only for DISPLAY scaling
 function step(dt,lvl){
   var s=S[cur];
   var h=1/FS,steps=Math.min(Math.round(dt*FS),60);
@@ -140,7 +140,9 @@ function step(dt,lvl){
     acc++;
   }
   dispNow=0;for(var i3=0;i3<s.modes.length;i3++)dispNow+=st[i3].x*s.modes[i3].w;
+  env=Math.max(env*Math.pow(0.985,steps),Math.abs(dispNow));
 }
+function nrm(v){return Math.max(-1.4,Math.min(1.4,v/(env+1e-9)));}  // display-normalized
 /* FFT the ring buffer, exponentially average */
 var specCol=[],SPECW=150;
 var peakHz=0,peakMag=0;
@@ -185,7 +187,7 @@ applyMods();ctlHTML();
 
 /* ================= drawing ================= */
 function drawShelf(cx,cy,d){
-  var s=S[cur],sag=d*260;
+  var s=S[cur],sag=nrm(d)*26;
   x.save();x.translate(cx,cy);
   // wall
   x.fillStyle='rgba(20,26,38,.7)';x.fillRect(-190,-150,380,300);
@@ -216,8 +218,8 @@ function drawTree(cx,cy,d){
   x.save();x.translate(cx,cy+140);
   function branch(len,ang,w,depth,off){
     if(depth<=0||len<6)return;
-    var sway=d*160*(depth/5)*(1+off*0.3);
-    var a=ang+sway*0.02;
+    var sway=nrm(d)*0.30*(depth/5)*(1+off*0.3);
+    var a=ang+sway;
     var ex=Math.sin(a)*len,ey=-Math.cos(a)*len;
     var col=s.crack>0.05&&depth>=5?'#ff6b6b':'#a78bfa';
     glow(col,6,function(){x.strokeStyle=col;x.lineWidth=w;x.lineCap='round';
@@ -242,7 +244,7 @@ function drawWire(cx,cy){
   glow('#7ef9ff',14,function(){x.strokeStyle='#9df3ff';x.lineWidth=2.6;x.beginPath();
     for(var i=-160;i<=160;i+=4){
       var u=(i+160)/320,y=0;
-      for(var m=0;m<st.length;m++)y+=st[m].x*S[cur].modes[m].w*260*Math.sin((m+1)*Math.PI*u);
+      for(var m=0;m<st.length;m++)y+=nrm(st[m].x*S[cur].modes[m].w)*34*Math.sin((m+1)*Math.PI*u);
       x.lineTo(i,y);}
     x.stroke();});
   x.restore();
@@ -259,20 +261,30 @@ function drawSparks(px,py,pw,ph){
   x.restore();
 }
 
+/* scrolling spectrogram lives on a small offscreen canvas: one new 1px column per
+   analysis instead of thousands of fillRects per frame */
+var MAXBIN=Math.min(BINS,Math.round(60/(FS/N)));     // show 0..60 Hz
+var off=document.createElement('canvas');off.width=SPECW;off.height=MAXBIN;
+var ox=off.getContext('2d');
+ox.fillStyle='#06090e';ox.fillRect(0,0,SPECW,MAXBIN);
+function pushColumn(col,mx){
+  ox.drawImage(off,-1,0);                             // scroll left 1px
+  ox.fillStyle='#06090e';ox.fillRect(SPECW-1,0,1,MAXBIN);
+  for(var b=1;b<MAXBIN;b++){
+    var v=Math.min(1,Math.pow(col[b]/(mx*1.2+1e-9),0.42));
+    if(v<0.04)continue;
+    var r=Math.round(255*Math.min(1,v*1.9)),
+        g=Math.round(90*v+165*Math.max(0,v-0.5)*2),
+        bl=Math.round(255*(1-v*0.55));
+    ox.fillStyle='rgb('+r+','+g+','+bl+')';
+    ox.fillRect(SPECW-1,MAXBIN-1-b,1,1);
+  }
+}
 function drawSpectrogram(px,py,pw,ph,mx){
   x.fillStyle='rgba(6,9,14,.9)';x.fillRect(px,py,pw,ph);
-  var MAXBIN=Math.min(BINS,Math.round(60/(FS/N)));   // show 0..60 Hz
-  var colW=pw/SPECW;
-  for(var t2=0;t2<specCol.length;t2++){
-    var col=specCol[t2];
-    for(var b=1;b<MAXBIN;b++){
-      var v=Math.min(1,Math.pow(col[b]/(mx*1.2+1e-9),0.42));
-      if(v<0.05)continue;
-      var r=Math.round(255*Math.min(1,v*1.9)),g=Math.round(90*v+165*Math.max(0,v-0.5)*2),bl=Math.round(255*(1-v*0.55));
-      x.fillStyle='rgb('+r+','+g+','+bl+')';
-      x.fillRect(px+t2*colW,py+ph-(b/MAXBIN)*ph,colW+0.6,ph/MAXBIN+0.6);
-    }
-  }
+  x.save();x.imageSmoothingEnabled=true;
+  x.drawImage(off,0,0,SPECW,MAXBIN,px,py,pw,ph);
+  x.restore();
   x.strokeStyle='rgba(150,120,255,.3)';x.lineWidth=1;x.strokeRect(px,py,pw,ph);
   x.font='10px ui-monospace,monospace';x.fillStyle='#b0a8d0';x.textAlign='left';
   x.fillText('SPECTROGRAM (time →)   0–60 Hz',px+6,py+13);

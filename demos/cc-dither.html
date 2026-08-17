@@ -1,0 +1,366 @@
+<meta charset="utf-8">
+<title>CC#93 — Dither</title>
+<style>
+  html,body{margin:0;padding:0;background:#05040a;overflow:hidden;height:100%}
+  canvas{display:block;position:fixed;inset:0}
+  #ui{position:fixed;top:10px;left:10px;z-index:10;width:380px;max-width:calc(100vw - 24px);
+      background:rgba(8,4,16,.72);border:1px solid #a6f3;border-radius:8px;padding:10px 12px;
+      font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#dcc8ff;
+      box-shadow:0 0 24px #aa66ff22, inset 0 0 40px #aa66ff08;backdrop-filter:blur(3px)}
+  #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.1em;color:#c79bff;text-shadow:0 0 10px #a6fa}
+  .cc{color:#ffd166;text-shadow:0 0 8px #ffd16655;margin:0 0 7px;font-size:10.5px;line-height:1.45}
+  .row{display:flex;align-items:center;gap:6px;margin:3px 0}
+  .row label{width:100px;color:#9a86bb;flex:none}
+  .row input[type=range]{flex:1;height:14px;accent-color:#b57bff;background:transparent}
+  .row .v{width:80px;text-align:right;color:#f0e4ff}
+  .hint{color:#7d6a99;margin-top:6px;font-size:10px}
+  .rd{margin-top:6px;border-top:1px solid #a6f2;padding-top:5px;font-size:10.5px}
+  .rd b{color:#7dffb0;font-weight:600}
+  .big{color:#ff6ec7;text-shadow:0 0 10px #ff6ec788}
+  a{color:#c79bff;text-decoration:none;border-bottom:1px dotted #a6f6}
+  button{background:#a6f2;border:1px solid #a6f5;color:#e6d8ff;font:10px ui-monospace,monospace;
+         padding:3px 7px;border-radius:4px;cursor:pointer;margin-right:3px}
+  button:hover{background:#a6f4}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>CHEAT CODE #93 — DITHER</h1>
+  <p class="cc">Add noise to see finer: a signal stuck between two ADC codes reads the same number forever — add ~1 LSB of noise and averaging recovers resolution BELOW the step size.</p>
+  <div class="row"><label>dither σ</label><input id="sD" type="range" min="0" max="3" step="0.01" value="1"><span class="v" id="vD">1.00 LSB</span></div>
+  <div class="row"><label>signal amp</label><input id="sA" type="range" min="0.05" max="1.2" step="0.01" value="0.35"><span class="v" id="vA">0.35 LSB</span></div>
+  <div class="row"><label>average N</label><input id="sN" type="range" min="0" max="3.3" step="0.01" value="2.3"><span class="v" id="vN">200</span></div>
+  <div class="row"><label>ADC bits</label><input id="sB" type="range" min="2" max="5" step="1" value="3"><span class="v" id="vB">3 bit</span></div>
+  <div class="hint"><button id="bS">sweep dither curve</button><button id="bR">reset</button> · sweet spot ≈ 1 LSB · <a href="index.html">← gallery</a></div>
+  <div class="rd">
+    RMS err — no dither <b id="rE0">—</b> &nbsp; dithered <b id="rE1">—</b> &nbsp; ratio <span class="big" id="rR">—</span><br>
+    LSB = <b id="rL">—</b> &nbsp; eff. bits <b id="rB">—</b> (= <b id="rB0">3</b> + <b id="rBg">—</b> gained)<br>
+    best dither so far <b id="rBest">—</b> LSB
+  </div>
+</div>
+<script>
+"use strict";
+var c=document.getElementById('c'),g=c.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
+ c.width=Math.round(W*DPR);c.height=Math.round(H*DPR);c.style.width=W+'px';c.style.height=H+'px';
+ g.setTransform(DPR,0,0,DPR,0,0);}
+window.addEventListener('resize',resize);resize();
+var el=function(i){return document.getElementById(i)};
+
+var sp=null;
+function gauss(){ if(sp!==null){var v=sp;sp=null;return v;}
+  var u=0,w=0,s=0; do{u=Math.random()*2-1;w=Math.random()*2-1;s=u*u+w*w;}while(s>=1||s===0);
+  var m=Math.sqrt(-2*Math.log(s)/s); sp=w*m; return u*m; }
+
+// ---- ADC ----
+var BITS=3, VREF=1.0;                 // full scale 0..1 V
+var LSB=VREF/Math.pow(2,BITS);
+function adc(v){                       // mid-tread quantiser, clipped
+  var code=Math.round(v/LSB);
+  var mx=Math.pow(2,BITS)-1;
+  if(code<0)code=0; if(code>mx)code=mx;
+  return code;
+}
+function code2v(k){return k*LSB;}
+
+// ---- signal ----
+var NPTS=420;                          // points across the plotted window
+var ampLSB=0.35, dithLSB=1.0, NAVG=200;
+var OFFSET;                            // DC bias placing the sine between two codes
+function recomputeConst(){ LSB=VREF/Math.pow(2,BITS); OFFSET=(Math.floor(Math.pow(2,BITS)/2))*LSB+0.5*LSB*0.62; }
+recomputeConst();
+function trueSig(i,phase){
+  return OFFSET + ampLSB*LSB*Math.sin(2*Math.PI*i/NPTS*2 + phase);
+}
+
+// ---- buffers ----
+var trueArr=new Float32Array(NPTS);
+var qClean=new Float32Array(NPTS);     // single quantised sample, no dither
+var qCleanAvg=new Float32Array(NPTS);  // average of N quantised (no-dither) samples
+var qDithOne=new Float32Array(NPTS);   // one dithered quantised sample (flickering)
+var qDithAvg=new Float32Array(NPTS);   // running average of dithered samples
+var accClean=new Float64Array(NPTS), accDith=new Float64Array(NPTS);
+var nAcc=0, phase=0;
+
+function resetAcc(){ for(var i=0;i<NPTS;i++){accClean[i]=0;accDith[i]=0;} nAcc=0; }
+
+function stepAccum(k){                 // add k more samples to the running average
+  for(var s=0;s<k;s++){
+    for(var i=0;i<NPTS;i++){
+      var v=trueSig(i,phase);
+      trueArr[i]=v;
+      // no dither: exact same value every time → same code forever
+      var qc=code2v(adc(v));
+      accClean[i]+=qc;
+      if(s===0)qClean[i]=qc;
+      // dithered
+      var vd=v+dithLSB*LSB*gauss();
+      var qd=code2v(adc(vd));
+      accDith[i]+=qd;
+      if(s===0)qDithOne[i]=qd;
+    }
+    nAcc++;
+    if(nAcc>=NAVG)break;
+  }
+  for(var j=0;j<NPTS;j++){
+    qCleanAvg[j]=accClean[j]/Math.max(nAcc,1);
+    qDithAvg[j]=accDith[j]/Math.max(nAcc,1);
+  }
+}
+
+// error metrics (remove DC offset — quantiser bias is not resolution loss)
+function rmsErr(rec){
+  var mT=0,mR=0;
+  for(var i=0;i<NPTS;i++){mT+=trueArr[i];mR+=rec[i];}
+  mT/=NPTS;mR/=NPTS;
+  var e=0;
+  for(var j=0;j<NPTS;j++){var d=(rec[j]-mR)-(trueArr[j]-mT); e+=d*d;}
+  return Math.sqrt(e/NPTS);
+}
+
+// ---- dither sweep curve (error vs dither amplitude, built live) ----
+var CURVE_N=34;
+var curveX=new Float32Array(CURVE_N), curveY=new Float32Array(CURVE_N);
+var curveHas=new Uint8Array(CURVE_N), curveIdx=0, sweeping=false;
+function curveEval(d){
+  // Monte-Carlo: NAVG samples at dither d, return RMS error
+  var acc=new Float64Array(NPTS);
+  var M=Math.min(NAVG,400);
+  for(var s=0;s<M;s++)for(var i=0;i<NPTS;i++){
+    var v=trueSig(i,phase);
+    acc[i]+=code2v(adc(v+d*LSB*gauss()));
+  }
+  var rec=new Float32Array(NPTS);
+  for(var j=0;j<NPTS;j++){rec[j]=acc[j]/M; trueArr[j]=trueSig(j,phase);}
+  return rmsErr(rec);
+}
+function sweepStep(){
+  if(!sweeping)return;
+  if(curveIdx>=CURVE_N){sweeping=false;return;}
+  var d=curveIdx/(CURVE_N-1)*3.0;
+  curveX[curveIdx]=d; curveY[curveIdx]=curveEval(d); curveHas[curveIdx]=1; curveIdx++;
+}
+function startSweep(){ curveIdx=0; for(var i=0;i<CURVE_N;i++)curveHas[i]=0; sweeping=true; }
+
+// ---- UI ----
+var sD=el('sD'),sA=el('sA'),sN=el('sN'),sB=el('sB');
+function readUI(){
+  dithLSB=parseFloat(sD.value); ampLSB=parseFloat(sA.value);
+  NAVG=Math.round(Math.pow(10,parseFloat(sN.value)));
+  var nb=parseInt(sB.value,10);
+  if(nb!==BITS){BITS=nb;recomputeConst();startSweep();}
+  el('vD').textContent=dithLSB.toFixed(2)+' LSB';
+  el('vA').textContent=ampLSB.toFixed(2)+' LSB';
+  el('vN').textContent=NAVG;
+  el('vB').textContent=BITS+' bit';
+  el('rB0').textContent=BITS;
+  resetAcc();
+}
+[sD,sA,sN,sB].forEach(function(s){s.addEventListener('input',function(){readUI();startSweep();})});
+el('bS').onclick=startSweep;
+el('bR').onclick=function(){resetAcc();startSweep();};
+readUI();
+startSweep();
+
+// ---- resolution-vs-N plot data (theory + measured) ----
+var resPts=[];
+function measureAtN(n){
+  var acc=new Float64Array(NPTS);
+  for(var s=0;s<n;s++)for(var i=0;i<NPTS;i++)acc[i]+=code2v(adc(trueSig(i,phase)+dithLSB*LSB*gauss()));
+  var rec=new Float32Array(NPTS);
+  for(var j=0;j<NPTS;j++){rec[j]=acc[j]/n;trueArr[j]=trueSig(j,phase);}
+  return rmsErr(rec);
+}
+
+// ---- drawing ----
+function panel(x,y,w,h,title,col){
+  g.save(); g.fillStyle='rgba(14,8,22,.5)'; g.strokeStyle=col+'44'; g.lineWidth=1;
+  g.beginPath(); g.rect(x,y,w,h); g.fill(); g.stroke();
+  g.fillStyle=col; g.font='10px ui-monospace,monospace'; g.globalAlpha=.92;
+  g.fillText(title,x+8,y+13); g.restore();
+}
+var VMIN,VMAX;
+function setRange(){ VMIN=OFFSET-2.2*LSB; VMAX=OFFSET+2.2*LSB; }
+function vy(v,y,h){ return y+h-(v-VMIN)/(VMAX-VMIN)*h; }
+function plot(arr,x,y,w,h,col,glow,lw,dash){
+  g.save(); g.beginPath(); g.rect(x,y,w,h); g.clip();
+  g.strokeStyle=col; g.lineWidth=lw||1.5; if(glow){g.shadowColor=col;g.shadowBlur=glow;}
+  if(dash)g.setLineDash(dash);
+  g.beginPath();
+  for(var i=0;i<NPTS;i++){
+    var px=x+i/(NPTS-1)*w, py=vy(arr[i],y,h);
+    if(py<y-4000)py=y-4000; if(py>y+h+4000)py=y+h+4000;
+    if(i===0)g.moveTo(px,py); else g.lineTo(px,py);
+  }
+  g.stroke(); g.restore();
+}
+function drawLadder(x,y,w,h){
+  g.save(); g.setLineDash([2,5]); g.lineWidth=1;
+  for(var k=0;k<Math.pow(2,BITS);k++){
+    var v=code2v(k); if(v<VMIN-LSB||v>VMAX+LSB)continue;
+    var py=vy(v,y,h);
+    g.strokeStyle='#ffffff20'; g.beginPath(); g.moveTo(x,py); g.lineTo(x+w,py); g.stroke();
+    g.setLineDash([]); g.fillStyle='#ffffff38'; g.font='9px ui-monospace,monospace';
+    g.fillText('code '+k,x+w-46,py-3); g.setLineDash([2,5]);
+  }
+  // decision thresholds (mid-tread: at (k+0.5)*LSB)
+  g.strokeStyle='#ff6ec733'; g.setLineDash([1,3]);
+  for(var m=0;m<Math.pow(2,BITS);m++){
+    var vt=(m+0.5)*LSB; if(vt<VMIN||vt>VMAX)continue;
+    var pt=vy(vt,y,h); g.beginPath(); g.moveTo(x,pt); g.lineTo(x+w,pt); g.stroke();
+  }
+  g.restore();
+}
+
+function drawCurve(x,y,w,h){
+  panel(x,y,w,h,'RMS ERROR vs DITHER σ — the sweet spot is real','#ffd166');
+  var mx=0,mn=1e9,mnI=-1;
+  for(var i=0;i<CURVE_N;i++)if(curveHas[i]){ if(curveY[i]>mx)mx=curveY[i]; if(curveY[i]<mn){mn=curveY[i];mnI=i;} }
+  if(mx<=0)mx=LSB*0.5;
+  var px0=x+34,py0=y+h-20,pw=w-46,phh=h-34;
+  g.save(); g.strokeStyle='#ffffff22'; g.lineWidth=1;
+  g.beginPath(); g.moveTo(px0,y+16); g.lineTo(px0,py0); g.lineTo(px0+pw,py0); g.stroke();
+  g.fillStyle='#ffffff55'; g.font='9px ui-monospace,monospace';
+  g.fillText('0',px0-4,py0+11); g.fillText('1',px0+pw/3-3,py0+11);
+  g.fillText('2',px0+2*pw/3-3,py0+11); g.fillText('3 LSB',px0+pw-20,py0+11);
+  g.fillText('err',x+8,y+24);
+  g.restore();
+  // 1-LSB guide
+  g.save(); g.strokeStyle='#7dffb040'; g.setLineDash([3,3]);
+  g.beginPath(); g.moveTo(px0+pw/3,y+16); g.lineTo(px0+pw/3,py0); g.stroke(); g.restore();
+  g.save(); g.strokeStyle='#ffd166'; g.shadowColor='#ffd166'; g.shadowBlur=10; g.lineWidth=1.8;
+  g.beginPath(); var started=false;
+  for(var k=0;k<CURVE_N;k++){ if(!curveHas[k])continue;
+    var xx=px0+curveX[k]/3.0*pw, yy=py0-(curveY[k]/mx)*phh;
+    if(!started){g.moveTo(xx,yy);started=true;}else g.lineTo(xx,yy);
+  }
+  g.stroke(); g.restore();
+  if(mnI>=0){
+    var mxp=px0+curveX[mnI]/3.0*pw, myp=py0-(curveY[mnI]/mx)*phh;
+    g.save(); g.fillStyle='#7dffb0'; g.shadowColor='#7dffb0'; g.shadowBlur=14;
+    g.beginPath(); g.arc(mxp,myp,4.5,0,7); g.fill();
+    g.font='10px ui-monospace,monospace'; g.shadowBlur=0;
+    g.fillText('min @ '+curveX[mnI].toFixed(2)+' LSB',Math.min(mxp+7,x+w-118),myp-7);
+    g.restore();
+  }
+  // current dither marker
+  g.save(); g.strokeStyle='#c79bff'; g.lineWidth=1.2;
+  var cxp=px0+Math.min(dithLSB,3)/3.0*pw;
+  g.beginPath(); g.moveTo(cxp,y+16); g.lineTo(cxp,py0); g.stroke();
+  g.fillStyle='#c79bff'; g.font='9px ui-monospace,monospace'; g.fillText('you',cxp+3,y+25); g.restore();
+  return mnI>=0?curveX[mnI]:-1;
+}
+
+function drawBits(x,y,w,h){
+  panel(x,y,w,h,'EFFECTIVE BITS vs AVERAGES N  (½ bit per 4× N)','#5ff');
+  var px0=x+34,py0=y+h-20,pw=w-46,phh=h-34;
+  g.save(); g.strokeStyle='#ffffff22';
+  g.beginPath(); g.moveTo(px0,y+16); g.lineTo(px0,py0); g.lineTo(px0+pw,py0); g.stroke();
+  g.fillStyle='#ffffff55'; g.font='9px ui-monospace,monospace';
+  g.fillText('N=1',px0-6,py0+11); g.fillText('10',px0+pw/3-6,py0+11);
+  g.fillText('100',px0+2*pw/3-8,py0+11); g.fillText('1000',px0+pw-20,py0+11);
+  g.restore();
+  var maxB=BITS+6;
+  function bx(n){return px0+Math.log10(Math.max(n,1))/3*pw;}
+  function by(b){return py0-(b-BITS)/(maxB-BITS)*phh;}
+  // theory: ENOB = BITS + 0.5*log2(N)
+  g.save(); g.strokeStyle='#ffffff55'; g.setLineDash([4,3]); g.lineWidth=1.3; g.beginPath();
+  for(var n=1;n<=1000;n*=1.15){ var b=BITS+0.5*Math.log2(n);
+    var xx=bx(n),yy=by(b); if(n===1)g.moveTo(xx,yy); else g.lineTo(xx,yy); }
+  g.stroke(); g.restore();
+  // measured (running, at current N)
+  var errD=rmsErr(qDithAvg);
+  var effB=BITS+Math.log2((LSB/Math.sqrt(12))/Math.max(errD,1e-12));
+  effB=Math.max(BITS-1,Math.min(maxB,effB));
+  g.save(); g.fillStyle='#5ff'; g.shadowColor='#5ff'; g.shadowBlur=14;
+  g.beginPath(); g.arc(bx(nAcc),by(effB),5,0,7); g.fill();
+  g.font='10px ui-monospace,monospace'; g.shadowBlur=0;
+  g.fillText('N='+nAcc+'  ENOB '+effB.toFixed(2),Math.min(bx(nAcc)+8,x+w-130),by(effB)-8);
+  g.restore();
+  // no-dither line: stuck flat at BITS (or worse)
+  var errC=rmsErr(qCleanAvg);
+  var effC=BITS+Math.log2((LSB/Math.sqrt(12))/Math.max(errC,1e-12));
+  effC=Math.max(BITS-2,Math.min(maxB,effC));
+  g.save(); g.strokeStyle='#ff5d73'; g.lineWidth=1.5; g.shadowColor='#ff5d73'; g.shadowBlur=8;
+  g.beginPath(); g.moveTo(px0,by(effC)); g.lineTo(px0+pw,by(effC)); g.stroke();
+  g.fillStyle='#ff5d73'; g.font='9.5px ui-monospace,monospace'; g.shadowBlur=0;
+  g.fillText('no dither: flat forever',px0+6,by(effC)-4); g.restore();
+  return [errC,errD,effB];
+}
+
+var bestD=-1;
+function draw(){
+  setRange();
+  var L=Math.min(408,W*0.31)+30, pad=14;
+  var x0=L, wA=W-L-pad, top=16, hAll=H-top-pad;
+  g.fillStyle='#05040a'; g.fillRect(0,0,W,H);
+  g.save(); g.strokeStyle='#a6f'; g.globalAlpha=.04;
+  for(var gx=x0;gx<x0+wA;gx+=48){g.beginPath();g.moveTo(gx,top);g.lineTo(gx,top+hAll);g.stroke();}
+  for(var gy=top;gy<top+hAll;gy+=48){g.beginPath();g.moveTo(x0,gy);g.lineTo(x0+wA,gy);g.stroke();}
+  g.restore();
+
+  var colW=(wA-10)/2, hTop=hAll*0.56, hBot=hAll-hTop-10;
+
+  // LEFT — no dither
+  panel(x0,top,colW,hTop,'NO DITHER · '+BITS+'-bit ADC — output is STUCK on one code; averaging changes nothing','#ff5d73');
+  drawLadder(x0+4,top+18,colW-8,hTop-26);
+  plot(trueArr,x0+4,top+18,colW-8,hTop-26,'#ffffff77',0,1.4,[4,3]);
+  plot(qClean,x0+4,top+18,colW-8,hTop-26,'#ff5d73',10,2);
+  plot(qCleanAvg,x0+4,top+18,colW-8,hTop-26,'#ffb0bd',6,1.6,[6,3]);
+  g.save();g.font='9.5px ui-monospace,monospace';
+  g.fillStyle='#ffffff77';g.fillText('- - true (sub-LSB wiggle)',x0+10,top+hTop-20);
+  g.fillStyle='#ff5d73';g.fillText('—— quantised',x0+10,top+hTop-9);
+  g.fillStyle='#ffb0bd';g.fillText('- - averaged ×'+nAcc+' (identical — no new information)',x0+120,top+hTop-9);
+  g.restore();
+
+  // RIGHT — dithered
+  var xR=x0+colW+10;
+  panel(xR,top,colW,hTop,'DITHERED σ='+dithLSB.toFixed(2)+' LSB · codes flicker; the average reconstructs the sine','#7dffb0');
+  drawLadder(xR+4,top+18,colW-8,hTop-26);
+  plot(qDithOne,xR+4,top+18,colW-8,hTop-26,'#3d6b55',0,1.1);
+  plot(trueArr,xR+4,top+18,colW-8,hTop-26,'#ffffff88',0,1.4,[4,3]);
+  plot(qDithAvg,xR+4,top+18,colW-8,hTop-26,'#7dffb0',14,2.2);
+  g.save();g.font='9.5px ui-monospace,monospace';
+  g.fillStyle='#3d6b55';g.fillText('—— single dithered sample (flickering)',xR+10,top+hTop-20);
+  g.fillStyle='#7dffb0';g.fillText('—— recovered = mean of '+nAcc,xR+10,top+hTop-9);
+  g.fillStyle='#ffffff88';g.fillText('- - true',xR+220,top+hTop-9);
+  g.restore();
+
+  // bottom row
+  var yB=top+hTop+10;
+  bestD=drawCurve(x0,yB,colW,hBot);
+  var errs=drawBits(xR,yB,colW,hBot);
+
+  g.save(); g.fillStyle='#ff6ec7'; g.globalAlpha=.9; g.font='11.5px ui-monospace,monospace';
+  g.shadowColor='#ff6ec7'; g.shadowBlur=12;
+  g.fillText('"if a reading is stuck, you’re resolution-limited, not noise-limited — the fix is to ADD noise, then average it back out."',x0+6,top+hAll+9);
+  g.restore();
+  return errs;
+}
+
+function updateReadouts(errs){
+  var e0=errs[0], e1=errs[1];
+  el('rE0').textContent=(e0/LSB).toFixed(4)+' LSB';
+  el('rE1').textContent=(e1/LSB).toFixed(4)+' LSB';
+  var ratio=e0/Math.max(e1,1e-12);
+  el('rR').textContent=ratio>=1?('×'+ratio.toFixed(1)+' better'):('×'+(1/ratio).toFixed(1)+' worse');
+  el('rL').textContent=(LSB*1000).toFixed(1)+' mV';
+  el('rB').textContent=errs[2].toFixed(2);
+  el('rBg').textContent=(errs[2]-BITS).toFixed(2);
+  el('rBest').textContent=bestD>=0?bestD.toFixed(2):'…';
+}
+
+var last=0;
+function frame(ts){
+  // accumulate averages progressively so the reconstruction visibly builds
+  if(nAcc<NAVG) stepAccum(Math.max(1,Math.ceil(NAVG/70)));
+  else { phase+=0.006; resetAcc(); stepAccum(Math.max(1,Math.ceil(NAVG/70))); }
+  sweepStep();
+  var errs=draw();
+  updateReadouts(errs);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>

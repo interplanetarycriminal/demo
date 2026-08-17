@@ -1,0 +1,384 @@
+<meta charset="utf-8">
+<title>CC#69 — Reynolds</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;background:#04060a;overflow:hidden}
+  canvas{display:block;position:fixed;inset:0}
+  #ui{position:fixed;left:12px;top:12px;z-index:10;width:340px;max-height:calc(100vh - 24px);
+      overflow:auto;background:rgba(6,10,18,.72);border:1px solid rgba(120,255,190,.28);
+      border-radius:8px;padding:10px 12px;color:#bff5dd;
+      font:11px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+      box-shadow:0 0 28px rgba(0,255,170,.14), inset 0 0 40px rgba(0,80,60,.25);
+      backdrop-filter:blur(3px)}
+  #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.9px;color:#7effc4;text-shadow:0 0 10px #10d68a}
+  .cheat{color:#ffd98a;border-left:2px solid #ffb347;padding-left:7px;margin:6px 0 8px;text-shadow:0 0 8px rgba(255,170,60,.35)}
+  .hint{color:#79a99a;margin:6px 0}
+  label{display:block;margin:5px 0 1px;color:#8ff0c8}
+  input[type=range]{width:100%;height:16px;accent-color:#2effa8;background:transparent}
+  .row{display:flex;justify-content:space-between;gap:8px}
+  .k{color:#6fa891}.v{color:#eafff6}
+  .lam{color:#4fd2ff}.tur{color:#ff5f6f}.ok{color:#66ffa8}
+  .sec{margin-top:8px;border-top:1px solid rgba(120,255,190,.16);padding-top:6px}
+  .btns{display:flex;gap:4px;margin:6px 0;flex-wrap:wrap}
+  .btns button{flex:1 1 46%;background:rgba(15,60,45,.7);border:1px solid rgba(120,255,190,.3);
+    color:#9fffd8;font:10px/1.4 ui-monospace,monospace;padding:4px 2px;border-radius:4px;cursor:pointer}
+  .btns button.on{background:rgba(0,255,170,.26);color:#eafff6;box-shadow:0 0 10px rgba(0,255,170,.45)}
+  a{color:#7effc4;text-decoration:none;border-bottom:1px dotted #3bae86}
+  a:hover{color:#fff}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>CHEAT CODE #69 — REYNOLDS</h1>
+  <div class="cheat">Reynolds is a regime switch — laminar is silent and predictable, turbulent is noisy and lossy, and the FLIP itself is detectable.</div>
+  <div class="hint" id="hint">sliders · presets · [R] auto-ramp · [S] smoke act · [space] pause</div>
+  <div class="btns">
+    <button id="pWater" class="on">WATER</button><button id="pHoney">HONEY</button>
+    <button id="pAir">AIR</button><button id="pOil">OIL</button>
+  </div>
+  <div id="ctl"></div>
+  <div class="btns">
+    <button id="bRamp">AUTO-RAMP ▶</button><button id="bSmoke">SMOKE ACT</button>
+  </div>
+  <div class="sec" id="out"></div>
+  <div class="sec" style="color:#ffd98a">"when you only need 'flowing hard? y/n', listen for the regime change."</div>
+  <div style="margin-top:6px"><a href="index.html">← gallery</a></div>
+</div>
+<script>
+'use strict';
+var c=document.getElementById('c'),g=c.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
+  c.width=Math.round(W*DPR);c.height=Math.round(H*DPR);c.style.width=W+'px';c.style.height=H+'px';
+  g.setTransform(DPR,0,0,DPR,0,0);}
+window.addEventListener('resize',resize);resize();
+
+// ---------------- constants ----------------
+var RE_CRIT=2300;          // pipe-flow laminar→turbulent threshold
+var RE_FULL=4000;          // fully turbulent
+var FLUIDS={
+  water:{rho:998, mu:1.002e-3, name:'WATER 20°C', col:'#4fd2ff'},
+  honey:{rho:1420, mu:10.0,    name:'HONEY',      col:'#ffc24f'},
+  air:  {rho:1.225,mu:1.81e-5, name:'AIR',        col:'#c7e9ff'},
+  oil:  {rho:880,  mu:0.20,    name:'SAE-50 OIL', col:'#9dff7e'}
+};
+var S={fluid:'water', v:1.0, D:0.012, muScale:1, ramp:false, rampT:0, smoke:false, paused:false};
+
+function fl(){return FLUIDS[S.fluid];}
+function mu(){return fl().mu*S.muScale;}
+function Re(){return fl().rho*S.v*S.D/mu();}
+// turbulence intensity: 0 below Re_crit, →1 by RE_FULL (perturbation growth)
+function turb(re){
+  if(re<=RE_CRIT)return 0;
+  return Math.min(1,Math.pow((re-RE_CRIT)/(RE_FULL-RE_CRIT),0.6));
+}
+// simulated acoustic level: silent until the flip, then grows ~ log with Re
+function noiseDb(re){
+  var t=turb(re);
+  if(t<=0)return 8+2*Math.sin(performance.now()/900);     // floor hiss
+  return 8+62*Math.pow(t,0.75)+3*Math.sin(performance.now()/70);
+}
+
+// ---------------- UI ----------------
+var ctl=document.getElementById('ctl'),out=document.getElementById('out'),hint=document.getElementById('hint');
+ctl.innerHTML=
+ '<label>velocity v <span class="v" id="lv"></span></label><input type="range" id="sV" min="0.01" max="6" step="0.01" value="1">'+
+ '<label>pipe diameter D <span class="v" id="lD"></span></label><input type="range" id="sD" min="1" max="60" step="0.5" value="12">'+
+ '<label>viscosity ×µ <span class="v" id="lM"></span></label><input type="range" id="sM" min="-2" max="2" step="0.01" value="0">';
+var sV=document.getElementById('sV'),sD=document.getElementById('sD'),sM=document.getElementById('sM');
+sV.oninput=function(){S.v=parseFloat(sV.value);S.ramp=false;syncRampBtn();};
+sD.oninput=function(){S.D=parseFloat(sD.value)/1000;};
+sM.oninput=function(){S.muScale=Math.pow(10,parseFloat(sM.value));};
+function preset(k,id){document.getElementById(id).onclick=function(){
+  S.fluid=k;['pWater','pHoney','pAir','pOil'].forEach(function(b){document.getElementById(b).className='';});
+  document.getElementById(id).className='on';};}
+preset('water','pWater');preset('honey','pHoney');preset('air','pAir');preset('oil','pOil');
+function syncRampBtn(){document.getElementById('bRamp').className=S.ramp?'on':'';}
+document.getElementById('bRamp').onclick=function(){S.ramp=!S.ramp;S.rampT=0;syncRampBtn();};
+document.getElementById('bSmoke').onclick=function(){S.smoke=!S.smoke;
+  document.getElementById('bSmoke').className=S.smoke?'on':'';};
+window.addEventListener('keydown',function(e){
+  if(e.key==='r'||e.key==='R'){S.ramp=!S.ramp;S.rampT=0;syncRampBtn();}
+  if(e.key==='s'||e.key==='S'){S.smoke=!S.smoke;document.getElementById('bSmoke').className=S.smoke?'on':'';}
+  if(e.code==='Space'){S.paused=!S.paused;e.preventDefault();}
+});
+
+// ---------------- stream particles ----------------
+var NL=13;                       // ribbons
+var STR=[];
+for(var i=0;i<NL;i++){
+  var lane=[];
+  for(var j=0;j<64;j++)lane.push({x:0,y:0,vx:0,vy:0,seed:Math.random()*100});
+  STR.push(lane);
+}
+var SM=[];for(i=0;i<220;i++)SM.push({y:Math.random(),x:0,vx:0,seed:Math.random()*100,br:Math.random()});
+
+// audio-trace ring buffer
+var TRACE=new Array(320);for(i=0;i<TRACE.length;i++)TRACE[i]=8;
+var tracePtr=0;
+// ramp record: Re at which hiss switched on, per sweep
+var flips=[],rampPrevTurb=0,sweepCount=0;
+
+function hash(n){var s=Math.sin(n*127.1)*43758.5453;return s-Math.floor(s);}
+function noise1(x,seed){
+  var i0=Math.floor(x),f=x-i0;
+  var a=hash(i0+seed),b=hash(i0+1+seed);
+  var u=f*f*(3-2*f);
+  return (a+(b-a)*u)*2-1;
+}
+
+function glowText(txt,x,y,col,size,align,weight){
+  g.save();g.font=(weight||'')+' '+(size||12)+'px ui-monospace,Menlo,monospace';g.textAlign=align||'left';
+  g.fillStyle=col;g.shadowColor=col;g.shadowBlur=12;g.fillText(txt,x,y);g.restore();
+}
+function row(k,v){return '<div class="row"><span class="k">'+k+'</span><span class="v">'+v+'</span></div>';}
+
+// ---------------- faucet stream ----------------
+var Tg=0;
+function drawStream(dt){
+  var re=Re(),t=turb(re);
+  var fx=Math.max(430,W*0.36), top=H*0.10, bot=H*0.92;
+  var streamW=Math.max(9,Math.min(52,S.D*1400));
+  // faucet body
+  g.save();
+  g.fillStyle='rgba(140,190,215,.22)';g.strokeStyle='rgba(160,230,255,.7)';g.lineWidth=2;
+  g.shadowColor='#59d8ff';g.shadowBlur=14;
+  g.beginPath();g.roundRect?g.roundRect(fx-46,top-56,92,56,8):g.rect(fx-46,top-56,92,56);g.fill();g.stroke();
+  g.beginPath();g.rect(fx-streamW/2-5,top-12,streamW+10,14);g.fill();g.stroke();
+  g.restore();
+
+  // transition height: turbulence begins right at the nozzle when Re>>Re_crit,
+  // and progressively lower down the stream near the threshold
+  var breakFrac = t<=0 ? 1.2 : Math.max(0.03, 0.92-0.9*t);
+  var breakY=top+(bot-top)*breakFrac;
+
+  var vpx=(bot-top)*0.55*(0.35+Math.min(1,S.v/6)*1.3); // fall speed px/s scaling
+
+  g.save();g.globalCompositeOperation='lighter';
+  for(var li=0;li<NL;li++){
+    var lane=STR[li];
+    var frac=(li/(NL-1))*2-1;                      // -1..1 across the stream
+    var laneCol = t>0 ? mixCol(t) : '#4fd2ff';
+    g.beginPath();
+    for(var k=0;k<lane.length;k++){
+      var p=lane[k];
+      var yy=top+((k/lane.length)+ (Tg*vpx/(bot-top))%1 )%1*(bot-top);
+      // gravity accelerates + stream narrows (continuity in free fall)
+      var fall=(yy-top)/(bot-top);
+      var narrow=1/Math.sqrt(1+3.2*fall);
+      var xx=fx+frac*(streamW/2)*narrow;
+      if(yy>breakY&&t>0){
+        var depth=(yy-breakY)/Math.max(1,(bot-breakY));
+        var amp=(streamW*0.55+ (bot-breakY)*0.20*t )*Math.pow(depth,0.85)*t;
+        xx+=noise1(yy*0.045+Tg*2.3*(0.4+t)+li*7.3,p.seed)*amp;
+        xx+=noise1(yy*0.14+Tg*5.1+li*2.1,p.seed+31)*amp*0.45;
+      }
+      if(k===0)g.moveTo(xx,yy);else{
+        // avoid drawing the wrap seam
+        if(Math.abs(yy-top)<2)g.moveTo(xx,yy);else g.lineTo(xx,yy);
+      }
+    }
+    g.strokeStyle=laneCol;g.lineWidth=t>0?1.5:2.0;g.globalAlpha=t>0?0.55:0.8;
+    g.shadowColor=laneCol;g.shadowBlur=t>0?8:14;g.stroke();
+  }
+  g.restore();
+
+  // droplets / spray above threshold
+  if(t>0.15){
+    g.save();g.globalCompositeOperation='lighter';
+    for(var d=0;d<Math.floor(160*t);d++){
+      var sd=d*3.77;
+      var yy2=breakY+(hash(sd+Math.floor(Tg*2))*0.9+((Tg*0.9+hash(sd))%1)*0.6)*(bot-breakY);
+      if(yy2>bot)continue;
+      var dep=(yy2-breakY)/Math.max(1,bot-breakY);
+      var xx2=fx+(hash(sd+7)*2-1)*(streamW*0.9+(bot-breakY)*0.30*t)*Math.pow(dep,0.8);
+      g.fillStyle='rgba(255,'+Math.floor(150-90*t)+','+Math.floor(140-60*t)+',.55)';
+      g.beginPath();g.arc(xx2,yy2,1+hash(sd+3)*1.9,0,6.2832);g.fill();
+    }
+    g.restore();
+  }
+  // transition marker
+  if(t>0&&breakY<bot){
+    g.save();g.strokeStyle='rgba(255,95,111,.55)';g.setLineDash([5,6]);g.lineWidth=1.5;
+    g.beginPath();g.moveTo(fx-140,breakY);g.lineTo(fx+180,breakY);g.stroke();g.restore();
+    glowText('TRANSITION',fx+186,breakY+4,'#ff5f6f',11);
+  }
+  glowText(t>0?'TURBULENT':'LAMINAR',fx,bot+26,t>0?'#ff5f6f':'#4fd2ff',20,'center','bold');
+  glowText(t>0?'noisy · lossy · chaotic':'glassy · silent · predictable',fx,bot+44,'#79a99a',11,'center');
+}
+function mixCol(t){
+  var hu=200-190*Math.min(1,t);
+  return 'hsl('+hu+',100%,'+(58+10*t)+'%)';
+}
+
+// ---------------- smoke act ----------------
+function drawSmoke(dt){
+  var re=Re(),t=turb(re);
+  var sx=Math.max(430,W*0.36), base=H*0.94, topY=H*0.06;
+  // breakup height falls as Re rises above crit (repeatable, deterministic in Re)
+  var hFrac = t<=0 ? 1.05 : Math.max(0.06,0.95-0.9*t);
+  var breakY=base-(base-topY)*(1-hFrac); // note: measured downward
+  breakY=base-(base-topY)*hFrac;
+  // candle
+  g.save();g.fillStyle='rgba(200,170,120,.5)';g.fillRect(sx-14,base,28,26);
+  var fg=g.createRadialGradient(sx,base-4,0,sx,base-4,22);
+  fg.addColorStop(0,'rgba(255,240,180,.95)');fg.addColorStop(1,'rgba(255,120,20,0)');
+  g.fillStyle=fg;g.beginPath();g.arc(sx,base-6,22,0,6.2832);g.fill();g.restore();
+
+  g.save();g.globalCompositeOperation='lighter';
+  for(var i=0;i<SM.length;i++){
+    var p=SM[i];
+    p.y+=dt*(0.10+0.30*Math.min(1,S.v/6));
+    if(p.y>1){p.y-=1;}
+    var yy=base-p.y*(base-topY);
+    var x=sx;
+    if(yy<breakY){
+      var dep=(breakY-yy)/Math.max(1,(breakY-topY));
+      var amp=(26+90*t)*Math.pow(dep,1.15);
+      x+=noise1(yy*0.03+Tg*1.6+p.seed,p.seed)*amp;
+      x+=noise1(yy*0.10+Tg*3.4,p.seed+11)*amp*0.5;
+    }else{
+      x+=Math.sin(yy*0.02+Tg*1.1+p.seed)*3.2*(1-(yy-breakY)/Math.max(1,base-breakY));
+    }
+    var a=0.55*(1-p.y*0.85);
+    g.fillStyle='rgba('+Math.floor(140+110*t)+','+Math.floor(220-90*t)+',255,'+a.toFixed(3)+')';
+    g.beginPath();g.arc(x,yy,1.4+2.6*p.y,0,6.2832);g.fill();
+  }
+  g.restore();
+  g.save();g.strokeStyle='rgba(255,95,111,.5)';g.setLineDash([5,6]);g.lineWidth=1.5;
+  g.beginPath();g.moveTo(sx-160,breakY);g.lineTo(sx+200,breakY);g.stroke();g.restore();
+  glowText('breakup height (repeatable in Re)',sx+206,breakY+4,'#ff5f6f',11);
+  glowText('SMOKE FILAMENT — laminar below, turbulent above',sx,topY-10,'#8ff0c8',13,'center');
+  glowText('use "velocity" as the draft slider',sx,H*0.99-4,'#79a99a',11,'center');
+}
+
+// ---------------- Re gauge ----------------
+function drawGauge(){
+  var re=Re();
+  var x=W-330,y=40,w=300,h=16;
+  if(x<380){x=W-320;}
+  var lo=Math.log10(1),hi=Math.log10(1e6);
+  function pos(v){return x+ (Math.log10(Math.max(1,v))-lo)/(hi-lo)*w;}
+  g.save();
+  g.fillStyle='rgba(0,0,0,.45)';g.fillRect(x-10,y-26,w+20,h+72);
+  g.strokeStyle='rgba(120,255,190,.25)';g.strokeRect(x-10,y-26,w+20,h+72);
+  // laminar / transitional / turbulent zones
+  var gr=g.createLinearGradient(x,0,x+w,0);
+  gr.addColorStop(0,'#0a4a70');gr.addColorStop(Math.min(1,(pos(RE_CRIT)-x)/w),'#1f9fd8');
+  gr.addColorStop(Math.min(1,(pos(RE_FULL)-x)/w),'#ff9f3f');gr.addColorStop(1,'#ff3f52');
+  g.fillStyle=gr;g.fillRect(x,y,w,h);
+  g.strokeStyle='rgba(255,255,255,.25)';g.strokeRect(x,y,w,h);
+  // decade ticks
+  for(var d=0;d<=6;d++){
+    var tx=x+(d/6)*w;
+    g.strokeStyle='rgba(255,255,255,.25)';g.beginPath();g.moveTo(tx,y+h);g.lineTo(tx,y+h+5);g.stroke();
+    g.fillStyle='rgba(180,220,235,.75)';g.font='9px ui-monospace,monospace';g.textAlign='center';
+    g.fillText('1e'+d,tx,y+h+16);
+  }
+  // 2300 threshold
+  var cx=pos(RE_CRIT);
+  g.strokeStyle='#ffd98a';g.lineWidth=2;g.shadowColor='#ffd98a';g.shadowBlur=10;
+  g.beginPath();g.moveTo(cx,y-8);g.lineTo(cx,y+h+4);g.stroke();g.shadowBlur=0;
+  g.fillStyle='#ffd98a';g.font='10px ui-monospace,monospace';g.textAlign='center';g.fillText('2300',cx,y-12);
+  // cursor
+  var px=pos(re);
+  g.strokeStyle='#fff';g.lineWidth=2;g.shadowColor='#fff';g.shadowBlur=12;
+  g.beginPath();g.moveTo(px,y-4);g.lineTo(px,y+h+4);g.stroke();g.restore();
+  glowText('Re = ρvL/µ',x-10,y-32,'#8ff0c8',12,'left');
+  var re_s = re>=1e5?re.toExponential(2):re.toFixed(re<100?2:0);
+  glowText('Re = '+re_s, x+w+8, y+h+34, turb(re)>0?'#ff5f6f':'#4fd2ff',30,'right','bold');
+}
+
+// ---------------- listen panel ----------------
+function drawListen(dt){
+  var re=Re(),t=turb(re),db=noiseDb(re);
+  var pw=300,ph=150,x=W-pw-30,y=H-ph-30;
+  if(x<380)x=W-pw-20;
+  g.save();
+  g.fillStyle='rgba(0,0,0,.5)';g.fillRect(x,y,pw,ph);
+  g.strokeStyle='rgba(120,255,190,.28)';g.strokeRect(x,y,pw,ph);
+  g.restore();
+  glowText('🎤 LISTEN  (simulated mic)',x+10,y+18,'#8ff0c8',12);
+  // level meter
+  var mw=pw-20,mx=x+10,my=y+28,mh=14;
+  g.save();g.fillStyle='rgba(255,255,255,.08)';g.fillRect(mx,my,mw,mh);
+  var frac=Math.max(0,Math.min(1,(db-5)/70));
+  var lg=g.createLinearGradient(mx,0,mx+mw,0);
+  lg.addColorStop(0,'#2effa8');lg.addColorStop(.55,'#ffd447');lg.addColorStop(1,'#ff3f52');
+  g.fillStyle=lg;g.shadowColor=t>0?'#ff5f6f':'#2effa8';g.shadowBlur=t>0?16:4;
+  g.fillRect(mx,my,mw*frac,mh);g.restore();
+  glowText(db.toFixed(1)+' dB',x+pw-10,y+24,t>0?'#ff5f6f':'#66ffa8',12,'right');
+
+  // scrolling trace
+  TRACE[tracePtr]=db;tracePtr=(tracePtr+1)%TRACE.length;
+  var tx=x+10,ty=y+52,tw=pw-20,th=ph-70;
+  g.save();g.fillStyle='rgba(0,20,16,.6)';g.fillRect(tx,ty,tw,th);
+  g.strokeStyle='rgba(120,255,190,.15)';g.strokeRect(tx,ty,tw,th);
+  g.beginPath();
+  for(var i=0;i<TRACE.length;i++){
+    var idx=(tracePtr+i)%TRACE.length;
+    var v=TRACE[idx];
+    var jag=(v>12)?(Math.sin(i*2.7+Tg*30)*0.5+Math.sin(i*7.1+Tg*51)*0.5)*(v-12)*0.22:0;
+    var yy=ty+th-((v+jag-5)/75)*th;
+    yy=Math.max(ty+1,Math.min(ty+th-1,yy));
+    if(i===0)g.moveTo(tx+i/TRACE.length*tw,yy);else g.lineTo(tx+i/TRACE.length*tw,yy);
+  }
+  g.strokeStyle=t>0?'#ff5f6f':'#2effa8';g.lineWidth=1.4;g.shadowColor=g.strokeStyle;g.shadowBlur=10;g.stroke();
+  g.restore();
+  glowText(t>0?'HISS — turbulent':'silent — laminar',tx+6,ty+th-6,t>0?'#ff5f6f':'#66ffa8',11);
+}
+
+// ---------------- auto-ramp ----------------
+function stepRamp(dt){
+  if(!S.ramp)return;
+  S.rampT+=dt*0.32;
+  if(S.rampT>1){S.rampT=0;sweepCount++;rampPrevTurb=0;}
+  S.v=0.01+S.rampT*6;
+  if(sV)sV.value=S.v;
+  var t=turb(Re());
+  if(rampPrevTurb<=0&&t>0){
+    flips.push(Re());
+    if(flips.length>12)flips.shift();
+  }
+  rampPrevTurb=t;
+}
+
+// ---------------- loop ----------------
+var last=performance.now();
+function frame(now){
+  var dt=Math.min(0.05,(now-last)/1000);last=now;
+  if(!S.paused){Tg+=dt;stepRamp(dt);}
+  g.fillStyle='rgba(4,6,10,0.30)';g.fillRect(0,0,W,H);
+  g.save();g.strokeStyle='rgba(40,140,110,.07)';g.lineWidth=1;
+  for(var x=0;x<W;x+=56){g.beginPath();g.moveTo(x,0);g.lineTo(x,H);g.stroke();}
+  for(var y=0;y<H;y+=56){g.beginPath();g.moveTo(0,y);g.lineTo(W,y);g.stroke();}
+  g.restore();
+
+  if(S.smoke)drawSmoke(dt);else drawStream(dt);
+  drawGauge();drawListen(dt);
+
+  var re=Re(),t=turb(re);
+  var f=fl();
+  var fmin=flips.length?Math.min.apply(null,flips):0, fmax=flips.length?Math.max.apply(null,flips):0;
+  out.innerHTML=
+   row('fluid',f.name)+
+   row('ρ',f.rho+' kg/m³')+
+   row('µ',mu().toExponential(3)+' Pa·s')+
+   row('v',S.v.toFixed(3)+' m/s')+
+   row('L (diameter)',(S.D*1000).toFixed(1)+' mm')+
+   row('ν = µ/ρ',(mu()/f.rho).toExponential(3)+' m²/s')+
+   '<div class="sec"></div>'+
+   row('Re',(re>=1e5?re.toExponential(3):re.toFixed(2)))+
+   row('regime',t>0?'<span class="tur">TURBULENT</span>':'<span class="lam">LAMINAR</span>')+
+   row('Re_crit','<span class="ok">'+RE_CRIT+'</span> (fully turb '+RE_FULL+')')+
+   row('turbulence intensity',(t*100).toFixed(1)+' %')+
+   row('mic level',noiseDb(re).toFixed(1)+' dB')+
+   '<div class="sec"></div>'+
+   row('auto-ramp sweeps',sweepCount)+
+   row('flip Re recorded',flips.length?('<span class="ok">'+fmin.toFixed(1)+' … '+fmax.toFixed(1)+'</span>'):'—')+
+   row('spread',flips.length>1?((fmax-fmin)/RE_CRIT*100).toFixed(3)+' %':'—');
+  hint.textContent = S.ramp? 'AUTO-RAMP running — watch the hiss switch on at Re=2300 every sweep'
+                           : 'sliders · presets · [R] auto-ramp · [S] smoke act · [space] pause';
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>

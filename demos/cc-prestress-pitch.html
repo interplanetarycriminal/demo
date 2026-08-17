@@ -1,0 +1,438 @@
+<meta charset="utf-8">
+<title>Cheat Code 63 — Prestress Pitch</title>
+<style>
+  html,body{margin:0;padding:0;background:#04070c;overflow:hidden;height:100%}
+  canvas{display:block;position:fixed;inset:0}
+  #ui{position:fixed;top:10px;left:10px;z-index:10;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;
+      color:#bfe9ff;background:rgba(4,10,18,.62);border:1px solid rgba(90,220,255,.28);
+      border-radius:8px;padding:10px 12px;max-width:440px;backdrop-filter:blur(6px);
+      box-shadow:0 0 26px rgba(0,190,255,.14)}
+  #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.14em;color:#7ffcff;text-shadow:0 0 12px #12d6ff}
+  .code{color:#ffd27f;margin:0 0 6px;text-shadow:0 0 9px rgba(255,180,60,.45)}
+  .hint{color:#7fa8c0;margin:0 0 6px}
+  .row{display:flex;align-items:center;gap:6px;margin:2px 0}
+  .row label{width:104px;color:#8fd8ff}
+  input[type=range]{width:140px;accent-color:#33e6ff;background:transparent}
+  .rd{color:#a9ffd9}.rd b{color:#fff;font-weight:600}
+  a{color:#69f0ff;text-decoration:none;border-bottom:1px dotted #69f0ff}
+  button{font:11px ui-monospace,monospace;background:rgba(40,220,255,.13);color:#7ffcff;
+         border:1px solid rgba(90,220,255,.4);border-radius:5px;padding:3px 8px;cursor:pointer;margin-right:4px}
+  button:hover{background:rgba(40,220,255,.26)}
+  .warn{color:#ff7ba8}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>CHEAT CODE #63 — PRESTRESS = PITCH</h1>
+  <p class="code">Prestress is stored information: a tensioned wire carries its tension in its pitch, f = (1/2L)√(T/µ) — so losing tension is the earliest failure signal, and you hear it before you see it.</p>
+  <p class="hint">CLICK a wire to pluck · [1-5] select · [A] pluck all · [S] audio · [C] creep clock</p>
+  <div class="row"><label>TENSION (sel)</label><input id="sT" type="range" min="20" max="1600" step="1" value="800"><span class="rd" id="vT">800 N</span></div>
+  <div class="row"><label>HUMIDITY</label><input id="sH" type="range" min="0" max="100" step="1" value="35"><span class="rd" id="vH">35 %</span></div>
+  <div class="row"><button id="bA">PLUCK ALL</button><button id="bS">AUDIO: off</button><button id="bC">CREEP: off</button></div>
+  <div class="rd" id="r1">selected: wire 1</div>
+  <div class="rd" id="r2">f = (1/2L)√(T/µ) = —</div>
+  <div class="rd" id="r3">FFT peak → T = —</div>
+  <div class="rd warn" id="r4">&nbsp;</div>
+  <div style="margin-top:6px"><a href="index.html">← gallery</a></div>
+</div>
+<script>
+(function(){
+"use strict";
+var c=document.getElementById('c'),g=c.getContext('2d');
+var W=0,H=0,DPR=1;
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  W=window.innerWidth;H=window.innerHeight;
+  c.width=Math.round(W*DPR);c.height=Math.round(H*DPR);
+  c.style.width=W+'px';c.style.height=H+'px';
+  g.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize',resize);resize();
+
+// ================= physics =================
+// Modal string: y(x,t) = Σ a_n sin(nπx/L) cos(2π f_n t) e^{-t/τ_n},  f_n = n·f1,  f1=(1/2L)√(T/µ)
+var NMODE=10;
+var LWIRE=2.40;                // m between posts
+var MU=0.0031;                 // kg/m  (≈2.5mm steel-ish fence wire)
+function f1(T){return (1/(2*LWIRE))*Math.sqrt(T/MU);}
+function Tfromf(f){return MU*Math.pow(2*LWIRE*f,2);}
+
+function makeWire(i,T){
+  return {i:i,T:T,T0:T,a:new Float64Array(NMODE+1),ph:new Float64Array(NMODE+1),
+          t:0,ring:0,leak:false,samples:[],fftPeak:0,sagBase:0};
+}
+var wires=[];
+var baseT=[860,905,880,870,895];
+for(var i=0;i<5;i++)wires.push(makeWire(i,baseT[i]));
+var LEAK=2;                       // the secretly-slackening one
+wires[LEAK].leak=true;
+
+var sel=0, audioOn=false, creepOn=false, actx=null;
+var S={t:0,sweep:[],drum:{hum:0.35,ring:0,t:0},gtr:{T:700,ring:0,t:0,creep:0}};
+
+function pluck(w,strength,posFrac){
+  var st=strength===undefined?1:strength;
+  var p=posFrac===undefined?0.28:posFrac;
+  w.t=0;w.ring=1;
+  for(var n=1;n<=NMODE;n++){
+    // plucked-string coefficients for a triangular initial shape at fraction p
+    var an=(2/(n*n*Math.PI*Math.PI*p*(1-p)))*Math.sin(n*Math.PI*p);
+    w.a[n]=an*st*0.055;             // metres of amplitude scale
+    w.ph[n]=0;
+  }
+  w.samples=[];
+  if(audioOn)ping(f1(w.T),0.9);
+}
+function wireY(w,xf){
+  // sum of modes at normalized x
+  var f=f1(w.T),y=0;
+  for(var n=1;n<=NMODE;n++){
+    var fn=n*f;
+    var tau=1.35/(1+0.055*n*n);          // higher modes die first (real strings)
+    y+=w.a[n]*Math.sin(n*Math.PI*xf)*Math.cos(2*Math.PI*fn*w.t)*Math.exp(-w.t/tau);
+  }
+  return y;
+}
+function wireSample(w){    // pickup at x=0.13L
+  return wireY(w,0.13);
+}
+
+// -------- Goertzel-based spectrum (real DFT magnitude over a band) --------
+var SR=600;                 // sample rate of the virtual pickup (Hz)
+var BINS=140, FMIN=20, FMAX=200;
+function spectrum(w){
+  var N=w.samples.length;
+  var out=new Float64Array(BINS);
+  if(N<64)return out;
+  for(var b=0;b<BINS;b++){
+    var f=FMIN+(FMAX-FMIN)*b/(BINS-1);
+    var wq=2*Math.PI*f/SR, cw=Math.cos(wq), coeff=2*cw, sw=Math.sin(wq);
+    var s0=0,s1=0,s2=0;
+    for(var n=0;n<N;n++){
+      // Hann window keeps the peak clean
+      var win=0.5-0.5*Math.cos(2*Math.PI*n/(N-1));
+      s0=win*w.samples[n]+coeff*s1-s2;s2=s1;s1=s0;
+    }
+    var re=s1-s2*cw, im=s2*sw;
+    out[b]=Math.sqrt(re*re+im*im);
+  }
+  return out;
+}
+function peakFreq(sp){
+  var bi=0,bv=-1;
+  for(var b=0;b<BINS;b++)if(sp[b]>bv){bv=sp[b];bi=b;}
+  if(bv<=0)return 0;
+  // parabolic interpolation for sub-bin accuracy
+  var y0=sp[Math.max(0,bi-1)],y1=sp[bi],y2=sp[Math.min(BINS-1,bi+1)];
+  var d=0.5*(y0-y2)/Math.max(1e-12,(y0-2*y1+y2));
+  if(!isFinite(d)||Math.abs(d)>1)d=0;
+  var bf=bi+d;
+  return FMIN+(FMAX-FMIN)*bf/(BINS-1);
+}
+
+// ================= audio =================
+function ensureAudio(){
+  if(actx)return;
+  try{ actx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ actx=null; }
+}
+function ping(f,vol){
+  if(!actx)return;
+  var t0=actx.currentTime;
+  var g1=actx.createGain();g1.gain.setValueAtTime(0.0001,t0);
+  g1.gain.exponentialRampToValueAtTime(0.09*(vol||1),t0+0.01);
+  g1.gain.exponentialRampToValueAtTime(0.0001,t0+1.6);
+  g1.connect(actx.destination);
+  [1,2,3].forEach(function(n,k){
+    var o=actx.createOscillator();o.type='sine';o.frequency.value=f*n;
+    var gg=actx.createGain();gg.gain.value=[1,0.32,0.14][k];
+    o.connect(gg);gg.connect(g1);o.start(t0);o.stop(t0+1.7);
+  });
+}
+
+// ================= input =================
+var geom={x0:0,x1:0,ys:[]};
+c.addEventListener('pointerdown',function(e){
+  var mx=e.clientX,my=e.clientY;
+  if(mx>=geom.x0-30&&mx<=geom.x1+30){
+    var best=-1,bd=1e9;
+    for(var i=0;i<5;i++){var d=Math.abs(my-geom.ys[i]);if(d<bd){bd=d;best=i;}}
+    if(bd<26){
+      sel=best;
+      var p=Math.min(0.85,Math.max(0.15,(mx-geom.x0)/(geom.x1-geom.x0)));
+      pluck(wires[best],1,p);
+      sT.value=wires[best].T.toFixed(0);
+      noteSweep(wires[best].T);
+      return;
+    }
+  }
+});
+window.addEventListener('keydown',function(e){
+  var k=e.key.toLowerCase();
+  if(k>='1'&&k<='5'){sel=+k-1;sT.value=wires[sel].T.toFixed(0);}
+  if(k==='a'){pluckAll();}
+  if(k==='s'){toggleAudio();}
+  if(k==='c'){creepOn=!creepOn;bC.textContent='CREEP: '+(creepOn?'on':'off');}
+});
+function pluckAll(){ for(var i=0;i<5;i++)(function(i){setTimeout(function(){pluck(wires[i],1,0.28);},i*260);})(i); }
+
+var sT=document.getElementById('sT'),sH=document.getElementById('sH');
+var vT=document.getElementById('vT'),vH=document.getElementById('vH');
+var bA=document.getElementById('bA'),bS=document.getElementById('bS'),bC=document.getElementById('bC');
+var r1=document.getElementById('r1'),r2=document.getElementById('r2'),r3=document.getElementById('r3'),r4=document.getElementById('r4');
+sT.addEventListener('input',function(){ wires[sel].T=parseFloat(sT.value); wires[sel].T0=wires[sel].T; noteSweep(wires[sel].T); });
+sH.addEventListener('input',function(){ S.drum.hum=parseFloat(sH.value)/100; });
+bA.addEventListener('click',pluckAll);
+bS.addEventListener('click',toggleAudio);
+bC.addEventListener('click',function(){creepOn=!creepOn;bC.textContent='CREEP: '+(creepOn?'on':'off');});
+function toggleAudio(){
+  ensureAudio();
+  if(actx&&actx.state==='suspended')actx.resume();
+  audioOn=!audioOn&&!!actx;
+  bS.textContent='AUDIO: '+(audioOn?'on':'off');
+}
+function noteSweep(T){
+  for(var i=0;i<S.sweep.length;i++)if(Math.abs(S.sweep[i].T-T)<12)return;
+  S.sweep.push({T:T,f:f1(T)});
+  if(S.sweep.length>260)S.sweep.shift();
+}
+noteSweep(800);
+
+// ================= step =================
+function step(dt){
+  S.t+=dt;
+  for(var i=0;i<5;i++){
+    var w=wires[i];
+    w.t+=dt;
+    w.ring*=Math.exp(-dt*0.55);
+    // sample the virtual pickup at fixed SR
+    if(w.ring>0.002){
+      var need=Math.floor(dt*SR);
+      for(var k=0;k<need;k++){
+        var tt=w.t-(need-1-k)/SR;
+        var save=w.t;w.t=Math.max(0,tt);
+        w.samples.push(wireSample(w));
+        w.t=save;
+      }
+      while(w.samples.length>512)w.samples.shift();
+    }
+    // the slow leak: wire #3 bleeds tension
+    if(w.leak){ w.T=Math.max(180,w.T-dt*11.5); if(w.T<200)w.T=880; w.T0=w.T; }
+  }
+  // drum
+  S.drum.t+=dt;S.drum.ring*=Math.exp(-dt*1.1);
+  // guitar creep
+  if(creepOn){ S.gtr.creep+=dt; S.gtr.T=700*Math.exp(-S.gtr.creep*0.018); if(S.gtr.T<180){S.gtr.T=700;S.gtr.creep=0;} }
+  S.gtr.t+=dt;S.gtr.ring*=Math.exp(-dt*1.2);
+}
+
+// ================= draw =================
+function glow(pts,col,w,blur){
+  g.save();g.strokeStyle=col;g.lineWidth=w;g.shadowColor=col;g.shadowBlur=blur;g.lineJoin='round';g.lineCap='round';
+  g.beginPath();for(var i=0;i<pts.length;i++){i?g.lineTo(pts[i][0],pts[i][1]):g.moveTo(pts[i][0],pts[i][1]);}
+  g.stroke();g.restore();
+}
+function txt(s,x,y,col,size,al){
+  g.save();g.fillStyle=col;g.font=(size||11)+'px ui-monospace,Menlo,Consolas,monospace';g.textAlign=al||'left';
+  g.shadowColor=col;g.shadowBlur=8;g.fillText(s,x,y);g.restore();
+}
+function panel(x,y,w,h,title){
+  g.save();g.fillStyle='rgba(6,14,24,.55)';g.strokeStyle='rgba(80,200,240,.22)';g.lineWidth=1;
+  g.beginPath();g.rect(x,y,w,h);g.fill();g.stroke();g.restore();
+  txt(title,x+8,y+15,'#7fd8ff',11);
+}
+
+function drawFence(){
+  var x0=Math.max(70,W*0.06), x1=Math.min(W*0.56,W-40);
+  var yTop=110, spacing=Math.min(46,(H-330)/5);
+  geom.x0=x0;geom.x1=x1;geom.ys=[];
+  // posts
+  [x0,x1].forEach(function(px){
+    glow([[px,yTop-26],[px,yTop+spacing*5+30]],'#2c6a86',7,12);
+  });
+  var pxPerM=(x1-x0)/LWIRE;
+  for(var i=0;i<5;i++){
+    var w=wires[i];
+    var yb=yTop+spacing*i;
+    geom.ys.push(yb);
+    var f=f1(w.T);
+    // static sag from tension (catenary approx: sag = qL²/8T)
+    var qw=MU*9.81;
+    var sagM=qw*LWIRE*LWIRE/(8*w.T);
+    var sagPx=sagM*pxPerM*7;                 // exaggerated ×7 to be visible at all
+    var N=90,pts=[];
+    for(var k=0;k<=N;k++){
+      var xf=k/N;
+      var x=x0+(x1-x0)*xf;
+      var stat=4*sagPx*xf*(1-xf);
+      var dyn=wireY(w,xf)*pxPerM*4.5;
+      pts.push([x,yb+stat+dyn]);
+    }
+    var isSel=(i===sel);
+    var hue=200-Math.min(90,Math.max(0,(f-40)*1.5));
+    var col=isSel?'#ffd27f':'hsl('+hue+',95%,64%)';
+    glow(pts,col,isSel?3.4:2.4,w.ring>0.03?(16+22*w.ring):9);
+    // labels
+    txt('#'+(i+1),x0-42,yb+4,isSel?'#ffd27f':'#7fd8ff',12);
+    txt(f.toFixed(1)+' Hz',x1+14,yb+4,'#a9ffd9',11);
+    txt(w.T.toFixed(0)+' N',x1+82,yb+4,'#6fb6d6',11);
+    if(w.ring>0.05){
+      g.save();g.globalAlpha=Math.min(1,w.ring);g.fillStyle='#fff';g.shadowColor=col;g.shadowBlur=16;
+      g.beginPath();g.arc(x1+150,yb,3+4*w.ring,0,7);g.fill();g.restore();
+    }
+  }
+  txt('FIVE GUY-WIRES · click one to pluck',x0,yTop-44,'#7fd8ff',12);
+  // slack callout
+  var lw=wires[LEAK];
+  if(lw.T<0.82*880){
+    var yb2=geom.ys[LEAK];
+    txt('◀ SLACK — rings LOW, long before it sags',x1+150,yb2+4,'#ff7ba8',12);
+  }
+}
+
+function drawFFT(x,y,w,h){
+  panel(x,y,w,h,'SPECTRUM of the plucked wire  (peak = f₁)');
+  var wr=wires[sel];
+  var sp=spectrum(wr);
+  var mx=1e-9;for(var b=0;b<BINS;b++)mx=Math.max(mx,sp[b]);
+  var bw=(w-30)/BINS;
+  for(var b2=0;b2<BINS;b2++){
+    var v=sp[b2]/mx;
+    var bh=v*(h-40);
+    var f=FMIN+(FMAX-FMIN)*b2/(BINS-1);
+    var hue=200-Math.min(120,(f-20)*1.1);
+    g.save();g.fillStyle='hsla('+hue+',95%,60%,'+(0.25+0.7*v)+')';g.shadowColor='hsl('+hue+',95%,60%)';g.shadowBlur=8*v;
+    g.fillRect(x+15+b2*bw,y+h-18-bh,Math.max(1,bw-0.6),bh);g.restore();
+  }
+  var pf=peakFreq(sp);
+  wr.fftPeak=pf;
+  // theory marker
+  var ft=f1(wr.T);
+  var tx=x+15+((ft-FMIN)/(FMAX-FMIN))*(w-30);
+  glow([[tx,y+22],[tx,y+h-18]],'rgba(255,120,170,.7)',1.5,10);
+  txt('theory '+ft.toFixed(1),tx+5,y+32,'#ff9bc2',10);
+  if(pf>0){
+    var px=x+15+((pf-FMIN)/(FMAX-FMIN))*(w-30);
+    glow([[px,y+22],[px,y+h-18]],'rgba(255,255,255,.85)',1.2,10);
+    txt('peak '+pf.toFixed(1)+' Hz',px+5,y+h-26,'#ffffff',10);
+  }
+  txt('Hz →',x+w-12,y+h-4,'#4e93ad',10,'right');
+}
+
+function drawSqrt(x,y,w,h){
+  panel(x,y,w,h,'PITCH vs TENSION    f ∝ √T   (4× T → 2× pitch)');
+  var Tmax=1600,fmax=f1(Tmax)*1.06;
+  function px(T){return x+18+(T/Tmax)*(w-34);}
+  function py(f){return y+h-18-(f/fmax)*(h-40);}
+  var cur=[];for(var T=10;T<=Tmax;T+=Tmax/160)cur.push([px(T),py(f1(T))]);
+  glow(cur,'rgba(90,255,200,.55)',2,10);
+  for(var i=0;i<S.sweep.length;i++){
+    var s=S.sweep[i];
+    g.save();g.fillStyle='rgba(160,255,220,.8)';g.shadowColor='#5effc8';g.shadowBlur=8;
+    g.beginPath();g.arc(px(s.T),py(s.f),2.2,0,7);g.fill();g.restore();
+  }
+  // all five wires as dots
+  for(var i2=0;i2<5;i2++){
+    var wr=wires[i2];
+    var col=wr.leak?'#ff7ba8':(i2===sel?'#ffd27f':'#8fd8ff');
+    g.save();g.fillStyle=col;g.shadowColor=col;g.shadowBlur=14;
+    g.beginPath();g.arc(px(wr.T),py(f1(wr.T)),4,0,7);g.fill();g.restore();
+    txt(''+(i2+1),px(wr.T)+6,py(f1(wr.T))-5,col,10);
+  }
+  txt('T (N) →',x+w-12,y+h-4,'#3e9a80',10,'right');
+}
+
+function drawDrum(x,y,w,h){
+  panel(x,y,w,h,'DRUM-SKIN HYGROMETER — humidity slackens the head');
+  var D=S.drum;
+  var slack=D.hum;                      // 0 dry/tight … 1 damp/slack
+  var Td=1400*(1-0.72*slack)+60;
+  var sigma=0.26;                       // areal density kg/m²
+  var R=0.16;                           // m
+  var fd=(2.405/(2*Math.PI*R))*Math.sqrt(Td/sigma);
+  var cx=x+w*0.30, cy=y+h*0.58, rr=Math.min(w*0.22,h*0.30);
+  // shell
+  glow([[cx-rr,cy],[cx-rr*0.9,cy+rr*0.75],[cx+rr*0.9,cy+rr*0.75],[cx+rr,cy]],'#2c6a86',4,10);
+  // membrane profile with a mode-0 wobble
+  var pts=[];
+  for(var k=0;k<=48;k++){
+    var s=k/48, xx=cx-rr+2*rr*s;
+    var bess=Math.cos((s-0.5)*Math.PI);          // stand-in for J0 lobe
+    var amp=D.ring*10*Math.cos(2*Math.PI*fd*D.t)+slack*10;
+    pts.push([xx,cy+bess*amp*(D.ring>0.02?1:0.25)+slack*6*bess]);
+  }
+  var col=slack>0.6?'#ff9b6b':'#66f0ff';
+  glow(pts,col,4,12+26*D.ring);
+  txt('f₀ = '+fd.toFixed(0)+' Hz',cx,cy+rr+30,col,13,'center');
+  txt('T = '+Td.toFixed(0)+' N/m   RH '+(slack*100).toFixed(0)+'%',cx,cy+rr+46,'#8fd8ff',11,'center');
+  txt(slack>0.6?'damp → slack → FLAT':'dry → tight → SHARP',cx,y+34,slack>0.6?'#ff9b6b':'#5ef2c0',11,'center');
+
+  // guitar string with creep clock
+  var gx=x+w*0.63, gw=w*0.32;
+  var G=S.gtr, fg=(1/(2*0.648))*Math.sqrt(G.T/0.0062);
+  var gy=y+h*0.52;
+  var p2=[];
+  for(var k2=0;k2<=40;k2++){
+    var s2=k2/40;
+    p2.push([gx+gw*s2, gy+Math.sin(Math.PI*s2)*G.ring*14*Math.cos(2*Math.PI*fg*G.t)]);
+  }
+  glow([[gx,gy-24],[gx,gy+24]],'#2c6a86',4,8);
+  glow([[gx+gw,gy-24],[gx+gw,gy+24]],'#2c6a86',4,8);
+  glow(p2,creepOn?'#ffb64d':'#8fd8ff',3,10+22*G.ring);
+  txt('GUITAR + CREEP CLOCK',gx,y+34,'#8fd8ff',11);
+  txt(fg.toFixed(1)+' Hz  ·  T '+G.T.toFixed(0)+' N',gx,gy+42,creepOn?'#ffb64d':'#a9ffd9',11);
+  txt(creepOn?'creeping → detuning ↓':'press C to run creep',gx,gy+58,'#7fa8c0',10);
+}
+
+// keep the demo acts alive
+setInterval(function(){ S.drum.ring=1;S.drum.t=0; },2600);
+setInterval(function(){ S.gtr.ring=1;S.gtr.t=0; },3100);
+
+function updateUI(){
+  var w=wires[sel];
+  vT.textContent=w.T.toFixed(0)+' N';
+  vH.textContent=(S.drum.hum*100).toFixed(0)+' %';
+  var f=f1(w.T);
+  r1.innerHTML='selected: <b>wire '+(sel+1)+'</b>'+(w.leak?'  <span style="color:#ff7ba8">(the leaker)</span>':'');
+  r2.innerHTML='f = (1/2·'+LWIRE.toFixed(2)+')·√('+w.T.toFixed(0)+'/'+MU.toFixed(4)+') = <b>'+f.toFixed(2)+' Hz</b>';
+  var pf=w.fftPeak;
+  r3.innerHTML= pf>0 ? ('FFT peak <b>'+pf.toFixed(2)+' Hz</b> → T = µ(2Lf)² = <b>'+Tfromf(pf).toFixed(0)+' N</b>') : 'FFT peak → pluck a wire';
+  // slack detection: compare to the median
+  var fs=wires.map(function(x){return f1(x.T);}).slice().sort(function(a,b){return a-b;});
+  var med=fs[2];
+  var lo=null;
+  for(var i=0;i<5;i++){ if(f1(wires[i].T)<med*0.90) lo=i; }
+  r4.textContent = lo!==null ? ('⚠ wire '+(lo+1)+' rings '+(100*(1-f1(wires[lo].T)/med)).toFixed(0)+'% LOW → tension down '+(100*(1-wires[lo].T/Tfromf(med))).toFixed(0)+'%') : ' ';
+}
+
+function draw(){
+  g.setTransform(DPR,0,0,DPR,0,0);
+  g.fillStyle='#04070c';g.fillRect(0,0,W,H);
+  g.save();g.strokeStyle='rgba(40,110,150,.09)';g.lineWidth=1;
+  for(var x=0;x<W;x+=48){g.beginPath();g.moveTo(x,0);g.lineTo(x,H);g.stroke();}
+  for(var y=0;y<H;y+=48){g.beginPath();g.moveTo(0,y);g.lineTo(W,y);g.stroke();}
+  g.restore();
+
+  drawFence();
+
+  var px=Math.min(W*0.60,W-360), pw=Math.max(300,W-px-20);
+  var ph=Math.min(180,(H-120)/3.3);
+  drawFFT(px,24,pw,ph);
+  drawSqrt(px,24+ph+16,pw,ph);
+  drawDrum(px,24+2*(ph+16),pw,ph+10);
+
+  txt('"tension is memory of assembly — listen by pitch; the slack one is the story."',24,H-20,'#7ffcff',13);
+}
+
+var last=performance.now();
+function frame(now){
+  var dt=Math.min(0.033,(now-last)/1000);last=now;
+  step(dt);draw();updateUI();
+  requestAnimationFrame(frame);
+}
+// alive immediately
+pluckAll();
+setInterval(function(){ if(wires.every(function(w){return w.ring<0.02;})) pluckAll(); },7000);
+requestAnimationFrame(frame);
+})();
+</script>
