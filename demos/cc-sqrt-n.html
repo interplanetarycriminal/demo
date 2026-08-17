@@ -1,0 +1,341 @@
+<title>Root-N Noise Floor</title>
+<style>
+html,body{margin:0;padding:0;background:#03060a;overflow:hidden;height:100%}
+canvas{display:block;position:fixed;inset:0}
+#ui{position:fixed;top:12px;left:12px;z-index:10;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;
+ color:#cfe6ff;background:rgba(6,10,18,.76);border:1px solid rgba(160,255,120,.24);border-radius:9px;
+ padding:10px 12px;max-width:330px;backdrop-filter:blur(6px);box-shadow:0 0 26px rgba(120,255,80,.12)}
+#ui h1{margin:0 0 3px;font-size:13px;letter-spacing:.14em;color:#b6ff6a;text-shadow:0 0 12px #7ee02a}
+#ui .cc{color:#ffd76a;font-size:10px;letter-spacing:.1em}
+#ui .th{color:#9fb6cc;margin:5px 0 7px}
+#ui .hint{color:#6f8399;margin:6px 0 0;font-size:10px}
+#ui a{color:#b6ff6a;text-decoration:none;border-bottom:1px dotted #5d8f2c}
+#ui .row{display:flex;justify-content:space-between;gap:10px}
+#ui .k{color:#6f8399}#ui .v{color:#e8f6ff}
+hr{border:0;border-top:1px solid rgba(160,255,120,.15);margin:7px 0}
+label{display:block;color:#8fa6bd;font-size:10px;margin-top:5px}
+input[type=range]{width:100%;accent-color:#b6ff6a;margin:1px 0 0}
+button{font:10px ui-monospace,monospace;color:#d7ffb8;background:rgba(24,44,18,.85);
+ border:1px solid rgba(160,255,120,.35);border-radius:5px;padding:4px 7px;cursor:pointer;margin:5px 4px 0 0}
+button:hover{background:rgba(48,90,30,.95);box-shadow:0 0 10px rgba(160,255,120,.45)}
+button.on{background:rgba(120,200,60,.95);color:#0d1a06;border-color:#dfffb0;font-weight:700}
+button.alt{border-color:rgba(120,200,255,.4);color:#bfe4ff;background:rgba(16,34,56,.85)}
+button.alt.on{background:rgba(90,180,255,.95);color:#031018}
+#pun{position:fixed;bottom:8px;left:50%;transform:translateX(-50%);z-index:10;font:11px ui-monospace,monospace;
+ color:#8aa4bd;background:rgba(6,10,18,.6);padding:5px 14px;border-radius:14px;border:1px solid rgba(160,255,120,.16)}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div class="cc">CHEAT CODE #98</div>
+  <h1>√N — THE COUNTING FLOOR</h1>
+  <div class="th">Rare events arrive at random and √N is your error bar: count 100 → ±10%, count 10,000 → ±1%; no electronics evades this, the only fix is counting longer.</div>
+  <div class="row"><span class="k">total counts N</span><span class="v" id="rN">0</span></div>
+  <div class="row"><span class="k">√N / N (theory)</span><span class="v" id="rTh">—</span></div>
+  <div class="row"><span class="k">measured σ/N</span><span class="v" id="rMe" style="color:#b6ff6a">—</span></div>
+  <div class="row"><span class="k">log-log slope</span><span class="v" id="rSl" style="color:#ffd76a">—</span></div>
+  <div class="row"><span class="k">variance / mean</span><span class="v" id="rVM" style="color:#7fd0ff">—</span></div>
+  <div class="row"><span class="k">σ real vs perfect</span><span class="v" id="rCmp">—</span></div>
+  <hr>
+  <label>SOURCE RATE λ = <span class="v" id="lLam">40</span> /s</label>
+  <input type="range" id="lam" min="1" max="300" step="1" value="40">
+  <label>TIME ACCELERATION ×<span class="v" id="lSpd">12</span></label>
+  <input type="range" id="spd" min="1" max="60" step="1" value="12">
+  <label>TARGET ACCURACY ±<span class="v" id="lTgt">1.0</span>%  →  need N = <span class="v" id="rNeed">10000</span>, t = <span class="v" id="rTime">250 s</span></label>
+  <input type="range" id="tgt" min="0.2" max="20" step="0.1" value="1">
+  <div><button id="bPerf" class="on">BLAME THE INSTRUMENT</button><button id="bPhot" class="alt">PHOTON MODE</button><button id="bRst">RESET</button></div>
+  <div class="hint">events are true Poisson draws (exponential waits). Press BLAME THE INSTRUMENT to swap in a perfect noiseless detector — the scatter does not change. <a href="index.html">← gallery</a></div>
+</div>
+<div id="pun">the noise itself reports how many quanta you caught — and more time is the only amplifier</div>
+<script>
+"use strict";
+var c=document.getElementById('c'),g=c.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,devicePixelRatio||1);W=innerWidth;H=innerHeight;
+ c.width=Math.round(W*DPR);c.height=Math.round(H*DPR);c.style.width=W+'px';c.style.height=H+'px';
+ g.setTransform(DPR,0,0,DPR,0,0);}
+addEventListener('resize',resize);resize();
+if(!CanvasRenderingContext2D.prototype.roundRect){CanvasRenderingContext2D.prototype.roundRect=function(x,y,w,h,r){
+ this.beginPath();this.moveTo(x+r,y);this.arcTo(x+w,y,x+w,y+h,r);this.arcTo(x+w,y+h,x,y+h,r);
+ this.arcTo(x,y+h,x,y,r);this.arcTo(x,y,x+w,y,r);this.closePath();return this;};}
+
+// ================= MATH =================
+function lgamma(z){ // Lanczos
+ var p=[676.5203681218851,-1259.1392167224028,771.32342877765313,-176.61502916214059,
+ 12.507343278686905,-0.13857109526572012,9.9843695780195716e-6,1.5056327351493116e-7];
+ if(z<0.5)return Math.log(Math.PI/Math.sin(Math.PI*z))-lgamma(1-z);
+ z-=1;var x=0.99999999999980993;for(var i=0;i<8;i++)x+=p[i]/(z+i+1);
+ var tt=z+7.5;return 0.5*Math.log(2*Math.PI)+(z+0.5)*Math.log(tt)-tt+Math.log(x);}
+function poissonPmf(k,m){if(m<=0)return k===0?1:0;return Math.exp(-m+k*Math.log(m)-lgamma(k+1));}
+function expWait(lam){var u=Math.random();if(u<=0)u=1e-12;return -Math.log(u)/lam;} // true exponential
+function randn(){var u=0,v=0;while(u===0)u=Math.random();while(v===0)v=Math.random();
+ return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+
+// ================= STATE =================
+var LAM=40, SPD=12, TGT=1.0, perfect=false, photon=false;
+var BIN=10.0;              // simulated seconds per bin
+var simT=0, binT=0, binTrue=0, N=0, bins=[], binsPerf=[], MAXB=4000;
+var ticks=[], flashes=[], flash=0;
+var starPhase=0;
+function reset(){simT=0;binT=0;binTrue=0;N=0;bins=[];binsPerf=[];ticks=[];flashes=[];}
+var el=function(id){return document.getElementById(id);};
+el('lam').oninput=function(){LAM=+this.value;el('lLam').textContent=LAM;reset();};
+el('spd').oninput=function(){SPD=+this.value;el('lSpd').textContent=SPD;};
+el('tgt').oninput=function(){TGT=+this.value;el('lTgt').textContent=TGT.toFixed(1);};
+el('bRst').onclick=reset;
+el('bPerf').onclick=function(){perfect=!perfect;this.className=perfect?'':'on';
+ this.textContent=perfect?'PERFECT DETECTOR (scatter unchanged!)':'BLAME THE INSTRUMENT';};
+el('bPhot').onclick=function(){photon=!photon;this.className=photon?'alt on':'alt';};
+addEventListener('keydown',function(e){if(e.key==='b')el('bPerf').click();if(e.key==='p')el('bPhot').click();if(e.key==='r')reset();});
+
+// instrument noise on a bin readout (removed in "perfect" mode)
+function instrument(nTrue){
+ var gainJit=1+0.004*randn();          // small gain wobble
+ var readNoise=1.8*randn();            // electronic read noise, counts
+ var dark=0;                           // dark counts folded into rate elsewhere
+ return Math.max(0,nTrue*gainJit+readNoise+dark);
+}
+
+// ================= STATISTICS: relative error vs N (log-log) =================
+function relErrPoints(arr){
+ var pts=[],n=arr.length;if(n<8)return pts;
+ for(var m=1;m<=n/4;m*=2){
+  var k=Math.floor(n/m),s=0,s2=0;
+  for(var i=0;i<k;i++){var sum=0;for(var j=0;j<m;j++)sum+=arr[i*m+j];s+=sum;s2+=sum*sum;}
+  var mean=s/k;if(mean<=0||k<3)continue;
+  var varr=(s2-k*mean*mean)/(k-1);if(varr<0)varr=0;
+  pts.push({N:mean,e:Math.sqrt(varr)/mean,k:k,m:m});
+ }
+ return pts;
+}
+function fitSlope(pts){
+ if(pts.length<3)return NaN;
+ var sx=0,sy=0,sxx=0,sxy=0,n=pts.length;
+ for(var i=0;i<n;i++){var x=Math.log10(pts[i].N),y=Math.log10(pts[i].e);sx+=x;sy+=y;sxx+=x*x;sxy+=x*y;}
+ return (n*sxy-sx*sy)/(n*sxx-sx*sx);
+}
+window.__SQRTN={expWait:expWait,relErrPoints:relErrPoints,fitSlope:fitSlope,poissonPmf:poissonPmf};
+
+// ================= DRAW HELPERS =================
+function txt(s,x,y,col,size,bold,align){g.save();g.textAlign=align||'left';
+ g.font=(bold?'bold ':'')+size+'px ui-monospace,Menlo,monospace';g.fillStyle=col;
+ g.shadowBlur=bold?9:0;g.shadowColor=col;g.fillText(s,x,y);g.restore();}
+function panel(x,y,w,h,title,col){
+ g.fillStyle='rgba(6,11,18,.66)';g.strokeStyle=col;g.lineWidth=1;
+ g.beginPath();g.roundRect(x,y,w,h,8);g.fill();g.stroke();
+ txt(title,x+10,y+16,col,10,true);}
+
+// ================= LOOP =================
+var last=performance.now(),nextEvt=expWait(LAM);
+function frame(now){
+ var dt=Math.min(0.05,(now-last)/1000);last=now;
+ var dsim=dt*SPD, guard=0;
+ nextEvt-=dsim;binT+=dsim;simT+=dsim;starPhase+=dt;
+ while(nextEvt<=0&&guard++<6000){
+  binTrue++;N++;
+  ticks.push({t:simT+nextEvt,a:1});
+  if(ticks.length>600)ticks.shift();
+  if(guard<40)flashes.push({a:1,x:Math.random(),y:Math.random()});
+  flash=1;
+  nextEvt+=expWait(LAM);
+ }
+ while(binT>=BIN){
+  binT-=BIN;
+  bins.push(instrument(binTrue));binsPerf.push(binTrue);
+  if(bins.length>MAXB){bins.shift();binsPerf.shift();}
+  binTrue=0;
+ }
+ flash*=Math.pow(0.02,dt);
+
+ // ---- stats
+ var shown=perfect?binsPerf:bins;
+ var nb=shown.length,mean=0,varr=0;
+ for(var i=0;i<nb;i++)mean+=shown[i];mean=nb?mean/nb:0;
+ for(var i=0;i<nb;i++){var d=shown[i]-mean;varr+=d*d;}varr=nb>1?varr/(nb-1):0;
+ var sd=Math.sqrt(varr);
+ var meanP=0;for(var i=0;i<nb;i++)meanP+=binsPerf[i];meanP=nb?meanP/nb:0;
+ var vP=0;for(var i=0;i<nb;i++){var d2=binsPerf[i]-meanP;vP+=d2*d2;}vP=nb>1?vP/(nb-1):0;
+ var sdR=0;{var mR=0;for(var i=0;i<nb;i++)mR+=bins[i];mR=nb?mR/nb:0;
+  var vR=0;for(var i=0;i<nb;i++){var d3=bins[i]-mR;vR+=d3*d3;}vR=nb>1?vR/(nb-1):0;sdR=Math.sqrt(vR);}
+ var pts=relErrPoints(shown), slope=fitSlope(pts);
+
+ // ---- render
+ g.setTransform(DPR,0,0,DPR,0,0);
+ g.fillStyle='#03060a';g.fillRect(0,0,W,H);
+ g.strokeStyle='rgba(80,140,90,0.045)';g.lineWidth=1;
+ for(var x=0;x<W;x+=46){g.beginPath();g.moveTo(x,0);g.lineTo(x,H);g.stroke();}
+ for(var y=0;y<H;y+=46){g.beginPath();g.moveTo(0,y);g.lineTo(W,y);g.stroke();}
+
+ var accent=photon?'#7fd0ff':'#b6ff6a';
+ var narrow=W<900;
+ var topY=narrow?H*0.30:132, topH=Math.min(150,H*0.20);
+ var padL=narrow?12:360, padR=14;
+ var TX=padL,TW=W-padL-padR;
+ if(narrow){TX=12;TW=W-24;topY=H*0.32;}
+
+ // ===== DETECTOR PANEL =====
+ panel(TX,topY,TW,topH,photon?'TELESCOPE — photons from a dim star (same law)':'GEIGER TUBE — random arrivals, exponential waits',accent);
+ // source glow
+ var sx=TX+52,sy=topY+topH*0.55,sr=20+flash*14;
+ g.save();g.globalCompositeOperation='lighter';
+ var rg=g.createRadialGradient(sx,sy,1,sx,sy,sr*2.6);
+ rg.addColorStop(0,photon?'rgba(180,220,255,'+(0.5+flash*0.5)+')':'rgba(180,255,120,'+(0.5+flash*0.5)+')');
+ rg.addColorStop(1,'rgba(0,0,0,0)');g.fillStyle=rg;g.beginPath();g.arc(sx,sy,sr*2.6,0,7);g.fill();
+ g.restore();
+ g.strokeStyle=accent;g.lineWidth=1.4;g.beginPath();g.arc(sx,sy,14,0,7);g.stroke();
+ txt(photon?'★':'☢',sx,sy+5,'#fff',15,true,'center');
+ txt(photon?'dim star':'source',sx,sy+34,'rgba(150,180,200,.7)',9,false,'center');
+ // scrolling tick strip
+ var stx=sx+52,stw=TW-(stx-TX)-16,sty=topY+26,sth=topH-52;
+ g.strokeStyle='rgba(140,180,200,.25)';g.lineWidth=1;
+ g.beginPath();g.moveTo(stx,sty+sth);g.lineTo(stx+stw,sty+sth);g.stroke();
+ var window_s=Math.max(2,600/LAM);
+ for(var i=ticks.length-1;i>=0;i--){
+  var age=simT-ticks[i].t;if(age>window_s){break;}
+  var fx=stx+stw*(1-age/window_s);
+  var al=0.25+0.75*Math.max(0,1-age/(window_s*0.28));
+  g.strokeStyle=photon?'rgba(127,208,255,'+al+')':'rgba(182,255,106,'+al+')';
+  g.lineWidth=1.4;g.shadowBlur=al>0.6?10:0;g.shadowColor=accent;
+  g.beginPath();g.moveTo(fx,sty+sth);g.lineTo(fx,sty+sth-(6+al*(sth-12)));g.stroke();g.shadowBlur=0;
+ }
+ txt('← '+window_s.toFixed(1)+' s of arrivals →',stx+stw/2,sty+sth+16,'rgba(140,175,200,.6)',9,false,'center');
+ // current bin fill
+ var bp=binT/BIN;
+ g.fillStyle='rgba(255,255,255,.07)';g.beginPath();g.roundRect(stx,sty-14,stw,8,4);g.fill();
+ g.fillStyle=accent;g.shadowBlur=8;g.shadowColor=accent;
+ g.beginPath();g.roundRect(stx,sty-14,Math.max(2,stw*bp),8,4);g.fill();g.shadowBlur=0;
+ txt('bin '+bins.length+'  ·  '+binTrue+' counts in this 10 s bin',stx,sty-19,'rgba(180,210,230,.75)',9,false);
+
+ // ===== THREE BOTTOM PANELS =====
+ var py=topY+topH+14, ph=H-py-34;
+ var cols=narrow?1:3, cw=(W-24-(cols-1)*12)/cols;
+ function rect(i){return narrow?{x:12,y:py,w:W-24,h:ph}:{x:12+i*(cw+12),y:py,w:cw,h:ph};}
+
+ // --- P1: bin bars
+ var R1r=rect(0);
+ if(!narrow||true){
+  panel(R1r.x,R1r.y,R1r.w,R1r.h,'1 · COUNTS PER 10 s BIN — visibly scattered',accent);
+  var ax=R1r.x+30,ay=R1r.y+26,aw=R1r.w-40,ah=R1r.h-46;
+  var show=shown.slice(-46);
+  var top=Math.max(1,mean+4.5*Math.max(1,sd));
+  // mean and ±√mean band
+  var ym=ay+ah*(1-mean/top), ys1=ay+ah*(1-(mean+Math.sqrt(Math.max(mean,0)))/top),
+      ys2=ay+ah*(1-(mean-Math.sqrt(Math.max(mean,0)))/top);
+  g.fillStyle='rgba(255,215,106,.10)';g.fillRect(ax,ys1,aw,Math.max(1,ys2-ys1));
+  g.strokeStyle='rgba(255,215,106,.55)';g.setLineDash([4,3]);g.lineWidth=1;
+  g.beginPath();g.moveTo(ax,ym);g.lineTo(ax+aw,ym);g.stroke();g.setLineDash([]);
+  var bwid=aw/Math.max(1,show.length);
+  for(var i=0;i<show.length;i++){
+   var hh=ah*Math.min(1,show[i]/top);
+   var al2=0.35+0.6*i/Math.max(1,show.length);
+   g.fillStyle=photon?'rgba(127,208,255,'+al2+')':'rgba(182,255,106,'+al2+')';
+   g.shadowBlur=i===show.length-1?12:0;g.shadowColor=accent;
+   g.fillRect(ax+i*bwid+0.5,ay+ah-hh,Math.max(1,bwid-1.2),hh);g.shadowBlur=0;
+  }
+  txt('mean '+mean.toFixed(1),ax+4,ym-4,'#ffd76a',9,true);
+  txt('±√mean = ±'+Math.sqrt(Math.max(mean,0)).toFixed(1),ax+4,ys1-3,'rgba(255,215,106,.7)',9,false);
+  txt('measured σ = '+sd.toFixed(1),ax+4,R1r.y+R1r.h-10,accent,10,true);
+ }
+
+ // --- P2: distribution vs Poisson
+ var R2r=rect(1);
+ if(!narrow){
+  panel(R2r.x,R2r.y,R2r.w,R2r.h,'2 · DISTRIBUTION vs POISSON — they converge',accent);
+  var bx2=R2r.x+16,by2=R2r.y+26,bw2=R2r.w-30,bh2=R2r.h-48;
+  var m2=meanP>0?meanP:LAM*BIN, s2=Math.sqrt(Math.max(1,m2));
+  var loK=Math.max(0,Math.floor(m2-4.2*s2)),hiK=Math.ceil(m2+4.2*s2);
+  var NB=Math.min(46,Math.max(8,hiK-loK)),wK=(hiK-loK)/NB;
+  var hist=new Array(NB).fill(0);
+  for(var i=0;i<nb;i++){var idx=Math.floor((shown[i]-loK)/wK);if(idx>=0&&idx<NB)hist[idx]++;}
+  var theo=new Array(NB).fill(0),maxT=0,maxHf=0;
+  for(var i=0;i<NB;i++){
+   var k0=Math.round(loK+i*wK),k1=Math.round(loK+(i+1)*wK),p=0;
+   if(k1<=k0)k1=k0+1;
+   for(var k=k0;k<k1;k++)p+=poissonPmf(k,m2);
+   theo[i]=p;if(p>maxT)maxT=p;
+  }
+  for(var i=0;i<NB;i++)maxHf=Math.max(maxHf,nb?hist[i]/nb:0);
+  var top2=Math.max(maxT,maxHf)*1.15||1;
+  var bwid2=bw2/NB;
+  for(var i=0;i<NB;i++){
+   var f=nb?hist[i]/nb:0,hh=bh2*f/top2;
+   g.fillStyle=photon?'rgba(127,208,255,.55)':'rgba(182,255,106,.55)';
+   g.fillRect(bx2+i*bwid2+0.5,by2+bh2-hh,Math.max(1,bwid2-1.2),hh);
+  }
+  g.strokeStyle='#ff8ad0';g.lineWidth=2;g.shadowBlur=12;g.shadowColor='#ff8ad0';
+  g.beginPath();
+  for(var i=0;i<NB;i++){var xx=bx2+(i+0.5)*bwid2,yy=by2+bh2-bh2*theo[i]/top2;
+   if(i===0)g.moveTo(xx,yy);else g.lineTo(xx,yy);}
+  g.stroke();g.shadowBlur=0;
+  txt('— Poisson(μ='+m2.toFixed(0)+')','' ,0,'#ff8ad0',9,false);
+  txt('— Poisson(μ='+m2.toFixed(0)+')',bx2+4,by2+12,'#ff8ad0',9,true);
+  txt('bars: '+nb+' observed bins',bx2+4,by2+24,'rgba(180,210,230,.7)',9,false);
+  txt('variance/mean = '+(meanP>0?(vP/meanP).toFixed(3):'—')+'  (Poisson ⇒ 1.000)',bx2+4,R2r.y+R2r.h-10,'#7fd0ff',10,true);
+ }
+
+ // --- P3: log-log law
+ var R3r=rect(2);
+ if(!narrow){
+  panel(R3r.x,R3r.y,R3r.w,R3r.h,'3 · THE LAW — σ/N vs N on log–log',accent);
+  var lx=R3r.x+42,ly=R3r.y+28,lw=R3r.w-56,lh=R3r.h-56;
+  var xlo=1,xhi=7;      // log10 N
+  var ylo=-4,yhi=0;     // log10 relerr
+  function LX(v){return lx+lw*(Math.log10(Math.max(v,1e-9))-xlo)/(xhi-xlo);}
+  function LY(v){return ly+lh*(1-(Math.log10(Math.max(v,1e-9))-ylo)/(yhi-ylo));}
+  g.strokeStyle='rgba(120,180,220,.13)';g.lineWidth=1;
+  for(var e2=xlo;e2<=xhi;e2++){var xx=LX(Math.pow(10,e2));g.beginPath();g.moveTo(xx,ly);g.lineTo(xx,ly+lh);g.stroke();
+   txt('10'+['⁰','¹','²','³','⁴','⁵','⁶','⁷'][e2],xx,ly+lh+13,'rgba(140,180,210,.6)',9,false,'center');}
+  for(var e2=ylo;e2<=yhi;e2++){var yy=LY(Math.pow(10,e2));g.beginPath();g.moveTo(lx,yy);g.lineTo(lx+lw,yy);g.stroke();
+   txt((Math.pow(10,e2)*100).toFixed(e2<-2?2:(e2<0?1:0))+'%',lx-5,yy+3,'rgba(140,180,210,.6)',9,false,'right');}
+  // 1/sqrt(N) theory line
+  g.strokeStyle='rgba(255,215,106,.85)';g.lineWidth=2;g.setLineDash([6,4]);
+  g.beginPath();g.moveTo(LX(Math.pow(10,xlo)),LY(1/Math.sqrt(Math.pow(10,xlo))));
+  g.lineTo(LX(Math.pow(10,xhi)),LY(1/Math.sqrt(Math.pow(10,xhi))));g.stroke();g.setLineDash([]);
+  txt('1/√N',LX(1e5),LY(1/Math.sqrt(1e5))-8,'#ffd76a',10,true,'center');
+  // measured points
+  pts.forEach(function(p){
+   var xx=LX(p.N),yy=LY(p.e),rr=3+Math.min(4,Math.log2(p.k)*0.6);
+   g.fillStyle=photon?'rgba(127,208,255,.9)':'rgba(182,255,106,.9)';
+   g.shadowBlur=12;g.shadowColor=accent;g.beginPath();g.arc(xx,yy,rr,0,7);g.fill();g.shadowBlur=0;});
+  if(pts.length>1){g.strokeStyle='rgba(255,255,255,.35)';g.lineWidth=1;g.beginPath();
+   pts.forEach(function(p,i){var xx=LX(p.N),yy=LY(p.e);if(i===0)g.moveTo(xx,yy);else g.lineTo(xx,yy);});g.stroke();}
+  // target accuracy marker
+  var need=Math.ceil(1/Math.pow(TGT/100,2));
+  var tX=LX(need),tY=LY(TGT/100);
+  g.strokeStyle='#ff8ad0';g.lineWidth=1.2;g.setLineDash([3,3]);
+  g.beginPath();g.moveTo(lx,tY);g.lineTo(tX,tY);g.lineTo(tX,ly+lh);g.stroke();g.setLineDash([]);
+  g.fillStyle='#ff8ad0';g.shadowBlur=12;g.shadowColor='#ff8ad0';g.beginPath();g.arc(tX,tY,4.5,0,7);g.fill();g.shadowBlur=0;
+  txt('±'+TGT.toFixed(1)+'% ⇒ N='+need.toLocaleString(),Math.min(tX+7,lx+lw-110),tY-6,'#ff8ad0',9,true);
+  txt('measured slope '+(isNaN(slope)?'—':slope.toFixed(3))+'   (theory −0.500)',lx,R3r.y+R3r.h-10,
+      (!isNaN(slope)&&Math.abs(slope+0.5)<0.08)?'#b6ff6a':'rgba(200,220,240,.8)',10,true);
+ }
+
+ // narrow fallback caption
+ if(narrow) txt('widen the window for the distribution + log–log panels',W/2,H-40,'rgba(150,180,210,.6)',10,false,'center');
+
+ // perfect-detector banner
+ if(perfect){
+  var s='PERFECT NOISELESS DETECTOR ENGAGED — scatter unchanged. compute √N before blaming the sensor.';
+  g.font='bold 12px ui-monospace,monospace';var tw=g.measureText(s).width;
+  g.fillStyle='rgba(20,40,10,.9)';g.beginPath();g.roundRect(W/2-tw/2-14,topY-40,tw+28,26,13);g.fill();
+  g.strokeStyle='#b6ff6a';g.lineWidth=1;g.stroke();
+  txt(s,W/2,topY-23,'#dfffb0',12,true,'center');
+ }
+
+ // ---- readouts
+ var need=Math.ceil(1/Math.pow(TGT/100,2));
+ el('rN').textContent=N.toLocaleString();
+ el('rTh').textContent=N>0?(100/Math.sqrt(N)).toFixed(3)+' %':'—';
+ var pt1=pts.length?pts[pts.length-1]:null;
+ el('rMe').textContent=pt1?(pt1.e*100).toFixed(3)+' % at N='+Math.round(pt1.N).toLocaleString():'accumulating…';
+ el('rSl').textContent=isNaN(slope)?'—':slope.toFixed(3)+'  (want −0.500)';
+ el('rVM').textContent=meanP>0?(vP/meanP).toFixed(3)+'  (Poisson ⇒ 1)':'—';
+ el('rCmp').textContent=nb>3?sdR.toFixed(1)+' vs '+Math.sqrt(vP).toFixed(1):'—';
+ el('rNeed').textContent=need.toLocaleString();
+ var secs=need/LAM;
+ el('rTime').textContent=secs<90?secs.toFixed(1)+' s':(secs<5400?(secs/60).toFixed(1)+' min':(secs/3600).toFixed(1)+' h');
+ requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>

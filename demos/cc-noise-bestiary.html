@@ -76,18 +76,18 @@ var pink=new PinkGen(), driftState=0, tIdx=0;
    - flicker & drift are SLOWER than one record, so they are COMMON-MODE
      across the N repeats -> they survive untouched. That is why averaging
      does nothing below the 1/f corner.
-   So flickerRec/driftRec are drawn ONCE PER FRAME and reused by all N repeats,
-   while the white draws are fresh in every repeat. */
    Flicker is split at the corner: the SUB-corner part is shared by every repeat
    (it is slower than the record), the ABOVE-corner part is drawn fresh, so it
-   averages like any other independent noise. */
-var CORNER=10, AC=1-Math.exp(-2*Math.PI*CORNER/FS);   // 1-pole @ 10 Hz
+   averages like any other independent noise. Same for drift. */
+var CORNER=10, AC=1-Math.exp(-2*Math.PI*CORNER/FS);   // pole @ 10 Hz
 var flickerSlow=new Float64Array(N), driftRec=new Float64Array(N);
-var pinkFast=new PinkGen(), fastLP=0, slowLP=0;
+var pinkFast=new PinkGen(), fastLP=0, s1=0, s2=0, s3=0;
 function refreshSlow(){
  for(var i=0;i<N;i++){
-  slowLP += AC*(pink.next()-slowLP);      // sub-corner flicker: common-mode
-  flickerSlow[i]=slowLP;
+  // 3-pole LP: the common-mode part is strictly sub-corner, so it cannot
+  // contaminate (and pin) the high-frequency floor we watch averaging destroy.
+  s1+=AC*(pink.next()-s1); s2+=AC*(s1-s2); s3+=AC*(s2-s3);
+  flickerSlow[i]=s3;
   driftState+=gauss()*0.004-driftState*0.0006;
   driftRec[i]=driftState;
  }
@@ -131,7 +131,7 @@ function makeBlock(applyWeapons){
   if(sOn.flicker){
     var fr=pinkFast.next(); fastLP+=AC*(fr-fastLP);   // above-corner: independent
     // chopping: modulate signal to fc, so 1/f lands out-of-band, then demod
-    v += (flickerSlow[i]*3.0 + (fr-fastLP))*0.30*(chopOn?0.12:1);
+    v += (flickerSlow[i]*9.0 + (fr-fastLP))*0.30*(chopOn?0.12:1);
   }
   if(sOn.drift){ v+= driftRec[i]*(recalOn?0.05:4.0); }
   if(sOn.mains && !notchOn){ v+=0.45*Math.sin(2*Math.PI*50*t+0.7)
