@@ -124,7 +124,9 @@ function stepSim(){
     sumS+=s*s; sumN+=n*n;
     // demodulate against the FUNDAMENTAL of your own chop.
     // <sq(ft) * (pi/2)sin(2pi f t + phi)> = cos(phi)  exactly.
-    var ang=TWOPI*FMOD*tt+phR;
+    // (+pi*FMOD*DT advances the reference by half a sample: the sampled square's
+    //  positive block is centred between samples, so this removes a 1.8 deg bias.)
+    var ang=TWOPI*FMOD*tt+Math.PI*FMOD*DT+phR;
     var refI=HALFPI*Math.sin(ang), refQ=HALFPI*Math.cos(ang);
     var pI=v*refI, pQ=v*refQ;
     X1+=alpha*(pI-X1); X2+=alpha*(X1-X2);   // 2-pole, 12 dB/oct

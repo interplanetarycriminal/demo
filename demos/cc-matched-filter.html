@@ -57,14 +57,17 @@ function gauss(){ if(sp!==null){var v=sp;sp=null;return v;}
 
 // ---- maximal-length LFSR (real m-sequence: ideal +/-1 autocorrelation sidelobes) ----
 var LENS=[31,63,127,255,511,1023,2047,4095];
-var TAPS={31:[5,3],63:[6,5],127:[7,6],255:[8,6],511:[9,5],1023:[10,7],2047:[11,9],4095:[12,6]};
+// tap sets are primitive polynomials -> maximal length, ideal ±1 cyclic sidelobes
+var TAPS={31:[5,3],63:[6,5],127:[7,6],255:[8,6,5,4],511:[9,5],
+          1023:[10,7],2047:[11,9],4095:[12,11,10,4]};
 function mseq(len){
-  var t=TAPS[len], m=t[0], fb=t[1], reg=[];
+  var t=TAPS[len], m=t[0], reg=[];
   for(var i=0;i<m;i++)reg.push(1);
   var out=new Float32Array(len);
   for(var k=0;k<len;k++){
     out[k]=reg[m-1]?1:-1;
-    var nb=reg[m-1]^reg[fb-1];
+    var nb=0;
+    for(var a=0;a<t.length;a++)nb^=reg[t[a]-1];
     for(var j=m-1;j>0;j--)reg[j]=reg[j-1];
     reg[0]=nb;
   }

@@ -156,7 +156,7 @@ function coherentAvg(){
 }
 function spectrumOf(x){
  var re=new Float64Array(N), im=new Float64Array(N);
- for(var i=0;i<N;i++){var w=0.5-0.5*Math.cos(2*Math.PI*i/(N-1));re[i]=x[i]*w;}
+ for(var i=0;i<N;i++){var w=0.35875-0.48829*Math.cos(2*Math.PI*i/(N-1))+0.14128*Math.cos(4*Math.PI*i/(N-1))-0.01168*Math.cos(6*Math.PI*i/(N-1));re[i]=x[i]*w;}
  fft(re,im);
  var P=new Float64Array(N/2);
  for(var b=0;b<N/2;b++)P[b]=(re[b]*re[b]+im[b]*im[b])/(N*N)*4;
