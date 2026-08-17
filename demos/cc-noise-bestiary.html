@@ -1,0 +1,295 @@
+<title>Noise Bestiary</title>
+<style>
+html,body{margin:0;padding:0;background:#04060a;overflow:hidden;font-family:ui-monospace,Menlo,Consolas,monospace}
+canvas{display:block;position:fixed;inset:0}
+#ui{position:fixed;top:0;left:0;padding:10px 12px;color:#cfe8ff;background:rgba(4,8,14,.62);
+  font:11px/1.45 ui-monospace,Menlo,Consolas,monospace;max-width:430px;border-right:1px solid #12406033;
+  border-bottom:1px solid #12406033;backdrop-filter:blur(3px);z-index:10}
+#ui h1{margin:0 0 3px;font-size:14px;letter-spacing:.16em;color:#7ef;text-shadow:0 0 12px #0ff8}
+.th{color:#9fb6c9;margin:0 0 7px;font-style:italic}
+.hint{color:#5f7d94;margin-top:6px}
+a{color:#6fe;text-decoration:none}a:hover{text-shadow:0 0 8px #0ff}
+.chips{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0}
+.chip{padding:2px 6px;border:1px solid #2a4a63;border-radius:9px;cursor:pointer;user-select:none;
+  color:#88a;font-size:10px;transition:.14s}
+.chip.on{color:#04060a;font-weight:bold}
+.wpn{padding:3px 7px;border:1px dashed #3a6a8a;border-radius:4px;cursor:grab;color:#adf;font-size:10px;user-select:none}
+.wpn.act{background:#0ff2;border-style:solid;box-shadow:0 0 10px #0ff5}
+.wpn.drag{opacity:.4}
+#rd{margin-top:7px;color:#8fe;border-top:1px solid #1a3a52;padding-top:5px;white-space:pre}
+#verdict{margin-top:5px;color:#ffd479;min-height:26px}
+.row{display:flex;align-items:center;gap:6px;margin:3px 0}
+input[type=range]{width:110px;height:12px;accent-color:#0ff}
+button{background:#0a1a26;color:#8df;border:1px solid #2a5a7a;border-radius:3px;font:10px monospace;padding:2px 7px;cursor:pointer}
+button:hover{background:#123}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>NOISE BESTIARY</h1>
+  <p class="th">All noise is not one thing: eight species, each with a source, a spectrum, and a specific weapon — identify the species BEFORE choosing the weapon.</p>
+  <div><b style="color:#6ad">SPECIES</b> (click to toggle)</div>
+  <div class="chips" id="chips"></div>
+  <div class="row"><span style="color:#6ad">signal I</span><input type="range" id="cur" min="1" max="100" value="30"><span id="curv">30</span></div>
+  <div><b style="color:#6ad">WEAPONS</b> (drag onto trace, or click)</div>
+  <div class="chips" id="wpns"></div>
+  <div class="row"><button id="diag">DIAGNOSE MODE</button><button id="clr">clear weapons</button></div>
+  <div id="rd"></div>
+  <div id="verdict"></div>
+  <p class="hint">drag weapon → trace · wheel = averaging N · <a href="index.html">← gallery</a></p>
+</div>
+<script>
+'use strict';
+var c=document.getElementById('c'),g=c.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;
+ c.width=W*DPR|0;c.height=H*DPR|0;c.style.width=W+'px';c.style.height=H+'px';g.setTransform(DPR,0,0,DPR,0,0);}
+addEventListener('resize',resize);resize();
+
+/* ---------- DSP core ---------- */
+var N=1024, FS=1000; // 1024 samples @ 1 kHz -> bins of 0.977 Hz, Nyquist 500 Hz
+function fft(re,im){var n=re.length,i,j=0,k,m,t;
+ for(i=1;i<n;i++){var b=n>>1;for(;j&b;b>>=1)j^=b;j^=b;
+   if(i<j){t=re[i];re[i]=re[j];re[j]=t;t=im[i];im[i]=im[j];im[j]=t;}}
+ for(m=2;m<=n;m<<=1){var ang=-2*Math.PI/m,wr=Math.cos(ang),wi=Math.sin(ang);
+  for(i=0;i<n;i+=m){var cr=1,ci=0;
+   for(k=0;k<m/2;k++){var ur=re[i+k],ui=im[i+k],
+     vr=re[i+k+m/2]*cr-im[i+k+m/2]*ci, vi=re[i+k+m/2]*ci+im[i+k+m/2]*cr;
+    re[i+k]=ur+vr;im[i+k]=ui+vi;re[i+k+m/2]=ur-vr;im[i+k+m/2]=ui-vi;
+    t=cr*wr-ci*wi;ci=cr*wi+ci*wr;cr=t;}}}
+}
+function gauss(){var u=0,v=0;while(u===0)u=Math.random();while(v===0)v=Math.random();
+ return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
+
+/* pink (1/f) generator: Voss-McCartney-ish IIR (Paul Kellet) */
+function PinkGen(){var b=[0,0,0,0,0,0,0];
+ this.next=function(){var w=gauss()*0.11;
+  b[0]=0.99886*b[0]+w*0.0555179;b[1]=0.99332*b[1]+w*0.0750759;b[2]=0.96900*b[2]+w*0.1538520;
+  b[3]=0.86650*b[3]+w*0.3104856;b[4]=0.55000*b[4]+w*0.5329522;b[5]=-0.7616*b[5]-w*0.0168980;
+  var o=b[0]+b[1]+b[2]+b[3]+b[4]+b[5]+b[6]+w*0.5362;b[6]=w*0.115926;return o*3.2;};
+}
+var pink=new PinkGen(), driftState=0, phase=0, tIdx=0;
+
+var SPECIES=[
+ {k:'johnson',n:'Johnson',col:'#7fd9ff',src:'thermal kTB in R',spec:'white',on:true,amp:1.0},
+ {k:'shot',n:'Shot',col:'#ffd479',src:'discrete charge, √(2qI B)',spec:'white, grows as √I',on:true,amp:1.0},
+ {k:'flicker',n:'Flicker 1/f',col:'#ff8ad0',src:'trap/detrap, surfaces',spec:'P ∝ 1/f',on:true,amp:1.0},
+ {k:'quant',n:'Quantization',col:'#9dff8a',src:'ADC LSB staircase',spec:'floor + comb',on:false,amp:1.0},
+ {k:'mains',n:'Mains 50 Hz',col:'#ff6b6b',src:'E/H coupling from grid',spec:'lines @ 50,150,250',on:true,amp:1.0},
+ {k:'drift',n:'Drift',col:'#c39bff',src:'temp, aging, creep',spec:'power → DC',on:false,amp:1.0}
+];
+var WEAPONS=[
+ {k:'avg',n:'averaging',t:'kills white ∝1/√N; useless below 1/f corner'},
+ {k:'bw',n:'bandwidth ↓',t:'white noise ∝ √B — narrow the band'},
+ {k:'chop',n:'chopping',t:'move signal above the 1/f corner, then demod'},
+ {k:'notch',n:'shield+notch',t:'removes 50 Hz lines only'},
+ {k:'dither',n:'dither',t:'decorrelates quantization → averageable'},
+ {k:'recal',n:'recalibrate',t:'the only cure for drift'}
+];
+var wpnOn={};WEAPONS.forEach(function(w){wpnOn[w.k]=false;});
+var SIG_F=17, SIG_A=1.0, avgN=1, curI=30;
+var LSB=0.22;
+
+/* build one raw block of N samples given current species set */
+function makeBlock(applyWeapons){
+ var x=new Float64Array(N);
+ var bwOn=applyWeapons&&wpnOn.bw, chopOn=applyWeapons&&wpnOn.chop,
+     notchOn=applyWeapons&&wpnOn.notch, ditherOn=applyWeapons&&wpnOn.dither,
+     recalOn=applyWeapons&&wpnOn.recal;
+ var sOn={};SPECIES.forEach(function(s){sOn[s.k]=s.on;});
+ var shotAmp=0.10*Math.sqrt(curI);          // √I granularity — real shot scaling
+ var lp=0, alpha=0.12;                       // bandwidth-narrowing 1-pole
+ for(var i=0;i<N;i++){
+  var t=(tIdx+i)/FS;
+  var v=SIG_A*Math.sin(2*Math.PI*SIG_F*t);
+  if(sOn.johnson) v+=0.22*gauss();
+  if(sOn.shot)    v+=shotAmp*gauss();
+  var f=pink.next();
+  if(sOn.flicker){
+    // chopping: modulate signal to fc, so 1/f lands out-of-band, then demod
+    if(chopOn) v+=f*0.30*0.12; else v+=f*0.30;
+  }
+  if(sOn.drift){ driftState+=(gauss()*0.004-driftState*0.0006);
+    v+= recalOn? driftState*0.05 : driftState*4.0; }
+  if(sOn.mains && !notchOn){ v+=0.45*Math.sin(2*Math.PI*50*t+0.7)
+     +0.16*Math.sin(2*Math.PI*150*t+1.9)+0.07*Math.sin(2*Math.PI*250*t+0.3); }
+  if(sOn.quant){ var d = ditherOn ? (Math.random()-0.5)*LSB : 0;
+    v = Math.round((v+d)/LSB)*LSB; }
+  if(bwOn){ lp+=alpha*(v-lp); v=lp; }
+  x[i]=v;
+ }
+ return x;
+}
+
+/* averaging: coherently average avgN independent blocks (real operation) */
+function averagedSpectrum(){
+ var acc=new Float64Array(N/2), disp=null;
+ for(var r=0;r<avgN;r++){
+  var x=makeBlock(true);
+  if(r===0) disp=x;
+  var re=new Float64Array(N), im=new Float64Array(N);
+  for(var i=0;i<N;i++){var w=0.5-0.5*Math.cos(2*Math.PI*i/(N-1));re[i]=x[i]*w;}
+  fft(re,im);
+  for(var b=0;b<N/2;b++) acc[b]+= (re[b]*re[b]+im[b]*im[b]);
+ }
+ for(var b2=0;b2<N/2;b2++) acc[b2]/=avgN;
+ // averaging N spectra reduces the *variance*; averaging N time records reduces
+ // white power by N. We emulate coherent time averaging: white floor ∝ 1/N in power.
+ return {P:acc,x:disp};
+}
+/* coherent time-domain averaging of avgN records (the honest one) */
+function coherentAvg(){
+ var sum=new Float64Array(N), first=null;
+ for(var r=0;r<avgN;r++){
+  var x=makeBlock(true); if(r===0)first=x;
+  for(var i=0;i<N;i++) sum[i]+=x[i];
+ }
+ for(var i2=0;i2<N;i2++) sum[i2]/=avgN;
+ return {avg:sum,first:first};
+}
+function spectrumOf(x){
+ var re=new Float64Array(N), im=new Float64Array(N);
+ for(var i=0;i<N;i++){var w=0.5-0.5*Math.cos(2*Math.PI*i/(N-1));re[i]=x[i]*w;}
+ fft(re,im);
+ var P=new Float64Array(N/2);
+ for(var b=0;b<N/2;b++)P[b]=(re[b]*re[b]+im[b]*im[b])/(N*N)*4;
+ return P;
+}
+
+/* ---------- diagnose mode ---------- */
+var diagMode=false, diagTruth=null, diagBest=null;
+function startDiag(){
+ diagMode=true;
+ SPECIES.forEach(function(s){s.on=false;});
+ var pool=['flicker','mains','quant','drift','johnson'];
+ var pick=pool[(Math.random()*pool.length)|0];
+ SPECIES.forEach(function(s){if(s.k===pick||s.k==='johnson')s.on=true;});
+ var map={flicker:'chop',mains:'notch',quant:'dither',drift:'recal',johnson:'avg'};
+ diagTruth=pick; diagBest=map[pick];
+ WEAPONS.forEach(function(w){wpnOn[w.k]=false;});
+ syncChips();
+ vd.textContent='MYSTERY MIX loaded. Read the spectrum, pick ONE weapon.';
+ vd.style.color='#ffd479';
+}
+function gradeDiag(k){
+ var s=SPECIES.filter(function(s){return s.on&&s.k!==diagTruth;});
+ if(k===diagBest){vd.style.color='#9dff8a';
+  vd.textContent='CORRECT — '+diagTruth.toUpperCase()+' dies to '+k+'. '+
+   WEAPONS.filter(function(w){return w.k===k;})[0].t;}
+ else {vd.style.color='#ff6b6b';
+  vd.textContent='WRONG — the culprit is '+diagTruth.toUpperCase()+'; '+k+' does nothing to it. '+
+   'Try: '+diagBest+'.';}
+}
+
+/* ---------- UI ---------- */
+var chipsEl=document.getElementById('chips'), wpnsEl=document.getElementById('wpns'),
+    rd=document.getElementById('rd'), vd=document.getElementById('verdict');
+SPECIES.forEach(function(s){var d=document.createElement('div');d.className='chip';d.textContent=s.n;
+ d.dataset.k=s.k;d.onclick=function(){s.on=!s.on;syncChips();};chipsEl.appendChild(d);s.el=d;});
+WEAPONS.forEach(function(w){var d=document.createElement('div');d.className='wpn';d.textContent=w.n;
+ d.draggable=true;d.title=w.t;
+ d.ondragstart=function(e){d.classList.add('drag');e.dataTransfer.setData('text/plain',w.k);};
+ d.ondragend=function(){d.classList.remove('drag');};
+ d.onclick=function(){fire(w.k);};
+ wpnsEl.appendChild(d);w.el=d;});
+function fire(k){wpnOn[k]=!wpnOn[k];
+ if(k==='avg'&&wpnOn.avg&&avgN<2)avgN=16; if(k==='avg'&&!wpnOn.avg)avgN=1;
+ if(diagMode&&wpnOn[k])gradeDiag(k); else if(wpnOn[k]){
+   vd.style.color='#ffd479';vd.textContent=WEAPONS.filter(function(w){return w.k===k;})[0].t;}
+ syncChips();}
+function syncChips(){SPECIES.forEach(function(s){s.el.classList.toggle('on',s.on);
+  s.el.style.background=s.on?s.col:'transparent';s.el.style.borderColor=s.col;});
+ WEAPONS.forEach(function(w){w.el.classList.toggle('act',wpnOn[w.k]);});}
+syncChips();
+c.ondragover=function(e){e.preventDefault();};
+c.ondrop=function(e){e.preventDefault();var k=e.dataTransfer.getData('text/plain');if(k)fire(k);};
+document.getElementById('cur').oninput=function(e){curI=+e.target.value;
+ document.getElementById('curv').textContent=curI;};
+document.getElementById('diag').onclick=startDiag;
+document.getElementById('clr').onclick=function(){WEAPONS.forEach(function(w){wpnOn[w.k]=false;});
+ avgN=1;diagMode=false;vd.textContent='';syncChips();};
+addEventListener('wheel',function(e){if(!wpnOn.avg)return;
+ avgN=Math.max(1,Math.min(256,Math.round(avgN*(e.deltaY<0?1.35:1/1.35))));},{passive:true});
+
+/* ---------- render ---------- */
+var lastP=null, floorHist=[];
+function frame(){
+ tIdx+=N;
+ var res=coherentAvg();
+ var shown = wpnOn.avg? res.avg : res.first;
+ var P=spectrumOf(shown);
+ lastP=P;
+ g.fillStyle='#04060a';g.fillRect(0,0,W,H);
+ // grid glow
+ var padL=470, padR=30, top=70, half=(H-top-60)/2;
+ g.strokeStyle='#0a2436';g.lineWidth=1;
+ for(var i=0;i<=8;i++){var y=top+half*i/8;g.beginPath();g.moveTo(padL,y);g.lineTo(W-padR,y);g.stroke();}
+ // --- time trace ---
+ g.save();g.beginPath();g.rect(padL,top,W-padR-padL,half);g.clip();
+ g.strokeStyle='#00e5ff';g.lineWidth=1.4;g.shadowBlur=12;g.shadowColor='#00e5ff';
+ g.beginPath();
+ for(var i2=0;i2<N;i2++){var x=padL+(W-padR-padL)*i2/N, y=top+half/2 - shown[i2]*half*0.26;
+  if(i2===0)g.moveTo(x,y);else g.lineTo(x,y);}
+ g.stroke();g.restore();
+ g.shadowBlur=0;g.fillStyle='#5ad';g.font='11px monospace';
+ g.fillText('TIME  (1024 samples @ 1 kHz)'+(wpnOn.avg?'  ·  averaged N='+avgN:''),padL,top-8);
+
+ // --- spectrum (log-log) ---
+ var sTop=top+half+42, sH=half;
+ g.strokeStyle='#0a2436';
+ for(var d=0;d<5;d++){var yy=sTop+sH*d/5;g.beginPath();g.moveTo(padL,yy);g.lineTo(W-padR,yy);g.stroke();}
+ var fmin=1, fmax=FS/2;
+ function fx(f){return padL+(W-padR-padL)*(Math.log10(Math.max(f,fmin))-Math.log10(fmin))/(Math.log10(fmax)-Math.log10(fmin));}
+ function py(p){var db=10*Math.log10(Math.max(p,1e-12));
+  return sTop+sH*(1-(db+120)/130);}
+ // 1/f corner marker
+ g.strokeStyle='#ff8ad055';g.setLineDash([4,4]);g.beginPath();
+ g.moveTo(fx(10),sTop);g.lineTo(fx(10),sTop+sH);g.stroke();g.setLineDash([]);
+ g.fillStyle='#ff8ad0aa';g.fillText('1/f corner ≈10 Hz',fx(10)+4,sTop+12);
+ // spectrum curve
+ g.strokeStyle='#8affc8';g.lineWidth=1.2;g.shadowBlur=10;g.shadowColor='#8affc8';
+ g.beginPath();var started=false;
+ for(var b=1;b<N/2;b++){var f=b*FS/N;if(f<fmin)continue;
+  var X=fx(f),Y=py(P[b]);if(!started){g.moveTo(X,Y);started=true;}else g.lineTo(X,Y);}
+ g.stroke();g.shadowBlur=0;
+ // signal marker
+ g.strokeStyle='#ffd479';g.setLineDash([2,3]);g.beginPath();
+ g.moveTo(fx(SIG_F),sTop);g.lineTo(fx(SIG_F),sTop+sH);g.stroke();g.setLineDash([]);
+ g.fillStyle='#ffd479';g.fillText('signal 17 Hz',fx(SIG_F)+4,sTop+sH-6);
+ g.fillStyle='#5ad';g.fillText('SPECTRUM  log f (1 → 500 Hz)  ·  dB',padL,sTop-8);
+ // axis labels
+ [1,10,50,100,250,500].forEach(function(f){g.fillStyle='#3a6a8a';
+   g.fillText(f+'',fx(f)-6,sTop+sH+14);});
+
+ // --- metrics ---
+ var sb=Math.round(SIG_F*N/FS);
+ var sigP=P[sb]+P[sb-1]+P[sb+1];
+ var noiseP=0,cnt=0;
+ for(var b3=2;b3<N/2;b3++){if(Math.abs(b3-sb)<=2)continue;noiseP+=P[b3];cnt++;}
+ var snr=10*Math.log10(sigP/Math.max(noiseP,1e-14));
+ // white floor estimate: median of 200..450 Hz bins
+ var hi=[];for(var b4=Math.round(200*N/FS);b4<Math.round(450*N/FS);b4++)hi.push(P[b4]);
+ hi.sort(function(a,b){return a-b;});
+ var floorDb=10*Math.log10(hi[hi.length>>1]||1e-12);
+ // sub-corner 1/f power (1..5 Hz)
+ var lowP=0;for(var b5=Math.round(1*N/FS);b5<=Math.round(5*N/FS);b5++)lowP+=P[b5];
+ var line50=P[Math.round(50*N/FS)]+P[Math.round(50*N/FS)-1]+P[Math.round(50*N/FS)+1];
+
+ rd.textContent=
+  'SNR        '+snr.toFixed(1)+' dB\n'+
+  'white floor'+floorDb.toFixed(1)+' dB   (avg N='+avgN+', expect −'+(10*Math.log10(avgN)).toFixed(1)+' dB)\n'+
+  'sub-corner '+(10*Math.log10(lowP+1e-12)).toFixed(1)+' dB  ← averaging does NOT move this\n'+
+  '50 Hz line '+(10*Math.log10(line50+1e-12)).toFixed(1)+' dB'+(wpnOn.notch?'   [NOTCHED]':'')+'\n'+
+  'shot amp   '+(0.10*Math.sqrt(curI)).toFixed(3)+' = 0.10·√I,  I='+curI;
+
+ // species legend on the spectrum
+ var ly=sTop+18;
+ SPECIES.forEach(function(s){if(!s.on)return;
+  g.fillStyle=s.col;g.fillRect(W-padR-186,ly-8,7,7);
+  g.fillStyle='#9cc';g.font='10px monospace';g.fillText(s.n+' — '+s.spec,W-padR-174,ly);ly+=13;});
+ if(diagMode){g.fillStyle='#ffd47922';g.fillRect(padL,top-24,220,18);
+  g.fillStyle='#ffd479';g.font='11px monospace';g.fillText('◆ DIAGNOSE: identify then strike',padL+6,top-11);}
+ requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>

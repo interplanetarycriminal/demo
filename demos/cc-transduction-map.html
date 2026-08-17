@@ -1,0 +1,350 @@
+<title>Transduction Map</title>
+<style>
+html,body{margin:0;padding:0;background:#04060b;overflow:hidden;height:100%}
+canvas{display:block;position:fixed;inset:0}
+#ui{position:fixed;top:12px;left:12px;z-index:10;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;
+  color:#cfe6ff;background:rgba(6,10,20,.72);border:1px solid rgba(120,190,255,.28);
+  border-radius:9px;padding:10px 12px;max-width:370px;backdrop-filter:blur(6px);
+  box-shadow:0 0 26px rgba(60,140,255,.16)}
+#ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.16em;color:#7fe9ff;text-shadow:0 0 12px #26c6ff}
+#ui .th{color:#9fb6cc;margin:0 0 7px}
+#ui .hint{color:#6f8399;margin:6px 0 0;font-size:10px}
+#ui b{color:#ffd76a;font-weight:600}
+#ui a{color:#7fe9ff;text-decoration:none;border-bottom:1px dotted #3a7fa8}
+#ui .row{display:flex;justify-content:space-between;gap:8px}
+#ui .k{color:#6f8399}
+button{font:10px ui-monospace,monospace;color:#bfe9ff;background:rgba(20,40,70,.8);
+  border:1px solid rgba(120,190,255,.4);border-radius:5px;padding:4px 7px;cursor:pointer;margin:4px 4px 0 0}
+button:hover{background:rgba(40,90,150,.9);box-shadow:0 0 10px rgba(90,190,255,.5)}
+#pun{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);z-index:10;
+  font:11px ui-monospace,monospace;color:#8aa4bd;background:rgba(6,10,20,.6);
+  padding:6px 14px;border-radius:14px;border:1px solid rgba(120,190,255,.16);text-align:center}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>TRANSDUCTION MAP</h1>
+  <div class="th">Every sensor is a crossing between two energy domains; every empty cell is a sensor nobody built yet.</div>
+  <div class="row"><span class="k">crossing</span><span id="rXing">— hover an arc —</span></div>
+  <div class="row"><span class="k">effects</span><span id="rEff" style="text-align:right;max-width:250px">·</span></div>
+  <div class="row"><span class="k">chain</span><span id="rChain">empty</span></div>
+  <div class="row"><span class="k">packets</span><span id="rPk">0</span></div>
+  <div class="row"><span class="k">cells filled</span><span id="rCov">30 / 30 off-diagonal</span></div>
+  <div>
+    <button id="bTrick">GENERATIVE TRICK</button><button id="bChain">CHAIN: OFF</button><button id="bClear">CLEAR</button>
+  </div>
+  <div class="hint">hover arcs to ignite · click domain A then B to launch an energy packet · CHAIN mode: keep clicking to build a cascade (light→heat→motion→charge) · <a href="index.html">← gallery</a></div>
+</div>
+<div id="pun">every cheat code is a cell of this table</div>
+<script>
+"use strict";
+var c=document.getElementById('c'),g=c.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
+ c.width=Math.round(W*DPR);c.height=Math.round(H*DPR);c.style.width=W+'px';c.style.height=H+'px';
+ g.setTransform(DPR,0,0,DPR,0,0);}
+window.addEventListener('resize',resize);resize();
+
+var DOM=[
+ {id:0,name:'MECHANICAL',ab:'MECH',col:'#5cf0a8',icon:'⚙'},
+ {id:1,name:'THERMAL',   ab:'THERM',col:'#ff8a4c',icon:'🔥'},
+ {id:2,name:'ELECTRICAL',ab:'ELEC',col:'#6bd0ff',icon:'⚡'},
+ {id:3,name:'OPTICAL',   ab:'OPT', col:'#ffe066',icon:'☀'},
+ {id:4,name:'CHEMICAL',  ab:'CHEM',col:'#c48cff',icon:'⚗'},
+ {id:5,name:'MAGNETIC',  ab:'MAG', col:'#ff5fa8',icon:'🧲'}
+];
+// FULL 6x6 atlas. E[from][to] = array of real effects. Diagonal = storage.
+var E=[[],[],[],[],[],[]];
+function set(f,t,a){E[f][t]=a;}
+// MECH -> *
+set(0,0,['spring / flywheel storage','elastic strain energy']);
+set(0,1,['friction heating','Gough–Joule elastomer heating','adiabatic gas compression']);
+set(0,2,['piezoelectric effect','triboelectric charging','electromagnetic induction']);
+set(0,3,['triboluminescence','photoelasticity (stress birefringence)','sonoluminescence']);
+set(0,4,['mechanochemistry / ball milling','mechanoluminescent bond scission','sonochemistry']);
+set(0,5,['Villari effect (inverse magnetostriction)','Matteucci effect','magneto-mechanical Wiedemann']);
+// THERM -> *
+set(1,0,['thermal expansion / bimetal strip','shape-memory alloy actuation','Stirling engine']);
+set(1,1,['thermal mass / phase-change storage','latent heat of fusion']);
+set(1,2,['Seebeck effect (thermocouple)','pyroelectric effect','thermionic emission']);
+set(1,3,['blackbody / incandescence','thermoluminescence','IR thermal emission']);
+set(1,4,['endothermic reaction drive','thermal cracking / pyrolysis','calcination']);
+set(1,5,['Curie-point demagnetization','thermomagnetic (Nernst–Ettingshausen)','pyromagnetic Tesla cycle']);
+// ELEC -> *
+set(2,0,['electrostatic / MEMS comb actuator','Lorentz force motor','inverse piezoelectric']);
+set(2,1,['Joule heating (I²R)','Peltier cooling/heating','dielectric loss heating']);
+set(2,2,['capacitor / battery / supercapacitor','inductor field storage']);
+set(2,3,['LED electroluminescence','electro-optic Pockels/Kerr','cathodoluminescence']);
+set(2,4,['electrolysis','electroplating','anodization']);
+set(2,5,['Ampère law / electromagnet','current-driven spin torque','solenoid field']);
+// OPT -> *
+set(3,0,['radiation pressure / optical tweezers','photostriction','opto-acoustic (photophone)']);
+set(3,1,['optical absorption heating','bolometer heating','laser ablation']);
+set(3,2,['photodiode / photovoltaic effect','photoconductivity','photoemission (photoelectric)']);
+set(3,3,['phosphor persistence','fluorescence / stimulated emission','photon-echo storage']);
+set(3,4,['photosynthesis','photolithography resist chemistry','photocatalysis (TiO₂)']);
+set(3,5,['inverse Faraday effect','all-optical magnetic switching','photomagnetic Prussian blue']);
+// CHEM -> *
+set(4,0,['muscle actin–myosin contraction','combustion engine expansion','osmotic pressure swelling']);
+set(4,1,['exothermic reaction / combustion','hand-warmer crystallization','thermite']);
+set(4,2,['Nernst galvanic cell / battery','fuel cell','ion-selective electrode (pH)']);
+set(4,3,['chemiluminescence (luminol)','bioluminescence (luciferase)','flame emission']);
+set(4,4,['fuel / ATP chemical storage','hydrogen carrier']);
+set(4,5,['chemically-tuned magnetism','spin-crossover complexes','magnetochemical Fe redox']);
+// MAG -> *
+set(5,0,['magnetostriction (Joule effect)','magnetorheological fluid stiffening','Maxwell magnetic force']);
+set(5,1,['magnetocaloric effect','hysteresis/eddy-current heating','magnetic induction hyperthermia']);
+set(5,2,['Faraday induction','Hall effect','GMR / magnetoresistance']);
+set(5,3,['Faraday rotation','Kerr magneto-optic effect','Zeeman splitting']);
+set(5,4,['radical-pair magnetochemistry','NMR / spin chemistry','magnetic-field enzyme modulation']);
+set(5,5,['permanent magnet remanence','magnetic domain / tape storage']);
+// coverage audit
+var COV=0,MISS=[];
+for(var i=0;i<6;i++)for(var j=0;j<6;j++){if(i===j)continue;if(E[i][j]&&E[i][j].length)COV++;else MISS.push(i+'>'+j);}
+document.getElementById('rCov').textContent=COV+' / 30 off-diagonal'+(MISS.length?(' MISS:'+MISS.join(',')):'');
+window.__ATLAS={E:E,COV:COV,MISS:MISS};
+
+// ---- geometry
+var cx=0,cy=0,R=0,NR=0,nodes=[];
+function layout(){cx=W*0.5;cy=H*0.52;R=Math.min(W,H)*0.315;NR=Math.max(24,Math.min(46,R*0.16));
+ nodes=DOM.map(function(d,i){var a=-Math.PI/2+i*Math.PI*2/6;return{x:cx+Math.cos(a)*R,y:cy+Math.sin(a)*R,a:a,d:d};});}
+layout();window.addEventListener('resize',layout);
+
+// arc geometry: quadratic through a control point bowed toward center
+function arcPts(i,j){
+ var A=nodes[i],B=nodes[j];
+ var mx=(A.x+B.x)/2,my=(A.y+B.y)/2;
+ var dx=mx-cx,dy=my-cy,L=Math.hypot(dx,dy)||1;
+ // bow: direction of travel decides which side (so i->j and j->i are distinct arcs)
+ var px=-(B.y-A.y),py=(B.x-A.x),pl=Math.hypot(px,py)||1;px/=pl;py/=pl;
+ var bow=R*0.30;
+ var kx=mx-dx/L*R*0.26+px*bow*0.42, ky=my-dy/L*R*0.26+py*bow*0.42;
+ return{ax:A.x,ay:A.y,bx:B.x,by:B.y,kx:kx,ky:ky};
+}
+function qp(P,t){var u=1-t;return{x:u*u*P.ax+2*u*t*P.kx+t*t*P.bx,y:u*u*P.ay+2*u*t*P.ky+t*t*P.by};}
+function qd(P,t){var u=1-t;return{x:2*u*(P.kx-P.ax)+2*t*(P.bx-P.kx),y:2*u*(P.ky-P.ay)+2*t*(P.by-P.ky)};}
+
+var pairs=[];for(var i=0;i<6;i++)for(var j=0;j<6;j++)if(i!==j)pairs.push({f:i,t:j,heat:0,use:0});
+var pairIdx={};pairs.forEach(function(p,k){pairIdx[p.f+'_'+p.t]=k;});
+
+var mouse={x:-999,y:-999},hoverPair=-1,hoverNode=-1,sel=-1,chainMode=false,chain=[],trick=-1,trickT=0;
+var packets=[],pulses=[],toast=null,tm=0;
+
+function nearestArc(mx,my){
+ var best=-1,bd=16;
+ for(var k=0;k<pairs.length;k++){var P=arcPts(pairs[k].f,pairs[k].t);
+  for(var t=0.12;t<=0.88;t+=0.06){var q=qp(P,t);var d=Math.hypot(q.x-mx,q.y-my);if(d<bd){bd=d;best=k;}}}
+ return best;
+}
+function nearestNode(mx,my){for(var i=0;i<6;i++){if(Math.hypot(nodes[i].x-mx,nodes[i].y-my)<NR+6)return i;}return -1;}
+
+function onMove(e){var r=c.getBoundingClientRect();mouse.x=e.clientX-r.left;mouse.y=e.clientY-r.top;
+ hoverNode=nearestNode(mouse.x,mouse.y);hoverPair=hoverNode>=0?-1:nearestArc(mouse.x,mouse.y);
+ c.style.cursor=(hoverNode>=0||hoverPair>=0)?'pointer':'default';updateReadout();}
+c.addEventListener('mousemove',onMove);
+c.addEventListener('touchmove',function(e){if(e.touches[0]){onMove(e.touches[0]);e.preventDefault();}},{passive:false});
+
+function updateReadout(){
+ var k=hoverPair;
+ if(hoverNode>=0){var d=DOM[hoverNode];
+  document.getElementById('rXing').textContent=d.name+' (storage)';
+  document.getElementById('rEff').textContent=E[hoverNode][hoverNode].join(' · ');return;}
+ if(k<0){document.getElementById('rXing').textContent='— hover an arc —';document.getElementById('rEff').textContent='·';return;}
+ var p=pairs[k];
+ document.getElementById('rXing').textContent=DOM[p.f].ab+' → '+DOM[p.t].ab;
+ document.getElementById('rEff').textContent=E[p.f][p.t].join(' · ');
+}
+
+function launch(f,t){
+ var k=pairIdx[f+'_'+t];if(k===undefined)return;
+ pairs[k].use++;pairs[k].heat=1;
+ packets.push({f:f,t:t,tt:0,sp:0.55+Math.random()*0.12,queue:[]});
+ say(DOM[f].ab+' → '+DOM[t].ab+' :: '+E[f][t][0]);
+}
+function launchChain(seq){
+ if(seq.length<2)return;
+ var hops=[];for(var i=0;i<seq.length-1;i++){hops.push([seq[i],seq[i+1]]);
+  var k=pairIdx[seq[i]+'_'+seq[i+1]];if(k!==undefined){pairs[k].use++;pairs[k].heat=1;}}
+ packets.push({f:hops[0][0],t:hops[0][1],tt:0,sp:0.62,queue:hops.slice(1)});
+ say('CASCADE '+seq.map(function(s){return DOM[s].ab;}).join(' → '));
+}
+function say(s){toast={s:s,t:1.0};}
+
+c.addEventListener('click',function(e){
+ var r=c.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
+ var n=nearestNode(mx,my);
+ if(n<0){var k=nearestArc(mx,my);if(k>=0){pairs[k].heat=1;launch(pairs[k].f,pairs[k].t);}return;}
+ pulses.push({x:nodes[n].x,y:nodes[n].y,r:0,col:DOM[n].col});
+ if(chainMode){
+  if(chain.length&&chain[chain.length-1]===n)return;
+  chain.push(n);
+  document.getElementById('rChain').textContent=chain.map(function(s){return DOM[s].ab;}).join('→');
+  if(chain.length>=2&&chain.length%1===0){/* keep building */}
+  return;
+ }
+ if(sel<0){sel=n;say('packet born in '+DOM[n].name+' — pick a destination');}
+ else if(sel===n){sel=-1;say('storage: '+E[n][n][0]);}
+ else{launch(sel,n);sel=-1;}
+});
+
+document.getElementById('bChain').onclick=function(){
+ if(chainMode&&chain.length>=2){launchChain(chain.slice());}
+ chainMode=!chainMode;chain=[];sel=-1;
+ this.textContent='CHAIN: '+(chainMode?'ON (click nodes, press again to RUN)':'OFF');
+ document.getElementById('rChain').textContent=chainMode?'building…':'empty';
+};
+document.getElementById('bClear').onclick=function(){chain=[];sel=-1;packets.length=0;trick=-1;
+ document.getElementById('rChain').textContent='empty';say('cleared');};
+document.getElementById('bTrick').onclick=function(){
+ var min=1e9,cands=[];
+ pairs.forEach(function(p,k){if(p.use<min){min=p.use;cands=[k];}else if(p.use===min)cands.push(k);});
+ trick=cands[(Math.random()*cands.length)|0];trickT=1;
+ var p=pairs[trick];
+ say('WHAT PROBLEM IS '+DOM[p.f].ab+'→'+DOM[p.t].ab+' NOBODY HAS AIMED AT? ('+E[p.f][p.t][0]+')');
+};
+window.addEventListener('keydown',function(e){if(e.key==='t')document.getElementById('bTrick').click();
+ if(e.key==='c')document.getElementById('bChain').click();});
+
+// seed some life
+launchChain([3,1,0,2]);
+
+function hexa(col,a){ // #rrggbb + alpha
+ var r=parseInt(col.substr(1,2),16),gg=parseInt(col.substr(3,2),16),b=parseInt(col.substr(5,2),16);
+ return 'rgba('+r+','+gg+','+b+','+a+')';}
+function mix(c1,c2,t){
+ var f=function(c,i){return parseInt(c.substr(1+i*2,2),16);};
+ var r=Math.round(f(c1,0)+(f(c2,0)-f(c1,0))*t),gg=Math.round(f(c1,1)+(f(c2,1)-f(c1,1))*t),b=Math.round(f(c1,2)+(f(c2,2)-f(c1,2))*t);
+ return 'rgb('+r+','+gg+','+b+')';}
+
+var last=performance.now();
+function frame(now){
+ var dt=Math.min(0.05,(now-last)/1000);last=now;tm+=dt;
+ g.setTransform(DPR,0,0,DPR,0,0);
+ g.fillStyle='rgba(4,6,11,0.30)';g.fillRect(0,0,W,H);
+ g.globalCompositeOperation='lighter';
+
+ // faint radial grid
+ g.strokeStyle='rgba(60,110,170,0.06)';g.lineWidth=1;
+ for(var rr=0.35;rr<=1.25;rr+=0.3){g.beginPath();g.arc(cx,cy,R*rr,0,7);g.stroke();}
+
+ // arcs
+ for(var k=0;k<pairs.length;k++){
+  var p=pairs[k],P=arcPts(p.f,p.t);
+  p.heat*=Math.pow(0.12,dt);
+  var hov=(k===hoverPair),tk=(k===trick);
+  var base=0.055+Math.min(0.20,p.use*0.035);
+  var a=base+p.heat*0.75+(hov?0.55:0)+(tk?0.35*(0.6+0.4*Math.sin(tm*7)):0);
+  var col=mix(DOM[p.f].col,DOM[p.t].col,0.5);
+  g.lineWidth=(hov?3.2:1.1)+p.heat*2.6+(tk?2.2:0);
+  var m=col.match(/\d+/g);
+  g.strokeStyle='rgba('+m[0]+','+m[1]+','+m[2]+','+Math.min(1,a)+')';
+  if(tk)g.strokeStyle='rgba(255,255,255,'+Math.min(1,a)+')';
+  g.shadowBlur=(hov||tk||p.heat>0.1)?18:0;g.shadowColor=g.strokeStyle;
+  g.beginPath();g.moveTo(P.ax,P.ay);g.quadraticCurveTo(P.kx,P.ky,P.bx,P.by);g.stroke();
+  g.shadowBlur=0;
+  // arrowhead near destination
+  if(hov||tk||p.heat>0.05){
+   var q=qp(P,0.86),d=qd(P,0.86),ang=Math.atan2(d.y,d.x),s=7+p.heat*5;
+   g.fillStyle=g.strokeStyle;g.beginPath();
+   g.moveTo(q.x+Math.cos(ang)*s,q.y+Math.sin(ang)*s);
+   g.lineTo(q.x+Math.cos(ang+2.5)*s,q.y+Math.sin(ang+2.5)*s);
+   g.lineTo(q.x+Math.cos(ang-2.5)*s,q.y+Math.sin(ang-2.5)*s);g.fill();
+  }
+ }
+
+ // hovered arc label
+ if(hoverPair>=0){
+  var hp=pairs[hoverPair],HP=arcPts(hp.f,hp.t),q2=qp(HP,0.5);
+  g.globalCompositeOperation='source-over';
+  var txt=DOM[hp.f].ab+' → '+DOM[hp.t].ab, eff=E[hp.f][hp.t];
+  g.font='bold 12px ui-monospace,monospace';var wmax=g.measureText(txt).width;
+  g.font='11px ui-monospace,monospace';
+  eff.forEach(function(s){wmax=Math.max(wmax,g.measureText('· '+s).width);});
+  var bw=wmax+18,bh=22+eff.length*15,bx=Math.max(8,Math.min(W-bw-8,q2.x-bw/2)),by=Math.max(8,q2.y-bh-14);
+  g.fillStyle='rgba(4,8,16,0.92)';g.strokeStyle='rgba(140,200,255,0.45)';g.lineWidth=1;
+  g.beginPath();g.roundRect(bx,by,bw,bh,7);g.fill();g.stroke();
+  g.font='bold 12px ui-monospace,monospace';g.fillStyle='#fff';g.fillText(txt,bx+9,by+16);
+  g.font='11px ui-monospace,monospace';
+  eff.forEach(function(s,ii){g.fillStyle=ii===0?'#ffd76a':'#9fc4e0';g.fillText('· '+s,bx+9,by+32+ii*15);});
+  g.globalCompositeOperation='lighter';
+ }
+
+ // packets
+ for(var pi=packets.length-1;pi>=0;pi--){
+  var pk=packets[pi];pk.tt+=dt*pk.sp;
+  var PP=arcPts(pk.f,pk.t);
+  if(pk.tt>=1){
+   pulses.push({x:nodes[pk.t].x,y:nodes[pk.t].y,r:0,col:DOM[pk.t].col});
+   var kk=pairIdx[pk.f+'_'+pk.t];if(kk!==undefined)pairs[kk].heat=1;
+   if(pk.queue.length){var h=pk.queue.shift();pk.f=h[0];pk.t=h[1];pk.tt=0;
+    say(DOM[pk.f].ab+' → '+DOM[pk.t].ab+' :: '+E[pk.f][pk.t][0]);}
+   else{packets.splice(pi,1);}
+   continue;
+  }
+  var q3=qp(PP,pk.tt),col2=mix(DOM[pk.f].col,DOM[pk.t].col,pk.tt);
+  var mm=col2.match(/\d+/g);
+  for(var b=0;b<4;b++){var tb=Math.max(0,pk.tt-b*0.03),qb=qp(PP,tb);
+   g.fillStyle='rgba('+mm[0]+','+mm[1]+','+mm[2]+','+(0.5/(b+1))+')';
+   g.beginPath();g.arc(qb.x,qb.y,10-b*1.8,0,7);g.fill();}
+  g.shadowBlur=26;g.shadowColor=col2;g.fillStyle='#fff';
+  g.beginPath();g.arc(q3.x,q3.y,4.5,0,7);g.fill();g.shadowBlur=0;
+ }
+
+ // pulses
+ for(var pu=pulses.length-1;pu>=0;pu--){var P2=pulses[pu];P2.r+=dt*220;
+  var al=1-P2.r/(NR*3.4);if(al<=0){pulses.splice(pu,1);continue;}
+  var mc=P2.col;g.strokeStyle=hexa(mc,al*0.7);g.lineWidth=2.5*al+0.5;
+  g.beginPath();g.arc(P2.x,P2.y,P2.r,0,7);g.stroke();}
+
+ // nodes
+ for(var n=0;n<6;n++){
+  var N=nodes[n],d=N.d,on=(hoverNode===n),issel=(sel===n),inch=chain.indexOf(n)>=0;
+  var pul=0.5+0.5*Math.sin(tm*1.7+n);
+  g.shadowBlur=on||issel?34:16;g.shadowColor=d.col;
+  var grd=g.createRadialGradient(N.x,N.y,2,N.x,N.y,NR);
+  grd.addColorStop(0,hexa(d.col,0.85));grd.addColorStop(0.55,hexa(d.col,0.20));grd.addColorStop(1,hexa(d.col,0));
+  g.fillStyle=grd;g.beginPath();g.arc(N.x,N.y,NR,0,7);g.fill();g.shadowBlur=0;
+  g.strokeStyle=hexa(d.col,on||issel?0.95:0.45+0.15*pul);g.lineWidth=issel?3:1.6;
+  g.beginPath();g.arc(N.x,N.y,NR*0.72,0,7);g.stroke();
+  if(inch){g.strokeStyle='rgba(255,255,255,0.8)';g.lineWidth=1.2;
+   g.beginPath();g.arc(N.x,N.y,NR*0.88,0,7);g.stroke();}
+  g.globalCompositeOperation='source-over';
+  g.textAlign='center';g.font=Math.round(NR*0.62)+'px serif';g.fillStyle='#fff';
+  g.fillText(d.icon,N.x,N.y+NR*0.20);
+  g.font='bold 11px ui-monospace,monospace';g.fillStyle=d.col;
+  var lo=N.y+NR+14,li=N.y-NR-8;
+  g.fillText(d.ab,N.x,N.a>0.1?lo:(N.a<-1.6&&N.a>-1.8?li:(Math.sin(N.a)<0?li:lo)));
+  g.globalCompositeOperation='lighter';
+  g.textAlign='left';
+ }
+
+ // center hub text
+ g.globalCompositeOperation='source-over';
+ g.textAlign='center';
+ g.font='bold 13px ui-monospace,monospace';g.fillStyle='rgba(160,200,240,0.55)';
+ g.fillText('6 × 6 = 30 CROSSINGS',cx,cy-6);
+ g.font='10px ui-monospace,monospace';g.fillStyle='rgba(120,160,200,0.42)';
+ g.fillText('+ 6 STORAGE DIAGONALS',cx,cy+10);
+
+ // toast
+ if(toast){toast.t-=dt*0.42;
+  if(toast.t<=0)toast=null;else{
+   g.font='bold 14px ui-monospace,monospace';
+   var tw=g.measureText(toast.s).width;
+   var al2=Math.min(1,toast.t*1.7);
+   g.fillStyle='rgba(6,12,22,'+(0.82*al2)+')';
+   g.beginPath();g.roundRect(cx-tw/2-14,H-84,tw+28,30,15);g.fill();
+   g.strokeStyle='rgba(140,220,255,'+(0.5*al2)+')';g.lineWidth=1;g.stroke();
+   g.fillStyle='rgba(230,245,255,'+al2+')';g.fillText(toast.s,cx,H-64);
+  }}
+ g.textAlign='left';
+ document.getElementById('rPk').textContent=packets.length+' in flight';
+ requestAnimationFrame(frame);
+}
+if(!CanvasRenderingContext2D.prototype.roundRect){
+ CanvasRenderingContext2D.prototype.roundRect=function(x,y,w,h,r){
+  this.beginPath();this.moveTo(x+r,y);this.arcTo(x+w,y,x+w,y+h,r);this.arcTo(x+w,y+h,x,y+h,r);
+  this.arcTo(x,y+h,x,y,r);this.arcTo(x,y,x+w,y,r);this.closePath();return this;};}
+requestAnimationFrame(frame);
+</script>
+</body>
