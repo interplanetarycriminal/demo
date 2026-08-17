@@ -1,0 +1,388 @@
+<title>Two Points Speedometer</title>
+<style>
+html,body{margin:0;padding:0;height:100%;background:#04060a;overflow:hidden}
+canvas{display:block;position:fixed;top:0;left:0}
+#ui{position:fixed;top:0;left:0;padding:10px 12px;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;
+ color:#cfe6ff;background:rgba(4,6,10,.66);border-right:1px solid #0f83;border-bottom:1px solid #0f83;
+ max-width:352px;z-index:10;text-shadow:0 0 6px #0f86;backdrop-filter:blur(3px)}
+#ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.13em;color:#6fffd0;text-shadow:0 0 12px #0fca}
+.th{color:#9ab;margin:0 0 7px;font-style:italic}
+.hint{color:#4fd6a6;margin:6px 0}
+.rd{color:#ffd479;text-shadow:0 0 8px #fa06}
+.big{font-size:15px;color:#8ff0ff;text-shadow:0 0 12px #0ffa}
+a{color:#f7a;text-decoration:none;border-bottom:1px dotted #f7a5}
+.tab{display:inline-block;padding:2px 7px;margin:1px 3px 1px 0;border:1px solid #0f85;color:#6fd;cursor:pointer;border-radius:2px}
+.tab.on{background:#0f83;color:#dff;box-shadow:0 0 10px #0f86}
+.btn{display:inline-block;margin-top:5px;padding:3px 9px;border:1px solid #ffd479;color:#ffd479;cursor:pointer;border-radius:2px}
+.btn:hover{background:#ffd47922}
+.pun{color:#f9a;margin-top:7px;border-top:1px solid #f9a3;padding-top:5px}
+</style>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>CHEAT CODES #18 + #48 · TIME</h1>
+  <div class="th">Two points make a speedometer; three localize — and simultaneity is manufactured: two sensors with a shared clock are a different instrument than two sensors alone.</div>
+  <div>
+    <span class="tab on" data-a="0">1 · SPEED TRAP</span>
+    <span class="tab" data-a="1">2 · TDOA</span>
+    <span class="tab" data-a="2">3 · SYNC</span>
+  </div>
+  <div class="hint" id="hint"></div>
+  <div class="big" id="big">--</div>
+  <div class="rd" id="rd1">--</div>
+  <div class="rd" id="rd2">--</div>
+  <div id="btnwrap"></div>
+  <div class="pun">time-sync is the cheapest instrument upgrade there is.</div>
+  <div><a href="index.html">← gallery</a></div>
+</div>
+<script>
+"use strict";
+var cv=document.getElementById('c'),cx=cv.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,devicePixelRatio||1);W=innerWidth;H=innerHeight;
+ cv.width=W*DPR|0;cv.height=H*DPR|0;cv.style.width=W+'px';cv.style.height=H+'px';cx.setTransform(DPR,0,0,DPR,0,0);}
+addEventListener('resize',resize);resize();
+
+var C_SOUND=343, T=0, act=0;
+var hints=["traffic crosses two IR beams 1 m apart · press SPACE to launch one now",
+           "CLICK anywhere to clap · drag the mics · hyperbolae intersect on your clap",
+           "CLICK to clap with UNSYNC'D clocks · press S to run the sync handshake"];
+function setAct(i){act=i;document.getElementById('hint').textContent=hints[i];
+ document.getElementById('btnwrap').innerHTML=(i===2?'<span class="btn" id="syn">▶ RUN SYNC HANDSHAKE</span>':'');
+ if(i===2){document.getElementById('syn').onclick=startSync;offsetOn=true;}
+ else{offsetOn=false;}
+ events=[];clap=null;syncT=-1;}
+var tabs=document.querySelectorAll('.tab');
+for(var i=0;i<tabs.length;i++)(function(n){tabs[n].onclick=function(){setAct(n)}})(i);
+
+/* ================= ACT 1 : SPEED TRAP ================= */
+var PX_PER_M=0;              // set each frame
+var BEAM_D=1.0;              // metres between beams
+var traffic=[],plates=[];
+var kinds=[
+ {n:'CAR',    len:4.2, vmin:6,  vmax:16, col:'#5cd8ff', h:26},
+ {n:'VAN',    len:5.6, vmin:5,  vmax:12, col:'#c9a0ff', h:32},
+ {n:'CYCLIST',len:1.8, vmin:3,  vmax:8,  col:'#ffd479', h:16},
+ {n:'WALKER', len:0.5, vmin:1.0,vmax:1.8,col:'#7ffcd8', h:20},
+ {n:'CAT',    len:0.45,vmin:1.5,vmax:5,  col:'#ff9ec9', h:11}
+];
+function spawn(){
+  var k=kinds[(Math.random()*kinds.length)|0];
+  var dir=Math.random()<0.5?1:-1;
+  var v=k.vmin+Math.random()*(k.vmax-k.vmin);
+  traffic.push({k:k,dir:dir,v:v,len:k.len,x:dir>0?-8:8,tA:null,tB:null,oA:null,oB:null,done:false,id:(Math.random()*9000+1000)|0});
+}
+addEventListener('keydown',function(e){
+  if(e.key==='1')setAct(0);if(e.key==='2')setAct(1);if(e.key==='3')setAct(2);
+  if(e.key===' '&&act===0){spawn();e.preventDefault();}
+  if((e.key==='s'||e.key==='S')&&act===2)startSync();
+});
+var spawnT=0;
+function drawAct1(dt){
+  var roadY=H*0.55, roadH=Math.min(150,H*0.20);
+  PX_PER_M=W/22;
+  var beamAx=W*0.36, beamBx=beamAx+BEAM_D*PX_PER_M;
+  // road
+  cx.save();cx.fillStyle='rgba(20,26,36,.85)';cx.fillRect(0,roadY-roadH/2,W,roadH);
+  cx.strokeStyle='#2a3a52';cx.lineWidth=1;cx.beginPath();
+  cx.moveTo(0,roadY-roadH/2);cx.lineTo(W,roadY-roadH/2);
+  cx.moveTo(0,roadY+roadH/2);cx.lineTo(W,roadY+roadH/2);cx.stroke();
+  cx.setLineDash([22,20]);cx.strokeStyle='#3b4d66';cx.beginPath();
+  cx.moveTo(0,roadY);cx.lineTo(W,roadY);cx.stroke();cx.setLineDash([]);cx.restore();
+
+  spawnT-=dt;if(spawnT<=0){spawn();spawnT=1.1+Math.random()*1.9;}
+
+  // beams
+  function beam(x,name,broken){
+    var col=broken?'#ff5f7e':'#ff4d4d';
+    cx.save();cx.strokeStyle=col;cx.lineWidth=broken?3.4:1.6;cx.shadowColor=col;cx.shadowBlur=broken?26:12;
+    cx.globalAlpha=broken?1:0.75;
+    cx.beginPath();cx.moveTo(x,roadY-roadH/2-16);cx.lineTo(x,roadY+roadH/2+16);cx.stroke();cx.restore();
+    cx.save();cx.fillStyle=col;cx.shadowColor=col;cx.shadowBlur=14;
+    cx.fillRect(x-5,roadY-roadH/2-24,10,10);cx.fillRect(x-5,roadY+roadH/2+14,10,10);cx.restore();
+    cx.fillStyle='#ffb0b0';cx.font='10px ui-monospace,monospace';cx.fillText(name,x-4,roadY-roadH/2-30);
+  }
+  // update traffic + detect beam events
+  var brA=false,brB=false;
+  for(var i=traffic.length-1;i>=0;i--){
+    var o=traffic[i];
+    var px0=o.x*PX_PER_M+W*0.5;        // nose position px
+    o.x+=o.v*o.dir*dt;
+    var nose=o.x*PX_PER_M+W*0.5;
+    var tail=nose-o.dir*o.len*PX_PER_M;
+    var lo=Math.min(nose,tail),hi=Math.max(nose,tail);
+    if(lo<beamAx&&hi>beamAx)brA=true;
+    if(lo<beamBx&&hi>beamBx)brB=true;
+    // event timestamps (nose crossing / tail clearing) in seconds
+    function cross(bx,slot,slotOff){
+      var noseWasBefore=(o.dir>0? px0<bx : px0>bx);
+      var noseNowAfter =(o.dir>0? nose>=bx : nose<=bx);
+      if(o[slot]===null&&noseWasBefore&&noseNowAfter)o[slot]=T;
+      if(o[slotOff]===null&&o[slot]!==null){
+        var tailPast=(o.dir>0? tail>bx : tail<bx);
+        if(tailPast)o[slotOff]=T;
+      }
+    }
+    cross(beamAx,'tA','oA');cross(beamBx,'tB','oB');
+    // draw body
+    var yh=o.k.h, yy=roadY-yh/2+(o.k.n==='CAT'?18:0);
+    cx.save();cx.fillStyle=o.k.col;cx.shadowColor=o.k.col;cx.shadowBlur=16;cx.globalAlpha=.9;
+    cx.fillRect(Math.min(nose,tail),yy,Math.abs(nose-tail),yh);cx.restore();
+    cx.fillStyle='#04060a';cx.font='9px ui-monospace,monospace';
+    if(Math.abs(nose-tail)>34)cx.fillText(o.k.n,Math.min(nose,tail)+4,yy+yh-7);
+    // compute stamp once both beams + occlusion known
+    if(!o.done&&o.tA!==null&&o.tB!==null&&o.oA!==null){
+      var dtAB=o.tB-o.tA;                       // signed
+      var speed=BEAM_D/Math.abs(dtAB);          // m/s  (d/Δt)
+      var occ=o.oA-o.tA;                        // beam-A occlusion duration
+      var length=speed*occ;                     // length = occlusion time × speed
+      o.done=true;
+      plates.push({t:T,id:o.id,kind:o.k.n,col:o.k.col,dir:dtAB>0?'→ EAST':'← WEST',
+        speed:speed,kmh:speed*3.6,len:length,trueLen:o.len,trueV:o.v,dt:Math.abs(dtAB),occ:occ});
+      if(plates.length>7)plates.shift();
+    }
+    if(o.x>13||o.x<-13)traffic.splice(i,1);
+  }
+  beam(beamAx,'BEAM A',brA);beam(beamBx,'BEAM B',brB);
+  // 1 m ruler
+  cx.save();cx.strokeStyle='#7ffcd8';cx.lineWidth=1;cx.shadowColor='#7ffcd8';cx.shadowBlur=8;
+  cx.beginPath();cx.moveTo(beamAx,roadY+roadH/2+42);cx.lineTo(beamBx,roadY+roadH/2+42);
+  cx.moveTo(beamAx,roadY+roadH/2+37);cx.lineTo(beamAx,roadY+roadH/2+47);
+  cx.moveTo(beamBx,roadY+roadH/2+37);cx.lineTo(beamBx,roadY+roadH/2+47);cx.stroke();cx.restore();
+  cx.fillStyle='#7ffcd8';cx.font='10px ui-monospace,monospace';
+  cx.fillText('d = 1.000 m  (the whole instrument)',beamAx,roadY+roadH/2+62);
+
+  // radar-gun readouts
+  var px=W*0.60,py=H*0.10,pw=W*0.36;
+  cx.save();cx.fillStyle='rgba(8,12,20,.72)';cx.strokeStyle='#0f84';
+  cx.fillRect(px,py,pw,26+plates.length*46);cx.strokeRect(px,py,pw,26+plates.length*46);cx.restore();
+  cx.fillStyle='#6fd';cx.font='10px ui-monospace,monospace';
+  cx.fillText('RADAR LOG   speed = d/Δt · length = v·t_occlusion',px+8,py+15);
+  for(var p=plates.length-1;p>=0;p--){
+    var q=plates[p],ry=py+26+(plates.length-1-p)*46, fresh=Math.max(0,1-(T-q.t)*1.4);
+    cx.save();cx.globalAlpha=0.35+0.65*Math.min(1,(T-q.t)*2+0.4);
+    cx.fillStyle=q.col;cx.shadowColor=q.col;cx.shadowBlur=8+26*fresh;
+    cx.font='bold 15px ui-monospace,monospace';
+    cx.fillText((q.kmh).toFixed(1)+' km/h',px+10,ry+18);
+    cx.font='10px ui-monospace,monospace';cx.globalAlpha=0.85;
+    cx.fillText('#'+q.id+' '+q.kind+' '+q.dir+'   Δt='+(q.dt*1000).toFixed(1)+' ms',px+130,ry+10);
+    cx.fillText('len '+q.len.toFixed(2)+' m (true '+q.trueLen.toFixed(2)+')  occl '+(q.occ*1000).toFixed(0)+' ms',px+130,ry+24);
+    cx.restore();
+    cx.strokeStyle='#1e2c40';cx.beginPath();cx.moveTo(px+6,ry+34);cx.lineTo(px+pw-6,ry+34);cx.stroke();
+  }
+  var lastP=plates[plates.length-1];
+  document.getElementById('big').textContent=lastP?('v = 1.000 m / '+(lastP.dt*1000).toFixed(2)+' ms = '+lastP.speed.toFixed(2)+' m/s'):'waiting for traffic…';
+  document.getElementById('rd1').textContent=lastP?('length = '+lastP.speed.toFixed(2)+' m/s × '+(lastP.occ*1000).toFixed(0)+' ms = '+lastP.len.toFixed(2)+' m  ['+lastP.kind+']'):'';
+  document.getElementById('rd2').textContent='two $2 photointerruptors + a shared clock = a radar gun';
+}
+
+/* ================= ACT 2/3 : TDOA ================= */
+var mics=[],micDrag=-1,clap=null,events=[],offsetOn=false,offsets=[0,0,0],syncT=-1,syncStage='';
+function initMics(){
+  var cxr=W*0.52,cyr=H*0.55,R=Math.min(W,H)*0.26;
+  mics=[{x:cxr+R*Math.cos(-1.6),y:cyr+R*Math.sin(-1.6),n:'M0'},
+        {x:cxr+R*Math.cos(0.5),y:cyr+R*Math.sin(0.5),n:'M1'},
+        {x:cxr+R*Math.cos(2.6),y:cyr+R*Math.sin(2.6),n:'M2'}];
+}
+initMics();
+addEventListener('resize',function(){initMics()});
+var PX_M=90; // px per metre in the room view
+
+cv.addEventListener('pointerdown',function(e){
+  if(act===0)return;
+  for(var i=0;i<3;i++){var d=Math.hypot(e.clientX-mics[i].x,e.clientY-mics[i].y);if(d<26){micDrag=i;return;}}
+  doClap(e.clientX,e.clientY);
+});
+addEventListener('pointermove',function(e){if(micDrag>=0){mics[micDrag].x=e.clientX;mics[micDrag].y=e.clientY;if(clap)doClap(clap.x,clap.y);}});
+addEventListener('pointerup',function(){micDrag=-1});
+
+function doClap(x,y){
+  clap={x:x,y:y,t:T};
+  if(act===2&&offsetOn){offsets=[0,(Math.random()*2-1)*0.0022,(Math.random()*2-1)*0.0022];}
+  else offsets=[0,0,0];
+  events=[];
+  for(var i=0;i<3;i++){
+    var dm=Math.hypot(x-mics[i].x,y-mics[i].y)/PX_M;
+    events.push({i:i,tof:dm/C_SOUND,stamp:dm/C_SOUND+offsets[i],d:dm,heard:false});
+  }
+  solve();
+}
+// TDOA solve: minimise sum (|p-mi| - |p-m0| - c*(t_i - t_0))^2 by Nelder-Mead-ish grid+gradient
+var solved=null,resid=0;
+function tdoaCost(px,py,st){
+  var c=0;
+  var r0=Math.hypot(px-mics[0].x,py-mics[0].y)/PX_M;
+  for(var i=1;i<3;i++){
+    var ri=Math.hypot(px-mics[i].x,py-mics[i].y)/PX_M;
+    var pred=ri-r0, meas=C_SOUND*(st[i]-st[0]);
+    c+=(pred-meas)*(pred-meas);
+  }
+  return c;
+}
+function solve(){
+  if(!events.length)return;
+  var st=[events[0].stamp,events[1].stamp,events[2].stamp];
+  // coarse grid then refine
+  var best=null,bc=1e18;
+  for(var gx=0;gx<=40;gx++)for(var gy=0;gy<=30;gy++){
+    var X=gx/40*W,Y=gy/30*H,c=tdoaCost(X,Y,st);
+    if(c<bc){bc=c;best=[X,Y];}
+  }
+  var step=Math.max(W,H)/40;
+  for(var it=0;it<220;it++){
+    var improved=false;
+    var dirs=[[1,0],[-1,0],[0,1],[0,-1],[.7,.7],[-.7,.7],[.7,-.7],[-.7,-.7]];
+    for(var d=0;d<8;d++){
+      var X2=best[0]+dirs[d][0]*step,Y2=best[1]+dirs[d][1]*step;
+      var c2=tdoaCost(X2,Y2,st);
+      if(c2<bc){bc=c2;best=[X2,Y2];improved=true;}
+    }
+    if(!improved)step*=0.62;
+    if(step<1e-6)break;
+  }
+  solved=best;resid=Math.sqrt(bc);
+}
+function startSync(){syncT=0;syncStage='ping';}
+
+function drawTDOA(dt,unsyncMode){
+  // room
+  cx.save();cx.strokeStyle='#1e3550';cx.lineWidth=2;cx.strokeRect(W*0.16,H*0.16,W*0.72,H*0.72);cx.restore();
+  cx.fillStyle='#3d5e80';cx.font='10px ui-monospace,monospace';
+  cx.fillText('room · sound = 343 m/s · scale '+PX_M+' px = 1 m',W*0.16+8,H*0.16-8);
+  // scale bar
+  cx.save();cx.strokeStyle='#7ffcd8';cx.lineWidth=1;cx.beginPath();
+  cx.moveTo(W*0.16+8,H*0.88-14);cx.lineTo(W*0.16+8+PX_M,H*0.88-14);cx.stroke();cx.restore();
+  cx.fillStyle='#7ffcd8';cx.fillText('1 m',W*0.16+8+PX_M/2-9,H*0.88-19);
+
+  // sync handshake animation (act 3)
+  if(syncT>=0){
+    syncT+=dt;
+    var pingP=Math.min(1,syncT/0.7), pongP=Math.max(0,Math.min(1,(syncT-0.8)/0.7));
+    var a=mics[0],b=mics[1];
+    if(pingP<1){var X=a.x+(b.x-a.x)*pingP,Y=a.y+(b.y-a.y)*pingP;
+      cx.save();cx.fillStyle='#ffd479';cx.shadowColor='#fa0';cx.shadowBlur=20;cx.beginPath();cx.arc(X,Y,7,0,6.283);cx.fill();cx.restore();
+      cx.fillStyle='#ffd479';cx.fillText('PING  t1',X+10,Y-10);}
+    else if(pongP>0&&pongP<1){var X2=b.x+(a.x-b.x)*pongP,Y2=b.y+(a.y-b.y)*pongP;
+      cx.save();cx.fillStyle='#7ffcd8';cx.shadowColor='#7ffcd8';cx.shadowBlur=20;cx.beginPath();cx.arc(X2,Y2,7,0,6.283);cx.fill();cx.restore();
+      cx.fillStyle='#7ffcd8';cx.fillText('PONG  t2,t3',X2+10,Y2-10);}
+    if(syncT>1.7){offsetOn=false;offsets=[0,0,0];syncT=-1;if(clap)doClap(clap.x,clap.y);}
+    // math box
+    var mx=W*0.06,my=H*0.06;
+    cx.save();cx.fillStyle='rgba(8,12,20,.8)';cx.strokeStyle='#ffd4794d';
+    cx.fillRect(mx,my,300,86);cx.strokeRect(mx,my,300,86);cx.restore();
+    cx.fillStyle='#ffd479';cx.font='10px ui-monospace,monospace';
+    cx.fillText('SYNC HANDSHAKE (SNTP / PTP in one line)',mx+8,my+15);
+    cx.fillStyle='#cfe6ff';
+    cx.fillText('RTT   = (t3 − t0) − (t2 − t1)',mx+8,my+33);
+    cx.fillText('offset= ((t1 − t0) + (t2 − t3)) / 2',mx+8,my+49);
+    cx.fillText('halve the round trip → shared clock',mx+8,my+65);
+    cx.fillText('cost: 2 packets. gain: a real instrument.',mx+8,my+79);
+  }
+
+  // wavefronts
+  if(clap){
+    var age=T-clap.t;
+    var rPix=age*C_SOUND*PX_M;
+    if(age<3.2){
+      for(var w=0;w<3;w++){
+        var rr=rPix-w*10;if(rr<=0)continue;
+        cx.save();cx.strokeStyle='rgba(120,230,255,'+(0.5*Math.exp(-age*0.9)*(1-w*0.28)).toFixed(3)+')';
+        cx.lineWidth=w?1:2.4;cx.shadowColor='#5cd8ff';cx.shadowBlur=14;
+        cx.beginPath();cx.arc(clap.x,clap.y,rr,0,6.283);cx.stroke();cx.restore();
+      }
+    }
+    // mic hit flashes
+    for(var i=0;i<3;i++){
+      var e=events[i];
+      if(age>=e.tof)e.heard=true;
+      if(e.heard){
+        var since=age-e.tof;
+        if(since<0.5){cx.save();cx.globalAlpha=1-since/0.5;cx.strokeStyle='#ffd479';cx.lineWidth=3;
+          cx.shadowColor='#fa0';cx.shadowBlur=22;cx.beginPath();cx.arc(mics[i].x,mics[i].y,14+since*70,0,6.283);cx.stroke();cx.restore();}
+      }
+    }
+    // hyperbolae from measured time differences (branch of |p-mi| - |p-m0| = c·Δt)
+    var st=[events[0].stamp,events[1].stamp,events[2].stamp];
+    for(var k=1;k<3;k++){
+      var meas=C_SOUND*(st[k]-st[0]);
+      cx.save();cx.strokeStyle=k===1?'rgba(255,158,201,.9)':'rgba(201,160,255,.9)';
+      cx.lineWidth=1.8;cx.shadowColor=k===1?'#ff9ec9':'#c9a0ff';cx.shadowBlur=10;
+      // march-squares-lite: sample the plane, draw contour of f=0 by scanning columns
+      cx.beginPath();var started=false;
+      for(var X=0;X<=W;X+=3){
+        var prev=null,hit=null;
+        for(var Y=0;Y<=H;Y+=4){
+          var f=Math.hypot(X-mics[k].x,Y-mics[k].y)/PX_M-Math.hypot(X-mics[0].x,Y-mics[0].y)/PX_M-meas;
+          if(prev!==null&&((prev<0&&f>=0)||(prev>0&&f<=0))){hit=Y-4*(f/(f-prev));break;}
+          prev=f;
+        }
+        if(hit!==null){started?cx.lineTo(X,hit):cx.moveTo(X,hit);started=true;}
+      }
+      cx.stroke();
+      // second sweep by rows to complete steep branches
+      cx.beginPath();started=false;
+      for(var Y2=0;Y2<=H;Y2+=3){
+        var prev2=null,hit2=null;
+        for(var X2=0;X2<=W;X2+=4){
+          var f2=Math.hypot(X2-mics[k].x,Y2-mics[k].y)/PX_M-Math.hypot(X2-mics[0].x,Y2-mics[0].y)/PX_M-meas;
+          if(prev2!==null&&((prev2<0&&f2>=0)||(prev2>0&&f2<=0))){hit2=X2-4*(f2/(f2-prev2));break;}
+          prev2=f2;
+        }
+        if(hit2!==null){started?cx.lineTo(hit2,Y2):cx.moveTo(hit2,Y2);started=true;}
+      }
+      cx.stroke();cx.restore();
+    }
+    // solution
+    if(solved){
+      var errM=Math.hypot(solved[0]-clap.x,solved[1]-clap.y)/PX_M;
+      cx.save();cx.strokeStyle=errM<0.05?'#7ffcd8':'#ff5f7e';cx.lineWidth=2;
+      cx.shadowColor=errM<0.05?'#7ffcd8':'#ff5f7e';cx.shadowBlur=20;
+      cx.beginPath();cx.arc(solved[0],solved[1],13,0,6.283);cx.stroke();
+      cx.beginPath();cx.moveTo(solved[0]-19,solved[1]);cx.lineTo(solved[0]+19,solved[1]);
+      cx.moveTo(solved[0],solved[1]-19);cx.lineTo(solved[0],solved[1]+19);cx.stroke();cx.restore();
+      cx.fillStyle=errM<0.05?'#7ffcd8':'#ff9db1';cx.font='11px ui-monospace,monospace';
+      cx.fillText('TDOA SOLVE  err '+(errM*100).toFixed(1)+' cm',solved[0]+22,solved[1]-16);
+    }
+    // clap marker
+    cx.save();cx.fillStyle='#fff';cx.shadowColor='#fff';cx.shadowBlur=18;
+    cx.beginPath();cx.arc(clap.x,clap.y,4,0,6.283);cx.fill();cx.restore();
+    cx.fillStyle='#cfe6ff';cx.font='10px ui-monospace,monospace';cx.fillText('CLAP (truth)',clap.x+8,clap.y+16);
+  }
+  // mics
+  for(var m=0;m<3;m++){
+    var mm=mics[m];
+    cx.save();cx.fillStyle='#5cd8ff';cx.shadowColor='#5cd8ff';cx.shadowBlur=18;
+    cx.beginPath();cx.arc(mm.x,mm.y,9,0,6.283);cx.fill();cx.restore();
+    cx.fillStyle='#04060a';cx.font='bold 9px ui-monospace,monospace';cx.fillText(m,mm.x-3,mm.y+3);
+    cx.fillStyle='#8fe6ff';cx.font='10px ui-monospace,monospace';
+    var lbl=mm.n+(events[m]?'  t='+(events[m].stamp*1000).toFixed(3)+' ms':'  (drag me)');
+    cx.fillText(lbl,mm.x+14,mm.y+4);
+    if(unsyncMode&&offsets[m])
+      {cx.fillStyle='#ff9db1';cx.fillText('clock skew '+(offsets[m]*1000).toFixed(2)+' ms',mm.x+14,mm.y+18);}
+  }
+  // readouts
+  if(events.length){
+    var d10=(events[1].stamp-events[0].stamp)*1000, d20=(events[2].stamp-events[0].stamp)*1000;
+    document.getElementById('big').textContent='Δt10 = '+d10.toFixed(3)+' ms → Δd = '+(C_SOUND*d10/1000*100).toFixed(1)+' cm';
+    document.getElementById('rd1').textContent='Δt20 = '+d20.toFixed(3)+' ms → Δd = '+(C_SOUND*d20/1000*100).toFixed(1)+' cm · residual '+(resid*100).toFixed(2)+' cm';
+    var errM2=solved?Math.hypot(solved[0]-clap.x,solved[1]-clap.y)/PX_M:0;
+    document.getElementById('rd2').textContent=(unsyncMode&&offsetOn?'UNSYNC\'D: ':'SYNCED: ')+'position error '+(errM2*100).toFixed(1)+' cm';
+  }else{
+    document.getElementById('big').textContent='click in the room to clap';
+    document.getElementById('rd1').textContent='three mics + one shared clock = a position sensor';
+    document.getElementById('rd2').textContent=unsyncMode?'clocks are OFFSET — watch the hyperbolae miss':'';
+  }
+}
+
+setAct(0);
+var last=performance.now();
+function frame(now){
+  var dt=Math.min(0.05,(now-last)/1000);last=now;T+=dt;
+  cx.fillStyle='rgba(4,6,10,.30)';cx.fillRect(0,0,W,H);
+  cx.save();cx.strokeStyle='rgba(60,160,200,.05)';cx.beginPath();
+  for(var x=0;x<W;x+=58){cx.moveTo(x,0);cx.lineTo(x,H);}
+  for(var y=0;y<H;y+=58){cx.moveTo(0,y);cx.lineTo(W,y);}cx.stroke();cx.restore();
+  if(act===0)drawAct1(dt);else drawTDOA(dt,act===2);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
