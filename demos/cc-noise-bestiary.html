@@ -68,7 +68,25 @@ function PinkGen(){var b=[0,0,0,0,0,0,0];
   b[3]=0.86650*b[3]+w*0.3104856;b[4]=0.55000*b[4]+w*0.5329522;b[5]=-0.7616*b[5]-w*0.0168980;
   var o=b[0]+b[1]+b[2]+b[3]+b[4]+b[5]+b[6]+w*0.5362;b[6]=w*0.115926;return o*3.2;};
 }
-var pink=new PinkGen(), driftState=0, phase=0, tIdx=0;
+var pink=new PinkGen(), driftState=0, tIdx=0;
+/* MODEL (this is the physics that makes the demo honest):
+   Coherent averaging repeats the SAME measurement N times.
+   - the signal repeats identically   -> survives
+   - white noise is independent       -> power /N, amplitude /√N
+   - flicker & drift are SLOWER than one record, so they are COMMON-MODE
+     across the N repeats -> they survive untouched. That is why averaging
+     does nothing below the 1/f corner.
+   So flickerRec/driftRec are drawn ONCE PER FRAME and reused by all N repeats,
+   while the white draws are fresh in every repeat. */
+var flickerRec=new Float64Array(N), driftRec=new Float64Array(N);
+function refreshSlow(){
+ for(var i=0;i<N;i++){
+  flickerRec[i]=pink.next();
+  driftState+=gauss()*0.004-driftState*0.0006;
+  driftRec[i]=driftState;
+ }
+}
+for(var wu=0;wu<8;wu++) refreshSlow();   // warm up the 1/f filter
 
 var SPECIES=[
  {k:'johnson',n:'Johnson',col:'#7fd9ff',src:'thermal kTB in R',spec:'white',on:true,amp:1.0},
@@ -100,17 +118,15 @@ function makeBlock(applyWeapons){
  var shotAmp=0.10*Math.sqrt(curI);          // √I granularity — real shot scaling
  var lp=0, alpha=0.12;                       // bandwidth-narrowing 1-pole
  for(var i=0;i<N;i++){
-  var t=(tIdx+i)/FS;
+  var t=i/FS;   // SAME time base every repeat: the measurement is repeated, not continued
   var v=SIG_A*Math.sin(2*Math.PI*SIG_F*t);
   if(sOn.johnson) v+=0.22*gauss();
   if(sOn.shot)    v+=shotAmp*gauss();
-  var f=pink.next();
   if(sOn.flicker){
     // chopping: modulate signal to fc, so 1/f lands out-of-band, then demod
-    if(chopOn) v+=f*0.30*0.12; else v+=f*0.30;
+    v += flickerRec[i]*0.30*(chopOn?0.12:1);
   }
-  if(sOn.drift){ driftState+=(gauss()*0.004-driftState*0.0006);
-    v+= recalOn? driftState*0.05 : driftState*4.0; }
+  if(sOn.drift){ v+= driftRec[i]*(recalOn?0.05:4.0); }
   if(sOn.mains && !notchOn){ v+=0.45*Math.sin(2*Math.PI*50*t+0.7)
      +0.16*Math.sin(2*Math.PI*150*t+1.9)+0.07*Math.sin(2*Math.PI*250*t+0.3); }
   if(sOn.quant){ var d = ditherOn ? (Math.random()-0.5)*LSB : 0;
@@ -121,23 +137,7 @@ function makeBlock(applyWeapons){
  return x;
 }
 
-/* averaging: coherently average avgN independent blocks (real operation) */
-function averagedSpectrum(){
- var acc=new Float64Array(N/2), disp=null;
- for(var r=0;r<avgN;r++){
-  var x=makeBlock(true);
-  if(r===0) disp=x;
-  var re=new Float64Array(N), im=new Float64Array(N);
-  for(var i=0;i<N;i++){var w=0.5-0.5*Math.cos(2*Math.PI*i/(N-1));re[i]=x[i]*w;}
-  fft(re,im);
-  for(var b=0;b<N/2;b++) acc[b]+= (re[b]*re[b]+im[b]*im[b]);
- }
- for(var b2=0;b2<N/2;b2++) acc[b2]/=avgN;
- // averaging N spectra reduces the *variance*; averaging N time records reduces
- // white power by N. We emulate coherent time averaging: white floor ∝ 1/N in power.
- return {P:acc,x:disp};
-}
-/* coherent time-domain averaging of avgN records (the honest one) */
+/* coherent time-domain averaging of avgN repeated records */
 function coherentAvg(){
  var sum=new Float64Array(N), first=null;
  for(var r=0;r<avgN;r++){
@@ -214,7 +214,7 @@ addEventListener('wheel',function(e){if(!wpnOn.avg)return;
 /* ---------- render ---------- */
 var lastP=null, floorHist=[];
 function frame(){
- tIdx+=N;
+ refreshSlow();          // the slow world evolves once per frame, not per repeat
  var res=coherentAvg();
  var shown = wpnOn.avg? res.avg : res.first;
  var P=spectrumOf(shown);
