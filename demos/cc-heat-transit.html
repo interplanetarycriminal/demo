@@ -1,0 +1,371 @@
+<meta charset="utf-8">
+<title>Cheat Codes #27+#39 — Heat In Transit</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;background:#04060b;overflow:hidden}
+  canvas{display:block;position:fixed;inset:0}
+  #ui{position:fixed;top:12px;left:12px;z-index:10;max-width:440px;
+      font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#bfe1ff;
+      background:rgba(5,9,16,.74);border:1px solid rgba(120,180,255,.28);
+      border-radius:8px;padding:10px 12px;backdrop-filter:blur(6px);
+      box-shadow:0 0 26px rgba(0,120,220,.18)}
+  #ui h1{margin:0 0 5px;font-size:12.5px;letter-spacing:.12em;color:#9ce4ff;
+      text-shadow:0 0 12px rgba(90,220,255,.65)}
+  .cc{color:#ffd27a;text-shadow:0 0 10px rgba(255,180,60,.5);margin:0 0 7px}
+  .hint{color:#7d90a8;margin:6px 0 0}
+  kbd{background:rgba(120,220,255,.14);border:1px solid rgba(120,220,255,.32);
+      border-radius:3px;padding:0 4px;color:#cfefff}
+  #rd{margin-top:7px;border-top:1px solid rgba(120,180,255,.2);padding-top:6px;color:#a6e6c9;white-space:pre}
+  a{color:#7fe0ff;text-decoration:none;border-bottom:1px dotted rgba(127,224,255,.5)}
+  a:hover{color:#fff}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>CHEAT CODES #27 + #39 · HEAT IN TRANSIT</h1>
+  <p class="cc">Heat walks, and its gait is structure — diffusion is a stopwatch: t ≈ x²/D, double the distance, quadruple the time.</p>
+  <div class="hint"><kbd>1</kbd>brick <kbd>2</kbd>cavity <kbd>3</kbd>hidden beam <kbd>4</kbd>dry soil <kbd>5</kbd>wet soil ·
+    drag the two <b>probes</b> · click left face = pulse · <kbd>R</kbd> relaunch · <kbd>[</kbd><kbd>]</kbd> speed · <kbd>space</kbd> pause</div>
+  <div id="rd"></div>
+  <div class="hint"><a href="index.html">← gallery</a></div>
+</div>
+<script>
+"use strict";
+var cv=document.getElementById('c'),ctx=cv.getContext('2d'),rdEl=document.getElementById('rd');
+var W=0,H=0,DPR=1;
+
+/* ================= grid & materials ================= */
+var NX=150,NY=34,DX=1.4545e-3;             // metres per cell
+var Lx=NX*DX, Ly=NY*DX;
+var N=NX*NY;
+var T=new Float64Array(N), T2=new Float64Array(N);
+var Kc=new Float64Array(N), RC=new Float64Array(N), MAT=new Uint8Array(N);
+var TAMB=20, STEP=45, THRESH=TAMB+0.10*STEP;   // 10% of the applied step
+var ERFC10=1.16309;                             // erfc(z)=0.1  ->  t = x^2/(4 z^2 D)
+var KFIT=4*ERFC10*ERFC10;                       // 5.4111  ->  t = x^2/(KFIT*D)
+
+var MATS=[
+ {n:'BRICK',    k:0.72,  rc:1.38e6, col:[168,104, 70]},
+ {n:'FOAM/AIR', k:0.033, rc:2.90e4, col:[ 92,120,150]},
+ {n:'CONCRETE', k:2.90,  rc:2.20e6, col:[132,146,160]},
+ {n:'DRY SOIL', k:0.256, rc:1.28e6, col:[150,120, 78]},
+ {n:'WET SOIL', k:1.160, rc:2.90e6, col:[ 74,124,142]}
+];
+for(var m=0;m<MATS.length;m++)MATS[m].a=MATS[m].k/MATS[m].rc;
+
+var PRESETS=[
+ {name:'UNIFORM BRICK', base:0, ref:0, tale:'no structure — pure t ∝ x². the textbook parabola.',
+  build:function(i,j){return 0;}},
+ {name:'INSULATED CAVITY', base:0, ref:0, tale:'the wave STALLS at the low-k gap — a wall tells you it is hollow.',
+  build:function(i,j){return (i>=44&&i<58)?1:0;}},
+ {name:'HIDDEN BEAM (thermal bridge)', base:0, ref:0, tale:'a parallel fast path — the buried beam arrives first, off-axis.',
+  build:function(i,j){return (j>=12&&j<22)?2:0;}},
+ {name:'DRY SOIL', base:3, ref:3, tale:'D = 2.0e−7 m²/s',
+  build:function(i,j){return 3;}},
+ {name:'WET SOIL', base:4, ref:4, tale:'moisture DOUBLES D — two thermometers = a soil-moisture sensor.',
+  build:function(i,j){return 4;}}
+];
+var preset=0, DT=1, simT=0, running=true, paused=false, speedMul=1;
+var arrival=new Float32Array(NX), arrRow=-1, lastFit=null, fitStore={};
+
+function idx(i,j){return j*NX+i;}
+function buildPreset(p){
+  preset=p;var P=PRESETS[p];
+  for(var j=0;j<NY;j++)for(var i=0;i<NX;i++){var q=idx(i,j),mm=P.build(i,j);MAT[q]=mm;Kc[q]=MATS[mm].k;RC[q]=MATS[mm].rc;}
+  // stability: dt <= rc / sum(face conductances)/dx^2 , safety 0.4
+  var worst=1e30;
+  for(var j2=0;j2<NY;j2++)for(var i2=0;i2<NX;i2++){
+    var q2=idx(i2,j2),s=0;
+    s+=kf(q2,idx(Math.min(NX-1,i2+1),j2));s+=kf(q2,idx(Math.max(0,i2-1),j2));
+    s+=kf(q2,idx(i2,Math.min(NY-1,j2+1)));s+=kf(q2,idx(i2,Math.max(0,j2-1)));
+    var lim=RC[q2]*DX*DX/Math.max(1e-12,s);if(lim<worst)worst=lim;
+  }
+  DT=0.4*worst;
+  relaunch();
+}
+function kf(a,b){var ka=Kc[a],kb=Kc[b];return 2*ka*kb/(ka+kb);}
+function relaunch(){
+  T.fill(TAMB);for(var j=0;j<NY;j++)T[idx(0,j)]=TAMB+STEP;
+  simT=0;arrival.fill(-1);arrRow=Math.round(probes[0].j);lastFit=null;running=true;
+}
+
+/* ================= the explicit finite-difference core ================= */
+function stepSim(){
+  var inv=1/(DX*DX);
+  for(var j=0;j<NY;j++){
+    var jm=(j>0?j-1:0), jp=(j<NY-1?j+1:NY-1);
+    for(var i=0;i<NX;i++){
+      var q=idx(i,j);
+      if(i===0){T2[q]=TAMB+STEP;continue;}           // driven face (Dirichlet step)
+      var im=i-1, ip=(i<NX-1?i+1:NX-1);
+      var qE=idx(ip,j),qWs=idx(im,j),qN=idx(i,jp),qS=idx(i,jm);
+      var kE=kf(q,qE),kWv=kf(q,qWs),kN=kf(q,qN),kS=kf(q,qS);
+      var flux=(kE*(T[qE]-T[q])+kWv*(T[qWs]-T[q])+kN*(T[qN]-T[q])+kS*(T[qS]-T[q]))*inv;
+      T2[q]=T[q]+DT*flux/RC[q];
+    }
+  }
+  var tmp=T;T=T2;T2=tmp;simT+=DT;
+  // stopwatch: first crossing of the 10% level, column by column, along probe A's row
+  var r=arrRow;if(r<0)r=0;if(r>NY-1)r=NY-1;
+  for(var i3=1;i3<NX;i3++){if(arrival[i3]<0&&T[idx(i3,r)]>=THRESH)arrival[i3]=simT;}
+  if(arrival[Math.min(NX-1,118)]>0)running=false;
+}
+
+/* ================= fit t = x^2/(KFIT*D) ================= */
+var FIT_I0=8, FIT_I1=72;
+function doFit(){
+  var sxt=0,sxx=0,n=0,ts=[],xs=[];
+  for(var i=FIT_I0;i<=FIT_I1;i++){if(arrival[i]>0){var x=i*DX,x2=x*x;sxt+=x2*arrival[i];sxx+=x2*x2;xs.push(x2);ts.push(arrival[i]);n++;}}
+  if(n<8)return null;
+  var s=sxt/sxx, mean=0;
+  for(var a=0;a<n;a++)mean+=ts[a];mean/=n;
+  var ssr=0,sst=0;
+  for(var b=0;b<n;b++){var pr=s*xs[b];ssr+=(ts[b]-pr)*(ts[b]-pr);sst+=(ts[b]-mean)*(ts[b]-mean);}
+  return {s:s,D:1/(KFIT*s),R2:1-ssr/Math.max(1e-12,sst),n:n};
+}
+
+/* ================= probes ================= */
+var probes=[{i:40,j:17,col:'#7ef7c8',hist:[],name:'A'},{i:88,j:17,col:'#ff9ad5',hist:[],name:'B'}];
+var drag=-1;
+
+/* ================= layout ================= */
+var slab={},trace={},para={},off=document.createElement('canvas'),octx;
+off.width=NX;off.height=NY;octx=off.getContext('2d');
+var imgd=octx.createImageData(NX,NY);
+function layout(){
+  var leftW=Math.min(W*0.60,W-330);
+  slab.x=Math.max(24,W*0.03);slab.w=leftW-slab.x-14;
+  slab.h=slab.w*(Ly/Lx);
+  slab.y=Math.max(150,H*0.30);
+  if(slab.y+slab.h>H-120){slab.h=Math.max(90,H-120-slab.y);slab.w=slab.h*(Lx/Ly);}
+  var rx=slab.x+slab.w+34;
+  trace.x=rx;trace.w=Math.max(180,W-rx-24);trace.y=Math.max(150,H*0.16);trace.h=Math.min(200,H*0.26);
+  para.x=rx;para.w=trace.w;para.y=trace.y+trace.h+42;para.h=Math.min(230,H-para.y-40);
+}
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;
+  cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);cv.style.width=W+'px';cv.style.height=H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);layout();}
+addEventListener('resize',resize);
+
+/* ================= colour ramp ================= */
+function ramp(v,o,p){ // v in 0..1
+  var r,g,b;
+  if(v<0.5){var t=v/0.5;r=10+120*t;g=14+30*t;b=40+150*t;}
+  else if(v<0.8){var t2=(v-0.5)/0.3;r=130+125*t2;g=44+70*t2;b=190-120*t2;}
+  else{var t3=(v-0.8)/0.2;r=255;g=114+141*t3;b=70+180*t3;}
+  p[o]=r|0;p[o+1]=g|0;p[o+2]=b|0;p[o+3]=255;
+}
+
+/* ================= draw ================= */
+function drawSlab(){
+  var d=imgd.data;
+  for(var j=0;j<NY;j++)for(var i=0;i<NX;i++){
+    var q=idx(i,j),v=(T[q]-TAMB)/STEP;v=v<0?0:(v>1?1:v);
+    ramp(Math.pow(v,0.62),(j*NX+i)*4,d);
+  }
+  octx.putImageData(imgd,0,0);
+  ctx.save();
+  ctx.shadowColor='rgba(255,120,40,.45)';ctx.shadowBlur=26;
+  ctx.imageSmoothingEnabled=true;
+  ctx.drawImage(off,slab.x,slab.y,slab.w,slab.h);
+  ctx.shadowBlur=0;
+  // material outlines
+  ctx.lineWidth=1.4;ctx.setLineDash([5,4]);
+  var seen={};
+  for(var j2=0;j2<NY;j2++)for(var i2=0;i2<NX;i2++){var mm=MAT[idx(i2,j2)];if(mm!==PRESETS[preset].base)seen[mm]=1;}
+  for(var mk in seen){
+    var mi=+mk,c=MATS[mi].col;
+    var x0=NX,x1=-1,y0=NY,y1=-1;
+    for(var j3=0;j3<NY;j3++)for(var i3=0;i3<NX;i3++)if(MAT[idx(i3,j3)]===mi){
+      if(i3<x0)x0=i3;if(i3>x1)x1=i3;if(j3<y0)y0=j3;if(j3>y1)y1=j3;}
+    ctx.strokeStyle='rgba('+c[0]+','+c[1]+','+c[2]+',.95)';
+    ctx.shadowColor=ctx.strokeStyle;ctx.shadowBlur=10;
+    var px=slab.x+slab.w*x0/NX, py=slab.y+slab.h*y0/NY;
+    ctx.strokeRect(px,py,slab.w*(x1-x0+1)/NX,slab.h*(y1-y0+1)/NY);
+    ctx.shadowBlur=0;ctx.setLineDash([]);
+    ctx.fillStyle=ctx.strokeStyle;ctx.font='700 10px ui-monospace,monospace';ctx.textAlign='left';
+    ctx.fillText(MATS[mi].n+'  k='+MATS[mi].k+'  D='+MATS[mi].a.toExponential(1),px+4,py-5);
+    ctx.setLineDash([5,4]);
+  }
+  ctx.setLineDash([]);
+  ctx.strokeStyle='rgba(140,190,240,.35)';ctx.lineWidth=1;ctx.strokeRect(slab.x,slab.y,slab.w,slab.h);
+  // driven face
+  ctx.fillStyle='rgba(255,190,80,.85)';ctx.fillRect(slab.x-7,slab.y,6,slab.h);
+  ctx.save();ctx.translate(slab.x-18,slab.y+slab.h/2);ctx.rotate(-Math.PI/2);ctx.textAlign='center';
+  ctx.fillStyle='#ffbe50';ctx.font='700 10px ui-monospace,monospace';ctx.fillText('+45 K STEP',0,0);ctx.restore();
+  // glowing front contour (10% level)
+  ctx.strokeStyle='rgba(255,255,255,.85)';ctx.lineWidth=1.6;ctx.shadowColor='#fff';ctx.shadowBlur=12;
+  ctx.beginPath();var first=true;
+  for(var j4=0;j4<NY;j4++){
+    var fi=-1;
+    for(var i4=NX-1;i4>=0;i4--){if(T[idx(i4,j4)]>=THRESH){fi=i4;break;}}
+    if(fi<0)continue;
+    var fx=slab.x+slab.w*(fi+0.5)/NX, fy=slab.y+slab.h*(j4+0.5)/NY;
+    if(first){ctx.moveTo(fx,fy);first=false;}else ctx.lineTo(fx,fy);
+  }
+  ctx.stroke();ctx.shadowBlur=0;
+  ctx.fillStyle='rgba(255,255,255,.6)';ctx.font='9px ui-monospace,monospace';ctx.textAlign='left';
+  ctx.fillText('← 10% front (the walking wave)',slab.x+6,slab.y+slab.h+14);
+  // probes
+  for(var p2=0;p2<2;p2++){
+    var P=probes[p2],cx=slab.x+slab.w*(P.i+0.5)/NX,cy=slab.y+slab.h*(P.j+0.5)/NY;
+    ctx.strokeStyle=P.col;ctx.fillStyle='rgba(4,8,14,.85)';ctx.lineWidth=2;
+    ctx.shadowColor=P.col;ctx.shadowBlur=14;
+    ctx.beginPath();ctx.arc(cx,cy,8,0,6.2832);ctx.fill();ctx.stroke();
+    ctx.beginPath();ctx.moveTo(cx,cy-14);ctx.lineTo(cx,cy-24);ctx.stroke();ctx.shadowBlur=0;
+    ctx.fillStyle=P.col;ctx.font='700 10px ui-monospace,monospace';ctx.textAlign='center';
+    ctx.fillText(P.name,cx,cy-28);
+    ctx.font='9px ui-monospace,monospace';
+    ctx.fillText(T[idx(P.i,P.j)].toFixed(1)+'°C',cx,cy+20);
+  }
+  ctx.restore();
+}
+function panel(x,y,w,h,title,col){
+  ctx.fillStyle='rgba(6,11,19,.7)';ctx.strokeStyle='rgba(120,180,255,.2)';ctx.lineWidth=1;
+  ctx.beginPath();ctx.rect(x,y,w,h);ctx.fill();ctx.stroke();
+  ctx.fillStyle=col||'rgba(156,228,255,.9)';ctx.font='700 10px ui-monospace,monospace';ctx.textAlign='left';
+  ctx.fillText(title,x+8,y-6);
+}
+function drawTraces(){
+  panel(trace.x,trace.y,trace.w,trace.h,'PROBE ARRIVAL CURVES   T(t)');
+  var maxT=Math.max(1,simT);
+  ctx.save();
+  ctx.strokeStyle='rgba(255,255,255,.22)';ctx.setLineDash([3,4]);
+  var ty=trace.y+trace.h*(1-(THRESH-TAMB)/STEP);
+  ctx.beginPath();ctx.moveTo(trace.x,ty);ctx.lineTo(trace.x+trace.w,ty);ctx.stroke();ctx.setLineDash([]);
+  ctx.fillStyle='rgba(255,255,255,.45)';ctx.font='9px ui-monospace,monospace';
+  ctx.fillText('10% level',trace.x+4,ty-3);
+  for(var p=0;p<2;p++){
+    var P=probes[p];if(P.hist.length<2)continue;
+    ctx.strokeStyle=P.col;ctx.lineWidth=1.8;ctx.shadowColor=P.col;ctx.shadowBlur=8;
+    ctx.beginPath();
+    for(var a=0;a<P.hist.length;a++){
+      var hx=trace.x+trace.w*(P.hist[a][0]/maxT);
+      var hy=trace.y+trace.h*(1-Math.max(0,Math.min(1,(P.hist[a][1]-TAMB)/STEP)));
+      if(a===0)ctx.moveTo(hx,hy);else ctx.lineTo(hx,hy);
+    }
+    ctx.stroke();ctx.shadowBlur=0;
+  }
+  ctx.fillStyle='rgba(150,180,205,.6)';ctx.font='9px ui-monospace,monospace';ctx.textAlign='right';
+  ctx.fillText('t = '+fmtT(simT),trace.x+trace.w-6,trace.y+trace.h-5);
+  ctx.restore();
+}
+function drawPara(){
+  panel(para.x,para.y,para.w,para.h,'DISTANCE  vs  ARRIVAL TIME    t = x²/(5.41 D)','rgba(255,210,122,.95)');
+  var maxx=FIT_I1*DX*1.08, maxt=1;
+  for(var i=FIT_I0;i<=FIT_I1;i++)if(arrival[i]>maxt)maxt=arrival[i];
+  maxt*=1.1;
+  var f=doFit();if(f)lastFit=f;
+  ctx.save();
+  ctx.strokeStyle='rgba(120,180,255,.12)';ctx.lineWidth=1;
+  for(var g=1;g<4;g++){var gy=para.y+para.h*g/4;ctx.beginPath();ctx.moveTo(para.x,gy);ctx.lineTo(para.x+para.w,gy);ctx.stroke();}
+  // fitted parabola
+  if(lastFit){
+    ctx.strokeStyle='rgba(255,210,122,.9)';ctx.lineWidth=1.6;ctx.shadowColor='rgba(255,190,60,.8)';ctx.shadowBlur=10;
+    ctx.beginPath();
+    for(var s2=0;s2<=60;s2++){var xx=maxx*s2/60,tt=lastFit.s*xx*xx;
+      var sx=para.x+para.w*xx/maxx, sy=para.y+para.h*(1-tt/maxt);
+      if(s2===0)ctx.moveTo(sx,sy);else ctx.lineTo(sx,sy);}
+    ctx.stroke();ctx.shadowBlur=0;
+  }
+  // measured points
+  for(var i2=1;i2<NX;i2++){
+    if(arrival[i2]<=0)continue;var x=i2*DX;if(x>maxx)continue;
+    var qx=para.x+para.w*x/maxx, qy=para.y+para.h*(1-arrival[i2]/maxt);
+    if(qy<para.y||qy>para.y+para.h)continue;
+    var inFit=(i2>=FIT_I0&&i2<=FIT_I1);
+    ctx.fillStyle=inFit?'rgba(126,247,200,.95)':'rgba(126,247,200,.28)';
+    ctx.beginPath();ctx.arc(qx,qy,inFit?2.4:1.6,0,6.2832);ctx.fill();
+  }
+  ctx.fillStyle='rgba(150,180,205,.65)';ctx.font='9px ui-monospace,monospace';ctx.textAlign='left';
+  ctx.fillText('x →  '+(maxx*1000).toFixed(0)+' mm',para.x+4,para.y+para.h-5);
+  ctx.textAlign='right';ctx.fillText('t ↑ '+fmtT(maxt),para.x+para.w-4,para.y+12);
+  ctx.textAlign='left';
+  if(lastFit){
+    ctx.fillStyle='#ffd27a';ctx.font='700 11px ui-monospace,monospace';
+    ctx.fillText('D_fit = '+lastFit.D.toExponential(2)+' m²/s',para.x+8,para.y+para.h+16);
+    ctx.fillStyle=lastFit.R2>0.99?'#7ef7c8':'#ff9ad5';
+    ctx.fillText('R² = '+lastFit.R2.toFixed(4)+(lastFit.R2>0.99?'   ✓ pure parabola':'   ✗ STRUCTURE inside'),para.x+8,para.y+para.h+30);
+    var tr=fitStore[3],tw=fitStore[4];
+    if(tr&&tw){ctx.fillStyle='#9ce4ff';ctx.fillText('wet/dry D ratio = '+(tw/tr).toFixed(2)+'  ← soil-moisture sensor',para.x+8,para.y+para.h+44);}
+  }
+  ctx.restore();
+}
+function fmtT(s){if(s<120)return s.toFixed(0)+' s';if(s<7200)return (s/60).toFixed(1)+' min';return (s/3600).toFixed(2)+' h';}
+function drawHead(){
+  var P=PRESETS[preset];
+  ctx.save();ctx.textAlign='left';
+  ctx.font='700 15px ui-monospace,monospace';ctx.fillStyle='#9ce4ff';
+  ctx.shadowColor='rgba(90,220,255,.6)';ctx.shadowBlur=14;
+  ctx.fillText(P.name,slab.x,slab.y-56);ctx.shadowBlur=0;
+  ctx.font='11px ui-monospace,monospace';ctx.fillStyle='rgba(200,225,245,.8)';
+  ctx.fillText(P.tale,slab.x,slab.y-38);
+  ctx.fillStyle='rgba(255,210,122,.9)';ctx.font='700 11px ui-monospace,monospace';
+  ctx.fillText('equilibrium temperatures are boring.  TRANSIENTS carry the structure.',slab.x,slab.y-18);
+  ctx.restore();
+}
+
+/* ================= main loop ================= */
+var lastNow=performance.now();
+function frame(now){
+  var wall=Math.min(0.05,(now-lastNow)/1000);lastNow=now;
+  if(!paused&&running){
+    var alphaRef=MATS[PRESETS[preset].ref].a;
+    var rate=(Lx*0.5)*(Lx*0.5)/(KFIT*alphaRef)/9*speedMul;   // sim-seconds per wall-second
+    var nsteps=Math.max(1,Math.min(900,Math.round(rate*wall/DT)));
+    for(var s=0;s<nsteps;s++){stepSim();
+      if(s%4===0){for(var p=0;p<2;p++){var P=probes[p];P.hist.push([simT,T[idx(P.i,P.j)]]);
+        if(P.hist.length>1400)P.hist.splice(0,700);}}
+      if(!running)break;}
+    if(!running){var f=doFit();if(f&&f.R2>0.9)fitStore[preset]=f.D;}
+  }
+  ctx.fillStyle='#04060b';ctx.fillRect(0,0,W,H);
+  ctx.save();ctx.strokeStyle='rgba(70,140,200,.05)';ctx.lineWidth=1;
+  for(var gx=0;gx<W;gx+=48){ctx.beginPath();ctx.moveTo(gx,0);ctx.lineTo(gx,H);ctx.stroke();}
+  for(var gy=0;gy<H;gy+=48){ctx.beginPath();ctx.moveTo(0,gy);ctx.lineTo(W,gy);ctx.stroke();}
+  ctx.restore();
+  drawHead();drawSlab();drawTraces();drawPara();
+  var aA=arrival[probes[0].i],aB=arrival[probes[1].i];
+  var s2='preset '+PRESETS[preset].name+'   dt='+DT.toFixed(3)+' s   speed ×'+speedMul.toFixed(1)+'\n';
+  s2+='sim time  '+fmtT(simT)+(running?'   [walking]':'   [front reached the far side]')+'\n';
+  s2+='probe A  x='+(probes[0].i*DX*1000).toFixed(1)+' mm  T='+T[idx(probes[0].i,probes[0].j)].toFixed(2)+' °C  arr '+(aA>0?fmtT(aA):'—')+'\n';
+  s2+='probe B  x='+(probes[1].i*DX*1000).toFixed(1)+' mm  T='+T[idx(probes[1].i,probes[1].j)].toFixed(2)+' °C  arr '+(aB>0?fmtT(aB):'—')+'\n';
+  if(aA>0&&aB>0){var xr=probes[1].i/Math.max(1,probes[0].i);
+    s2+='x ratio '+xr.toFixed(2)+'  →  t ratio '+(aB/aA).toFixed(2)+'   (x² predicts '+(xr*xr).toFixed(2)+')';}
+  else s2+='move a probe further out and watch t ratio → (x ratio)²';
+  rdEl.textContent=s2;
+  requestAnimationFrame(frame);
+}
+
+/* ================= input ================= */
+function toCell(e){var t=e.touches?e.touches[0]:e;
+  return {i:(t.clientX-slab.x)/slab.w*NX,j:(t.clientY-slab.y)/slab.h*NY,x:t.clientX,y:t.clientY};}
+function down(e){var c=toCell(e);
+  if(c.x<slab.x&&c.x>slab.x-24&&c.y>slab.y&&c.y<slab.y+slab.h){relaunch();return;}
+  if(c.i<-2||c.i>NX+2||c.j<-2||c.j>NY+2)return;
+  var best=-1,bd=1e9;
+  for(var p=0;p<2;p++){var d=Math.hypot(c.i-probes[p].i,(c.j-probes[p].j)*2);if(d<bd){bd=d;best=p;}}
+  drag=best;place(c);
+}
+function place(c){
+  if(drag<0)return;var P=probes[drag];
+  var ni=Math.max(1,Math.min(NX-1,Math.round(c.i))),nj=Math.max(0,Math.min(NY-1,Math.round(c.j)));
+  if(ni!==P.i||nj!==P.j){P.i=ni;P.j=nj;P.hist=[];}
+  if(drag===0&&P.j!==arrRow){arrRow=P.j;arrival.fill(-1);lastFit=null;relaunchKeepRow();}
+}
+function relaunchKeepRow(){var r=arrRow;T.fill(TAMB);for(var j=0;j<NY;j++)T[idx(0,j)]=TAMB+STEP;
+  simT=0;arrival.fill(-1);arrRow=r;lastFit=null;running=true;probes[0].hist=[];probes[1].hist=[];}
+addEventListener('pointerdown',down);
+addEventListener('pointermove',function(e){if(drag>=0)place(toCell(e));});
+addEventListener('pointerup',function(){drag=-1;});
+addEventListener('keydown',function(e){
+  var k=e.key.toLowerCase();
+  if(k>='1'&&k<='5'){buildPreset(+k-1);}
+  else if(k==='r'){relaunch();probes[0].hist=[];probes[1].hist=[];}
+  else if(k===']'){speedMul=Math.min(8,speedMul*1.5);}
+  else if(k==='['){speedMul=Math.max(0.12,speedMul/1.5);}
+  else if(k===' '){paused=!paused;e.preventDefault();}
+});
+resize();buildPreset(0);requestAnimationFrame(frame);
+</script>
+</body>

@@ -1,0 +1,464 @@
+<meta charset="utf-8">
+<title>Cheat Code 101 — Hysteresis</title>
+<style>
+  html,body{margin:0;padding:0;background:#04070c;overflow:hidden;height:100%}
+  canvas{display:block;position:fixed;inset:0}
+  #ui{position:fixed;top:10px;left:10px;z-index:10;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;
+      color:#bfe9ff;background:rgba(4,10,18,.62);border:1px solid rgba(90,220,255,.28);
+      border-radius:8px;padding:10px 12px;max-width:450px;backdrop-filter:blur(6px);
+      box-shadow:0 0 26px rgba(0,190,255,.14)}
+  #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.14em;color:#7ffcff;text-shadow:0 0 12px #12d6ff}
+  .code{color:#ffd27f;margin:0 0 6px;text-shadow:0 0 9px rgba(255,180,60,.45)}
+  .hint{color:#7fa8c0;margin:0 0 6px}
+  .row{display:flex;align-items:center;gap:6px;margin:2px 0}
+  .row label{width:96px;color:#8fd8ff}
+  input[type=range]{width:140px;accent-color:#33e6ff;background:transparent}
+  .rd{color:#a9ffd9}.rd b{color:#fff;font-weight:600}
+  a{color:#69f0ff;text-decoration:none;border-bottom:1px dotted #69f0ff}
+  button{font:11px ui-monospace,monospace;background:rgba(40,220,255,.11);color:#7fd8ff;
+         border:1px solid rgba(90,220,255,.32);border-radius:5px;padding:3px 7px;cursor:pointer;margin:2px 3px 0 0}
+  button.on{background:rgba(255,190,90,.22);color:#ffd27f;border-color:rgba(255,190,90,.6)}
+  button:hover{background:rgba(40,220,255,.24)}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>CHEAT CODE #101 — THE LOOP IS THE LOSS</h1>
+  <p class="code">Plot output against input rather than against time: if the up-path and the down-path differ, the area they enclose is exactly the energy lost per cycle — heat, wear, and diagnosis in one measurement.</p>
+  <p class="hint">Pick a material · SPEED &amp; AMPLITUDE reshape the loop · WEAR grows a joint's loop · [1-5] materials · [space] pause</p>
+  <div class="row"><label>SPEED</label><input id="sS" type="range" min="0.15" max="3.0" step="0.01" value="0.85"><span class="rd" id="vS">0.85 Hz</span></div>
+  <div class="row"><label>AMPLITUDE</label><input id="sA" type="range" min="0.10" max="1.00" step="0.01" value="0.65"><span class="rd" id="vA">0.65</span></div>
+  <div class="row"><label>WEAR</label><input id="sW" type="range" min="0" max="100" step="1" value="10"><span class="rd" id="vW">10 %</span></div>
+  <div id="mats" style="margin:4px 0 2px"></div>
+  <div class="rd" id="r1">loop area = —</div>
+  <div class="rd" id="r2">power = —</div>
+  <div class="rd" id="r3">temperature = —</div>
+  <div class="rd" id="r4">loss factor = —</div>
+  <div style="margin-top:6px"><a href="index.html">← gallery</a></div>
+</div>
+<script>
+(function(){
+"use strict";
+var c=document.getElementById('c'),g=c.getContext('2d');
+var W=0,H=0,DPR=1;
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  W=window.innerWidth;H=window.innerHeight;
+  c.width=Math.round(W*DPR);c.height=Math.round(H*DPR);
+  c.style.width=W+'px';c.style.height=H+'px';
+  g.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize',resize);resize();
+
+// ===================== materials =====================
+// Each returns FORCE (N) for a displacement x (m) and velocity v (m/s), with internal state.
+// Loss comes from an explicit dissipative term so integrating F·dx equals the heat we inject.
+var MATS=[
+ {key:'steel', name:'SPRING STEEL',  col:'#8fd8ff', k:26000, cvis:6,    fy:0,     rate:0.0,  note:'whisper-thin loop — nearly lossless'},
+ {key:'foam',  name:'FOAM BLOCK',    col:'#5effc8', k:5200,  cvis:190,  fy:24,    rate:0.15, note:'fat loop — every cycle is heat'},
+ {key:'rubber',name:'RUBBER',        col:'#ffb64d', k:9000,  cvis:520,  fy:14,    rate:1.00, note:'rate-dependent — faster = fatter'},
+ {key:'bh',    name:'MAGNETIC B–H',  col:'#ff7ba8', k:0,     cvis:0,    fy:0,     rate:0.0,  note:'sigmoid loop; area = core loss/cycle'},
+ {key:'joint', name:'WORN JOINT',    col:'#c69bff', k:14000, cvis:40,   fy:8,     rate:0.05, note:'loop AREA is the health metric'}
+];
+var mi=1;
+
+var S={
+  t:0, phase:0, speed:0.85, amp:0.65, wear:0.10, paused:false,
+  x:0, v:0, F:0,
+  // Bouc-Wen-ish hysteretic internal variable for the friction/plastic part
+  z:0,
+  // B-H state
+  B:0,
+  hist:[],       // {t,x,F}
+  loop:[],       // current cycle's (x,F) samples
+  lastLoop:[],   // completed cycle
+  area:0, areaShown:0, power:0,
+  T:22.0, Tamb:22.0,
+  cycles:0, energyIn:0, lastPhase:0,
+  areaHistory:[]  // for the wear plot
+};
+
+var sS=document.getElementById('sS'),sA=document.getElementById('sA'),sW=document.getElementById('sW');
+var vS=document.getElementById('vS'),vA=document.getElementById('vA'),vW=document.getElementById('vW');
+var r1=document.getElementById('r1'),r2=document.getElementById('r2'),r3=document.getElementById('r3'),r4=document.getElementById('r4');
+var matsDiv=document.getElementById('mats');
+MATS.forEach(function(m,i){
+  var b=document.createElement('button');b.textContent=(i+1)+' '+m.name;b.dataset.i=i;
+  b.addEventListener('click',function(){setMat(i);});
+  matsDiv.appendChild(b);
+});
+function setMat(i){
+  mi=i;S.z=0;S.B=0;S.loop=[];S.lastLoop=[];S.hist=[];S.T=S.Tamb;S.areaHistory=[];
+  Array.prototype.forEach.call(matsDiv.children,function(b,j){ b.className=(j===i)?'on':''; });
+}
+setMat(1);
+sS.addEventListener('input',function(){S.speed=parseFloat(sS.value);});
+sA.addEventListener('input',function(){S.amp=parseFloat(sA.value);});
+sW.addEventListener('input',function(){S.wear=parseFloat(sW.value)/100;});
+window.addEventListener('keydown',function(e){
+  if(e.key>='1'&&e.key<='5')setMat(+e.key-1);
+  if(e.key===' '){S.paused=!S.paused;e.preventDefault();}
+});
+
+var XMAX=0.040;   // 40 mm stroke
+
+// ---------- constitutive law ----------
+function force(m,x,v,dt){
+  if(m.key==='bh'){
+    // B-H: H is the "input" (x scaled), B the output. Sigmoid + hysteretic lag.
+    var Hf=x/XMAX*1.0;                       // normalized H, ±1
+    var Bsat=Math.tanh(2.6*Hf);
+    var coerc=0.30*(1+2.2*S.wear*(0)); // fixed coercivity for the core
+    // relax B toward the anhysteretic curve, but only after overcoming coercivity
+    var drive=Bsat-S.B;
+    var rate=Math.max(0,Math.abs(drive)-0.0)*1.0;
+    S.B += Math.sign(drive)*Math.min(Math.abs(drive), rate*dt*14/(0.35+coerc));
+    return S.B;                              // "force" axis carries B here
+  }
+  var wearMul = (m.key==='joint') ? (1+7.5*S.wear) : 1;
+  var k=m.k*(m.key==='joint'?(1-0.28*S.wear):1);
+  // rate-dependent viscous term (rubber's loop widens with speed)
+  var cvis=m.cvis*(1+m.rate*3.2*(S.speed/0.85-1));
+  // Bouc-Wen hysteretic (rate-INdependent friction/plastic) element
+  var fy=m.fy*wearMul;
+  if(fy>0){
+    var xy=0.0030;                      // yield displacement
+    var A=1.0,beta=0.5,gam=0.5,n=2;
+    var dz=(A*v - beta*Math.abs(v)*Math.pow(Math.abs(S.z),n-1)*S.z - gam*v*Math.pow(Math.abs(S.z),n))/xy;
+    S.z+=dz*dt;
+    if(S.z>1.4)S.z=1.4; if(S.z<-1.4)S.z=-1.4;
+  }else S.z=0;
+  var Fel = k*x;
+  var Fvis= cvis*v*wearMul;
+  var Fhys= fy*S.z;
+  return Fel+Fvis+Fhys;
+}
+
+// ---------- integrate ----------
+function step(dt){
+  if(S.paused)return;
+  S.t+=dt;
+  var m=MATS[mi];
+  var w=2*Math.PI*S.speed;
+  S.lastPhase=S.phase;
+  S.phase+=w*dt;
+  var A=S.amp*XMAX;
+  var xNew=-A*Math.cos(S.phase)*0.5 - A*0.5*0 + A*0.5;   // 0 .. A compression, smooth
+  xNew=A*0.5*(1-Math.cos(S.phase));
+  var vNew=(xNew-S.x)/Math.max(1e-6,dt);
+  S.x=xNew;S.v=vNew;
+  S.F=force(m,S.x,S.v,dt);
+
+  // --- energy: the ONLY source of heat is ∮F·dx, accumulated exactly as trapezoids ---
+  if(S.loop.length){
+    var p=S.loop[S.loop.length-1];
+    var dW=0.5*(S.F+p.F)*(S.x-p.x);
+    if(m.key!=='bh') S.energyIn+=dW;      // J for mechanical materials
+    else             S.energyIn+=dW*40;   // B-H: scale to J/m³-ish for display
+  }
+  S.loop.push({x:S.x,F:S.F});
+  if(S.loop.length>4000)S.loop.shift();
+  S.hist.push({t:S.t,x:S.x,F:S.F});
+  if(S.hist.length>900)S.hist.shift();
+
+  // cycle boundary -> close the loop, bank the area, heat the block
+  if(Math.floor(S.phase/(2*Math.PI))>Math.floor(S.lastPhase/(2*Math.PI))){
+    S.lastLoop=S.loop.slice();
+    S.area=Math.abs(shoelace(S.lastLoop));
+    S.areaShown+=(S.area-S.areaShown)*1.0;
+    S.cycles++;
+    S.areaHistory.push({w:S.wear,a:S.area});
+    if(S.areaHistory.length>240)S.areaHistory.shift();
+    S.loop=[{x:S.x,F:S.F}];
+    S.energyIn=0;
+  }
+  // power = area × cycles/sec  (energy per cycle × frequency)
+  S.power=S.area*S.speed;
+
+  // thermal model fed by EXACTLY that dissipated power
+  var Cth=42;                 // J/K  (block heat capacity)
+  var hA=0.85;                // W/K  to ambient
+  var Pmech=(m.key==='bh')?S.power*0.02:S.power;
+  S.T += (Pmech - hA*(S.T-S.Tamb))/Cth*dt;
+  if(!isFinite(S.T))S.T=S.Tamb;
+}
+function shoelace(pts){
+  var a=0;
+  for(var i=0;i<pts.length;i++){
+    var p=pts[i],q=pts[(i+1)%pts.length];
+    a+=p.x*q.F-q.x*p.F;
+  }
+  return 0.5*a;
+}
+
+// ===================== drawing =====================
+function glow(pts,col,lw,blur,close){
+  g.save();g.strokeStyle=col;g.lineWidth=lw;g.shadowColor=col;g.shadowBlur=blur;g.lineJoin='round';g.lineCap='round';
+  g.beginPath();for(var i=0;i<pts.length;i++){i?g.lineTo(pts[i][0],pts[i][1]):g.moveTo(pts[i][0],pts[i][1]);}
+  if(close)g.closePath();
+  g.stroke();g.restore();
+}
+function txt(s,x,y,col,size,al){
+  g.save();g.fillStyle=col;g.font=(size||11)+'px ui-monospace,Menlo,Consolas,monospace';g.textAlign=al||'left';
+  g.shadowColor=col;g.shadowBlur=8;g.fillText(s,x,y);g.restore();
+}
+function panel(x,y,w,h,title,sub){
+  g.save();g.fillStyle='rgba(6,14,24,.55)';g.strokeStyle='rgba(80,200,240,.22)';g.lineWidth=1;
+  g.beginPath();g.rect(x,y,w,h);g.fill();g.stroke();g.restore();
+  txt(title,x+8,y+15,'#7fd8ff',11);
+  if(sub)txt(sub,x+w-8,y+15,'#4e93ad',10,'right');
+}
+
+// ---------- the piston + block ----------
+function drawStage(x,y,w,h){
+  var m=MATS[mi];
+  var cx=x+w/2;
+  var floorY=y+h-40;
+  var blockW=Math.min(w*0.44,190);
+  var h0=Math.min(h*0.42,150);
+  var comp=S.x/XMAX*h0*0.9;
+  var bh=h0-comp;
+  var top=floorY-bh;
+
+  // heat glow behind the block
+  var heat=Math.min(1,(S.T-S.Tamb)/24);
+  if(heat>0.01){
+    var rg=g.createRadialGradient(cx,floorY-bh/2,4,cx,floorY-bh/2,blockW*1.25);
+    rg.addColorStop(0,'rgba(255,'+Math.round(140-90*heat)+',40,'+(0.42*heat)+')');
+    rg.addColorStop(1,'rgba(255,60,0,0)');
+    g.save();g.fillStyle=rg;g.beginPath();g.arc(cx,floorY-bh/2,blockW*1.25,0,7);g.fill();g.restore();
+  }
+
+  // ground
+  glow([[cx-blockW,floorY],[cx+blockW,floorY]],'#2c6a86',4,10);
+  for(var i=-5;i<=5;i++)glow([[cx+i*22,floorY],[cx+i*22-9,floorY+12]],'rgba(44,106,134,.7)',2,4);
+
+  if(m.key==='bh'){
+    drawCore(cx,y,w,h,floorY);
+  }else{
+    // the block: colour lerps toward hot
+    var base=m.col;
+    var hot='rgb(255,'+Math.round(150-110*heat)+','+Math.round(80-70*heat)+')';
+    g.save();
+    g.strokeStyle=heat>0.05?hot:base;g.lineWidth=3;g.shadowColor=heat>0.05?hot:base;g.shadowBlur=18+30*heat;
+    g.fillStyle='rgba(255,255,255,'+(0.035+0.10*heat)+')';
+    g.beginPath();g.rect(cx-blockW/2,top,blockW,bh);g.fill();g.stroke();g.restore();
+    // cell texture squashes with compression
+    var rows=6,cols=7;
+    g.save();g.strokeStyle='rgba(255,255,255,'+(0.10+0.14*heat)+')';g.lineWidth=1;
+    for(var r=1;r<rows;r++){g.beginPath();g.moveTo(cx-blockW/2+3,top+bh*r/rows);g.lineTo(cx+blockW/2-3,top+bh*r/rows);g.stroke();}
+    for(var q=1;q<cols;q++){g.beginPath();g.moveTo(cx-blockW/2+blockW*q/cols,top+2);g.lineTo(cx-blockW/2+blockW*q/cols,top+bh-2);g.stroke();}
+    g.restore();
+    if(m.key==='joint'&&S.wear>0.02){
+      // wear debris / scoring marks
+      g.save();g.globalAlpha=Math.min(1,S.wear*1.3);
+      for(var d=0;d<Math.floor(S.wear*22);d++){
+        var ang=(d*2.399)+S.t*0.4, rr=blockW*0.5+8+((d*13)%26);
+        g.fillStyle='rgba(198,155,255,.7)';g.shadowColor='#c69bff';g.shadowBlur=8;
+        g.beginPath();g.arc(cx+Math.cos(ang)*rr,floorY-6-Math.abs(Math.sin(ang))*20,1.6,0,7);g.fill();
+      }
+      g.restore();
+    }
+  }
+
+  // piston
+  var pw=blockW*1.14;
+  g.save();
+  g.strokeStyle='#ffb64d';g.lineWidth=3;g.shadowColor='#ffb64d';g.shadowBlur=16;
+  g.fillStyle='rgba(255,182,77,.12)';
+  g.beginPath();g.rect(cx-pw/2,top-20,pw,20);g.fill();g.stroke();
+  g.beginPath();g.moveTo(cx,top-20);g.lineTo(cx,y+22);g.stroke();
+  g.restore();
+
+  // force arrow / magnitude
+  var Fdisp=(m.key==='bh')?S.F:S.F;
+  txt((m.key==='bh'?('B = '+S.B.toFixed(3)+' T'):('F = '+S.F.toFixed(1)+' N')),cx,y+18,'#ffd27f',12,'center');
+  txt((m.key==='bh'?('H ∝ '+(S.x/XMAX).toFixed(2)):('x = '+(S.x*1000).toFixed(2)+' mm')),cx,floorY+30,'#8fd8ff',12,'center');
+
+  // temperature bar
+  var tb=x+16;
+  var tH=h*0.5;
+  g.save();g.strokeStyle='rgba(255,120,60,.5)';g.lineWidth=1;
+  g.strokeRect(tb,y+40,12,tH);g.restore();
+  var frac=Math.min(1,(S.T-S.Tamb)/30);
+  g.save();g.fillStyle='rgba(255,'+Math.round(160-120*frac)+',60,.85)';g.shadowColor='#ff7a2a';g.shadowBlur=14;
+  g.fillRect(tb+1,y+40+tH*(1-frac)+1,10,tH*frac-2);g.restore();
+  txt(S.T.toFixed(2)+'°C',tb-4,y+34,'#ff9b6b',11);
+  txt('ΔT',tb-2,y+40+tH+14,'#ff9b6b',10);
+
+  txt(m.name,cx,floorY+50,m.col,14,'center');
+  txt(m.note,cx,floorY+68,'#7fa8c0',11,'center');
+}
+
+function drawCore(cx,y,w,h,floorY){
+  // toroid cross-section with flux glow
+  var R=Math.min(w*0.16,72), r=R*0.44;
+  var cy=floorY-R-24;
+  var sat=Math.abs(S.B);
+  g.save();
+  g.strokeStyle='#ff7ba8';g.lineWidth=R-r;g.shadowColor='#ff7ba8';g.shadowBlur=10+50*sat;
+  g.globalAlpha=0.35+0.6*sat;
+  g.beginPath();g.arc(cx,cy,(R+r)/2,0,7);g.stroke();g.restore();
+  // windings
+  for(var i=0;i<16;i++){
+    var a=i/16*Math.PI*2;
+    var x1=cx+Math.cos(a)*(r-8),y1=cy+Math.sin(a)*(r-8);
+    var x2=cx+Math.cos(a)*(R+8),y2=cy+Math.sin(a)*(R+8);
+    glow([[x1,y1],[x2,y2]],'rgba(255,200,120,'+(0.25+0.5*Math.abs(S.x/XMAX))+')',2,6);
+  }
+  txt('B = '+S.B.toFixed(3),cx,cy+4,'#fff',12,'center');
+}
+
+// ---------- vs TIME (looks innocent) ----------
+function drawTime(x,y,w,h){
+  var m=MATS[mi];
+  panel(x,y,w,h,'vs TIME — both smooth, nothing suspicious','x(t) & F(t)');
+  if(S.hist.length<3)return;
+  var t0=S.hist[0].t,t1=S.hist[S.hist.length-1].t;
+  var span=Math.max(0.4,t1-t0);
+  var fmax=1e-6,xmax=1e-6;
+  for(var i=0;i<S.hist.length;i++){fmax=Math.max(fmax,Math.abs(S.hist[i].F));xmax=Math.max(xmax,Math.abs(S.hist[i].x));}
+  function tx(t){return x+16+((t-t0)/span)*(w-30);}
+  function yx(v){return y+h*0.62-(v/xmax)*(h*0.26);}
+  function yf(v){return y+h*0.62-(v/fmax)*(h*0.26);}
+  var px=[],pf=[];
+  for(var i2=0;i2<S.hist.length;i2++){
+    px.push([tx(S.hist[i2].t),yx(S.hist[i2].x)]);
+    pf.push([tx(S.hist[i2].t),yf(S.hist[i2].F)]);
+  }
+  glow(px,'rgba(120,235,255,.85)',2,10);
+  glow(pf,'rgba(255,182,77,.85)',2,10);
+  txt('displacement',x+16,y+h-8,'#78ebff',10);
+  txt(m.key==='bh'?'B':'force',x+120,y+h-8,'#ffb64d',10);
+  txt('t →',x+w-12,y+h-8,'#4e93ad',10,'right');
+}
+
+// ---------- vs INPUT (the reveal) ----------
+function drawLoop(x,y,w,h){
+  var m=MATS[mi];
+  panel(x,y,w,h,'vs INPUT — THE LOOP OPENS (area = energy/cycle)',m.key==='bh'?'B vs H':'F vs x');
+  var pts=S.lastLoop.length>8?S.lastLoop:S.loop;
+  if(pts.length<3){txt('cycling…',x+w/2,y+h/2,'#5a8aa4',12,'center');return;}
+  var xm=1e-9,fm=1e-9;
+  var all=S.lastLoop.concat(S.loop);
+  for(var i=0;i<all.length;i++){xm=Math.max(xm,Math.abs(all[i].x));fm=Math.max(fm,Math.abs(all[i].F));}
+  xm*=1.12;fm*=1.15;
+  function lx(v){return x+w/2+(v/xm)*(w*0.42);}
+  function ly(v){return y+h*0.58-(v/fm)*(h*0.40);}
+  // axes
+  glow([[x+12,ly(0)],[x+w-12,ly(0)]],'rgba(90,180,215,.25)',1,0);
+  glow([[lx(0),y+22],[lx(0),y+h-14]],'rgba(90,180,215,.25)',1,0);
+
+  // filled loop
+  var poly=[];for(var i2=0;i2<pts.length;i2++)poly.push([lx(pts[i2].x),ly(pts[i2].F)]);
+  var lossy=S.area>1e-4;
+  g.save();
+  g.beginPath();
+  for(var i3=0;i3<poly.length;i3++){i3?g.lineTo(poly[i3][0],poly[i3][1]):g.moveTo(poly[i3][0],poly[i3][1]);}
+  g.closePath();
+  var hue=lossy?(28+120*Math.max(0,1-S.area/1.2)):170;
+  g.fillStyle='hsla('+hue+',100%,58%,'+(0.10+0.30*Math.min(1,S.area/0.8))+')';
+  g.shadowColor='hsl('+hue+',100%,60%)';g.shadowBlur=26;
+  g.fill();g.restore();
+  glow(poly,m.col,2.4,16,true);
+
+  // live cursor
+  var cur=S.loop[S.loop.length-1];
+  if(cur){
+    g.save();g.fillStyle='#fff';g.shadowColor=m.col;g.shadowBlur=20;
+    g.beginPath();g.arc(lx(cur.x),ly(cur.F),4.5,0,7);g.fill();g.restore();
+    // current partial path
+    var pp=[];for(var i4=0;i4<S.loop.length;i4++)pp.push([lx(S.loop[i4].x),ly(S.loop[i4].F)]);
+    if(pp.length>1)glow(pp,'rgba(255,255,255,.55)',1.6,8);
+  }
+  // up/down path arrows
+  txt('↑ loading',lx(xm*0.30),ly(fm*0.62),'#ffd27f',10);
+  txt('↓ unloading',lx(xm*0.30),ly(fm*0.20),'#7fd8ff',10);
+  txt(m.key==='bh'?'H →':'x →',x+w-12,y+h-8,'#4e93ad',10,'right');
+  var unit=m.key==='bh'?' J/m³':' J';
+  txt('AREA = '+S.area.toFixed(m.key==='steel'?5:4)+unit+' / cycle',x+w/2,y+h-10,
+      S.area>1e-4?'#ffd27f':'#5ef2c0',13,'center');
+}
+
+// ---------- wear / loss-vs-parameter plot ----------
+function drawWearPlot(x,y,w,h){
+  var m=MATS[mi];
+  var lbl=(m.key==='rubber')?'LOOP AREA vs SPEED (rate-dependent)':'LOOP AREA vs WEAR — a health metric';
+  panel(x,y,w,h,lbl,'live sweep');
+  var amax=1e-6;
+  for(var i=0;i<S.areaHistory.length;i++)amax=Math.max(amax,S.areaHistory[i].a);
+  amax=Math.max(amax,S.area)*1.15+1e-9;
+  function px(v){return x+18+v*(w-36);}
+  function py(v){return y+h-18-(v/amax)*(h-40);}
+  // sampled history dots (x-axis = wear, or speed for rubber)
+  for(var i2=0;i2<S.areaHistory.length;i2++){
+    var s=S.areaHistory[i2];
+    var xv=(m.key==='rubber')?Math.min(1,S.speed/3.0):s.w;
+    g.save();g.fillStyle='rgba(198,155,255,.55)';g.shadowColor='#c69bff';g.shadowBlur=6;
+    g.beginPath();g.arc(px(xv),py(s.a),2,0,7);g.fill();g.restore();
+  }
+  var cx=(m.key==='rubber')?Math.min(1,S.speed/3.0):S.wear;
+  g.save();g.fillStyle='#fff';g.shadowColor=m.col;g.shadowBlur=18;
+  g.beginPath();g.arc(px(cx),py(S.area),4.5,0,7);g.fill();g.restore();
+  txt((m.key==='rubber')?'speed →':'wear →',x+w-12,y+h-4,'#7a5fa0',10,'right');
+  txt('J/cycle ↑',x+8,y+h-4,'#7a5fa0',10);
+  // health verdict
+  if(m.key==='joint'){
+    var health=S.wear<0.25?'HEALTHY':(S.wear<0.6?'DEGRADING':'REPLACE');
+    txt(health,x+w/2,y+34,S.wear<0.25?'#5ef2c0':(S.wear<0.6?'#ffd27f':'#ff6fa5'),14,'center');
+  }else{
+    txt('cycles: '+S.cycles,x+w/2,y+34,'#7fa8c0',11,'center');
+  }
+}
+
+// ---------- readouts ----------
+function updateUI(){
+  var m=MATS[mi];
+  vS.textContent=S.speed.toFixed(2)+' Hz';
+  vA.textContent=S.amp.toFixed(2);
+  vW.textContent=(S.wear*100).toFixed(0)+' %';
+  var unit=m.key==='bh'?' J/m³':' J';
+  r1.innerHTML='loop area ∮F·dx = <b>'+S.area.toFixed(m.key==='steel'?6:4)+unit+'</b> per cycle';
+  r2.innerHTML='power = area × f = <b>'+(S.power).toFixed(m.key==='steel'?5:3)+' W</b>';
+  r3.innerHTML='block temperature = <b>'+S.T.toFixed(2)+' °C</b>  (Δ'+(S.T-S.Tamb).toFixed(2)+')';
+  // loss factor: dissipated / (2π × peak stored)
+  var Ustore=0.5*m.k*Math.pow(S.amp*XMAX,2);
+  var eta=Ustore>0?S.area/(2*Math.PI*Ustore):0;
+  r4.innerHTML='loss factor η = W<sub>d</sub>/2πU = <b>'+(m.key==='bh'?'—':eta.toFixed(4))+'</b>'+(eta<0.005&&m.key!=='bh'?'  (≈lossless)':'');
+}
+
+// ---------- frame ----------
+var last=performance.now();
+function frame(now){
+  var dt=Math.min(0.033,(now-last)/1000);last=now;
+  var sub=6;
+  for(var i=0;i<sub;i++)step(dt/sub);
+
+  g.setTransform(DPR,0,0,DPR,0,0);
+  g.fillStyle='#04070c';g.fillRect(0,0,W,H);
+  g.save();g.strokeStyle='rgba(40,110,150,.09)';g.lineWidth=1;
+  for(var x=0;x<W;x+=48){g.beginPath();g.moveTo(x,0);g.lineTo(x,H);g.stroke();}
+  for(var y=0;y<H;y+=48){g.beginPath();g.moveTo(0,y);g.lineTo(W,y);g.stroke();}
+  g.restore();
+
+  var stageW=Math.min(W*0.42,520);
+  var stageX=8, stageY=Math.max(250,H*0.30);
+  drawStage(stageX,stageY,stageW,H-stageY-56);
+
+  var px2=Math.min(W*0.46,W-340), pw=Math.max(310,W-px2-18);
+  var ph=Math.min(200,(H-100)/3.25);
+  drawTime(px2,24,pw,ph);
+  drawLoop(px2,24+ph+14,pw,ph+24);
+  drawWearPlot(px2,24+2*ph+52,pw,ph-10);
+
+  txt('"plot output against input rather than against time; the up/down gap is a loss and a diagnostic in one measurement."',
+      18,H-16,'#7ffcff',12);
+  if(S.paused)txt('PAUSED',W/2,40,'#ff7ba8',20,'center');
+
+  updateUI();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+})();
+</script>

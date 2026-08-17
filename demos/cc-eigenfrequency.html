@@ -144,7 +144,7 @@ function step(dt,lvl){
 }
 function nrm(v){return Math.max(-1.4,Math.min(1.4,v/(env+1e-9)));}  // display-normalized
 /* FFT the ring buffer, exponentially average */
-var specCol=[],SPECW=150;
+var SPECW=180;
 var peakHz=0,peakMag=0;
 function analyze(){
   var re=new Float64Array(N),im=new Float64Array(N);
@@ -159,7 +159,7 @@ function analyze(){
   var a=spec[bi-1],b=spec[bi],cc=spec[bi+1];
   var d=(a-cc)/(2*(a-2*b+cc)||1e-9);
   peakHz=(bi+Math.max(-1,Math.min(1,d)))*FS/N;peakMag=bv;
-  specCol.push(col);if(specCol.length>SPECW)specCol.shift();
+  pushColumn(col,mx);
   return mx;
 }
 
@@ -182,7 +182,8 @@ function ctlHTML(){
 document.querySelectorAll('.st').forEach(function(b){b.onclick=function(){
   cur=+b.dataset.s;document.querySelectorAll('.st').forEach(function(o){o.classList.remove('on')});
   b.classList.add('on');st=[];applyMods();ctlHTML();
-  ring.fill(0);spec.fill(0);specCol.length=0;};});
+  ring.fill(0);spec.fill(0);env=1e-6;
+  ox.fillStyle='#06090e';ox.fillRect(0,0,SPECW,MAXBIN);};});
 applyMods();ctlHTML();
 
 /* ================= drawing ================= */
@@ -296,7 +297,6 @@ function drawSpectrogram(px,py,pw,ph,mx){
 function drawSpectrum(px,py,pw,ph,mx){
   x.fillStyle='rgba(6,9,14,.9)';x.strokeStyle='rgba(150,120,255,.3)';
   x.beginPath();x.rect(px,py,pw,ph);x.fill();x.stroke();
-  var MAXBIN=Math.min(BINS,Math.round(60/(FS/N)));
   x.save();x.beginPath();x.rect(px,py,pw,ph);x.clip();
   glow('#b79bff',12,function(){
     x.beginPath();x.moveTo(px,py+ph);
