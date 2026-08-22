@@ -27,8 +27,8 @@ canvas{display:block;position:fixed;inset:0}
 <input id="v" type="range" min="1.2" max="7" step="0.05" value="3.4">
 <label>Refractive index n <span id="nR" class="big">1.333</span></label>
 <input id="n" type="range" min="1.10" max="1.90" step="0.005" value="1.333">
-<label>Jet radius <span id="rR" class="big">14</span> px</label>
-<input id="r" type="range" min="6" max="30" step="1" value="14">
+<label>Jet radius a <span id="rR" class="big">30</span> px</label>
+<input id="r" type="range" min="10" max="48" step="1" value="30">
 <label>Entry tilt <span id="aR" class="big">0.0°</span></label>
 <input id="a" type="range" min="-12" max="12" step="0.5" value="0">
 <p class="m">Drag JET SPEED: a fast, flat jet guides light far; a slow jet curves down fast and light sprays out early.</p>
@@ -36,6 +36,7 @@ canvas{display:block;position:fixed;inset:0}
 <div>bounces before leak: <span id="nb" class="big">0</span></div>
 <div>leak at <span id="lk" class="big">—</span> of jet <span id="st"></span></div>
 <div>last incidence: <span id="li" class="big">—</span></div>
+<div>apex bend R / limit: <span id="rc" class="big">—</span></div>
 <p><a href="index.html">← gallery</a></p>
 </div>
 <script>
@@ -47,22 +48,32 @@ window.addEventListener('resize',resize);resize();
 var el=function(i){return document.getElementById(i);};
 var Sv=el('v'),Sn=el('n'),Sr=el('r'),Sa=el('a');
 
-// --- jet: parabolic projectile from hole at (hx,hy) ---
-var G=520; // px/s^2 scaled
-function jetOrigin(){return {x:W*0.26,y:H*0.34};}
+// --- jet: a real fountain arc — launched UP at A0, gravity pulls it over ---
+// The tightest bend of a projectile arc is at the APEX (speed is least there),
+// and the apex moves downstream as v^2 — that is why the leak point tracks flow.
+var G=520, A0=40*Math.PI/180;   // px/s^2 (scaled), launch elevation
+function jetOrigin(){return {x:W*0.185,y:H*0.44};}
 function jetSpeed(){return parseFloat(Sv.value)*90;}
-// centreline: x(s)=x0+v*s, y(s)=y0+0.5*G*s^2 with s a time parameter
-function jetPoint(s){var o=jetOrigin(),v=jetSpeed();return{x:o.x+v*s,y:o.y+0.5*G*s*s};}
-function jetTangent(s){var v=jetSpeed();var dx=v,dy=G*s,L=Math.hypot(dx,dy);return{x:dx/L,y:dy/L};}
-function jetNormal(s){var t=jetTangent(s);return{x:-t.y,y:t.x};} // points "down-right" side
-// invert: given a point, find nearest s (Newton on centreline)
+function jetVX(){return jetSpeed()*Math.cos(A0);}
+function jetVY(){return jetSpeed()*Math.sin(A0);}
+function jetPoint(s){var o=jetOrigin();return{x:o.x+jetVX()*s, y:o.y-jetVY()*s+0.5*G*s*s};}
+function jetTangent(s){var dx=jetVX(),dy=-jetVY()+G*s,L=Math.hypot(dx,dy);return{x:dx/L,y:dy/L};}
+function jetNormal(s){var t=jetTangent(s);return{x:-t.y,y:t.x};}
+function apexS(){return jetVY()/G;}
+// local radius of curvature (px): R = speed^3 / |vx*G|
+function jetRadiusOfCurv(s){
+  var vx=jetVX(),vy=-jetVY()+G*s,sp=Math.hypot(vx,vy);
+  return sp*sp*sp/Math.abs(vx*G);
+}
+// invert: nearest s on the centreline (Newton)
 function nearestS(px,py,seed){
-  var o=jetOrigin(),v=jetSpeed(),s=seed===undefined?Math.max(0,(px-o.x)/v):seed;
+  var o=jetOrigin(),vx=jetVX(),vy=jetVY();
+  var s=seed===undefined?Math.max(0,(px-o.x)/vx):seed;
   for(var i=0;i<24;i++){
-    var X=o.x+v*s-px, Y=o.y+0.5*G*s*s-py;
-    var dX=v, dY=G*s, d2X=0, d2Y=G;
+    var X=o.x+vx*s-px, Y=o.y-vy*s+0.5*G*s*s-py;
+    var dX=vx, dY=-vy+G*s;
     var f=X*dX+Y*dY;
-    var fp=dX*dX+dY*dY+X*d2X+Y*d2Y;
+    var fp=dX*dX+dY*dY+Y*G;
     if(Math.abs(fp)<1e-9)break;
     var st=f/fp; s-=st;
     if(s<0)s=0;
@@ -77,17 +88,19 @@ function sdf(px,py){
   var dx=px-P.x,dy=py-P.y;
   return {s:s,d:dx*N.x+dy*N.y,dist:Math.hypot(dx,dy),P:P,N:N};
 }
-function sMax(){ // s at which jet leaves the screen bottom
-  var o=jetOrigin();
-  return Math.sqrt(Math.max(0,2*(H+40-o.y)/G));
+function sMax(){ // s at which the arc reaches the floor
+  var o=jetOrigin(),vy=jetVY(),h=H*0.94-o.y;
+  return (vy+Math.sqrt(vy*vy+2*G*h))/G;
 }
 
 // --- beam propagation inside the jet ---
 function propagate(n,R,tiltDeg){
   var o=jetOrigin(), smax=sMax();
   var C=Math.asin(Math.min(1,1/n));
-  var px=o.x+2, py=o.y, tilt=tiltDeg*Math.PI/180;
-  var dx=Math.cos(tilt),dy=Math.sin(tilt);
+  var t0v=jetTangent(0), tilt=tiltDeg*Math.PI/180;
+  var ct=Math.cos(tilt),stt=Math.sin(tilt);
+  var dx=t0v.x*ct-t0v.y*stt, dy=t0v.x*stt+t0v.y*ct;  // launched along the jet, +tilt
+  var px=o.x+dx*2, py=o.y+dy*2;
   var path=[{x:px,y:py}],leaks=[],bounces=0,lastInc=0,leakS=null;
   var step=1.4, maxIter=9000;
   for(var it=0;it<maxIter;it++){
@@ -155,21 +168,24 @@ function render(){
   g.fillStyle=vg;g.fillRect(0,0,W,H);
 
   var o=jetOrigin(),smax=sMax();
-  // tank
-  g.fillStyle='rgba(20,70,120,0.18)';
-  g.fillRect(W*0.05,H*0.16,W*0.21,H*0.46);
-  g.strokeStyle='rgba(120,210,255,0.45)';g.lineWidth=2;
-  g.strokeRect(W*0.05,H*0.16,W*0.21,H*0.46);
-  g.fillStyle='rgba(140,220,255,0.10)';
+  // lit tank
+  var tx=W*0.02,ty=H*0.16,tw=W*0.165,th=H*0.62;
+  g.fillStyle='rgba(20,70,120,0.18)';g.fillRect(tx,ty,tw,th);
+  g.fillStyle='rgba(140,220,255,0.09)';
   for(var w=0;w<3;w++){
-    g.beginPath();
-    for(var xx=W*0.05;xx<W*0.26;xx+=6)g.lineTo(xx,H*0.20+Math.sin(xx*0.03+T*1.2+w)*3+w*4);
-    g.lineTo(W*0.26,H*0.62);g.lineTo(W*0.05,H*0.62);g.closePath();g.fill();
+    g.beginPath();g.moveTo(tx,ty+H*0.05);
+    for(var xx=tx;xx<tx+tw;xx+=6)g.lineTo(xx,ty+H*0.05+Math.sin(xx*0.03+T*1.2+w)*3+w*4);
+    g.lineTo(tx+tw,ty+th);g.lineTo(tx,ty+th);g.closePath();g.fill();
   }
+  g.strokeStyle='rgba(120,210,255,0.45)';g.lineWidth=2;g.strokeRect(tx,ty,tw,th);
   g.fillStyle='rgba(190,235,255,0.6)';g.font='11px ui-monospace,monospace';
-  g.fillText('lit tank',W*0.06,H*0.155-4);
-  g.beginPath();g.arc(o.x,o.y,R*0.9,0,6.2832);g.fillStyle='#0a1a2c';g.fill();
-  g.strokeStyle='#8ff';g.lineWidth=1.5;g.stroke();
+  g.fillText('lit tank — Geneva, 1842',tx+4,ty-6);
+  // nozzle
+  g.save();g.translate(o.x,o.y);g.rotate(-A0);
+  g.fillStyle='#0a1a2c';g.fillRect(-26,-R,26,2*R);
+  g.strokeStyle='#8ff';g.lineWidth=1.6;g.strokeRect(-26,-R,26,2*R);
+  g.restore();
+  g.fillStyle='rgba(190,235,255,0.55)';g.fillText('laser in →',tx+4,o.y-R-12);
 
   // jet body
   var STEP=smax/220;
@@ -250,6 +266,15 @@ function render(){
     el('st').className='good';el('st').textContent='GUIDED all the way';
   }
   el('li').textContent=(res.lastInc*180/Math.PI).toFixed(1)+'°';
+
+  // apex marker: tightest bend of the arc
+  var sa=apexS(),AP=jetPoint(sa),Rc=jetRadiusOfCurv(sa);
+  g.setLineDash([4,5]);g.strokeStyle='rgba(255,220,140,0.35)';g.lineWidth=1;
+  g.beginPath();g.moveTo(AP.x,AP.y-R-8);g.lineTo(AP.x,AP.y-R-30);g.stroke();g.setLineDash([]);
+  g.fillStyle='rgba(255,220,140,0.7)';g.font='10px ui-monospace,monospace';
+  g.fillText('apex — tightest bend, R='+Rc.toFixed(0)+'px  (leaks when R < a/(1−1/n) = '+
+             (R/(1-1/n)).toFixed(0)+'px)',AP.x-70,AP.y-R-34);
+  el('rc').textContent=Rc.toFixed(0)+' px vs '+(R/(1-1/n)).toFixed(0)+' px';
 
   g.fillStyle='rgba(180,220,255,0.75)';g.font='12px ui-monospace,monospace';
   g.fillText('C = asin(1/n) = '+Cdeg.toFixed(1)+'°   bounces = '+res.bounces,W-300,H-24);

@@ -74,7 +74,7 @@ var vAvg=0;
 
 function layout(){
   beaker={x:W*0.30,y:H*0.30,w:Math.min(150,W*0.14),h:Math.min(160,H*0.20)};
-  rimX=beaker.x+beaker.w*0.5; rimY=beaker.y;
+  rimX=beaker.x+beaker.w; rimY=beaker.y;
   pedX=beaker.x;
   floorY=H-40;
 }
@@ -83,7 +83,7 @@ layout();
 function dropPx(){return (floorY-rimY)*(+sD.value);}
 function reset(){
   layout();
-  pts.length=0;released=0;peakH=0;vAvg=0;releaseAcc=0;
+  pts.length=0;released=10;peakH=0;vAvg=0;
   // start: a short tail already over the rim so it begins moving
   for(var i=0;i<NLINK;i++){
     var x,y;
@@ -117,6 +117,8 @@ function step(dt){
     var p=pts[i];
     if(p.pile){ p.px=p.x;p.py=p.y; continue; }
     var vx=(p.x-p.px)*damp, vy=(p.y-p.py)*damp;
+    var vm=Math.hypot(vx,vy), vc=26;                  // clamp per-step travel
+    if(vm>vc){vx*=vc/vm;vy*=vc/vm;}
     p.px=p.x;p.py=p.y;
     p.x+=vx; p.y+=vy+G*dt*dt;
   }
@@ -128,9 +130,9 @@ function step(dt){
       var a=pts[i],b=pts[i+1];
       if(a.pile&&b.pile)continue;
       var dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy)||1e-6;
-      var diff=(d-SEG)/d*0.5;
+      var diff=(d-SEG)/d;
       var wa=a.pile?0:1, wb=b.pile?0:1, s=wa+wb; if(!s)continue;
-      var fa=(wa/s)*2, fb=(wb/s)*2;
+      var fa=wa/s, fb=wb/s;
       a.x+=dx*diff*fa; a.y+=dy*diff*fa;
       b.x-=dx*diff*fb; b.y-=dy*diff*fb;
     }
@@ -158,32 +160,41 @@ function step(dt){
     }
   }
 
-  // --- release / pickup dynamics ---------------------------------------
-  // speed of the moving chain measured near the rim
-  var lead=pts[Math.min(pts.length-1,released+4)];
-  var v=Math.hypot(lead.x-lead.px,lead.y-lead.py)/dt;
-  vAvg=vAvg*0.9+v*0.1;
+  // --- recycle: links that have landed re-enter the pile, so the fountain
+  // reaches a steady state instead of simply running out of chain --------
+  var dT=rimY+dropPx();
+  while(pts.length>3 && !pts[0].pile && pts[0].y>dT-1.5 && pts[1].y>dT-1.5){
+    var q=pts.shift(); released=Math.max(0,released-1);
+    q.pile=true; q.kicked=false;
+    q.x=beaker.x+8+Math.random()*(beaker.w-16);
+    q.y=beaker.y+beaker.h-6-Math.random()*3;
+    q.px=q.x; q.py=q.y;
+    pts.push(q);
+  }
 
-  var pt=pileTop();
-  // release rate proportional to chain speed
-  var releaseRate=vAvg/SEG;
-  releaseAcc+=releaseRate*dt;
-  while(releaseAcc>=1 && released<pts.length-2){
-    releaseAcc-=1;
-    var idx=released;
-    var p=pts[idx];
-    p.pile=false;
-    // place the newly released link at the pile top, moving toward the rim
-    p.x=pt.idx>=0?pts[pt.idx].x:beaker.x+beaker.w*0.5;
-    p.y=pt.y;
+  // --- release / pickup dynamics ---------------------------------------
+  // The chain is pulled out link by link: whenever the last freed link has
+  // been dragged more than one link-length away from the pile surface, the
+  // next link is picked up. Self-throttling — no arbitrary release rate.
+  var lead=pts[Math.max(0,released-5)];
+  var v=Math.hypot(lead.x-lead.px,lead.y-lead.py)/dt;
+  vAvg=vAvg*0.88+v*0.12;
+
+  var guard=0;
+  while(released<pts.length-2 && guard++<8){
+    var pt=pileTop();
+    var lf=pts[released-1];
+    var px0=(pt.idx>=0?pts[pt.idx].x:beaker.x+beaker.w*0.5), py0=pt.y;
+    if(Math.hypot(lf.x-px0,lf.y-py0) < SEG*1.25) break;
+    var p=pts[released];
+    p.pile=false; p.kicked=false;
+    p.x=px0; p.y=py0;
     var dirx=rimX-p.x, diry=rimY-p.y, dl=Math.hypot(dirx,diry)||1; dirx/=dl;diry/=dl;
-    var sp=Math.max(60,vAvg);
-    p.kicked=false;
+    var sp=Math.max(40,vAvg)*0.5;
     p.px=p.x-dirx*sp*dt; p.py=p.y-diry*sp*dt;
     released++;
   }
 }
-var releaseAcc=0;
 
 function measure(){
   var top=1e9;
@@ -340,6 +351,7 @@ requestAnimationFrame(frame);
 
 // expose reduced model for verification
 window.__chain={dropPx:dropPx,measure:measure,step:step,reset:reset,
+  probe:function(){return{pts:pts,released:released,vAvg:vAvg,rimX:rimX,rimY:rimY,floorY:floorY};},
   setKick:function(v){KICK=v;bKick.className=KICK?'on':'';bKick.textContent='KICK: '+(KICK?'ON':'OFF');reset();}};
 })();
 </script>

@@ -208,7 +208,7 @@ function angY(th){return horizonY()-th*SCALE}
 function draw(){
   var now=performance.now(); if(!paused)TT=(now-t0)/1000;
   rebuildCache();
-  var D=8000+ (+sD.value/100)*20000;  // ship distance: 10 km .. 28 km
+  var D=6000+ (+sD.value/100)*14000;  // ship distance: 7.4 km .. 20 km
   SCALE=H*0.62/(thMax-thMin);
 
   var hy=horizonY();

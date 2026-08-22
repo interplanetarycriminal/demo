@@ -242,6 +242,14 @@ function frame(now){
   g.fillStyle='#8fe9ff';g.fillText('— instantaneous p(y,t)',VX+210,VY0-34);
   g.fillStyle='#7dffb0';g.fillText('· · pressure nodes (traps)',VX+210,VY0-22);
   g.fillStyle='#ff8a3d';g.fillText('— net force on a bead',VX+210,VY0-10);
+  // honest caption block, drawn on canvas next to the chamber
+  g.fillStyle='#6f8fa6';g.font='10px monospace';
+  var cap=['The trap is the TIME-AVERAGED field, not the instantaneous one:',
+           'U(y) ∝ ⟨p²⟩. Wells sit at pressure nodes, every λ/2.',
+           'Adding mg tilts every well, so each bead rests a little low.',
+           'Scale the mass up (the coin) and the wells stop being deep',
+           'enough — acoustic levitation is a light-object trick.'];
+  for(var i=0;i<cap.length;i++)g.fillText(cap[i],VX+210,VY1-70+i*13);
 
   // meters
   var mx=VX+210, my=H*0.90;

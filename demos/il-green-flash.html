@@ -36,7 +36,7 @@ canvas{display:block;position:fixed;inset:0}
 <div class="lin">LINEAGE: dispersion prism → inferior-mirage flash → mock-mirage flash</div>
 <hr>
 <div><span class="btn on" id="bAuto">auto sunset</span><span class="btn" id="bInv">inversion layer (mock-mirage)</span></div>
-<label><span>sun altitude</span><input id="sA" type="range" min="-120" max="400" value="220"><b id="vA">—</b></label>
+<label><span>sun altitude</span><input id="sA" type="range" min="-820" max="400" value="220"><b id="vA">—</b></label>
 <label><span>dispersion</span><input id="sD" type="range" min="0" max="100" value="55"><b id="vD">55</b></label>
 <label><span>speed</span><input id="sS" type="range" min="1" max="100" value="26"><b id="vS">26</b></label>
 <div class="k">[Space] pause &nbsp;[I] inversion &nbsp;drag = scrub the sun</div>
@@ -67,8 +67,9 @@ addEventListener('keydown',function(e){
 });
 
 // ---------- physics ----------
-// altitude in ARCMINUTES (slider units = 0.1 arcmin? use: value/10 arcmin... )
-// We work in arcminutes directly: slider -12.0 .. +40.0 arcmin.
+// Sun altitude in ARCMINUTES. Slider units are tenths: -82.0' .. +40.0'.
+// Horizon refraction is ~34', so the disc centre must fall to about -50'
+// before even the green limb is extinguished.
 function trueAlt(){ return +sA.value/10; }   // arcmin
 
 // Standard atmospheric refraction (Bennett) for apparent altitude h in degrees,
@@ -93,14 +94,14 @@ var STRENGTH=1; // set from slider
 function apparentAlt(aArcmin,lamNm){
   var hDeg=aArcmin/60;
   var R=refractionArcmin(hDeg);
-  var Rl=R*(1+ (dispFactor(lamNm)-1)*40*STRENGTH );  // amplify for visibility
-  if(inv){
-    // an inversion layer near the horizon adds an extra, strongly
-    // altitude-dependent lift + vertical magnification for the lowest rays:
-    // this is the "mock-mirage" flash — bigger, longer, easier to see.
-    var m=Math.exp(-Math.pow((aArcmin+2.0)/5.0,2));
-    Rl += m*7.5*(1+(dispFactor(lamNm)-1)*95*STRENGTH);
-  }
+  // m peaks on the rays that graze the inversion layer at the horizon
+  var m=Math.exp(-Math.pow((aArcmin+38.0)/14.0,2));
+  // A thermal inversion MAGNIFIES the vertical scale of the grazing rays, so
+  // the tiny colour separation of ordinary dispersion is stretched wide open:
+  // that is the mock-mirage flash — bigger, longer, far easier to catch.
+  var mag = inv ? (1+3.2*m) : 1;
+  var Rl = R*(1 + (dispFactor(lamNm)-1)*40*STRENGTH*mag);
+  if(inv) Rl += m*4.0;          // common lift + vertical stretch of the limb
   return aArcmin + Rl;
 }
 // The horizon cuts off at apparent altitude 0. A wavelength "still clears"
@@ -110,7 +111,7 @@ var SUNR=16.0; // solar semi-diameter, arcmin
 // The altitude at which the whole disc of wavelength λ has set:
 // solve apparentAlt(a + SUNR, λ) = 0  for a  (a = disc-centre true altitude)
 function setAltitude(lamNm){
-  var lo=-60,hi=40;
+  var lo=-90,hi=40;
   for(var i=0;i<48;i++){
     var mid=(lo+hi)/2;
     if(apparentAlt(mid+SUNR,lamNm)>0)hi=mid;else lo=mid;
@@ -137,7 +138,7 @@ function draw(){
   STRENGTH=+sD.value/100;
   if(auto&&!paused){
     var v=+sA.value - dt*(+sS.value)*2.4;
-    if(v<-120)v=400;
+    if(v<-820)v=400;
     sA.value=v;
   }
   var a=trueAlt();
@@ -146,7 +147,7 @@ function draw(){
 
   // ---- sky: built from the refracted twilight ----
   var sg=g.createLinearGradient(0,0,0,hy);
-  var dusk=Math.max(0,Math.min(1,(20-a)/44));
+  var dusk=Math.max(0,Math.min(1,(20-a)/70));
   sg.addColorStop(0, mix([6,10,32],[3,4,16],dusk));
   sg.addColorStop(.42, mix([28,60,120],[22,26,70],dusk));
   sg.addColorStop(.76, mix([140,120,150],[150,72,72],dusk));
@@ -342,7 +343,7 @@ addEventListener('pointerup',function(){drag=false});
 addEventListener('pointermove',function(e){if(drag)scrub(e)});
 function scrub(e){
   var f=1-Math.max(0,Math.min(1,e.clientY/H));
-  sA.value=Math.round(-120+f*520);
+  sA.value=Math.round(-820+f*1220);
 }
 
 requestAnimationFrame(draw);

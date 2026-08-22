@@ -49,6 +49,10 @@ var c=document.getElementById('c'),g=c.getContext('2d'),W=0,H=0,DPR=1;
 function resize(){DPR=Math.min(2,devicePixelRatio||1);W=innerWidth;H=innerHeight;
  c.width=W*DPR|0;c.height=H*DPR|0;c.style.width=W+'px';c.style.height=H+'px';g.setTransform(DPR,0,0,DPR,0,0)}
 addEventListener('resize',resize);resize();
+var _P=CanvasRenderingContext2D.prototype;
+if(!_P.roundRect){_P.roundRect=function(x,y,w,h,r){r=Math.min(r||0,Math.abs(w)/2,Math.abs(h)/2);
+ this.moveTo(x+r,y);this.arcTo(x+w,y,x+w,y+h,r);this.arcTo(x+w,y+h,x,y+h,r);
+ this.arcTo(x,y+h,x,y,r);this.arcTo(x,y,x+w,y,r);this.closePath();return this}}
 var el=function(i){return document.getElementById(i)};
 
 // four Mn species: 7+ purple, 6+ green(manganate), 4+ brown/gold(MnO2 colloid), 2+ colourless
@@ -65,7 +69,9 @@ function rates(p){var k=arr(p.T);
   // k[1] is the manganate step. Strong base stabilizes MnO4(2-), so the green
   // stage survives; as base weakens it disproportionates away almost instantly
   // and the column skips straight from purple/blue to gold.
-  return [0.85*k, 0.30*k + 6.0*k*Math.pow(1-p.base,3.2), 0.42*k];
+  // k[2] (MnO2 -> Mn2+) is the slowest rung, so the gold stage always gets its
+  // moment on stage no matter how fast the green one came and went.
+  return [0.85*k, 0.30*k + 6.0*k*Math.pow(1-p.base,3.2), 0.18*k];
 }
 // n = fraction vector, conserved
 function step(n,p,dt){

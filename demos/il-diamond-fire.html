@@ -238,10 +238,11 @@ function render(){
   var lrv=tot?up/tot:0;
   el('lr').textContent=(lrv*100).toFixed(0)+'%';
   // BLAZE WINDOW, derived live from C alone:
-  //  1st pavilion hit has incidence = p  -> needs p > C
-  //  2nd pavilion hit has incidence = 180-3p -> needs p < (180-C)/3
-  //  table exit needs |180-4p| < C     -> needs p > (180-C)/4
-  var pLo=Math.max(C,(180-C)/4), pHi=(180-C)/3;
+  //  1st pavilion hit has incidence = p         -> needs p > C
+  //  2nd pavilion hit has incidence = 180-3p    -> needs p < (180-C)/3
+  //  the twice-reflected ray leaves along 4p; to clear the crown facet
+  //  (tilted by the crown angle) it needs 4p > 180 - C - crown
+  var pLo=Math.max(C,(180-C-crD)/4), pHi=(180-C)/3;
   el('win').textContent=pLo.toFixed(1)+'° … '+pHi.toFixed(1)+'°';
   var v=el('verdict'),mode='';
   if(pvD<pLo){mode=pvD<C?'FISH-EYE — first facet is below C, light pours straight out'

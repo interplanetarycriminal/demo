@@ -226,6 +226,24 @@ function biasCurve(x,y,w,h){
   g.restore();
 }
 
+// on-canvas caption for the skew geometry
+function skewCaption(cx,cy,R){
+  g.save();
+  g.font='10px monospace';
+  g.fillStyle='#3aa0c8';
+  g.fillText('— — hull axis (geometry)',cx-R,cy+R*1.05);
+  g.fillStyle='#ff8a3d';
+  g.fillText('—— principal inertia axes, skewed by δ = '+(skew*180/Math.PI).toFixed(1)+'°',cx-R,cy+R*1.05+13);
+  g.fillStyle='#8fb6cc';
+  g.fillText('the mismatch is the whole illusion: spin leaks into wobble,',cx-R,cy+R*1.05+30);
+  g.fillText('wobble leaks back into spin — with the opposite sign.',cx-R,cy+R*1.05+42);
+  // arc showing delta between the two axes
+  g.strokeStyle='rgba(255,138,61,.75)';g.lineWidth=1.4;
+  g.beginPath();g.arc(cx,cy,R*0.55,S.phi,S.phi+skew);g.stroke();
+  g.fillStyle='#ffb46b';g.fillText('δ',cx+R*0.60*Math.cos(S.phi+skew/2),cy+R*0.60*Math.sin(S.phi+skew/2));
+  g.restore();
+}
+
 var last=performance.now();
 function frame(now){
   var dt=Math.min(0.05,(now-last)/1000);last=now;
@@ -241,6 +259,7 @@ function frame(now){
 
   var R=Math.min(W,H)*0.15;
   drawTop(W*0.36,H*0.40,R);
+  skewCaption(W*0.36,H*0.40,R);
   drawSideView(W*0.72,H*0.34,R*0.9);
 
   var pw=Math.min(560,W*0.44), ph=Math.min(96,H*0.14), px=W-pw-24, py=H-ph*3-40;
