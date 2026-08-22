@@ -6,13 +6,14 @@
 <title>Sequencer</title>
 <style>
 html,body{margin:0;height:100%;overflow:hidden;background:#05050f}
-#cv{display:block;position:fixed;inset:0;cursor:pointer}
-#ui{position:fixed;top:10px;left:10px;z-index:5;font:12px/1.6 ui-monospace,Menlo,Consolas,monospace;color:#d8f4ff;background:rgba(8,8,24,.55);padding:8px 12px;border:1px solid rgba(140,120,255,.3);border-radius:10px}
+#cv{touch-action:none;display:block;position:fixed;inset:0;cursor:pointer}
+#ui{position:fixed;top:10px;left:10px;z-index:5;font:12px/1.6 ui-monospace,Menlo,Consolas,monospace;color:#d8f4ff;background:rgba(8,8,24,.55);padding:8px 12px;border:1px solid rgba(140,120,255,.3);border-radius:10px;max-height:52vh;overflow:auto}
 #ui b{color:#fff;letter-spacing:2px}
 #ui a{color:#9d8cff;text-decoration:none}
 #ui a:hover{text-shadow:0 0 8px #9d8cff}
 #splash{position:fixed;inset:0;z-index:9;display:flex;align-items:center;justify-content:center;background:radial-gradient(1200px 700px at 50% 45%,#1a0d33,#05050f);cursor:pointer}
 #splash div{font:700 26px/1 ui-monospace,Menlo,Consolas,monospace;color:#d9c8ff;padding:30px 54px;border:1px solid rgba(160,120,255,.5);border-radius:18px;background:rgba(22,10,44,.7);box-shadow:0 0 60px rgba(150,90,255,.35),inset 0 0 40px rgba(150,90,255,.15);text-shadow:0 0 18px #a86bff}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 </head>
 <body>

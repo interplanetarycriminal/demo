@@ -1,12 +1,13 @@
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Ant Colony Optimization — TSP</title>
 <style>
   html,body{margin:0;height:100%;background:#04060b;overflow:hidden}
-  canvas{display:block;position:fixed;inset:0}
+  canvas{display:block;position:fixed;inset:0;touch-action:none}
   #ui{position:fixed;top:12px;left:12px;z-index:10;max-width:330px;
       font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#bfe9ff;
       background:rgba(4,10,18,.62);border:1px solid rgba(0,220,255,.22);
-      border-radius:8px;padding:10px 12px;backdrop-filter:blur(4px)}
+      border-radius:8px;padding:10px 12px;backdrop-filter:blur(4px);max-height:52vh;overflow:auto}
   #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.14em;color:#7df9ff;text-transform:uppercase}
   #ui p{margin:0 0 7px;color:#7d9bb0}
   #ui .k{color:#ffd36e}
@@ -15,6 +16,7 @@
   #ui table{border-collapse:collapse;margin:2px 0 6px}
   #ui td{padding:0 8px 0 0;color:#6f8ea3}
   #ui td.v{color:#eaffff}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>

@@ -6,15 +6,16 @@
 <title>Kaleido Mandala</title>
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#05060a;}
-  canvas{display:block;position:fixed;inset:0;}
+  canvas{display:block;position:fixed;inset:0;touch-action:none;}
   #ui{position:fixed;top:12px;left:12px;z-index:10;
       font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#f9d;
       background:rgba(14,8,20,0.42);border:1px solid rgba(255,150,220,0.18);
-      border-radius:8px;padding:10px 12px;max-width:270px;}
+      border-radius:8px;padding:10px 12px;max-width:270px;max-height:52vh;overflow:auto}
   #ui h1{margin:0 0 4px;font-size:12px;letter-spacing:2px;color:#ff9be6;text-transform:uppercase;}
   #ui p{margin:2px 0;opacity:0.82;}
   #ui a{color:#f9b;text-decoration:none;border-bottom:1px dotted #f9b;}
   #ui .k{color:#ffd27f;}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 </head>
 <body>
@@ -46,7 +47,7 @@ var mouse={x:null,y:null,last:-1e9};
 window.addEventListener('resize',resize);
 resize();
 
-canvas.addEventListener('mousemove',function(e){
+canvas.addEventListener('pointermove',function(e){
   mouse.x=e.clientX; mouse.y=e.clientY; mouse.last=performance.now();
 });
 canvas.addEventListener('click',function(){

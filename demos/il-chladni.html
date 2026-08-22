@@ -100,20 +100,25 @@ function ampMorph(x,y){
   var a=amp(x,y,curM,curN),b=amp(x,y,tgtM,tgtN);
   return a*(1-morph)+b*morph;
 }
-// resonance: modal frequency ~ sqrt(m^2+n^2) normalised
-function modeF(m,n){return Math.sqrt(m*m+n*n)/Math.sqrt(41);}
-function driveF(){return auto?(0.18+0.62*(morphIdxF())):userF;}
-function morphIdxF(){var a=modeF(curM,curN),b=modeF(tgtM,tgtN);return (a*(1-morph)+b*morph-modeF(1,2))/(modeF(4,6)-modeF(1,2));}
-function resonanceQ(){ // 1 at resonance, →0 off
-  var f=driveF(), fm=(modeF(curM,curN)*(1-morph)+modeF(tgtM,tgtN)*morph);
-  var fn=(fm-modeF(1,2))/(modeF(4,6)-modeF(1,2));
-  var d=(f-fn)/0.085; return Math.exp(-d*d);
-}
+// resonance: modal frequency ~ sqrt(m^2+n^2), mapped onto the 0..1 dial
+function modeF(m,n){return Math.sqrt(m*m+n*n);}
+function fMap(f){return (f-modeF(1,2))/(modeF(2,6)-modeF(1,2))*0.78+0.11;}
+function modePos(m,n){return fMap(modeF(m,n));}
+function fnorm(){return fMap(modeF(curM,curN)*(1-morph)+modeF(tgtM,tgtN)*morph);}
+function driveF(){return auto?Math.min(1,Math.max(0,fnorm()+detune)):userF;}
+function resonanceQ(){var d=(driveF()-fnorm())/0.085;return Math.exp(-d*d);}
 var meanA=1,onNode=0;
 
 function step(dt){
   tSim+=dt;
-  if(auto){ morph+=dt*0.28; if(morph>=1){morph=0;curM=tgtM;curN=tgtN;seqI=(seqI+1)%MODES.length;tgtM=MODES[seqI][0];tgtN=MODES[seqI][1];} }
+  if(auto){
+    cyc+=dt;
+    if(cyc>=CYC){cyc-=CYC;curIdx=tgtIdx;tgtIdx=(tgtIdx+1)%MODES.length;
+      curM=MODES[curIdx][0];curN=MODES[curIdx][1];tgtM=MODES[tgtIdx][0];tgtN=MODES[tgtIdx][1];}
+    var u=(cyc-5.6)/1.6;                       // 0..5.6 s locked, then one detune sweep
+    detune=(u>0&&u<1)?Math.sin(u*Math.PI)*0.17:0;
+    morph=cyc<5.9?0:(cyc>7.0?1:(cyc-5.9)/1.1); // mode swaps while the sand is airborne
+  } else { detune=0; }
   var Q=resonanceQ();
   var base=0.0022*vig;
   var sum=0,near=0;
@@ -122,7 +127,7 @@ function step(dt){
     var a=ampMorph(x,y);
     var aa=Math.abs(a);
     sum+=aa;
-    if(aa<0.09)near++;
+    if(aa<0.13)near++;
     // step ~ |A|^2 on resonance ; off resonance everything jitters (re-scatter)
     var s=stepSize(aa,Q,vig);
     x+=(Math.random()*2-1)*s*60*dt*10;
@@ -134,20 +139,37 @@ function step(dt){
 }
 
 function drawResp(){
-  var w=resp.width,h=resp.height;rg.clearRect(0,0,w,h);
-  rg.fillStyle='#070d18';rg.fillRect(0,0,w,h);
-  // peaks at each mode
-  rg.strokeStyle='#2a4570';rg.lineWidth=1;rg.beginPath();rg.moveTo(0,h-1);rg.lineTo(w,h-1);rg.stroke();
-  var pts=[];for(var k=0;k<MODES.length;k++){var m=MODES[k];pts.push((modeF(m[0],m[1])-modeF(1,2))/(modeF(4,6)-modeF(1,2)));}
-  rg.beginPath();
-  for(var x=0;x<=w;x++){var f=x/w,v=0;
-    for(var k2=0;k2<pts.length;k2++){var d=(f-pts[k2])/0.085;v=Math.max(v,Math.exp(-d*d));}
-    var yy=h-3-v*(h-8); if(x===0)rg.moveTo(x,yy);else rg.lineTo(x,yy);}
-  rg.strokeStyle='#5fd0ff';rg.lineWidth=1.4;rg.stroke();
-  for(var k3=0;k3<pts.length;k3++){var xx=pts[k3]*w;rg.fillStyle='#3a6ea8';rg.fillRect(xx-0.5,2,1,h-4);}
-  var fx=driveF()*w;
-  rg.fillStyle='#ffcf5c';rg.fillRect(fx-1,0,2,h);
-  rg.fillStyle='#7d90b0';rg.font='9px monospace';rg.fillText('response vs drive f',5,11);
+  var x=CARD.x,y=CARD.y,w=CARD.w,h=CARD.h;
+  g.fillStyle='rgba(6,10,20,0.94)';g.strokeStyle='#1d2b48';g.lineWidth=1;
+  g.beginPath();g.rect(x+.5,y+.5,w-1,h-1);g.fill();g.stroke();
+  g.fillStyle='#9fb0cc';g.font='10.5px ui-monospace,monospace';
+  g.fillText('plate response vs drive frequency',x+10,y+15);
+  var px=x+10,py=y+22,pw=w-20,ph=h-42;
+  g.fillStyle='#070d18';g.fillRect(px,py,pw,ph);
+  g.strokeStyle='#17233d';g.strokeRect(px+.5,py+.5,pw-1,ph-1);
+  var pts=[];for(var k=0;k<MODES.length;k++)pts.push({p:modePos(MODES[k][0],MODES[k][1]),m:MODES[k]});
+  pts.sort(function(a,b){return a.p-b.p;});
+  for(var k3=0;k3<pts.length;k3++){var xx=px+pts[k3].p*pw;
+    g.strokeStyle='rgba(58,110,168,0.55)';g.lineWidth=1;
+    g.beginPath();g.moveTo(xx,py+2);g.lineTo(xx,py+ph-2);g.stroke();
+    g.fillStyle=(pts[k3].m[0]===curM&&pts[k3].m[1]===curN)?'#ffe08a':'#5f7ba3';
+    g.font='9px ui-monospace,monospace';
+    var lb='('+pts[k3].m[0]+','+pts[k3].m[1]+')';
+    var lw=g.measureText(lb).width;
+    g.fillText(lb,Math.max(px+2,Math.min(xx-lw/2,px+pw-lw-2)),py+11+(k3%2)*11);}
+  g.beginPath();
+  for(var i=0;i<=pw;i++){var f=i/pw,v=0;
+    for(var k2=0;k2<pts.length;k2++){var d=(f-pts[k2].p)/0.085;v=Math.max(v,Math.exp(-d*d));}
+    var yy=py+ph-3-v*(ph-30); if(i===0)g.moveTo(px+i,yy);else g.lineTo(px+i,yy);}
+  g.strokeStyle='#5fd0ff';g.lineWidth=1.5;g.stroke();
+  var fx=px+driveF()*pw;
+  g.fillStyle='#ffcf5c';g.fillRect(fx-1,py+1,2,ph-2);
+  g.fillStyle='#7d90b0';g.font='9.5px ui-monospace,monospace';
+  g.fillText('0.6 kHz',px,y+h-7);
+  var rt='8.0 kHz';g.fillText(rt,px+pw-g.measureText(rt).width,y+h-7);
+  g.fillStyle='#ffcf5c';
+  var dt2='drive '+(0.6+driveF()*7.4).toFixed(2);
+  g.fillText(dt2,px+pw/2-g.measureText(dt2).width/2,y+h-7);
 }
 
 function draw(){
@@ -177,13 +199,16 @@ function draw(){
   }
   g.globalCompositeOperation='source-over';
   // labels on chips
-  var lbl='mode ('+curM+','+curN+') → ('+tgtM+','+tgtN+')  '+(morph*100|0)+'%';
-  chip(x0+8,y0+8,lbl,'#8fd6ff');
-  chip(x0+8,y0+S-26,(Q>0.6?'ON RESONANCE — sand crystallising on nodes':'OFF RESONANCE — sand re-scattering'),Q>0.6?'#9dff9d':'#ff9d6b');
+  var morphing=morph>0.02&&morph<0.98;
+  var mtxt=morphing?('mode ('+curM+','+curN+') → ('+tgtM+','+tgtN+')  '+(morph*100|0)+'%')
+                   :('mode ('+(morph>=0.98?tgtM:curM)+','+(morph>=0.98?tgtN:curN)+')  locked');
+  chip(x0+8,y0+8,mtxt,'#8fd6ff');
+  chip(x0+8,y0+S-26,(Q>0.6?'ON RESONANCE — sand crystallising on the nodal lines':'OFF RESONANCE — sand re-scattering'),Q>0.6?'#9dff9d':'#ff9d6b');
   drawResp();
   var f=driveF();
   document.getElementById('rF').textContent=(0.6+f*7.4).toFixed(2)+' kHz';
-  document.getElementById('rM').textContent='('+curM+','+curN+')'+(auto?' →('+tgtM+','+tgtN+')':'');
+  document.getElementById('rM').textContent=morphing?('('+curM+','+curN+') → ('+tgtM+','+tgtN+')')
+                                                    :('('+(morph>=0.98?tgtM:curM)+','+(morph>=0.98?tgtN:curN)+')');
   document.getElementById('rR').textContent=(Q*100).toFixed(0)+'%';
   document.getElementById('rA').textContent=meanA.toFixed(3);
   document.getElementById('rN').textContent=(onNode*100).toFixed(1)+'%';
@@ -215,8 +240,8 @@ function frame(now){
   var n=0;while(acc>=1/60&&n<40){step(1/60);acc-=1/60;n++;}
   draw();requestAnimationFrame(frame);
 }
-// warm start so t=4s is mid-crystallising
-(function warm(){morph=0.0;for(var i=0;i<40;i++)step(1/60);})();
+// warm start: sand already gathering, still tightening through t≈4 s while locked on resonance
+(function warm(){var k=cyc;for(var i=0;i<300;i++){step(1/60);cyc=k;}})();
 requestAnimationFrame(frame);
 })();
 </script>

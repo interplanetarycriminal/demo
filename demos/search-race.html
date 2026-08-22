@@ -6,13 +6,14 @@
 <title>Search Race — Linear vs Binary</title>
 <style>
 html,body{margin:0;height:100%;background:#04060c;overflow:hidden}
-canvas{position:fixed;inset:0;display:block}
-#ui{position:fixed;top:10px;left:10px;z-index:10;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#9fb6d4;background:rgba(4,10,22,.74);border:1px solid rgba(53,213,255,.28);border-radius:8px;padding:10px 12px;max-width:330px;backdrop-filter:blur(4px)}
+canvas{touch-action:none;position:fixed;inset:0;display:block}
+#ui{position:fixed;top:10px;left:10px;z-index:10;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#9fb6d4;background:rgba(4,10,22,.74);border:1px solid rgba(53,213,255,.28);border-radius:8px;padding:10px 12px;max-width:330px;backdrop-filter:blur(4px);max-height:52vh;overflow:auto}
 #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.14em;color:#35d5ff;text-shadow:0 0 8px rgba(53,213,255,.7)}
 #ui .ex{color:#7e93b3;margin:0 0 6px}
 #ui .keys{color:#5c7396;margin:0 0 6px}
 #ui a{color:#ff4fd8;text-decoration:none}
 #stats{white-space:pre;color:#cfe3ff;margin-bottom:6px}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 </head>
 <body>

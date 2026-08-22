@@ -6,8 +6,8 @@
 <title>Edit Distance — Levenshtein DP</title>
 <style>
 html,body{margin:0;height:100%;background:#04060c;overflow:hidden}
-canvas{position:fixed;inset:0;display:block}
-#ui{position:fixed;top:10px;left:10px;z-index:10;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#aef3e7;background:rgba(4,12,20,.72);border:1px solid rgba(0,255,213,.28);border-radius:8px;padding:9px 11px;max-width:280px;backdrop-filter:blur(3px)}
+canvas{position:fixed;inset:0;display:block;touch-action:none}
+#ui{position:fixed;top:10px;left:10px;z-index:10;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#aef3e7;background:rgba(4,12,20,.72);border:1px solid rgba(0,255,213,.28);border-radius:8px;padding:9px 11px;max-width:280px;backdrop-filter:blur(3px);max-height:52vh;overflow:auto}
 #ui h1{margin:0 0 3px;font-size:13px;color:#4dffdb;text-shadow:0 0 9px #0fc}
 #ui p{margin:3px 0;color:#7fd9c8}
 .hint{color:#5891a6}
@@ -15,6 +15,7 @@ canvas{position:fixed;inset:0;display:block}
 #stats{color:#c8fff4;white-space:pre;margin:4px 0}
 #ui input{width:80px;background:#06131d;border:1px solid #1e5f6e;color:#aef3e7;font:11px ui-monospace,monospace;padding:2px 4px;border-radius:4px;margin-right:4px}
 #ui input:focus{outline:1px solid #4dffdb}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 </head>
 <body>

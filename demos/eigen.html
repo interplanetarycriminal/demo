@@ -7,10 +7,10 @@
 <style>
   html,body{margin:0;height:100%;background:#04050d;overflow:hidden;
     font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#dfe6ff}
-  canvas{display:block;position:fixed;inset:0}
+  canvas{display:block;position:fixed;inset:0;touch-action:none}
   .pane{position:fixed;background:rgba(8,10,24,.62);border:1px solid rgba(120,150,255,.22);
     border-radius:10px;backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);
-    box-shadow:0 10px 40px -14px #000;z-index:5}
+    box-shadow:0 10px 40px -14px #000;z-index:5;max-height:52vh;overflow:auto}
   #ui{top:14px;left:14px;padding:12px 14px;max-width:390px}
   #ui h1{margin:0 0 6px;font-size:13px;letter-spacing:.16em;font-weight:700;
     background:linear-gradient(92deg,#3ce0ff,#b48cff 55%,#ff58d8);
@@ -35,6 +35,7 @@
     font-size:11px;line-height:1.65;color:#93a0cc}
   #stats b{color:#eaf0ff;font-weight:600}
   .note{margin-top:7px;padding:6px 7px;border-radius:6px;font-size:10.5px;line-height:1.5}
+@media (max-width:640px){.pane{font-size:11px;max-height:40vh}}
 </style>
 </head>
 <body>

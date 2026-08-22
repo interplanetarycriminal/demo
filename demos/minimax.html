@@ -1,12 +1,13 @@
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
 <title>Minimax + Alpha-Beta</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
   html,body{margin:0;height:100%;background:#04060a;overflow:hidden}
-  canvas{display:block;position:fixed;inset:0}
+  canvas{display:block;position:fixed;inset:0;touch-action:none}
   #ui{position:fixed;top:0;left:0;margin:12px;padding:10px 12px;background:rgba(6,12,18,.75);
       border:1px solid rgba(90,240,200,.26);border-radius:8px;color:#c9f6e8;
       font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;max-width:330px;z-index:10;
-      backdrop-filter:blur(6px);text-shadow:0 0 8px rgba(90,240,200,.3)}
+      backdrop-filter:blur(6px);text-shadow:0 0 8px rgba(90,240,200,.3);max-height:52vh;overflow:auto}
   #ui h1{margin:0 0 4px;font-size:14px;letter-spacing:.11em;color:#5fe;text-transform:uppercase}
   #ui .e{color:#8db6ab;margin:0 0 7px}
   #ui .k{color:#5d857a}
@@ -14,6 +15,7 @@
   #ui a{color:#ff7bd5;text-decoration:none;display:inline-block;margin-top:7px}
   #ui a:hover{text-decoration:underline}
   #ui hr{border:0;border-top:1px solid rgba(90,240,200,.16);margin:7px 0}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
@@ -404,12 +406,12 @@ function loop(now){
   requestAnimationFrame(loop);
 }
 
-cv.addEventListener('mousemove', function(ev){
+cv.addEventListener('pointermove', function(ev){
   var cs = BS/3;
   var x = Math.floor((ev.clientX - BX)/cs), y = Math.floor((ev.clientY - BY)/cs);
   hoverCell = (x>=0&&y>=0&&x<3&&y<3) ? y*3+x : -1;
 });
-cv.addEventListener('mousedown', function(ev){
+cv.addEventListener('pointerdown', function(ev){
   var cs = BS/3;
   var x = Math.floor((ev.clientX - BX)/cs), y = Math.floor((ev.clientY - BY)/cs);
   if (x>=0&&y>=0&&x<3&&y<3) playerMove(y*3+x);

@@ -3,11 +3,11 @@
 <title>Simpson's Paradox — The Reversal</title>
 <style>
   html,body{margin:0;height:100%;background:#04060d;overflow:hidden}
-  canvas{display:block;position:fixed;inset:0}
+  canvas{touch-action:none;display:block;position:fixed;inset:0}
   #ui{position:fixed;top:14px;left:14px;z-index:10;background:rgba(6,10,20,.62);
       border:1px solid rgba(255,80,140,.28);border-radius:9px;padding:12px 14px;
       font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#ffd9e6;
-      max-width:352px;backdrop-filter:blur(7px)}
+      max-width:352px;backdrop-filter:blur(7px);max-height:52vh;overflow:auto}
   #ui h1{margin:0 0 6px;font-size:14px;letter-spacing:.15em;color:#ff4d8d;text-transform:uppercase}
   #ui p{margin:0 0 8px;color:#9aa6c8}
   #ui .k{color:#ffd166}
@@ -33,6 +33,7 @@
   #take{position:fixed;left:0;right:0;bottom:12px;z-index:10;text-align:center;
       font:12px/1.4 ui-monospace,monospace;color:#8fa0c8;letter-spacing:.06em}
   #take b{color:#ffd166;font-weight:400}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>

@@ -6,10 +6,10 @@
 <title>Towers of Hanoi — Recursion Made Visible</title>
 <style>
 html,body{margin:0;height:100%;overflow:hidden;background:#04060c}
-canvas{position:fixed;inset:0;display:block}
+canvas{position:fixed;inset:0;display:block;touch-action:none}
 .panel{position:fixed;z-index:10;font:12px/1.55 ui-monospace,Consolas,Menlo,monospace;
  background:rgba(7,12,24,.74);border:1px solid rgba(80,170,255,.25);border-radius:10px;
- padding:10px 14px;backdrop-filter:blur(3px)}
+ padding:10px 14px;backdrop-filter:blur(3px);max-height:52vh;overflow:auto}
 #ui{top:12px;left:12px;color:#9fd0f5;max-width:330px}
 #ui h1{margin:0 0 4px;font-size:14px;letter-spacing:.5px;color:#fff;text-shadow:0 0 10px #38f}
 #ui .dim{color:#647d9e;font-size:11px}
@@ -20,6 +20,7 @@ canvas{position:fixed;inset:0;display:block}
 .hot{color:#fff;background:rgba(255,70,160,.22);text-shadow:0 0 8px #f6a}
 .anc{color:#9fd8ff}
 .done{color:#22344e}
+@media (max-width:640px){.panel{font-size:11px;max-height:40vh}}
 </style>
 </head>
 <body>

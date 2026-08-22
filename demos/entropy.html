@@ -1,17 +1,19 @@
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
 <title>Entropy &amp; Optimal Coding</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 html,body{margin:0;padding:0;background:#04070a;overflow:hidden;height:100%}
-canvas{display:block;cursor:ns-resize}
+canvas{display:block;cursor:ns-resize;touch-action:none}
 #ui{position:fixed;top:0;left:0;margin:12px;padding:10px 12px;background:rgba(6,14,18,.64);
   border:1px solid rgba(100,255,220,.25);border-radius:6px;color:#bff7ea;
   font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;max-width:340px;pointer-events:none;
-  text-shadow:0 0 8px rgba(60,240,200,.35)}
+  text-shadow:0 0 8px rgba(60,240,200,.35);max-height:52vh;overflow:auto}
 #ui h1{margin:0 0 4px;font-size:14px;letter-spacing:.11em;color:#5cffd6}
 #ui .e{color:#8aa8a2}
 #ui .k{color:#ffd76a}
 #ui .s{color:#9fd8ff}
 #ui a{color:#ff8ad8;pointer-events:auto;text-decoration:none}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <div id="ui">
   <h1>ENTROPY &amp; OPTIMAL CODING</h1>

@@ -6,16 +6,17 @@
 <title>Falling Sand</title>
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#05060a;cursor:crosshair}
-  #c{display:block;width:100vw;height:100vh}
+  #c{touch-action:none;display:block;width:100vw;height:100vh}
   #ui{position:fixed;top:10px;left:10px;z-index:10;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;
       color:#cfe;background:rgba(6,10,18,.55);border:1px solid rgba(120,200,255,.25);
-      padding:8px 10px;border-radius:6px;backdrop-filter:blur(3px);pointer-events:none;max-width:60vw}
+      padding:8px 10px;border-radius:6px;backdrop-filter:blur(3px);pointer-events:none;max-width:60vw;max-height:52vh;overflow:auto}
   #ui b{color:#7ef0ff;letter-spacing:1px}
   #ui a{color:#ff7ad9;pointer-events:auto;text-decoration:none}
   #ui a:hover{text-decoration:underline}
   #ui .row{margin-top:4px;opacity:.85}
   #mat{color:#fff}
   .sw{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;vertical-align:-1px;box-shadow:0 0 6px currentColor}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 </head>
 <body>

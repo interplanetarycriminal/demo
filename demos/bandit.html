@@ -1,12 +1,13 @@
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
 <title>Multi-Armed Bandit</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
   html,body{margin:0;height:100%;background:#06050c;overflow:hidden}
-  canvas{display:block;position:fixed;inset:0}
+  canvas{display:block;position:fixed;inset:0;touch-action:none}
   #ui{position:fixed;top:0;left:0;margin:12px;padding:10px 12px;background:rgba(10,8,20,.74);
       border:1px solid rgba(200,120,255,.28);border-radius:8px;color:#e5d4ff;
       font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;max-width:340px;z-index:10;
-      backdrop-filter:blur(6px);text-shadow:0 0 8px rgba(180,110,255,.3)}
+      backdrop-filter:blur(6px);text-shadow:0 0 8px rgba(180,110,255,.3);max-height:52vh;overflow:auto}
   #ui h1{margin:0 0 4px;font-size:14px;letter-spacing:.11em;color:#f9a;text-transform:uppercase}
   #ui .e{color:#a897c4;margin:0 0 7px}
   #ui .k{color:#7a6b96}
@@ -14,6 +15,7 @@
   #ui a{color:#6ff;text-decoration:none;display:inline-block;margin-top:7px}
   #ui a:hover{text-decoration:underline}
   #ui hr{border:0;border-top:1px solid rgba(200,120,255,.16);margin:7px 0}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>

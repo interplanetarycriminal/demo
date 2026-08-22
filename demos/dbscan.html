@@ -1,18 +1,20 @@
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>DBSCAN — Density Clustering, Animated</title>
 <style>
   html,body{margin:0;height:100%;background:#04060a;overflow:hidden}
-  canvas{display:block;position:fixed;inset:0}
+  canvas{display:block;position:fixed;inset:0;touch-action:none}
   #ui{position:fixed;top:14px;left:14px;z-index:10;background:rgba(6,10,16,.64);
       border:1px solid rgba(120,255,180,.26);border-radius:8px;padding:12px 14px;
       font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#c8ffe4;
-      max-width:344px;backdrop-filter:blur(6px)}
+      max-width:344px;backdrop-filter:blur(6px);max-height:52vh;overflow:auto}
   #ui h1{margin:0 0 6px;font-size:14px;letter-spacing:.14em;color:#6cffc0;text-transform:uppercase}
   #ui p{margin:0 0 8px;color:#7fae98}
   #ui .k{color:#ffe066}
   #ui .row{color:#e6fff4}
   #ui a{color:#ff7ad9;text-decoration:none}
   #ui a:hover{text-decoration:underline}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>

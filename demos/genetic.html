@@ -6,13 +6,14 @@
 <title>Genetic Rockets</title>
 <style>
 html,body{margin:0;height:100%;overflow:hidden;background:#03050b}
-#c{position:fixed;inset:0;display:block}
-#ui{position:fixed;top:10px;left:10px;z-index:10;color:#9ad8e8;background:rgba(3,10,20,.74);border:1px solid rgba(0,255,213,.22);border-radius:8px;padding:10px 12px;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;max-width:335px}
+#c{position:fixed;inset:0;display:block;touch-action:none}
+#ui{position:fixed;top:10px;left:10px;z-index:10;color:#9ad8e8;background:rgba(3,10,20,.74);border:1px solid rgba(0,255,213,.22);border-radius:8px;padding:10px 12px;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;max-width:335px;max-height:52vh;overflow:auto}
 #ui h1{margin:0 0 3px;font-size:13px;letter-spacing:1px;color:#3cf7d8;font-weight:700}
 .dim{color:#6d93aa}
 #ui b{color:#fff}
 #ui a{color:#ff8ae2;text-decoration:none}
 #g{display:block;margin:6px 0 4px;background:rgba(0,0,0,.4);border:1px solid rgba(0,255,213,.14);border-radius:4px}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 </head>
 <body>

@@ -1,17 +1,19 @@
 <title>Galton Board — Central Limit Theorem</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
   html,body{margin:0;padding:0;height:100%;background:#04050a;overflow:hidden}
-  canvas{display:block;position:fixed;inset:0}
+  canvas{display:block;position:fixed;inset:0;touch-action:none}
   #ui{position:fixed;top:12px;left:12px;z-index:10;background:rgba(10,10,20,.62);
       border:1px solid rgba(255,170,255,.22);border-radius:8px;padding:10px 12px;
       font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#ffd9f6;max-width:380px;
-      backdrop-filter:blur(6px);text-shadow:0 0 8px rgba(255,120,220,.30)}
+      backdrop-filter:blur(6px);text-shadow:0 0 8px rgba(255,120,220,.30);max-height:52vh;overflow:auto}
   #ui h1{margin:0 0 4px;font-size:14px;letter-spacing:.08em;color:#ff9fe8}
   #ui .ex{color:#c0a2bc;margin-bottom:6px}
   #ui .hint{color:#8d7a92;margin-top:6px;font-size:11px}
   #ui a{color:#ff9fe8;text-decoration:none;border-bottom:1px dotted #ff9fe8}
   #ui .row{display:flex;justify-content:space-between;gap:10px}
   #ui b{color:#fff;font-weight:600}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
 <canvas id="c"></canvas>

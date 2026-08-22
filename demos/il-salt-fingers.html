@@ -120,15 +120,22 @@ function diagnose(){
 var img=null,idata=null;
 function ensureImg(w,h){if(!img||img.width!==w||img.height!==h){img=document.createElement('canvas');img.width=w;img.height=h;idata=img.getContext('2d').createImageData(w,h);}}
 
-var TANK={x:0,y:0,w:10,h:10};
+var TANK={x:0,y:0,w:10,h:10},INSET={x:0,y:0,w:0,h:0,show:false};
 function layout(){
-  var pad=14, uiw=(W>760)?370:0;
-  var insetW=(W>760)?Math.min(230,W*0.2):0;
-  var availW=W-uiw-insetW-pad*3, availH=H-pad*2;
-  if(W<=760){availH=H-pad*2-Math.min(H*0.45,300)-8;availW=W-pad*2;}
-  TANK.w=Math.max(120,availW);TANK.h=Math.max(120,availH);
-  TANK.x=uiw+pad;TANK.y=(W<=760)?(H-pad-TANK.h):pad;
-  if(TANK.x<8)TANK.x=8;if(TANK.y<8)TANK.y=8;
+  var pad=10, uiw=(W>760)?Math.min(362,W*0.42):0;
+  var reserve=(W>=1180)?Math.min(250,W*0.18):0;
+  if(W>760){
+    TANK.x=uiw+pad;TANK.y=10;
+    TANK.w=Math.max(140,W-TANK.x-reserve-(reserve?18:10));
+    TANK.h=Math.max(140,H-20);
+  }else{
+    TANK.x=8;TANK.y=Math.min(H*0.38,262)+16;TANK.w=W-16;TANK.h=Math.max(120,H-TANK.y-10);
+  }
+  INSET.w=reserve?reserve:Math.min(218,TANK.w*0.44);
+  INSET.h=Math.min(272,Math.max(150,TANK.h*0.52));
+  INSET.x=reserve?(W-reserve-10):(TANK.x+TANK.w-INSET.w-10);
+  INSET.y=TANK.y+8;
+  INSET.show=(W>560&&TANK.w>270&&TANK.h>190);
 }
 
 function draw(){
@@ -139,13 +146,14 @@ function draw(){
   for(var j=0;j<NY;j++)for(var i=0;i<NX;i++){
     var k=idx(i,j),o=k*4;
     var s=Math.max(0,Math.min(1,S[k])),t=Math.max(0,Math.min(1,T[k]));
-    // salinity gold, temperature cyan; anomaly S-T lights up fingers
-    var an=Math.max(0,Math.min(1,(s-t)*3.2+0.5));
-    var v=Math.abs(V[k])*0.9;
-    var r=s*205*0.9 + an*70 + v*90;
-    var gg=s*150*0.8 + t*95 + v*80;
-    var b=t*225*0.95 + (1-an)*40 + v*70;
-    d[o]=Math.min(255,r*0.9+14);d[o+1]=Math.min(255,gg*0.9+16);d[o+2]=Math.min(255,b*0.9+26);d[o+3]=255;
+    var cold=1-t, anom=s-t, v=V[k];
+    // warm+salty = amber, cold+fresh = deep blue; sinking salty fingers glow gold, risers cyan
+    var gold=Math.min(1,Math.max(0,anom*7)*0.62+Math.max(0,v*1.15)*0.78);
+    var cyan=Math.min(1,Math.max(0,-anom*7)*0.62+Math.max(0,-v*1.15)*0.78);
+    var r=12+s*102+gold*148;
+    var gg=16+s*64+cold*24+gold*108+cyan*146;
+    var b=26+cold*98+cyan*200+s*10;
+    d[o]=Math.min(255,r);d[o+1]=Math.min(255,gg);d[o+2]=Math.min(255,b);d[o+3]=255;
   }
   img.getContext('2d').putImageData(idata,0,0);
   g.imageSmoothingEnabled=true;
@@ -153,21 +161,20 @@ function draw(){
   g.strokeStyle='#2a4570';g.lineWidth=2;g.strokeRect(TANK.x-1,TANK.y-1,TANK.w+2,TANK.h+2);
 
   diagnose();
-  chip(TANK.x+8,TANK.y+8,'warm + salty (light by heat, heavy by salt)','#ffd27a');
+  chip(TANK.x+8,TANK.y+8,'warm + salty — heavy by salt','#ffd27a');
   chip(TANK.x+8,TANK.y+TANK.h-26,'cold + fresh','#7fe8ff');
   var alive=tau<0.55;
-  chip(TANK.x+8,TANK.y+TANK.h/2-9,alive?'FINGERS: heat leaks sideways, salt does not':'τ→1: equal diffusion, fingers dead','#dfe9ff');
+  chip(TANK.x+8,TANK.y+TANK.h/2-9,alive?'heat leaks sideways, salt does not':'τ→1: equal diffusion, fingers dead','#dfe9ff');
 
   // inset staircase
-  if(W>760){
-    var iw=Math.min(216,W*0.19),ih=Math.min(250,H*0.42);
-    var ix=W-iw-14, iy=14;
-    g.fillStyle='rgba(6,10,20,0.9)';g.strokeStyle='#1d2b48';g.lineWidth=1;
-    g.beginPath();g.rect(ix,iy,iw,ih);g.fill();g.stroke();
+  if(INSET.show){
+    var iw=INSET.w,ih=INSET.h,ix=INSET.x,iy=INSET.y;
+    g.fillStyle='rgba(5,9,17,0.95)';g.strokeStyle='#1d2b48';g.lineWidth=1;
+    g.beginPath();g.rect(ix+.5,iy+.5,iw-1,ih-1);g.fill();g.stroke();
     g.fillStyle='#9fb0cc';g.font='10px ui-monospace,monospace';
-    g.fillText('ocean staircase  T,S vs depth',ix+8,iy+14);
-    var px0=ix+12,py0=iy+26,pw=iw-38,ph=ih-42;
-    g.strokeStyle='#22375c';g.strokeRect(px0,py0,pw,ph);
+    g.fillText('ocean staircase  T,S vs depth',ix+10,iy+16);
+    var px0=ix+12,py0=iy+26,pw=iw-24,ph=ih-72;
+    g.strokeStyle='#22375c';g.strokeRect(px0+.5,py0+.5,pw-1,ph-1);
     var steps=6;
     for(var q=0;q<2;q++){
       g.beginPath();
@@ -182,9 +189,10 @@ function draw(){
       }
       g.strokeStyle=q===0?'#7fe8ff':'#ffd27a';g.lineWidth=1.6;g.stroke();
     }
-    g.fillStyle='#7fe8ff';g.fillText('T',px0+pw*0.20,py0+ph+13);
-    g.fillStyle='#ffd27a';g.fillText('S',px0+pw*0.66,py0+ph+13);
-    g.fillStyle='#7d90b0';g.fillText('mixed layers',ix+8,iy+ih-6);
+    g.font='10px ui-monospace,monospace';
+    g.fillStyle='#7fe8ff';g.fillText('temperature',px0+pw*0.04,py0+ph+16);
+    g.fillStyle='#ffd27a';g.fillText('salinity',px0+pw*0.56,py0+ph+16);
+    g.fillStyle='#7d90b0';g.fillText('well-mixed layers, sharp steps',px0,py0+ph+32);
   }
 
   document.getElementById('rW').textContent=fw.toFixed(1)+' % tank';

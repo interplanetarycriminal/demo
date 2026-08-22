@@ -6,16 +6,17 @@
 <title>Chladni Plate</title>
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#04050a;}
-  canvas{display:block;position:fixed;inset:0;}
+  canvas{display:block;position:fixed;inset:0;touch-action:none;}
   #ui{position:fixed;top:12px;left:12px;z-index:10;
       font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#bfe;
       background:rgba(8,12,20,0.42);border:1px solid rgba(120,220,255,0.18);
-      border-radius:8px;padding:10px 12px;max-width:270px;}
+      border-radius:8px;padding:10px 12px;max-width:270px;max-height:52vh;overflow:auto}
   #ui h1{margin:0 0 4px;font-size:12px;letter-spacing:2px;color:#7ff5dd;text-transform:uppercase;}
   #ui p{margin:2px 0;opacity:0.82;}
   #ui a{color:#8ff;text-decoration:none;border-bottom:1px dotted #8ff;}
   #ui .k{color:#ffd27f;}
   #nm{color:#8effd0;font-size:13px;}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 </head>
 <body>

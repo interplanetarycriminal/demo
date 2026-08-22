@@ -6,13 +6,14 @@
 <title>Traveling Salesman — Nearest Neighbor + 2-opt</title>
 <style>
 html,body{margin:0;height:100%;background:#05060d;overflow:hidden}
-canvas{display:block;cursor:crosshair}
-#ui{position:fixed;top:10px;left:10px;z-index:10;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#9fd8ff;background:rgba(4,10,22,.76);border:1px solid rgba(255,110,199,.3);border-radius:8px;padding:10px 12px;max-width:330px}
+canvas{touch-action:none;display:block;cursor:crosshair}
+#ui{position:fixed;top:10px;left:10px;z-index:10;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#9fd8ff;background:rgba(4,10,22,.76);border:1px solid rgba(255,110,199,.3);border-radius:8px;padding:10px 12px;max-width:330px;max-height:52vh;overflow:auto}
 #ui h1{margin:0;font-size:13px;color:#ff6ec7;letter-spacing:.5px}
 #ui p{margin:5px 0;color:#8fa9c4}
 #ui .hint{color:#5e7a92}
 #ui a{color:#ffd54a;text-decoration:none}
 #stats{margin-top:6px;white-space:pre;color:#cfe9ff}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 </head>
 <body>

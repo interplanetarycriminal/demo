@@ -1,12 +1,13 @@
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
 <title>Euclid's Fifth Postulate</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
   html,body{margin:0;padding:0;background:#05060b;overflow:hidden;height:100%}
-  canvas{display:block;position:fixed;inset:0}
+  canvas{touch-action:none;display:block;position:fixed;inset:0}
   #ui{position:fixed;top:0;left:0;margin:12px;padding:10px 13px;background:rgba(10,9,14,.7);
       border:1px solid rgba(240,205,140,.24);border-radius:9px;color:#cfb98d;
-      font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;width:298px;
-      backdrop-filter:blur(6px);z-index:10}
+      font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;width:min(298px,calc(100vw - 20px));
+      backdrop-filter:blur(6px);z-index:10;max-height:52vh;overflow:auto}
   #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.1em;color:#f0cd8c;text-transform:uppercase}
   #ui .exp{color:#9a8d72;margin-bottom:8px}
   #ui .hint{color:#6f6349;margin-top:8px;font-size:11px;line-height:1.55}
@@ -15,6 +16,7 @@
   #ui b{color:#f0cd8c;font-weight:normal}
   .tab{display:inline-block;padding:1px 6px;border:1px solid rgba(240,205,140,.3);border-radius:4px;color:#7a6c50}
   .tab.on{color:#05060b;background:#f0cd8c;border-color:#f0cd8c}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 
 <canvas id="c"></canvas>

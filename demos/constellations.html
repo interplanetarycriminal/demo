@@ -6,11 +6,12 @@
 <title>Constellations — living night sky</title>
 <style>
 html,body{margin:0;height:100%;overflow:hidden;background:#02030a}
-#c{display:block;position:fixed;inset:0}
-#hud{position:fixed;top:10px;left:12px;z-index:10;font:11px/1.6 ui-monospace,Menlo,Consolas,monospace;color:#aac6ff;background:rgba(3,6,18,.5);border:1px solid rgba(140,170,255,.2);border-radius:8px;padding:7px 10px}
+#c{display:block;position:fixed;inset:0;touch-action:none}
+#hud{position:fixed;top:10px;left:12px;z-index:10;font:11px/1.6 ui-monospace,Menlo,Consolas,monospace;color:#aac6ff;background:rgba(3,6,18,.5);border:1px solid rgba(140,170,255,.2);border-radius:8px;padding:7px 10px;max-height:52vh;overflow:auto}
 #hud b{color:#fff;letter-spacing:1px}
 #hud a{color:#8fe3ff;text-decoration:none}
 #hud a:hover{text-decoration:underline}
+@media (max-width:640px){#hud{font-size:11px;max-height:40vh}}
 </style>
 </head>
 <body>

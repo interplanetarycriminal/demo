@@ -6,14 +6,15 @@
 <title>Mode 7 Horizon</title>
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#04010a}
-  #c{display:block;width:100vw;height:100vh}
+  #c{display:block;width:100vw;height:100vh;touch-action:none}
   #ui{position:fixed;top:10px;left:10px;z-index:10;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;
       color:#ffd7f4;background:rgba(12,4,24,.5);border:1px solid rgba(255,120,220,.3);
-      padding:8px 10px;border-radius:6px;backdrop-filter:blur(3px);pointer-events:none}
+      padding:8px 10px;border-radius:6px;backdrop-filter:blur(3px);pointer-events:none;max-height:52vh;overflow:auto}
   #ui b{color:#ff5ad2;letter-spacing:1px}
   #ui a{color:#67f7ff;pointer-events:auto;text-decoration:none}
   #ui a:hover{text-decoration:underline}
   #ui .row{margin-top:4px;opacity:.9}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 </head>
 <body>

@@ -8,10 +8,11 @@
   html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#000}
   canvas{position:fixed;top:0;left:0;display:block;touch-action:none}
   #ui{position:fixed;top:10px;left:12px;z-index:10;font:11px/1.7 ui-monospace,Menlo,Consolas,monospace;
-      color:rgba(170,190,255,.8);pointer-events:none;text-shadow:0 1px 4px #000,0 0 12px rgba(20,20,120,.7);user-select:none}
+      color:rgba(170,190,255,.8);pointer-events:none;text-shadow:0 1px 4px #000,0 0 12px rgba(20,20,120,.7);user-select:none;max-height:52vh;overflow:auto}
   #ui .t{font-size:13px;font-weight:bold;color:#9db4ff;letter-spacing:.12em}
   #ui a{color:rgba(120,230,255,.9);pointer-events:auto;text-decoration:none}
   #ui a:hover{color:#7df9ff;text-shadow:0 0 8px #7df9ff}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 </head>
 <body>

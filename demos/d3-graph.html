@@ -7,12 +7,13 @@
 <style>
 html,body{margin:0;height:100%;overflow:hidden;background:radial-gradient(1000px 700px at 50% 40%,#0b0f1e 0%,#05060c 70%,#03040a 100%)}
 svg{display:block}
-.ui{position:fixed;top:14px;left:14px;z-index:100;font:12px/1.7 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:rgba(222,230,255,.75);background:rgba(6,8,16,.55);border:1px solid rgba(130,160,255,.18);padding:10px 14px;border-radius:10px;backdrop-filter:blur(8px);pointer-events:none}
+.ui{position:fixed;top:14px;left:14px;z-index:100;font:12px/1.7 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:rgba(222,230,255,.75);background:rgba(6,8,16,.55);border:1px solid rgba(130,160,255,.18);padding:10px 14px;border-radius:10px;backdrop-filter:blur(8px);pointer-events:none;max-height:52vh;overflow:auto}
 .ui b{color:#7df9ff;font-weight:600;letter-spacing:.1em}
 .ui a{color:#ff5c9d;pointer-events:auto;text-decoration:none}
 .ui a:hover{text-decoration:underline}
 .ui .dim{opacity:.72}
 circle{cursor:grab}
+@media (max-width:640px){.ui{font-size:11px;max-height:40vh}}
 </style>
 </head>
 <body>

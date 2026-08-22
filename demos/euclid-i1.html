@@ -1,12 +1,13 @@
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
 <title>Euclid I.1 — To Construct an Equilateral Triangle</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
   html,body{margin:0;padding:0;background:#07060a;overflow:hidden;height:100%}
-  canvas{display:block;position:fixed;inset:0;cursor:default}
+  canvas{touch-action:none;display:block;position:fixed;inset:0;cursor:default}
   #ui{position:fixed;top:0;left:0;margin:12px;padding:10px 12px;background:rgba(14,11,8,.72);
       border:1px solid rgba(201,163,92,.26);border-radius:8px;color:#cdbb96;
-      font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;width:292px;
-      backdrop-filter:blur(6px);z-index:10}
+      font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;width:min(292px,calc(100vw - 20px));
+      backdrop-filter:blur(6px);z-index:10;max-height:52vh;overflow:auto}
   #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.14em;color:#f0d9a0;text-transform:uppercase}
   #ui .exp{color:#8c7d64;margin-bottom:9px}
   #ui .cl{margin:0 0 8px;border-top:1px solid rgba(201,163,92,.17);
@@ -20,6 +21,7 @@
   #ui a{color:#8ce7ff;text-decoration:none}
   #ui a:hover{text-decoration:underline}
   #ui .st{color:#f0d9a0}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 
 <canvas id="c"></canvas>

@@ -1,18 +1,20 @@
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Overfitting — Bias &amp; Variance, Felt</title>
 <style>
   html,body{margin:0;height:100%;background:#06060c;overflow:hidden}
-  canvas{display:block;position:fixed;inset:0}
+  canvas{touch-action:none;display:block;position:fixed;inset:0}
   #ui{position:fixed;top:14px;left:14px;z-index:10;background:rgba(8,8,18,.64);
       border:1px solid rgba(255,140,80,.28);border-radius:8px;padding:12px 14px;
       font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#ffd7a8;
-      max-width:350px;backdrop-filter:blur(6px)}
+      max-width:350px;backdrop-filter:blur(6px);max-height:52vh;overflow:auto}
   #ui h1{margin:0 0 6px;font-size:14px;letter-spacing:.14em;color:#ffae5c;text-transform:uppercase}
   #ui p{margin:0 0 8px;color:#b79a80}
   #ui .k{color:#7dffb0}
   #ui .row{color:#ffe9d2}
   #ui a{color:#7dffb0;text-decoration:none}
   #ui a:hover{text-decoration:underline}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>

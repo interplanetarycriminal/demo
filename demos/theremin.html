@@ -6,13 +6,14 @@
 <title>Theremin</title>
 <style>
 html,body{margin:0;height:100%;overflow:hidden;background:#04040c}
-#cv{display:block;position:fixed;inset:0;cursor:crosshair}
-#ui{position:fixed;top:10px;left:10px;z-index:5;font:12px/1.6 ui-monospace,Menlo,Consolas,monospace;color:#cfeaff;background:rgba(6,10,26,.55);padding:8px 12px;border:1px solid rgba(110,190,255,.25);border-radius:10px}
+#cv{touch-action:none;display:block;position:fixed;inset:0;cursor:crosshair}
+#ui{position:fixed;top:10px;left:10px;z-index:5;font:12px/1.6 ui-monospace,Menlo,Consolas,monospace;color:#cfeaff;background:rgba(6,10,26,.55);padding:8px 12px;border:1px solid rgba(110,190,255,.25);border-radius:10px;max-height:52vh;overflow:auto}
 #ui b{color:#fff;letter-spacing:2px}
 #ui a{color:#6fd3ff;text-decoration:none}
 #ui a:hover{text-shadow:0 0 8px #6fd3ff}
 #splash{position:fixed;inset:0;z-index:9;display:flex;align-items:center;justify-content:center;background:radial-gradient(1200px 700px at 50% 45%,#0d1a3a,#04040c);cursor:pointer}
 #splash div{font:700 26px/1 ui-monospace,Menlo,Consolas,monospace;color:#aee6ff;padding:30px 54px;border:1px solid rgba(110,190,255,.5);border-radius:18px;background:rgba(10,18,44,.7);box-shadow:0 0 60px rgba(80,170,255,.35),inset 0 0 40px rgba(80,170,255,.15);text-shadow:0 0 18px #58c8ff}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 </head>
 <body>

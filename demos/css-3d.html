@@ -20,7 +20,7 @@ body.dragging{cursor:grabbing}
 @keyframes d2{from{transform:translate3d(0,0,0) scale(1.1)}to{transform:translate3d(-12vmax,12vmax,0) scale(.92)}}
 @keyframes d3{from{transform:translate3d(0,0,0) scale(.95)}to{transform:translate3d(10vmax,-10vmax,0) scale(1.22)}}
 .grain{position:fixed;inset:0;pointer-events:none;opacity:.14;mix-blend-mode:overlay;background:repeating-conic-gradient(#000 0.0001%,#fff 0.0002%,#000 0.0004%)}
-.hud{position:fixed;top:16px;left:16px;z-index:20;color:rgba(190,230,255,.78);font:12px/1.7 ui-monospace,Menlo,Consolas,monospace;background:rgba(8,12,24,.5);border:1px solid rgba(120,200,255,.18);padding:10px 14px;border-radius:10px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.hud{position:fixed;top:16px;left:16px;z-index:20;color:rgba(190,230,255,.78);font:12px/1.7 ui-monospace,Menlo,Consolas,monospace;background:rgba(8,12,24,.5);border:1px solid rgba(120,200,255,.18);padding:10px 14px;border-radius:10px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);max-height:52vh;overflow:auto}
 .hud h1{font-size:13px;font-weight:700;letter-spacing:.22em;color:#9ef2ff;text-shadow:0 0 10px rgba(0,229,255,.6)}
 .hud .hint{opacity:.75}
 .hud a{color:#7fd4ff;text-decoration:none}
@@ -42,6 +42,7 @@ body.dragging{cursor:grabbing}
 .emoji{font-size:56px;line-height:1;filter:drop-shadow(0 0 14px hsla(var(--h),100%,65%,.9))}
 .stat{font-size:26px;font-weight:700;color:hsl(var(--h),100%,75%);text-shadow:0 0 16px hsla(var(--h),100%,60%,.9)}
 .lab{font-size:10px;letter-spacing:.3em;padding-left:.3em;color:rgba(210,235,255,.6);text-transform:uppercase}
+@media (max-width:640px){.hud{font-size:11px;max-height:40vh}}
 </style>
 </head>
 <body>

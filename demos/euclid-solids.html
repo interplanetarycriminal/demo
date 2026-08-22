@@ -8,10 +8,10 @@
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#07050b;color:#e8d8b4;
             font:12px/1.6 ui-monospace,Menlo,Consolas,monospace}
-  body>canvas{display:block;position:fixed;inset:0;z-index:0}
+  body>canvas{touch-action:none;display:block;position:fixed;inset:0;z-index:0}
   .pane{position:fixed;z-index:10;background:rgba(14,10,8,.58);border:1px solid rgba(255,196,110,.20);
-        border-radius:8px;backdrop-filter:blur(7px);letter-spacing:.03em}
-  #ui{top:12px;left:12px;width:308px;padding:10px 13px 11px}
+        border-radius:8px;backdrop-filter:blur(7px);letter-spacing:.03em;max-height:52vh;overflow:auto}
+  #ui{top:12px;left:12px;width:min(308px,calc(100vw - 20px));padding:10px 13px 11px}
   #ui h1{margin:0;font-size:12.5px;letter-spacing:.16em;color:#ffcf80;font-weight:700}
   #ui .sub{color:#8d7a5c;font-size:10.5px;letter-spacing:.13em;margin:1px 0 7px}
   #ui p.exp{color:#ac9b7e;margin:0 0 9px;font-size:11px;line-height:1.62}
@@ -44,6 +44,7 @@
     #ui{width:250px}
   }
   @media (max-width:620px){ #proof{display:none} }
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 </head>
 <body>

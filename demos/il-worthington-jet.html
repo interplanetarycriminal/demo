@@ -22,7 +22,7 @@ button{background:#12203a;color:#bfe4ff;border:1px solid #2a4570;border-radius:6
 <canvas id="c"></canvas>
 <div id="ui">
   <h1>Worthington Jet</h1>
-  <p class="mech">The crater a drop digs collapses inward; all that converging water focuses on the axis and fires a thin jet <b>upward</b> — often higher than the drop fell — which then pinches off a satellite by Plateau–Rayleigh.</p>
+  <p class="mech">The crater collapses inward, focuses on the axis, and fires a thin jet <b>upward</b> — often higher than the drop fell.</p>
   <div class="readouts">
     <div class="row"><span class="k">phase</span><span class="v" id="rP">—</span></div>
     <div class="row"><span class="k">jet height / drop height</span><span class="v" id="rR">—</span></div>
@@ -195,6 +195,10 @@ function chip(x,y,txt,col){
   g.fillStyle=col;g.fillText(txt,x+6,y+13);
   return w;
 }
+function chipR(xr,y,txt,col){
+  g.font='11px ui-monospace,monospace';
+  return chip(xr-(g.measureText(txt).width+12),y,txt,col);
+}
 
 function miniFrame(x,y,w,h,which,active){
   g.save();g.beginPath();g.rect(x,y,w,h);g.clip();
@@ -259,7 +263,7 @@ function draw(){
     var sy=surf-s.satY*U,sr=U*0.033;
     g.globalCompositeOperation='lighter';g.drawImage(SP,cx-sr*3,sy-sr*3,sr*6,sr*6);g.globalCompositeOperation='source-over';
     g.fillStyle='#f2fbff';g.beginPath();g.arc(cx,sy,sr,0,6.283);g.fill();
-    chip(cx+sr+10,sy-9,'satellite: Plateau–Rayleigh pinch','#7dffb0');
+    chipR(cx-sr-12,sy-9,'Plateau–Rayleigh pinch-off','#7dffb0');   // left of axis: never collides with the jet chip
   }
   // falling drop
   if(s.phase==='fall'){

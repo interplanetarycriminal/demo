@@ -6,10 +6,10 @@
 <title>generative audio viz</title>
 <style>
 html,body{margin:0;padding:0;height:100%;background:#03040a;overflow:hidden}
-canvas{position:fixed;inset:0;display:block;z-index:0}
+canvas{position:fixed;inset:0;display:block;z-index:0;touch-action:none}
 #ui{position:fixed;top:12px;left:12px;z-index:10;font:12px/1.7 ui-monospace,Menlo,Consolas,monospace;
 color:rgba(200,220,255,.75);background:rgba(5,8,18,.55);padding:10px 14px;
-border:1px solid rgba(120,160,255,.18);border-radius:8px;backdrop-filter:blur(4px);pointer-events:none}
+border:1px solid rgba(120,160,255,.18);border-radius:8px;backdrop-filter:blur(4px);pointer-events:none;max-height:52vh;overflow:auto}
 #ui a{color:#7fd4ff;pointer-events:auto;text-decoration:none}
 #ui a:hover{text-decoration:underline}
 #ui .t{color:#fff;font-weight:700;letter-spacing:.1em}
@@ -19,6 +19,7 @@ gap:14px;cursor:pointer;background:rgba(3,4,10,.6);font:16px ui-monospace,Menlo,
 letter-spacing:.2em;text-transform:uppercase}
 #splash .b{font-size:84px;color:#fff;text-shadow:0 0 30px #0ff,0 0 80px #08f;animation:pulse 1.6s ease-in-out infinite}
 @keyframes pulse{0%,100%{transform:scale(1);opacity:.85}50%{transform:scale(1.12);opacity:1}}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 </head>
 <body>

@@ -1,12 +1,13 @@
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
 <title>The Curse of Dimensionality</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
   html,body{margin:0;padding:0;background:#04050a;overflow:hidden;height:100%}
-  canvas{display:block;position:fixed;inset:0}
+  canvas{display:block;position:fixed;inset:0;touch-action:none}
   #ui{position:fixed;top:0;left:0;margin:12px;padding:10px 13px;background:rgba(8,10,18,.66);
       border:1px solid rgba(120,200,255,.22);border-radius:9px;color:#bfe6ff;
-      font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;width:300px;
-      backdrop-filter:blur(6px);z-index:10}
+      font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;width:min(300px,calc(100vw - 20px));
+      backdrop-filter:blur(6px);z-index:10;max-height:52vh;overflow:auto}
   #ui h1{margin:0 0 4px;font-size:14px;letter-spacing:.09em;color:#7df9ff;text-transform:uppercase}
   #ui .exp{color:#8fa8bd;margin-bottom:9px}
   #ui .hint{color:#63798c;margin-top:8px;font-size:11px;line-height:1.5}
@@ -16,6 +17,7 @@
   .dval{color:#ffe08a;font-size:26px;font-weight:bold;line-height:1}
   input[type=range]{width:100%;accent-color:#7df9ff;margin:5px 0 0;height:18px}
   .tag{color:#7dffb0}.tag.off{color:#556}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 
 <canvas id="c"></canvas>

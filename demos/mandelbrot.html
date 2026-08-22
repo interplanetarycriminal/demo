@@ -7,14 +7,15 @@
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{height:100%;overflow:hidden;background:#000}
-canvas{position:fixed;inset:0;display:block;cursor:crosshair}
+canvas{position:fixed;inset:0;display:block;cursor:crosshair;touch-action:none}
 canvas.drag{cursor:grabbing}
-.hud{position:fixed;top:16px;left:16px;z-index:20;color:rgba(190,230,255,.78);font:12px/1.7 ui-monospace,Menlo,Consolas,monospace;background:rgba(4,8,16,.55);border:1px solid rgba(160,100,255,.28);padding:10px 14px;border-radius:10px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);pointer-events:none}
+.hud{position:fixed;top:16px;left:16px;z-index:20;color:rgba(190,230,255,.78);font:12px/1.7 ui-monospace,Menlo,Consolas,monospace;background:rgba(4,8,16,.55);border:1px solid rgba(160,100,255,.28);padding:10px 14px;border-radius:10px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);pointer-events:none;max-height:52vh;overflow:auto}
 .hud h1{font-size:13px;font-weight:700;letter-spacing:.22em;color:#c99cff;text-shadow:0 0 10px rgba(160,100,255,.8)}
 .hud .hint{opacity:.75}
 .hud .stat{color:#7df3ff}
 .hud a{color:#ff6fe0;text-decoration:none;pointer-events:auto}
 .hud a:hover{text-shadow:0 0 8px rgba(255,64,208,.9)}
+@media (max-width:640px){.hud{font-size:11px;max-height:40vh}}
 </style>
 </head>
 <body>

@@ -1,12 +1,13 @@
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
 <title>Euclid, Book II — Algebra Drawn as Areas</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
   html,body{margin:0;padding:0;background:#07060a;overflow:hidden;height:100%}
-  canvas{display:block;position:fixed;inset:0}
+  canvas{touch-action:none;display:block;position:fixed;inset:0}
   #ui{position:fixed;top:0;left:0;margin:12px;padding:11px 13px;background:rgba(12,10,8,.62);
       border:1px solid rgba(226,190,120,.26);border-radius:8px;color:#e2d3b0;
-      font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;width:296px;
-      backdrop-filter:blur(7px);z-index:10}
+      font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;width:min(296px,calc(100vw - 20px));
+      backdrop-filter:blur(7px);z-index:10;max-height:52vh;overflow:auto}
   #ui h1{margin:0 0 5px;font-size:13px;letter-spacing:.14em;color:#f4b942;text-transform:uppercase}
   #ui .exp{color:#9d9078;margin-bottom:9px}
   #ui .hint{color:#7c7059;margin-top:9px;font-size:11px;line-height:1.6}
@@ -18,6 +19,7 @@
   #ui .tab:hover{border-color:rgba(244,185,66,.55);color:#e2d3b0}
   #ui .tab.on{background:rgba(244,185,66,.16);border-color:#f4b942;color:#f4d79a}
   #ui b{color:#e2d3b0;font-weight:normal}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 
 <canvas id="c"></canvas>

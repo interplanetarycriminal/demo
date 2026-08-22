@@ -6,11 +6,12 @@
 <title>Neon Flappy</title>
 <style>
 html,body{margin:0;height:100%;background:#030310;overflow:hidden}
-canvas{display:block}
-#ui{position:fixed;top:10px;left:10px;z-index:10;font:12px/1.6 monospace;color:rgba(160,255,255,.85);background:rgba(4,8,24,.55);border:1px solid rgba(0,255,255,.25);border-radius:8px;padding:8px 12px}
+canvas{display:block;touch-action:none}
+#ui{position:fixed;top:10px;left:10px;z-index:10;font:12px/1.6 monospace;color:rgba(160,255,255,.85);background:rgba(4,8,24,.55);border:1px solid rgba(0,255,255,.25);border-radius:8px;padding:8px 12px;max-height:52vh;overflow:auto}
 #ui b{color:#0ff;text-shadow:0 0 8px #0ff}
 #ui a{color:#f6f;text-decoration:none}
 #ui a:hover{text-shadow:0 0 8px #f6f}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 </head>
 <body>

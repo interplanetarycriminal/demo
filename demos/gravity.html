@@ -3,13 +3,14 @@
 <title>Gravity Sandbox</title>
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#000}
-  canvas{display:block;position:fixed;inset:0;cursor:crosshair}
+  canvas{display:block;position:fixed;inset:0;cursor:crosshair;touch-action:none}
   #ui{position:fixed;top:12px;left:12px;z-index:10;font:12px/1.6 ui-monospace,Menlo,monospace;
       color:#fc9;background:rgba(20,8,0,.45);padding:10px 14px;border:1px solid rgba(255,180,90,.25);
-      border-radius:10px;backdrop-filter:blur(6px)}
+      border-radius:10px;backdrop-filter:blur(6px);max-height:52vh;overflow:auto}
   #ui b{color:#fff;letter-spacing:.12em}
   #ui a{color:#fb7;text-decoration:none}
   #ui a:hover{text-decoration:underline}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
 <div id="ui"><b>GRAVITY SANDBOX</b><br>drag = slingshot a planet · c = clear · bodies: <span id="n">0</span><br><a href="index.html">← gallery</a></div>

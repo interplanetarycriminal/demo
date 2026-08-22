@@ -1,14 +1,16 @@
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#03040a;cursor:crosshair}
-  canvas{position:fixed;top:0;left:0;display:block}
+  canvas{position:fixed;top:0;left:0;display:block;touch-action:none}
   #ui{position:fixed;top:10px;left:12px;z-index:10;font:12px/1.55 monospace;
       color:#dfeaff;background:rgba(4,8,16,.36);padding:8px 11px;
-      border:1px solid rgba(150,180,255,.28);border-radius:5px;pointer-events:none}
+      border:1px solid rgba(150,180,255,.28);border-radius:5px;pointer-events:none;max-height:52vh;overflow:auto}
   #ui .t{color:#ffd28a;font-weight:bold;letter-spacing:1.5px}
   #ui .h{opacity:.72}
   #ui a{color:#8fbcff;pointer-events:auto;text-decoration:none}
   #ui a:hover{color:#cfe0ff}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <div id="ui">
   <div class="t">VOLUMETRIC CLOUDS</div>

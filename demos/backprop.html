@@ -1,12 +1,13 @@
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
 <title>Backpropagation Anatomy</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
   html,body{margin:0;padding:0;background:#05060a;overflow:hidden;height:100%}
-  canvas{display:block;position:fixed;inset:0}
+  canvas{display:block;position:fixed;inset:0;touch-action:none}
   #ui{position:fixed;top:0;left:0;margin:12px;padding:10px 12px;background:rgba(8,10,18,.62);
       border:1px solid rgba(120,200,255,.22);border-radius:8px;color:#bfe6ff;
       font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;max-width:330px;
-      backdrop-filter:blur(6px);pointer-events:auto;z-index:10}
+      backdrop-filter:blur(6px);pointer-events:auto;z-index:10;max-height:52vh;overflow:auto}
   #ui h1{margin:0 0 4px;font-size:14px;letter-spacing:.08em;color:#7df9ff;text-transform:uppercase}
   #ui .exp{color:#8fa8bd;margin-bottom:7px}
   #ui .hint{color:#6f8598;margin-top:6px}
@@ -17,6 +18,7 @@
   .v{color:#eaf6ff}
   input[type=range]{width:100%;accent-color:#7df9ff;margin:4px 0 2px}
   .ph{color:#ffe08a}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 
 <canvas id="c"></canvas>
@@ -182,8 +184,8 @@ window.addEventListener('keydown',function(e){
   if(e.code==='Space'){paused=!paused;e.preventDefault();}
   if(e.key==='r'||e.key==='R'){initNet();phase='forward';phaseT=0;curSample=0;}
 });
-cv.addEventListener('mousemove',function(e){mx=e.clientX;my=e.clientY;});
-cv.addEventListener('mouseleave',function(){mx=-999;my=-999;});
+cv.addEventListener('pointermove',function(e){mx=e.clientX;my=e.clientY;});
+cv.addEventListener('pointerleave',function(){mx=-999;my=-999;});
 
 function distSeg(px,py,x1,y1,x2,y2){
   var dx=x2-x1,dy=y2-y1,L2=dx*dx+dy*dy;

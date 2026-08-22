@@ -7,14 +7,15 @@
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#02030a;}
-  canvas{display:block;}
+  canvas{touch-action:none;display:block;}
   #ui{position:fixed;top:12px;left:12px;z-index:10;color:#cfe;font:12px/1.6 monospace;
        background:rgba(8,10,20,.45);padding:10px 13px;border-radius:8px;
-       border:1px solid rgba(120,160,220,.2);backdrop-filter:blur(3px);}
+       border:1px solid rgba(120,160,220,.2);backdrop-filter:blur(3px);max-height:52vh;overflow:auto}
   #ui h1{margin:0 0 3px;font-size:12px;letter-spacing:2px;color:#fff;font-weight:600;}
   #ui .hint{opacity:.65;}
   #ui a{color:#8bf;text-decoration:none;}
   #ui a:hover{text-decoration:underline;}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 </head>
 <body>

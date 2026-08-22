@@ -6,13 +6,14 @@
 <title>AVL Tree — Self-Balancing BST</title>
 <style>
 html,body{margin:0;height:100%;background:#04060c;overflow:hidden}
-canvas{display:block;position:fixed;inset:0}
-#ui{position:fixed;top:10px;left:10px;z-index:10;font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#c9e6f2;background:rgba(6,12,22,.74);border:1px solid rgba(77,240,255,.25);border-radius:10px;padding:10px 13px;max-width:370px}
+canvas{display:block;position:fixed;inset:0;touch-action:none}
+#ui{position:fixed;top:10px;left:10px;z-index:10;font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#c9e6f2;background:rgba(6,12,22,.74);border:1px solid rgba(77,240,255,.25);border-radius:10px;padding:10px 13px;max-width:370px;max-height:52vh;overflow:auto}
 #ui h1{margin:0 0 3px;font-size:14px;font-weight:700;color:#4df0ff;letter-spacing:.08em;text-shadow:0 0 8px rgba(77,240,255,.6)}
 #ui p{margin:0 0 4px;color:#8fb4c4}
 #ui .hint{color:#ffd24d}
 #stats{margin-top:5px;color:#8ff0b6;white-space:pre-line}
 #ui a{color:#4df0ff;text-decoration:none;border-bottom:1px dotted rgba(77,240,255,.4)}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 </head>
 <body>

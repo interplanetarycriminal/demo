@@ -1,13 +1,14 @@
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Euclid I.47 — The Windmill Proof</title>
 <style>
   html,body{margin:0;padding:0;background:#060605;overflow:hidden;height:100%}
-  canvas{display:block;position:fixed;inset:0}
+  canvas{touch-action:none;display:block;position:fixed;inset:0}
   #ui{position:fixed;top:0;left:0;margin:12px;padding:10px 12px;background:rgba(14,11,7,.72);
       border:1px solid rgba(212,176,110,.24);border-radius:8px;color:#d9c9a3;
-      font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;width:306px;
-      backdrop-filter:blur(6px);z-index:10}
+      font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;width:min(306px,calc(100vw - 20px));
+      backdrop-filter:blur(6px);z-index:10;max-height:52vh;overflow:auto}
   #ui h1{margin:0 0 4px;font-size:14px;letter-spacing:.12em;color:#f0d49a;text-transform:uppercase}
   #ui .exp{color:#9a8c72;margin-bottom:9px}
   #ui .hint{color:#7a6c56;margin-top:9px}
@@ -33,6 +34,7 @@
     #ui h1{font-size:12px;margin-bottom:2px}
     button{font-size:10px;padding:2px 4px}
   }
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 
 <canvas id="c"></canvas>

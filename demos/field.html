@@ -6,13 +6,14 @@
 <title>Magnetic Field Lines</title>
 <style>
 html,body{margin:0;height:100%;overflow:hidden;background:#02030a}
-canvas{display:block;position:fixed;inset:0;cursor:crosshair}
+canvas{display:block;position:fixed;inset:0;cursor:crosshair;touch-action:none}
 #ui{position:fixed;top:10px;left:12px;z-index:10;font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;
 color:rgba(200,225,255,.85);background:rgba(4,6,16,.5);padding:8px 12px;
-border:1px solid rgba(120,180,255,.18);border-radius:8px;user-select:none}
+border:1px solid rgba(120,180,255,.18);border-radius:8px;user-select:none;max-height:52vh;overflow:auto}
 #ui b{color:#7fd8ff;letter-spacing:.1em}
 #ui a{color:#ffb48a;text-decoration:none}
 #ui a:hover{text-decoration:underline}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 </head>
 <body>

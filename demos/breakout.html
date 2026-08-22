@@ -1,12 +1,14 @@
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
   html,body{margin:0;height:100%;background:#07040d;overflow:hidden;font-family:monospace}
-  canvas{display:block;cursor:none}
+  canvas{display:block;cursor:none;touch-action:none}
   #ui{position:fixed;top:10px;left:10px;color:#d8b6ff;background:rgba(16,0,26,.35);
     padding:8px 10px;border-radius:6px;font:12px/1.5 monospace;z-index:10;
-    text-shadow:0 0 6px #c0f;pointer-events:none}
+    text-shadow:0 0 6px #c0f;pointer-events:none;max-height:52vh;overflow:auto}
   #ui a{color:#c9f;pointer-events:auto;text-decoration:none}
   #ui a:hover{text-decoration:underline}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <div id="ui">
   <div style="font-size:15px;color:#c0f;letter-spacing:2px">◆ NEON BREAKOUT</div>
@@ -61,7 +63,7 @@ document.addEventListener('keydown',e=>{
   if((e.key==='r'||e.key==='R'||e.key==='Enter')&&(state==='over'||state==='win'))reset();
 });
 document.addEventListener('keyup',e=>{keys[e.key]=false;});
-cv.addEventListener('mousemove',e=>{
+cv.addEventListener('pointermove',e=>{
   const g=geo();const mx=(e.clientX-g.ox)/g.s;
   paddle.x=Math.max(0,Math.min(PW-paddle.w,mx-paddle.w/2));
 });

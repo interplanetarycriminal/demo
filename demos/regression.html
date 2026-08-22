@@ -6,13 +6,14 @@
 <title>Least Squares Lab — Live Regression</title>
 <style>
 html,body{margin:0;height:100%;overflow:hidden;background:#05010f}
-canvas{display:block;position:fixed;inset:0;cursor:crosshair}
-#ui{position:fixed;top:12px;left:12px;z-index:10;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#cfe9ff;background:rgba(5,8,22,.74);border:1px solid rgba(80,220,255,.25);border-radius:10px;padding:10px 14px;max-width:360px}
+canvas{touch-action:none;display:block;position:fixed;inset:0;cursor:crosshair}
+#ui{position:fixed;top:12px;left:12px;z-index:10;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#cfe9ff;background:rgba(5,8,22,.74);border:1px solid rgba(80,220,255,.25);border-radius:10px;padding:10px 14px;max-width:360px;max-height:52vh;overflow:auto}
 #ui h1{margin:0 0 2px;font-size:14px;color:#59ffc8;text-shadow:0 0 8px #0f8}
 #ui .ex{color:#9fb4d8}
 #ui .hint{color:#6ee7a0;margin-top:4px}
 #ui a{color:#ff7ad9;text-decoration:none}
 #stats{margin-top:6px;color:#e8f6ff;white-space:pre-wrap}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 </head>
 <body>

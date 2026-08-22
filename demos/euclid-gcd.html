@@ -7,11 +7,11 @@
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#08060a;color:#efe0c4;
     font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-  canvas{display:block;position:fixed;inset:0}
+  canvas{touch-action:none;display:block;position:fixed;inset:0}
   .pane{position:fixed;z-index:5;background:rgba(14,10,7,.62);
     border:1px solid rgba(230,192,122,.22);border-radius:9px;
     backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
-    box-shadow:0 14px 46px -16px #000,inset 0 1px 0 rgba(255,230,180,.06)}
+    box-shadow:0 14px 46px -16px #000,inset 0 1px 0 rgba(255,230,180,.06);max-height:52vh;overflow:auto}
   #ui{top:14px;left:14px;padding:11px 13px;max-width:392px}
   #ui h1{margin:0 0 5px;font-size:12px;letter-spacing:.17em;font-weight:700;
     background:linear-gradient(92deg,#ffd88a,#ffb454 45%,#ff8a6a);
@@ -23,7 +23,7 @@
     border-radius:4px;padding:1px 5px;color:#ffdca0;font:inherit}
   #ui a{color:#ffb454;text-decoration:none;border-bottom:1px dotted rgba(255,180,84,.5)}
   #ui a:hover{color:#fff}
-  #panel{top:14px;right:14px;padding:11px 13px;width:296px;max-height:calc(100% - 28px);
+  #panel{top:14px;right:14px;padding:11px 13px;width:min(296px,calc(100vw - 20px));max-height:calc(100% - 28px);
     overflow-y:auto;overflow-x:hidden}
   #panel::-webkit-scrollbar{width:6px}
   #panel::-webkit-scrollbar-thumb{background:rgba(230,192,122,.25);border-radius:3px}
@@ -54,6 +54,7 @@
   #note.on{opacity:1;transform:none}
   #note b{color:#ffd88a;font-weight:400}
   #note i{color:#ff9ab4;font-style:normal}
+@media (max-width:640px){#ui,#panel{font-size:11px;max-height:40vh}}
 </style>
 </head>
 <body>

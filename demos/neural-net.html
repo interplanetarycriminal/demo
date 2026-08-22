@@ -6,14 +6,15 @@
 <title>Neural Playground — live decision boundary</title>
 <style>
 html,body{margin:0;height:100%;overflow:hidden;background:#04040d}
-canvas{display:block;position:fixed;inset:0}
-#ui{position:fixed;top:10px;left:10px;z-index:10;font:12px/1.55 Menlo,Consolas,"SF Mono",monospace;color:#9fd8ff;background:rgba(4,10,26,.78);border:1px solid rgba(0,229,255,.28);border-radius:10px;padding:10px 13px;max-width:345px}
+canvas{touch-action:none;display:block;position:fixed;inset:0}
+#ui{position:fixed;top:10px;left:10px;z-index:10;font:12px/1.55 Menlo,Consolas,"SF Mono",monospace;color:#9fd8ff;background:rgba(4,10,26,.78);border:1px solid rgba(0,229,255,.28);border-radius:10px;padding:10px 13px;max-width:345px;max-height:52vh;overflow:auto}
 #ui h1{margin:0 0 3px;font-size:14px;letter-spacing:.5px;color:#00e5ff;text-shadow:0 0 9px rgba(0,229,255,.8)}
 .ex{color:#7fa6c8}
 .hint{color:#587a9c;margin-top:5px}
 .stats{margin-top:6px;color:#eaf7ff;white-space:pre}
 #ui a{color:#ff2fd6;text-decoration:none}
 #cls{font-weight:bold}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 </head>
 <body>
