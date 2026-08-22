@@ -4,28 +4,28 @@
 <style>
 html,body{margin:0;height:100%;background:#02060c;overflow:hidden}
 canvas{display:block;position:fixed;inset:0}
-#ov{position:fixed;top:14px;left:14px;width:330px;padding:12px 13px;z-index:20;
+#ov{position:fixed;top:12px;left:12px;width:316px;padding:9px 11px;z-index:20;
  background:rgba(3,9,17,.64);border:1px solid rgba(120,200,255,.28);border-radius:9px;
- backdrop-filter:blur(3px);font:11.5px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#c7e6f7;
+ backdrop-filter:blur(3px);font:10.5px/1.4 ui-monospace,Menlo,Consolas,monospace;color:#c7e6f7;
  box-shadow:0 0 26px rgba(0,150,255,.13)}
-#ov h1{margin:0 0 5px;font-size:14px;letter-spacing:.16em;color:#8fe0ff;text-shadow:0 0 12px #2aa0ff}
-#ov .m{margin:0 0 6px;color:#93b2c4}
-#ov .s{margin:0 0 2px;color:#ffd08a}
-#ov .l{margin:0 0 8px;color:#7a91a2;font-size:10.5px}
-#ov .f{margin:0 0 8px;padding:4px 6px;border-left:2px solid #46d6b0;color:#9ff0d8;font-size:10.5px;background:rgba(70,214,176,.07)}
-#ov .k{margin:0 0 8px;color:#a5d9ff;font-size:10.5px}
+#ov h1{margin:0 0 4px;font-size:13px;letter-spacing:.16em;color:#8fe0ff;text-shadow:0 0 12px #2aa0ff}
+#ov .m{margin:0 0 4px;color:#93b2c4}
+#ov .s{margin:0 0 1px;color:#ffd08a}
+#ov .l{margin:0 0 5px;color:#7a91a2}
+#ov .f{margin:0 0 5px;padding:3px 6px;border-left:2px solid #46d6b0;color:#9ff0d8;background:rgba(70,214,176,.07)}
+#ov .k{margin:0 0 5px;color:#a5d9ff}
 #ov .k b{color:#fff;background:rgba(120,200,255,.15);padding:0 4px;border-radius:3px;font-weight:600}
-#ov table{border-collapse:collapse;width:100%;font-size:11px}
-#ov td{padding:1px 0}#ov td:first-child{color:#7a91a2}
+#ov table{border-collapse:collapse;width:100%}
+#ov td{padding:0}#ov td:first-child{color:#7a91a2}
 #ov td:last-child{text-align:right;color:#eafaff;font-variant-numeric:tabular-nums}
-#ov a{display:inline-block;margin-top:8px;color:#6bd3ff;text-decoration:none;font-size:10.5px}
+#ov a{display:inline-block;margin-top:5px;color:#6bd3ff;text-decoration:none}
 #ov a:hover{text-shadow:0 0 9px #2aa0ff}
 </style></head><body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
 <canvas id="c"></canvas>
 <div id="ov">
 <h1>DEAD WATER</h1>
-<p class="m">Fresh melt-water over salt sea carries a slow internal wave. Drive the hull near that wave's speed and the engine's power goes into a hidden train on the interface instead of forward motion &mdash; the sea surface stays glassy while the ship bogs down.</p>
+<p class="m">Fresh melt-water over salt sea carries a slow internal wave. Drive the hull at that wave's speed and the engine feeds a hidden train on the interface instead of forward motion &mdash; the surface stays glassy while the ship bogs.</p>
 <p class="s">Fridtjof Nansen &middot; 1893 &nbsp;|&nbsp; V. W. Ekman &middot; 1904</p>
 <p class="l">Nansen's <i>Fram</i> log &rarr; Ekman's 1904 thesis &rarr; stratified-drag research</p>
 <p class="f" id="fx"></p>
@@ -123,12 +123,13 @@ function draw(){
  for(var x=0;x<=W;x+=10)ctx.lineTo(x,BY+Math.sin((x+worldX*HS*0.25)*0.013)*5);ctx.stroke();ctx.shadowBlur=0;
  ship(SX,SY-4);
  // annotations
+ var LX=366;
  ctx.font='10.5px ui-monospace,monospace';ctx.textAlign='left';
- ctx.fillStyle='rgba(169,231,255,.85)';ctx.fillText('SURFACE — glassy calm, nothing to see',24,SY-14);
+ ctx.fillStyle='rgba(169,231,255,.85)';ctx.fillText('SURFACE — glassy calm, nothing to see',LX,SY-14);
  ctx.fillStyle='rgba(92,240,196,.9)';
- ctx.fillText('HIDDEN INTERNAL WAVE TRAIN  λ = '+(k>0?(6.2832/k).toFixed(0):'—')+' m   amp '+(amp*ampMax()).toFixed(2)+' m',24,IY+34);
- ctx.fillStyle='rgba(140,190,230,.6)';ctx.fillText('fresh melt-water  ρ='+(rho2-drho)+'  h₁='+h1.toFixed(1)+' m',24,SY+16);
- ctx.fillText('salt sea  ρ='+rho2+'  h₂='+(DTOT-h1).toFixed(1)+' m',24,IY+(BY-IY)*0.55);
+ ctx.fillText('HIDDEN INTERNAL WAVE TRAIN  λ = '+(k>0?(6.2832/k).toFixed(0):'—')+' m   amp '+(amp*ampMax()).toFixed(2)+' m',LX,IY+34);
+ ctx.fillStyle='rgba(140,190,230,.6)';ctx.fillText('fresh melt-water  ρ='+(rho2-drho)+'  h₁='+h1.toFixed(1)+' m',LX,SY+16);
+ ctx.fillText('salt sea  ρ='+rho2+'  h₂='+(DTOT-h1).toFixed(1)+' m',LX,IY+(BY-IY)*0.55);
  // Fram caption
  panel(20,H-92,394,70,'rgba(255,208,138,.3)');
  ctx.fillStyle='#ffd08a';ctx.font='10.5px ui-monospace,monospace';
@@ -188,7 +189,6 @@ function readouts(){
  '<tr><td>Froude U/c</td><td>'+Fr.toFixed(3)+'</td></tr>'+
  '<tr><td>throttle</td><td>'+thr.toFixed(2)+(auto?' (auto)':' (manual)')+'</td></tr>'+
  '<tr><td>resistance</td><td>'+dragR(U,c0).toFixed(2)+'</td></tr>'+
- '<tr><td>train amplitude</td><td>'+(amp*ampMax()).toFixed(2)+' m</td></tr>'+
  '<tr><td>state</td><td>'+mode+'</td></tr>';
 }
 var last=0;

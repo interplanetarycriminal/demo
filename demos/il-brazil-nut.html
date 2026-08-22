@@ -44,60 +44,54 @@ kbd{color:#ffcf6b}
 var BN=(function(){
  function make(cfg){
   cfg=cfg||{};
-  var S={W:90,H:170,g:392,t:0,amp:cfg.amp!==undefined?cfg.amp:1.90,
+  var S={W:90,H:170,g:60,t:0,amp:cfg.amp!==undefined?cfg.amp:1.90,
     freq:cfg.freq!==undefined?cfg.freq:18,dense:!!cfg.dense,gr:2.5,ir:7.0,
     p:[],bedTop:55,U:0,gam:0,seed:987654321};
   var rnd=function(){S.seed=(S.seed*1664525+1013904223)>>>0;return S.seed/4294967296;};
-  var r=S.gr,sp=2.12*r,cols=Math.floor((S.W-2*r-1)/sp)+1;
+  var r=S.gr,sp=2.20*r,cols=Math.floor((S.W-2*r-1)/sp)+1;
   var x0=(S.W-(cols-1)*sp)/2, rows=22;
-  var ix=S.W*0.5, iy=S.H-3-r-(S.dense?(rows-2):3)*2.1*r;
+  var ix=S.W*0.5, iy=S.H-3-r-(S.dense?(rows-2):3)*sp;
   for(var j=0;j<rows;j++)for(var i=0;i<cols;i++){
-   var x=x0+i*sp+(j%2?r*0.4:0)+(rnd()-0.5)*0.25;
-   var y=S.H-3-r-j*2.1*r+(rnd()-0.5)*0.25;
+   var x=x0+i*sp+(j%2?r*0.5:0)+(rnd()-0.5)*0.9;
+   var y=S.H-3-r-j*sp+(rnd()-0.5)*0.9;
    if(x<r+0.6||x>S.W-r-0.6)continue;
    var dx=x-ix,dy=y-iy;
-   if(dx*dx+dy*dy<(S.ir+r+0.4)*(S.ir+r+0.4))continue;
-   S.p.push({x:x,y:y,vx:0,vy:0,r:r,rho:1,m:Math.PI*r*r,big:0,h:rnd()});
+   if(dx*dx+dy*dy<(S.ir+1.3*r)*(S.ir+1.3*r))continue;
+   var rad=r*(0.84+0.32*rnd());        // polydisperse: stops the bed crystallising
+   S.p.push({x:x,y:y,vx:0,vy:0,r:rad,rho:1,m:Math.PI*rad*rad,big:0,h:rnd()});
   }
   var I={x:ix,y:iy,vx:0,vy:0,r:S.ir,rho:S.dense?4.5:0.35,big:1,h:0};
   I.m=I.rho*Math.PI*I.r*I.r; S.p.push(I); S.I=I;
   return S;
  }
+ // divergence-free two-roll stream function: up the middle, down the walls
+ function bedH(S){return Math.max(20,(S.H-3)-S.bedTop);}
  function fieldY(S,x,y){
-  var u=(x-S.W/2)/(S.W/2);
-  var v=(y-S.bedTop)/Math.max(8,(S.H-3-S.bedTop));
-  v=v<0?0:(v>1?1:v);
-  return -S.U*Math.cos(Math.PI*0.85*u)*(0.35+0.65*Math.sin(Math.PI*v));
+  var Hb=bedH(S),Y=y-S.bedTop; if(Y<0)Y=0; if(Y>Hb)Y=Hb;
+  return S.U*Math.cos(2*Math.PI*x/S.W)*Math.sin(Math.PI*Y/Hb);
  }
  function fieldX(S,x,y){
-  var u=(x-S.W/2)/(S.W/2);
-  var v=(y-S.bedTop)/Math.max(8,(S.H-3-S.bedTop));
-  v=v<0?0:(v>1?1:v);
-  return S.U*0.5*u*Math.cos(Math.PI*v);
+  var Hb=bedH(S),Y=y-S.bedTop; if(Y<0)Y=0; if(Y>Hb)Y=Hb;
+  return -(S.U*S.W/(2*Hb))*Math.sin(2*Math.PI*x/S.W)*Math.cos(Math.PI*Y/Hb);
  }
  function step(S,dt){
   var n=S.p.length,i,a,b,NS=5,h=dt/NS;
-  var w=2*Math.PI*S.freq/5;            // sim runs at 1/5 real time
+  var w=2*Math.PI*S.freq/6;            // shown in slow motion
   var wr=2*Math.PI*S.freq;
   S.gam=S.amp*wr*wr/9810;              // dimensionless shaking strength A w^2/g
-  S.U=12*Math.max(0,Math.min(1,(S.gam-1)/1.6));
+  S.U=18*Math.max(0,Math.min(1,(S.gam-1)/1.6));
   var top=1e9;for(i=0;i<n;i++){if(!S.p[i].big&&S.p[i].y<top)top=S.p[i].y;}
   S.bedTop=S.bedTop*0.9+top*0.1;
   var Wd=11.0; // descending wall-channel width (mm)
   for(var s=0;s<NS;s++){
    S.t+=h;
-   var fy=S.amp*Math.sin(w*S.t), fv=S.amp*w*Math.cos(w*S.t);
-   var floorY=S.H-1+fy;
+   // work in the shaking frame: the jar is fixed and gravity oscillates.
+   // g_eff < 0 for part of every cycle once Gamma > 1 -> the bed lifts off and dilates.
+   S.shake=S.amp*Math.sin(w*S.t);
+   var geff=S.g*(1+S.gam*Math.sin(w*S.t)), fv=0, floorY=S.H-1;
    for(i=0;i<n;i++){
     a=S.p[i];
-    a.vy+=S.g*h;
-    if(S.U>0){
-     var vfy=fieldY(S,a.x,a.y),vfx=fieldX(S,a.x,a.y);
-     var k=6.0*Math.min(1.6,1/Math.max(0.35,a.rho));
-     if(vfy>0){var f=(Wd-2*a.r+3)/Wd;f=f<0?0:(f>1?1:f);k*=f;vfx*=f;}
-     a.vx+=(vfx-a.vx)*k*h; a.vy+=(vfy-a.vy)*k*h;
-     if(a.big)a.vy+=0.05*S.g*(a.rho-1)/a.rho*Math.min(1,(S.gam-1)/1.5)*h;
-    }
+    a.vy+=geff*h;
     a.vx*=(1-0.7*h); a.vy*=(1-0.7*h);
     var sp2=a.vx*a.vx+a.vy*a.vy;
     if(sp2>1.2e5){var q=Math.sqrt(1.2e5/sp2);a.vx*=q;a.vy*=q;}
@@ -107,7 +101,7 @@ var BN=(function(){
    for(i=0;i<n;i++){var cx=(S.p[i].x/cs+1)|0,cy=(S.p[i].y/cs+1)|0;
     if(cx<0)cx=0;if(cx>=GW)cx=GW-1;if(cy<0)cy=0;if(cy>=GH)cy=GH-1;
     var ci=cy*GW+cx;nxt[i]=head[ci];head[ci]=i;S.p[i]._c=ci;}
-   for(var it=0;it<4;it++){
+   for(var it=0;it<6;it++){
     for(i=0;i<n;i++){
      a=S.p[i];var acx=a._c%GW,acy=(a._c/GW)|0;
      for(var oy=-1;oy<=1;oy++)for(var ox=-1;ox<=1;ox++){
@@ -131,6 +125,20 @@ var BN=(function(){
      if(a.x>S.W-a.r){a.x=S.W-a.r;if(a.vx>0)a.vx*=-0.12;a.vy*=0.94;}
      if(a.y>floorY-a.r){a.y=floorY-a.r;if(a.vy>fv)a.vy=fv-0.12*(a.vy-fv);}
      if(a.y<a.r+2){a.y=a.r+2;if(a.vy<0)a.vy*=-0.1;}
+    }
+   }
+   // collective convection drift, applied AFTER the contact solve so the
+   // jammed pack cannot simply cancel it; neighbours move together, so the
+   // only residual for the next solve is the (small) shear between them.
+   if(S.U>0){
+    var vs0=3.5*Math.min(1,(S.gam-1)/1.6);
+    for(i=0;i<n;i++){
+     a=S.p[i];
+     var vfy=fieldY(S,a.x,a.y),vfx=fieldX(S,a.x,a.y);
+     if(vfy>0){var f=(Wd-2*a.r+3)/Wd;f=f<0?0:(f>1?1:f);vfy*=f;vfx*=f;} // too wide for the wall channel
+     a.x+=vfx*h; a.y+=(vfy+(a.rho-1)*vs0)*h;                          // density-driven sink/float
+     if(a.x<a.r)a.x=a.r; if(a.x>S.W-a.r)a.x=S.W-a.r;
+     if(a.y>floorY-a.r)a.y=floorY-a.r; if(a.y<a.r+2)a.y=a.r+2;
     }
    }
   }
