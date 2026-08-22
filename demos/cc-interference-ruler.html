@@ -3,10 +3,10 @@
 <style>
 html,body{margin:0;padding:0;height:100%;background:#04060a;overflow:hidden;
   font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#bfe9ff}
-canvas{display:block;position:fixed;inset:0}
+canvas{display:block;position:fixed;inset:0;touch-action:none}
 #ui{position:fixed;top:0;left:0;max-width:430px;padding:11px 13px;
   background:rgba(4,8,14,.72);border-right:1px solid #0d3a4d;border-bottom:1px solid #0d3a4d;
-  font-size:11.5px;line-height:1.5;z-index:10;backdrop-filter:blur(3px)}
+  font-size:11.5px;line-height:1.5;z-index:10;backdrop-filter:blur(3px);max-height:52vh;overflow:auto}
 h1{margin:0 0 4px;font-size:13px;letter-spacing:.16em;color:#5ff2ff;
   text-shadow:0 0 12px #0ff8,0 0 26px #0ff4}
 .cc{color:#ffd85e;text-shadow:0 0 10px #fb08;margin:0 0 7px;font-size:11px}
@@ -25,6 +25,7 @@ input[type=range]::-moz-range-thumb{width:11px;height:11px;border:0;border-radiu
 .pun{color:#ff8ad8;text-shadow:0 0 10px #f4a8;margin-top:6px;font-size:10.5px}
 a{color:#5ff2ff;text-decoration:none;font-size:10.5px}
 a:hover{text-shadow:0 0 8px #5ff2ff}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>

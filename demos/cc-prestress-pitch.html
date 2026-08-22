@@ -1,12 +1,13 @@
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Cheat Code 63 — Prestress Pitch</title>
 <style>
   html,body{margin:0;padding:0;background:#04070c;overflow:hidden;height:100%}
-  canvas{display:block;position:fixed;inset:0}
+  canvas{display:block;position:fixed;inset:0;touch-action:none}
   #ui{position:fixed;top:10px;left:10px;z-index:10;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;
       color:#bfe9ff;background:rgba(4,10,18,.62);border:1px solid rgba(90,220,255,.28);
       border-radius:8px;padding:10px 12px;max-width:440px;backdrop-filter:blur(6px);
-      box-shadow:0 0 26px rgba(0,190,255,.14)}
+      box-shadow:0 0 26px rgba(0,190,255,.14);max-height:52vh;overflow:auto}
   #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.14em;color:#7ffcff;text-shadow:0 0 12px #12d6ff}
   .code{color:#ffd27f;margin:0 0 6px;text-shadow:0 0 9px rgba(255,180,60,.45)}
   .hint{color:#7fa8c0;margin:0 0 6px}
@@ -19,6 +20,7 @@
          border:1px solid rgba(90,220,255,.4);border-radius:5px;padding:3px 8px;cursor:pointer;margin-right:4px}
   button:hover{background:rgba(40,220,255,.26)}
   .warn{color:#ff7ba8}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>

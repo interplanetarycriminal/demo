@@ -1,12 +1,13 @@
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Cheat Code #1 — Every Emitter Is a Detector</title>
 <style>
   html,body{margin:0;padding:0;background:#04060a;overflow:hidden;height:100%}
-  canvas{display:block;position:fixed;inset:0}
+  canvas{display:block;position:fixed;inset:0;touch-action:none}
   #ui{position:fixed;top:10px;left:10px;z-index:10;background:rgba(6,10,16,.72);
       border:1px solid rgba(90,220,255,.28);border-radius:8px;padding:10px 12px;
       font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#bfe9ff;max-width:390px;
-      backdrop-filter:blur(6px);box-shadow:0 0 24px rgba(0,180,255,.14)}
+      backdrop-filter:blur(6px);box-shadow:0 0 24px rgba(0,180,255,.14);max-height:52vh;overflow:auto}
   #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.12em;color:#7ef9ff;text-shadow:0 0 10px #0ff6}
   .code{color:#ffe58a;margin:0 0 6px;font-style:italic;text-shadow:0 0 8px #fc06}
   .hint{color:#7d93a8;margin:6px 0 4px}
@@ -20,6 +21,7 @@
   input[type=range]{width:120px;accent-color:#25d0ff;vertical-align:middle}
   #rd{color:#8ef0c0;white-space:pre;margin-top:5px;font-size:11px;text-shadow:0 0 6px #0f86}
   a{color:#67d5ff}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>

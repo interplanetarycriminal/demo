@@ -1,10 +1,11 @@
 <title>Wave Messengers</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 html,body{margin:0;padding:0;background:#03050a;overflow:hidden;font-family:ui-monospace,Menlo,Consolas,monospace}
-canvas{display:block;position:fixed;inset:0}
+canvas{display:block;position:fixed;inset:0;touch-action:none}
 #ui{position:fixed;top:0;left:0;padding:10px 12px;color:#cfe8ff;background:rgba(3,6,12,.66);
  font:11px/1.45 ui-monospace,Menlo,Consolas,monospace;max-width:400px;z-index:10;
- border-right:1px solid #12406033;border-bottom:1px solid #12406033;backdrop-filter:blur(3px)}
+ border-right:1px solid #12406033;border-bottom:1px solid #12406033;backdrop-filter:blur(3px);max-height:52vh;overflow:auto}
 #ui h1{margin:0 0 3px;font-size:14px;letter-spacing:.16em;color:#8ef;text-shadow:0 0 12px #0ff8}
 .th{color:#9fb6c9;margin:0 0 7px;font-style:italic}
 a{color:#6fe;text-decoration:none}a:hover{text-shadow:0 0 8px #0ff}
@@ -14,6 +15,7 @@ a{color:#6fe;text-decoration:none}a:hover{text-shadow:0 0 8px #0ff}
 .chip.on{color:#03050a;font-weight:bold}
 #sb{margin-top:6px;border-top:1px solid #1a3a52;padding-top:5px;white-space:pre;color:#8fe;font-size:10px}
 .hint{color:#5f7d94;margin-top:6px}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
@@ -185,13 +187,13 @@ function sync(){M.forEach(function(m){var on=m.k===cur;m.el.classList.toggle('on
   t.el.style.background=on?'#6ad':'transparent';t.el.style.borderColor='#6ad';});}
 sync();
 var dragPerson=false;
-c.onmousedown=function(e){var wx=(e.clientX-PADX)/SCALE, wy=(e.clientY-PADY)/SCALE;
+c.onpointerdown=function(e){var wx=(e.clientX-PADX)/SCALE, wy=(e.clientY-PADY)/SCALE;
  if(Math.hypot(wx-person.x,wy-person.y)<0.5){dragPerson=true;return;}
  if(wx>0&&wx<WORLD_W&&wy>0&&wy<WORLD_H){EM.x=Math.max(0.2,Math.min(4.6,wx));EM.y=wy;}};
-c.onmousemove=function(e){if(!dragPerson)return;
+c.onpointermove=function(e){if(!dragPerson)return;
  person.x=Math.max(.4,Math.min(WORLD_W-.4,(e.clientX-PADX)/SCALE));
  person.y=Math.max(.4,Math.min(WORLD_H-.4,(e.clientY-PADY)/SCALE));};
-addEventListener('mouseup',function(){dragPerson=false;});
+addEventListener('pointerup',function(){dragPerson=false;});
 
 /* ---- draw ---- */
 var T=0;

@@ -1,10 +1,11 @@
 <title>Noise Bestiary</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 html,body{margin:0;padding:0;background:#04060a;overflow:hidden;font-family:ui-monospace,Menlo,Consolas,monospace}
-canvas{display:block;position:fixed;inset:0}
+canvas{display:block;position:fixed;inset:0;touch-action:none}
 #ui{position:fixed;top:0;left:0;padding:10px 12px;color:#cfe8ff;background:rgba(4,8,14,.62);
   font:11px/1.45 ui-monospace,Menlo,Consolas,monospace;max-width:430px;border-right:1px solid #12406033;
-  border-bottom:1px solid #12406033;backdrop-filter:blur(3px);z-index:10}
+  border-bottom:1px solid #12406033;backdrop-filter:blur(3px);z-index:10;max-height:52vh;overflow:auto}
 #ui h1{margin:0 0 3px;font-size:14px;letter-spacing:.16em;color:#7ef;text-shadow:0 0 12px #0ff8}
 .th{color:#9fb6c9;margin:0 0 7px;font-style:italic}
 .hint{color:#5f7d94;margin-top:6px}
@@ -22,6 +23,7 @@ a{color:#6fe;text-decoration:none}a:hover{text-shadow:0 0 8px #0ff}
 input[type=range]{width:110px;height:12px;accent-color:#0ff}
 button{background:#0a1a26;color:#8df;border:1px solid #2a5a7a;border-radius:3px;font:10px monospace;padding:2px 7px;cursor:pointer}
 button:hover{background:#123}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>

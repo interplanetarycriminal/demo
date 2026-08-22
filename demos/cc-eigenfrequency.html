@@ -1,12 +1,13 @@
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Cheat Code #47 — The Universe Hums in Eigenfrequencies</title>
 <style>
   html,body{margin:0;padding:0;background:#04060a;overflow:hidden;height:100%}
-  canvas{display:block;position:fixed;inset:0}
+  canvas{display:block;position:fixed;inset:0;touch-action:none}
   #ui{position:fixed;top:10px;left:10px;z-index:10;background:rgba(6,10,16,.74);
       border:1px solid rgba(150,120,255,.32);border-radius:8px;padding:10px 12px;
       font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#d9d0ff;max-width:410px;
-      backdrop-filter:blur(6px);box-shadow:0 0 24px rgba(140,110,255,.16)}
+      backdrop-filter:blur(6px);box-shadow:0 0 24px rgba(140,110,255,.16);max-height:52vh;overflow:auto}
   #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.11em;color:#b79bff;text-shadow:0 0 10px #94f8}
   .code{color:#8ef0c0;margin:0 0 6px;font-style:italic;text-shadow:0 0 8px #0f86}
   .hint{color:#8a83a8;margin:6px 0 4px}
@@ -19,6 +20,7 @@
   #rd{color:#a8f0d8;white-space:pre;margin-top:5px;font-size:11px}
   #fo{color:#ffe58a;font-size:11px;margin-top:4px}
   a{color:#b79bff}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>

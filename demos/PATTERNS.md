@@ -112,6 +112,8 @@ addEventListener('resize',resize);resize();
 
 **Diagnosis**: recent demos dropped the viewport meta (phone renders at ~980px virtual width → microscopic text) and standardized a ≥340px fixed panel (covers the whole stage on a 390px phone). Mouse-only handlers broke drags on touch; missing `touch-action:none` makes the page scroll-fight the canvas.
 
+**Retrofit status (2026-08-22):** cc- era DONE 33/33 (viewport+touch-action+responsive panel+@media; pointer where trivially safe). Known residue: canvas-INTERNAL plot layout in a few (noise-bestiary, dither, everything-glows) still assumes wide canvas — needs per-demo stage-layout passes, not the 6-liner. il- era next.
+
 **The 6-line retrofit** (apply to any demo; it's skeleton items ①-⑥): add viewport meta · `touch-action:none` on canvas · panel `width:min(340px,calc(100vw-20px));max-height:45vh;overflow:auto` · `@media(max-width:640px)` shrink/collapse · s/mouse/pointer events/ + `setPointerCapture` · tap-alternatives for wheel-only controls.
 
 ## 5 · BUG BESTIARY (every real bug caught here — never re-pay for these)

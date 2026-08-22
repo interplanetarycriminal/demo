@@ -1,10 +1,11 @@
 <title>Slowness Is Range</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 html,body{margin:0;padding:0;background:#04060a;overflow:hidden;height:100%}
-canvas{display:block;position:fixed;top:0;left:0}
+canvas{display:block;position:fixed;top:0;left:0;touch-action:none}
 #ui{position:fixed;top:0;left:0;padding:10px 12px;color:#9fe;background:rgba(4,8,14,.62);
   font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;max-width:340px;z-index:10;
-  border-right:1px solid #0ff3;border-bottom:1px solid #0ff3;text-shadow:0 0 6px #0ff6}
+  border-right:1px solid #0ff3;border-bottom:1px solid #0ff3;text-shadow:0 0 6px #0ff6;max-height:52vh;overflow:auto}
 #ui h1{font-size:13px;margin:0 0 4px;color:#5ff;letter-spacing:.06em;text-shadow:0 0 10px #0ff}
 #ui .th{color:#ffd36e;margin:0 0 6px;text-shadow:0 0 8px #fa06}
 #ui .hint{color:#6bb;margin:6px 0}
@@ -13,6 +14,7 @@ canvas{display:block;position:fixed;top:0;left:0}
 #ui a{color:#5ff;text-decoration:none;border-bottom:1px dotted #5ff8}
 #ui .sep{height:1px;background:#0ff2;margin:6px 0}
 #ui .pun{color:#ff8ad2;text-shadow:0 0 8px #f0a6}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>

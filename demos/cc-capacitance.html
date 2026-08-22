@@ -1,10 +1,11 @@
 <title>Capacitance Leaks</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 html,body{margin:0;padding:0;height:100%;background:#04070c;overflow:hidden}
-canvas{display:block;position:fixed;top:0;left:0}
+canvas{display:block;position:fixed;top:0;left:0;touch-action:none}
 #ui{position:fixed;top:0;left:0;padding:10px 12px;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;
   color:#bfe9ff;background:rgba(4,8,14,.62);border-right:1px solid #0af3;border-bottom:1px solid #0af3;
-  max-width:335px;z-index:10;text-shadow:0 0 6px #0af8;backdrop-filter:blur(3px)}
+  max-width:335px;z-index:10;text-shadow:0 0 6px #0af8;backdrop-filter:blur(3px);max-height:52vh;overflow:auto}
 #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.14em;color:#6ff;text-shadow:0 0 12px #0ff9}
 .th{color:#9ad;margin:0 0 7px;font-style:italic;line-height:1.45}
 .hint{color:#57c9a0;margin:6px 0 6px}
@@ -15,6 +16,7 @@ a{color:#f7a;text-decoration:none;border-bottom:1px dotted #f7a5}
 .tab{display:inline-block;padding:2px 7px;margin:1px 3px 1px 0;border:1px solid #0af5;color:#8cf;cursor:pointer;border-radius:2px}
 .tab.on{background:#0af3;color:#dff;box-shadow:0 0 10px #0af6}
 .pun{color:#f9a;margin-top:7px;border-top:1px solid #f9a3;padding-top:5px}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
 <canvas id="c"></canvas>

@@ -1,16 +1,18 @@
 <title>Decade Ladders</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 html,body{margin:0;padding:0;background:#03040a;overflow:hidden;font-family:ui-monospace,Menlo,Consolas,monospace}
-canvas{display:block;position:fixed;inset:0}
+canvas{display:block;position:fixed;inset:0;touch-action:none}
 #ui{position:fixed;top:0;left:0;padding:10px 12px;color:#cfe8ff;background:rgba(3,5,12,.66);
  font:11px/1.45 ui-monospace,Menlo,Consolas,monospace;max-width:380px;z-index:10;
- border-right:1px solid #12406033;border-bottom:1px solid #12406033;backdrop-filter:blur(3px)}
+ border-right:1px solid #12406033;border-bottom:1px solid #12406033;backdrop-filter:blur(3px);max-height:52vh;overflow:auto}
 #ui h1{margin:0 0 3px;font-size:14px;letter-spacing:.16em;color:#9df;text-shadow:0 0 12px #08f}
 .th{color:#9fb6c9;margin:0 0 7px;font-style:italic}
 a{color:#6fe;text-decoration:none}a:hover{text-shadow:0 0 8px #0ff}
 #rd{margin-top:6px;border-top:1px solid #1a3a52;padding-top:5px;white-space:pre-wrap;color:#8fe;font-size:10px}
 #rule{margin-top:6px;color:#ffd479;font-size:10px;min-height:28px;font-style:italic}
 .hint{color:#5f7d94;margin-top:6px}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
@@ -148,11 +150,11 @@ addEventListener('wheel',function(e){
  e.preventDefault();
 },{passive:false});
 var dragging=false,lastY=0;
-c.onmousedown=function(e){dragging=true;lastY=e.clientY;hitTest(e.clientX,e.clientY);};
-c.onmousemove=function(e){if(!dragging)return;
+c.onpointerdown=function(e){dragging=true;lastY=e.clientY;hitTest(e.clientX,e.clientY);};
+c.onpointermove=function(e){if(!dragging)return;
  var dy=e.clientY-lastY;lastY=e.clientY;
  vfocus -= dy/(zoom*2.4)*0.9;};
-addEventListener('mouseup',function(){dragging=false;});
+addEventListener('pointerup',function(){dragging=false;});
 addEventListener('keydown',function(e){
  if(e.key==='ArrowDown')vfocus+=0.02; if(e.key==='ArrowUp')vfocus-=0.02;});
 

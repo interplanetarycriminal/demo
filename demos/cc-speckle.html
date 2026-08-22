@@ -1,10 +1,11 @@
 <title>Speckle Microphone</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 html,body{margin:0;padding:0;background:#050308;overflow:hidden;height:100%}
-canvas{display:block;position:fixed;top:0;left:0}
+canvas{display:block;position:fixed;top:0;left:0;touch-action:none}
 #ui{position:fixed;top:0;left:0;padding:10px 12px;color:#fbd;background:rgba(8,4,12,.66);
   font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;max-width:352px;z-index:10;
-  border-right:1px solid #f0a3;border-bottom:1px solid #f0a3;text-shadow:0 0 6px #f066}
+  border-right:1px solid #f0a3;border-bottom:1px solid #f0a3;text-shadow:0 0 6px #f066;max-height:52vh;overflow:auto}
 #ui h1{font-size:13px;margin:0 0 4px;color:#ff5d7a;letter-spacing:.05em;text-shadow:0 0 10px #f04}
 #ui .th{color:#7fe9ff;margin:0 0 6px;text-shadow:0 0 8px #0af6}
 #ui .hint{color:#a88;margin:6px 0}
@@ -13,6 +14,7 @@ canvas{display:block;position:fixed;top:0;left:0}
 #ui a{color:#ff5d7a;text-decoration:none;border-bottom:1px dotted #ff5d7a88}
 #ui .sep{height:1px;background:#f0a2;margin:6px 0}
 #ui .pun{color:#ffd36e;text-shadow:0 0 8px #fa06}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>

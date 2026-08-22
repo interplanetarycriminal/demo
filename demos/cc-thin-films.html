@@ -1,10 +1,11 @@
 <title>Films That Tattle</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 html,body{margin:0;padding:0;background:#04050a;overflow:hidden;height:100%}
-canvas{display:block;position:fixed;top:0;left:0}
+canvas{display:block;position:fixed;top:0;left:0;touch-action:none}
 #ui{position:fixed;top:0;left:0;padding:10px 12px;color:#cfe6ff;background:rgba(4,6,12,.66);
   font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;max-width:352px;z-index:10;
-  border-right:1px solid #6cf3;border-bottom:1px solid #6cf3;text-shadow:0 0 6px #6cf6}
+  border-right:1px solid #6cf3;border-bottom:1px solid #6cf3;text-shadow:0 0 6px #6cf6;max-height:52vh;overflow:auto}
 #ui h1{font-size:13px;margin:0 0 4px;color:#7fd4ff;letter-spacing:.05em;text-shadow:0 0 10px #0af}
 #ui .th{color:#ffd36e;margin:0 0 6px;text-shadow:0 0 8px #fa06}
 #ui .hint{color:#7a94ad;margin:6px 0}
@@ -13,6 +14,7 @@ canvas{display:block;position:fixed;top:0;left:0}
 #ui a{color:#7fd4ff;text-decoration:none;border-bottom:1px dotted #7fd4ff88}
 #ui .sep{height:1px;background:#6cf2;margin:6px 0}
 #ui .pun{color:#b98cff;text-shadow:0 0 8px #93f6}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
