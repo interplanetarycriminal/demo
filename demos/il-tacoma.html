@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tacoma Narrows Flutter</title>
+<style>
+  html,body{margin:0;height:100%;background:#05070c;overflow:hidden}
+  canvas{display:block;position:fixed;inset:0}
+  #ui{position:fixed;left:12px;top:12px;width:334px;z-index:10;
+      background:rgba(5,9,16,.76);border:1px solid #2b4258;border-radius:9px;padding:10px 12px 11px;
+      color:#c2d6e6;font:11px/1.45 ui-monospace,Menlo,Consolas,monospace;
+      -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);box-shadow:0 0 26px #ff8a3c22}
+  #ui h1{margin:0 0 3px;font-size:13px;letter-spacing:.09em;color:#ff9d5c;text-shadow:0 0 12px #ff6a2a7a}
+  .m{color:#96aec2}.sci{color:#7fe6c6}.lin{color:#6d8598}
+  .row{display:flex;justify-content:space-between;gap:8px}
+  .k{color:#7d97ab}.v{color:#ffe3bd}
+  hr{border:0;border-top:1px solid #2b4258;margin:7px 0}
+  input[type=range]{width:100%;height:14px;margin:1px 0 2px;accent-color:#ff9d5c;background:transparent}
+  label{display:block;color:#8fa8bc;margin-top:3px}
+  a{color:#6fd7ff;text-decoration:none}a:hover{text-decoration:underline}
+  button{background:#152232;color:#cfe6fa;border:1px solid #2b4258;border-radius:5px;padding:3px 8px;
+         font:11px ui-monospace,monospace;cursor:pointer;margin-top:5px}
+  button:hover{background:#1e3146}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>TACOMA NARROWS — AEROELASTIC FLUTTER</h1>
+  <div class="m">Wind past the deck sheds forces that act <i>in phase with twisting velocity</i> — negative damping. Every twist feeds the next, amplitude grows without any tuned driver, until the structure fails.</div>
+  <div class="sci">Collapse 7 Nov 1940 · Billah &amp; Scanlan 1991</div>
+  <div class="lin">1940 collapse film → decades of wrong "resonance" textbook captions → Billah–Scanlan 1991 correction → today's section-model flutter testing in wind tunnels</div>
+  <hr>
+  <label>wind speed U &nbsp;<span class="v" id="vU"></span></label>
+  <input type="range" id="sU" min="2" max="30" step="0.1" value="8">
+  <button id="poke">↯ poke the deck</button> <button id="rst">↺ reset</button>
+  <div class="lin" id="auto">AUTO-RAMP ON — drag the slider to take over</div>
+  <hr>
+  <div class="row"><span class="k">flutter speed U_c</span><span class="v">18.0 m/s</span></div>
+  <div class="row"><span class="k">net damping ζ</span><span class="v" id="rZ">—</span></div>
+  <div class="row"><span class="k">growth rate σ = −ζω</span><span class="v" id="rG">—</span></div>
+  <div class="row"><span class="k">twist α</span><span class="v" id="rA">—</span></div>
+  <div class="row"><span class="k">envelope α_max</span><span class="v" id="rE">—</span></div>
+  <div class="row"><span class="k">state</span><span class="v" id="rS">—</span></div>
+  <hr>
+  <div class="lin">Galloping Gertie, 7 Nov 1940: a steady 68 km/h wind — no periodic driver at the deck's 0.2 Hz torsional mode — tore it apart in 70 minutes. Leonard Coatsworth crawled off the deck; his cocker spaniel Tubby, too frightened to leave the car, was the only life lost.</div>
+  <div class="lin" style="margin-top:4px">model: 1-DOF Scanlan torsional flutter, ζ(U)=ζ₀(1−U/U_c); frequency and damping exaggerated so the growth is visible in seconds.</div>
+  <div style="margin-top:6px"><a href="index.html">← gallery</a></div>
+</div>
+<script>
+/*__MODEL_START__*/
+var U_C=18.0, ZETA0=0.35, OM_A=2*Math.PI*0.45, OM_H=2*Math.PI*0.70;
+// Scanlan-style aerodynamic damping: the A2* derivative flips the total damping negative above U_c
+function zetaNet(U){return ZETA0*(1-U/U_C);}
+function growthRate(U){return -zetaNet(U)*OM_A;}   // <0 below U_c, >0 above
+function windAuto(t){var p=t%20;
+  if(p<0.8)return 8;
+  if(p<5.0)return 8+18*(p-0.8)/4.2;
+  return 26;}
+/*__MODEL_END__*/
+
+var cv=document.getElementById('c'),ctx=cv.getContext('2d'),W=0,H=0,DPR=1;
+var sU=document.getElementById('sU'),auto=true,t0=performance.now(),last=t0;
+var al=0,av=0,hv=0,hh=0,gustP=0,env=0,hist=[],fail=-1,frame=0,kicked=false,resetAt=-1;
+var tr=[];for(var i=0;i<120;i++)tr.push({x:Math.random(),y:Math.random(),s:Math.random()});
+var halo=document.createElement('canvas'),hg=halo.getContext('2d');
+(function(){halo.width=halo.height=64;var g=hg.createRadialGradient(32,32,0,32,32,32);
+ g.addColorStop(0,'rgba(255,190,120,.9)');g.addColorStop(1,'rgba(255,120,40,0)');hg.fillStyle=g;hg.fillRect(0,0,64,64);})();
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;
+  cv.width=W*DPR;cv.height=H*DPR;cv.style.width=W+'px';cv.style.height=H+'px';ctx.setTransform(DPR,0,0,DPR,0,0);}
+addEventListener('resize',resize);resize();
+sU.addEventListener('input',function(){auto=false;document.getElementById('auto').textContent='MANUAL CONTROL';});
+document.getElementById('poke').addEventListener('click',function(){av+=1.1;});
+document.getElementById('rst').addEventListener('click',function(){al=av=hh=hv=0;env=0;hist=[];fail=-1;t0=performance.now();kicked=false;auto=true;document.getElementById('auto').textContent='AUTO-RAMP ON';});
+
+function draw(now){
+  var dt=Math.min(0.045,(now-last)/1000);last=now;var t=(now-t0)/1000;
+  if(auto){sU.value=windAuto(t).toFixed(1);}
+  var U=+sU.value,z=zetaNet(U),g=growthRate(U);
+  if(auto&&!kicked&&t>2.15){av+=0.72;kicked=true;}            // the named gust
+  if(fail<0){
+    gustP+=dt*3.1;
+    var gust=(Math.sin(gustP*1.7)+Math.sin(gustP*2.9+1.3)+Math.sin(gustP*0.7+2.2))*0.33;
+    var q=(U*U)/(U_C*U_C);
+    for(var s=0;s<2;s++){var h2=dt/2;
+      av+=h2*(-OM_A*OM_A*al-2*z*OM_A*av+gust*0.55*q);
+      al+=h2*av;
+      hv+=h2*(-OM_H*OM_H*hh-2*0.09*OM_H*hv+0.45*OM_H*OM_H*al*q*0.3+gust*0.5*q);
+      hh+=h2*hv;}
+    if(Math.abs(al)>0.72){fail=t;frame=0;}
+  } else { al+=0; }
+  var failT=fail<0?0:t-fail;
+  if(fail>=0){frame=Math.min(4,Math.floor(failT/0.45));
+    if(failT>4.2){al=av=hh=hv=0;env=0;hist=[];fail=-1;kicked=false;t0=performance.now();}}
+  var adeg=al*180/Math.PI;
+  env=Math.max(Math.abs(adeg),env*0.995);
+  if(hist.length===0||now-hist[hist.length-1].t>66)hist.push({t:now,e:env,a:adeg,u:U});
+  while(hist.length>420)hist.shift();
+
+  // ================= scene =================
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  var bg=ctx.createLinearGradient(0,0,0,H);bg.addColorStop(0,'#0a1120');bg.addColorStop(.55,'#070c16');bg.addColorStop(1,'#040610');
+  ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
+  var cx=W*0.5,cy=H*0.40,B=Math.min(300,Math.max(150,(W-760)*0.55+170)); // deck half-chord scale
+  // gorge
+  ctx.fillStyle='#0b1524';ctx.beginPath();ctx.moveTo(0,H);ctx.lineTo(0,cy+150);
+  ctx.quadraticCurveTo(cx*0.45,cy+215,cx*0.62,H);ctx.closePath();ctx.fill();
+  ctx.beginPath();ctx.moveTo(W,H);ctx.lineTo(W,cy+150);
+  ctx.quadraticCurveTo(W-cx*0.45,cy+215,W-cx*0.62,H);ctx.closePath();ctx.fill();
+  ctx.fillStyle='#0d2438';ctx.fillRect(0,H-56,W,56);
+  ctx.strokeStyle='rgba(80,150,200,.25)';ctx.lineWidth=1;
+  for(var w=0;w<6;w++){ctx.beginPath();ctx.moveTo(0,H-50+w*9);ctx.lineTo(W,H-50+w*9+Math.sin(t+w)*2);ctx.stroke();}
+  // wind tracers
+  ctx.strokeStyle='rgba(120,200,255,.30)';ctx.lineWidth=1.1;
+  for(var i=0;i<tr.length;i++){var p=tr[i];
+    p.x+=dt*(0.06+U*0.011)*(0.6+p.s);
+    if(p.x>1.05){p.x=-0.05;p.y=Math.random();}
+    var px=p.x*W,py=60+p.y*(H-190);
+    var d=(py-cy)/90,defl=Math.exp(-d*d)*Math.sin(t*3+p.s*6)*14*(U/18)*(1+Math.abs(adeg)/25);
+    if(px>cx-B*0.6)py+=defl;
+    var ln=6+U*0.9*(0.5+p.s);
+    ctx.globalAlpha=0.15+0.5*p.s;ctx.beginPath();ctx.moveTo(px-ln,py);ctx.lineTo(px,py);ctx.stroke();}
+  ctx.globalAlpha=1;
+  ctx.fillStyle='#7fc4ff';ctx.font='11px ui-monospace,monospace';
+  ctx.fillText('WIND  U = '+U.toFixed(1)+' m/s  →',cx-B-40,cy-118);
+  // hanger cables to towers above
+  var anchors=[[cx-B*0.78,cy-150],[cx+B*0.78,cy-150]];
+  var deckPts=[[-B*0.78,-16],[B*0.78,-16]];
+  ctx.lineWidth=2.6;
+  for(var k2=0;k2<2;k2++){
+    var snapped=fail>=0&&frame>=(k2===0?2:3);
+    var lx=deckPts[k2][0],ly=deckPts[k2][1];
+    var wx=cx+lx*Math.cos(al)-ly*Math.sin(al),wy=cy+hh+lx*Math.sin(al)+ly*Math.cos(al);
+    ctx.strokeStyle=snapped?'rgba(120,60,40,.5)':'rgba(190,215,240,.85)';
+    ctx.beginPath();ctx.moveTo(anchors[k2][0],anchors[k2][1]);
+    if(snapped){ctx.lineTo(anchors[k2][0]+(k2?18:-18),anchors[k2][1]+70+failT*40);}
+    else ctx.lineTo(wx,wy);
+    ctx.stroke();
+    if(snapped){ctx.strokeStyle='rgba(255,140,60,.8)';ctx.beginPath();
+      ctx.moveTo(wx,wy);ctx.lineTo(wx+(k2?26:-26),wy+60+failT*30);ctx.stroke();}}
+  ctx.fillStyle='#22344a';ctx.fillRect(anchors[0][0]-9,0,18,cy-146);ctx.fillRect(anchors[1][0]-9,0,18,cy-146);
+  // ---- deck cross-section (H-girder)
+  ctx.save();ctx.translate(cx,cy+hh);ctx.rotate(al);
+  var gd=26,slab=11;
+  ctx.fillStyle='#20303f';ctx.fillRect(-B,-slab/2,2*B,slab);          // deck slab
+  ctx.fillStyle='#16232f';ctx.fillRect(-B,-slab/2,2*B,3);
+  ctx.fillStyle='#2b3f52';ctx.fillRect(-B,slab/2,16,gd);ctx.fillRect(B-16,slab/2,16,gd); // deep side girders
+  ctx.fillStyle='#1a2836';ctx.fillRect(-B+16,slab/2+gd-5,2*B-32,5);
+  ctx.strokeStyle='rgba(255,157,92,.85)';ctx.lineWidth=1.4;
+  ctx.strokeRect(-B,-slab/2,2*B,slab+gd*0+slab*0);
+  ctx.strokeRect(-B,slab/2,16,gd);ctx.strokeRect(B-16,slab/2,16,gd);
+  ctx.fillStyle='#e8c76a';for(var lm=-B+40;lm<B-30;lm+=52)ctx.fillRect(lm,-1.5,22,3); // centre line
+  ctx.fillStyle='#7fc4ff';ctx.font='10px ui-monospace,monospace';ctx.textAlign='center';
+  ctx.fillText('H-GIRDER DECK  (1940 section: solid plate girders, no trusses)',0,-slab/2-10);
+  ctx.textAlign='left';ctx.restore();
+  // torsion spring + heave spring glyphs
+  ctx.strokeStyle='rgba(140,190,230,.5)';ctx.lineWidth=1.4;
+  ctx.beginPath();for(var sp=0;sp<26;sp++){var f=sp/25,yy=cy+hh+46+f*70,xx=cx+Math.sin(f*22)*9;
+    if(sp===0)ctx.moveTo(xx,yy);else ctx.lineTo(xx,yy);}ctx.stroke();
+  ctx.beginPath();ctx.arc(cx,cy+hh,15,0,6.284);ctx.stroke();
+  ctx.fillStyle='#8fb4cf';ctx.font='10px ui-monospace,monospace';
+  ctx.fillText('k_θ torsion',cx+20,cy+hh+4);ctx.fillText('k_h heave',cx+16,cy+hh+104);
+  // twist arc readout at the deck
+  ctx.strokeStyle=g>0?'#ff6a3c':'#4fd6a0';ctx.lineWidth=2.4;
+  ctx.beginPath();ctx.arc(cx,cy+hh,B*0.5,-Math.abs(al)-0.001,Math.abs(al)+0.001);ctx.stroke();
+  ctx.fillStyle=g>0?'#ff9d5c':'#4fd6a0';ctx.font='bold 15px ui-monospace,monospace';
+  ctx.fillText(adeg.toFixed(1)+'°',cx+B*0.5+10,cy+hh+5);
+  if(fail>=0){ctx.globalCompositeOperation='lighter';
+    ctx.globalAlpha=Math.max(0,1-(failT%0.45)/0.45);ctx.drawImage(halo,cx-160,cy+hh-160,320,320);
+    ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';
+    ctx.fillStyle='#ff5a3c';ctx.font='bold 15px ui-monospace,monospace';
+    ctx.fillText('FAILURE — CABLE SNAP, FRAME '+(frame+1)+'/5',cx-140,cy-160);}
+  // ================= MYTH panel (top-right) =================
+  var pw=340,px0=W-pw-14,py0=14,pht=176;
+  ctx.fillStyle='rgba(5,9,16,.78)';ctx.strokeStyle='#2b4258';ctx.lineWidth=1;
+  ctx.beginPath();ctx.roundRect(px0,py0,pw,pht,8);ctx.fill();ctx.stroke();
+  ctx.fillStyle='#ff8a6a';ctx.font='bold 11px ui-monospace,monospace';
+  ctx.fillText('✗ RESONANCE  (the textbook myth)',px0+10,py0+18);
+  ctx.fillStyle='#8fa8bc';ctx.font='10px ui-monospace,monospace';
+  ctx.fillText('needs a periodic driver tuned to 0.2 Hz.',px0+10,py0+32);
+  ctx.fillText('The wind that day was steady. No driver.',px0+10,py0+44);
+  ctx.fillStyle='#4fd6a0';ctx.font='bold 11px ui-monospace,monospace';
+  ctx.fillText('✓ SELF-EXCITED FLUTTER  (Billah–Scanlan)',px0+10,py0+64);
+  var wx0=px0+14,wy0=py0+108,ww=pw-100,amp=17;
+  ctx.strokeStyle='#3a5570';ctx.beginPath();ctx.moveTo(wx0,wy0);ctx.lineTo(wx0+ww,wy0);ctx.stroke();
+  ctx.lineWidth=1.8;
+  ctx.strokeStyle='#7fc4ff';ctx.beginPath();
+  for(var q2=0;q2<=ww;q2++){var yv=wy0-amp*Math.sin(q2/ww*Math.PI*3);q2?ctx.lineTo(wx0+q2,yv):ctx.moveTo(wx0+q2,yv);}ctx.stroke();
+  ctx.strokeStyle='#ff9d5c';ctx.beginPath();
+  for(var q3=0;q3<=ww;q3++){var yv2=wy0-amp*Math.sin(q3/ww*Math.PI*3+Math.PI/2);q3?ctx.lineTo(wx0+q3,yv2):ctx.moveTo(wx0+q3,yv2);}ctx.stroke();
+  ctx.font='10px ui-monospace,monospace';
+  ctx.fillStyle='#7fc4ff';ctx.fillText('twist α',wx0+ww+6,wy0-6);
+  ctx.fillStyle='#ff9d5c';ctx.fillText('aero moment M',wx0+ww+6,wy0+9);
+  ctx.fillStyle='#c2d6e6';
+  ctx.fillText('M leads α by 90° ⇒ M is in phase with α̇ :',px0+10,py0+152);
+  ctx.fillText('the air does net work every cycle → ζ < 0.',px0+10,py0+166);
+  // ================= plots (bottom) =================
+  var ex=360,ey=H-158,ew=Math.max(200,W-ex-374),eh=142;
+  ctx.fillStyle='rgba(5,9,16,.78)';ctx.strokeStyle='#2b4258';
+  ctx.beginPath();ctx.roundRect(ex,ey,ew,eh,8);ctx.fill();ctx.stroke();
+  ctx.fillStyle='#8fa8bc';ctx.font='10px ui-monospace,monospace';
+  ctx.fillText('TORSIONAL AMPLITUDE — envelope grows once ζ flips negative',ex+10,ey+15);
+  var p0x=ex+34,p0y=ey+eh-16,pwid=ew-48,phg=eh-38;
+  ctx.strokeStyle='#22384c';ctx.beginPath();ctx.moveTo(p0x,p0y);ctx.lineTo(p0x+pwid,p0y);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(p0x,p0y-phg/2);ctx.lineTo(p0x+pwid,p0y-phg/2);ctx.stroke();
+  ctx.fillStyle='#5f7f96';ctx.fillText('45°',ex+8,p0y-phg+4);ctx.fillText('0°',ex+14,p0y-phg/2+4);
+  ctx.strokeStyle='#ff4d5e';ctx.setLineDash([4,4]);ctx.beginPath();
+  ctx.moveTo(p0x,p0y-phg);ctx.lineTo(p0x+pwid,p0y-phg);ctx.stroke();ctx.setLineDash([]);
+  if(hist.length>1){
+    ctx.strokeStyle='#7fc4ff';ctx.lineWidth=1.2;ctx.beginPath();
+    for(var j=0;j<hist.length;j++){var xx2=p0x+pwid*j/419,yy2=p0y-phg/2-(hist[j].a/45)*(phg/2);
+      j?ctx.lineTo(xx2,yy2):ctx.moveTo(xx2,yy2);}ctx.stroke();
+    ctx.strokeStyle='#ff9d5c';ctx.lineWidth=1.6;
+    ctx.beginPath();for(var j2=0;j2<hist.length;j2++){var x3=p0x+pwid*j2/419,y3=p0y-phg/2-(hist[j2].e/45)*(phg/2);
+      j2?ctx.lineTo(x3,y3):ctx.moveTo(x3,y3);}ctx.stroke();
+    ctx.beginPath();for(var j3=0;j3<hist.length;j3++){var x4=p0x+pwid*j3/419,y4=p0y-phg/2+(hist[j3].e/45)*(phg/2);
+      j3?ctx.lineTo(x4,y4):ctx.moveTo(x4,y4);}ctx.stroke();}
+  // damping vs wind
+  var dx0=W-360,dy0=H-158,dw=346,dh=142;
+  ctx.fillStyle='rgba(5,9,16,.78)';ctx.strokeStyle='#2b4258';
+  ctx.beginPath();ctx.roundRect(dx0,dy0,dw,dh,8);ctx.fill();ctx.stroke();
+  ctx.fillStyle='#8fa8bc';ctx.fillText('NET DAMPING ζ vs WIND SPEED',dx0+10,dy0+15);
+  var qx=dx0+34,qy=dy0+22,qw=dw-52,qh=dh-46,zy=qy+qh*0.42;
+  ctx.strokeStyle='#22384c';ctx.beginPath();ctx.moveTo(qx,zy);ctx.lineTo(qx+qw,zy);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(qx,qy);ctx.lineTo(qx,qy+qh);ctx.stroke();
+  ctx.strokeStyle='#4fd6a0';ctx.lineWidth=2;ctx.beginPath();
+  for(var uu=0;uu<=30;uu+=0.5){var zz=zetaNet(uu),xq=qx+qw*uu/30,yq=zy-zz*(qh*0.42)/0.35;
+    if(uu===0)ctx.moveTo(xq,yq);else ctx.lineTo(xq,yq);}
+  ctx.stroke();
+  var fbx=qx+qw*U_C/30;
+  ctx.strokeStyle='#ff4d5e';ctx.setLineDash([3,3]);ctx.beginPath();ctx.moveTo(fbx,qy);ctx.lineTo(fbx,qy+qh);ctx.stroke();ctx.setLineDash([]);
+  ctx.fillStyle='#ff6f86';ctx.fillText('U_c = 18',fbx-24,qy+qh+12);
+  ctx.fillStyle='#4fd6a0';ctx.fillText('ζ>0 decays',qx+4,qy+10);
+  ctx.fillStyle='#ff9d5c';ctx.fillText('ζ<0 GROWS',fbx+8,qy+qh-4);
+  var mx2=qx+qw*Math.min(30,U)/30,my2=zy-z*(qh*0.42)/0.35;
+  ctx.fillStyle=z<0?'#ff6a3c':'#4fd6a0';ctx.beginPath();ctx.arc(mx2,my2,5,0,6.284);ctx.fill();
+  ctx.fillStyle='#cfe6fa';ctx.fillText('ζ = '+(z>=0?'+':'')+z.toFixed(3),mx2+9,my2-7);
+  // readouts
+  document.getElementById('vU').textContent=U.toFixed(1)+' m/s  ('+(U*3.6).toFixed(0)+' km/h)';
+  document.getElementById('rZ').textContent=(z>=0?'+':'')+z.toFixed(3)+(z<0?'  NEGATIVE':'');
+  document.getElementById('rG').textContent=(g>=0?'+':'')+g.toFixed(3)+' s⁻¹';
+  document.getElementById('rA').textContent=adeg.toFixed(1)+'°';
+  document.getElementById('rE').textContent=env.toFixed(1)+'°';
+  var rs=document.getElementById('rS');
+  if(fail>=0){rs.textContent='COLLAPSE SEQUENCE';rs.style.color='#ff5a3c';}
+  else if(z>0){rs.textContent='STABLE — gusts decay';rs.style.color='#4fd6a0';}
+  else {rs.textContent='FLUTTER — self-excited growth';rs.style.color='#ff9d5c';}
+  requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>

@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Milk-Drop Crown</title>
+<style>
+  html,body{margin:0;height:100%;background:#05060b;overflow:hidden}
+  canvas{display:block;position:fixed;inset:0}
+  #ui{position:fixed;left:12px;top:12px;width:330px;z-index:10;
+      background:rgba(6,8,16,.74);border:1px solid #33324e;border-radius:9px;padding:10px 12px 11px;
+      color:#cfd3e8;font:11px/1.45 ui-monospace,Menlo,Consolas,monospace;
+      -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);box-shadow:0 0 26px #7ad4ff22}
+  #ui h1{margin:0 0 3px;font-size:13px;letter-spacing:.10em;color:#8fe8ff;text-shadow:0 0 12px #2ad7ff7a}
+  .m{color:#a3a9c6}.sci{color:#ffd58a}.lin{color:#7d82a0}
+  .row{display:flex;justify-content:space-between;gap:8px}
+  .k{color:#8288a8}.v{color:#eaf3ff}
+  hr{border:0;border-top:1px solid #33324e;margin:7px 0}
+  input[type=range]{width:100%;height:14px;margin:1px 0 2px;accent-color:#7ad4ff;background:transparent}
+  label{display:block;color:#9aa0bd;margin-top:3px}
+  a{color:#7ad4ff;text-decoration:none}a:hover{text-decoration:underline}
+  #flash1936{margin-top:6px;background:#1a1b2c;color:#ffe7b0;border:1px solid #6a5a2e;border-radius:5px;
+             padding:4px 9px;font:11px ui-monospace,monospace;cursor:pointer}
+  #flash1936:hover{background:#2a2b42}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>THE MILK-DROP CROWN</h1>
+  <div class="m">A falling drop punches a crater whose rim sheet is whipped upward and breaks by Plateau–Rayleigh instability into a crown of pointed cusps and satellite droplets — far too fast for the eye, immortal on film.</div>
+  <div class="sci">A. M. Worthington 1877 · Harold "Doc" Edgerton 1936</div>
+  <div class="lin">Worthington's 1877 spark sketches → Edgerton's MIT strobe photograph → every splash logo since</div>
+  <hr>
+  <label>slow-motion &nbsp;<span class="v" id="vS"></span></label>
+  <input type="range" id="sS" min="0" max="100" step="1" value="8">
+  <label>drop height H &nbsp;<span class="v" id="vH"></span></label>
+  <input type="range" id="sH" min="0.08" max="2.0" step="0.01" value="0.45">
+  <label>surface tension σ &nbsp;<span class="v" id="vG"></span></label>
+  <input type="range" id="sG" min="20" max="72" step="0.5" value="48">
+  <button id="flash1936">▣ 1936 — Edgerton strobe frame</button>
+  <hr>
+  <div class="row"><span class="k">impact speed v=√(2gH)</span><span class="v" id="rV">—</span></div>
+  <div class="row"><span class="k">Weber We=ρv²D/σ</span><span class="v" id="rW">—</span></div>
+  <div class="row"><span class="k">cusps on the rim</span><span class="v" id="rN">—</span></div>
+  <div class="row"><span class="k">crown height</span><span class="v" id="rH">—</span></div>
+  <div class="row"><span class="k">cusp spacing λ_max</span><span class="v" id="rL">—</span></div>
+  <div class="row"><span class="k">splash clock τ</span><span class="v" id="rT">—</span></div>
+  <hr>
+  <div class="lin">Plateau–Rayleigh: the rim is a liquid cylinder of radius a; the fastest-growing ripple has λ_max ≈ 9.02a, and the crown carries exactly 2πR/λ_max cusps. More tension → fatter, slower rim → fewer, blunter spikes.</div>
+  <div style="margin-top:6px"><a href="index.html">← gallery</a></div>
+</div>
+<script>
+/*__MODEL_START__*/
+// Scaling model for a milk-drop crown. D = drop diameter, ρ = milk density.
+function crownModel(H,sigma){
+  var D=0.004,rho=1030,g=9.81;
+  var v=Math.sqrt(2*g*H);                       // impact speed  (m/s)
+  var We=rho*v*v*D/(sigma*1e-3);                // Weber number  (inertia / surface tension)
+  var N=Math.round(1.10*Math.sqrt(We));         // cusp count ∝ √We  → falls as σ rises
+  if(N<7)N=7; if(N>44)N=44;
+  var R=D*0.5*(1+0.62*Math.pow(We,0.25))*1000;  // crown radius (mm)
+  var hC=D*0.25*Math.pow(We,0.40)*1000;         // crown height (mm) → rises with H
+  var lam=2*Math.PI*R/N;                        // cusp spacing (mm) = λ_max
+  return {v:v,We:We,N:N,R:R,h:hC,lam:lam,a:lam/9.02};
+}
+// splash clock, in "splash milliseconds" since impact; loops
+var TAU_LO=-30,TAU_HI=235;
+function tauAt(wall,rate){var span=TAU_HI-TAU_LO;return TAU_LO+((wall*rate)%span+span)%span;}
+// crown envelope: 0 before impact, rises, holds, collapses
+function crownPhase(tau){
+  if(tau<=0)return 0;
+  if(tau<40)return tau/40;
+  if(tau<95)return 1;
+  if(tau<150)return 1-0.85*(tau-95)/55;
+  return 0.15*Math.max(0,1-(tau-150)/50);
+}
+/*__MODEL_END__*/
+
+var cv=document.getElementById('c'),ctx=cv.getContext('2d'),W=0,H2=0,DPR=1;
+var sS=document.getElementById('sS'),sH=document.getElementById('sH'),sG=document.getElementById('sG');
+var btn=document.getElementById('flash1936'),strobe=0,strobeOn=false,t0=performance.now();
+var halo=document.createElement('canvas'),hg=halo.getContext('2d');
+(function(){halo.width=halo.height=64;var g=hg.createRadialGradient(32,32,0,32,32,32);
+ g.addColorStop(0,'rgba(255,255,255,.95)');g.addColorStop(.35,'rgba(190,225,255,.42)');
+ g.addColorStop(1,'rgba(120,190,255,0)');hg.fillStyle=g;hg.fillRect(0,0,64,64);})();
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H2=innerHeight;
+  cv.width=W*DPR;cv.height=H2*DPR;cv.style.width=W+'px';cv.style.height=H2+'px';ctx.setTransform(DPR,0,0,DPR,0,0);}
+addEventListener('resize',resize);resize();
+btn.addEventListener('click',function(){if(strobeOn){strobeOn=false;strobe=0;}else{strobeOn=true;strobe=1;}});
+function slowmo(){var f=+sS.value/100;return Math.pow(50,-1+f)*1;} // 1/50× … 1×
+function sprite(x,y,r,a){ctx.globalAlpha=a;ctx.drawImage(halo,x-r,y-r,2*r,2*r);ctx.globalAlpha=1;}
+
+var frozenTau=null;
+function draw(now){
+  var t=(now-t0)/1000,sm=slowmo(),rate=1000*sm; // splash-ms per wall-second
+  var tau=strobeOn&&frozenTau!==null?frozenTau:tauAt(t,rate);
+  if(strobeOn&&frozenTau===null)frozenTau=tau;
+  if(!strobeOn)frozenTau=null;
+  var Hd=+sH.value,sg=+sG.value,M=crownModel(Hd,sg);
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  var bg=ctx.createLinearGradient(0,0,0,H2);bg.addColorStop(0,'#080b16');bg.addColorStop(.65,'#05070f');bg.addColorStop(1,'#0a0d18');
+  ctx.fillStyle=bg;ctx.fillRect(0,0,W,H2);
+  // ---- stage geometry (right of overlay)
+  var sx0=356,sw=Math.max(240,W-sx0-20),cx=sx0+sw/2,pool=H2*0.70;
+  var mm=Math.min(sw/78,(pool-80)/46);if(mm<2)mm=2;
+  var ph=crownPhase(tau);
+  var R=M.R*mm*(0.35+0.65*Math.min(1,Math.max(0,tau/34)));
+  var hc=M.h*mm*ph;
+  var craterD=Math.min(1,Math.max(0,tau/26))*M.h*0.42*mm*(tau<140?1:Math.max(0,1-(tau-140)/60));
+  // ---- pool
+  var pg=ctx.createLinearGradient(0,pool-10,0,H2);
+  pg.addColorStop(0,strobeOn?'#e9ecf2':'#dfe6f2');pg.addColorStop(.25,strobeOn?'#aab0bd':'#8fa6c4');pg.addColorStop(1,'#171d2c');
+  ctx.save();ctx.beginPath();ctx.moveTo(sx0-40,pool);
+  for(var x=sx0-40;x<=sx0+sw+40;x+=6){
+    var dx=(x-cx)/Math.max(1,R*1.35),dip=Math.exp(-dx*dx*2.2)*craterD;
+    var rip=Math.sin((x-cx)*0.055-tau*0.09)*Math.exp(-Math.abs(x-cx)/(R*3+40))*3*(tau>0?1:0);
+    ctx.lineTo(x,pool+dip+rip);}
+  ctx.lineTo(sx0+sw+40,H2);ctx.lineTo(sx0-40,H2);ctx.closePath();
+  ctx.fillStyle=pg;ctx.fill();
+  ctx.strokeStyle=strobeOn?'rgba(255,255,255,.9)':'rgba(160,220,255,.75)';ctx.lineWidth=1.6;ctx.stroke();
+  ctx.restore();
+  // ---- crater rim ellipse + crown wall
+  var ry=R*0.30,cy=pool+craterD*0.15;
+  if(ph>0.02){
+    // sheet: a tapered ring wall from rim ellipse up to crown lip
+    var lipY=cy-hc,lipR=R*(1+0.16*ph);
+    var wg=ctx.createLinearGradient(0,lipY,0,cy);
+    if(strobeOn){wg.addColorStop(0,'#ffffff');wg.addColorStop(.5,'#c9ced8');wg.addColorStop(1,'#8f95a3');}
+    else{wg.addColorStop(0,'#ffffff');wg.addColorStop(.45,'#cfe0f4');wg.addColorStop(1,'#6f8fb8');}
+    ctx.beginPath();
+    ctx.ellipse(cx,lipY,lipR,lipR*0.30,0,Math.PI,0);
+    ctx.ellipse(cx,cy,R,ry,0,0,Math.PI);
+    ctx.closePath();ctx.fillStyle=wg;ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,.55)';ctx.lineWidth=1;ctx.stroke();
+    // ---- cusps around the lip (Plateau–Rayleigh)
+    var Nn=M.N,spikeH=hc*0.42*ph,sat=Math.min(1,Math.max(0,(tau-40)/22));
+    for(var i=0;i<Nn;i++){
+      var a=(i/Nn)*Math.PI*2+0.13,front=Math.sin(a)>0;
+      var bx=cx+lipR*Math.cos(a),by=lipY+lipR*0.30*Math.sin(a);
+      var wob=Math.sin(i*2.3+tau*0.05)*0.10;
+      var tipx=cx+(lipR*1.16)*Math.cos(a)*(1+wob*0.2),tipy=by-spikeH*(1+wob);
+      var half=(Math.PI*2*lipR/Nn)*0.34;
+      ctx.beginPath();ctx.moveTo(bx-half*Math.abs(Math.sin(a))-half*0.5,by+2);
+      ctx.quadraticCurveTo(bx-half*0.25,by-spikeH*0.55,tipx,tipy);
+      ctx.quadraticCurveTo(bx+half*0.25,by-spikeH*0.55,bx+half*Math.abs(Math.sin(a))+half*0.5,by+2);
+      ctx.closePath();
+      ctx.fillStyle=front?(strobeOn?'#f4f6fa':'#eaf3ff'):(strobeOn?'#b9bfca':'#9fb8d6');ctx.fill();
+      // bead at the tip, then a satellite that pinches off and flies
+      if(sat<1){ctx.fillStyle='#ffffff';ctx.beginPath();
+        ctx.arc(tipx,tipy-1.5,Math.max(1.5,spikeH*0.10),0,6.284);ctx.fill();}
+      else{
+        var fly=Math.max(0,(tau-62)/62),sy2=tipy-4-fly*spikeH*1.5+fly*fly*spikeH*1.1;
+        ctx.fillStyle='#ffffff';ctx.beginPath();
+        ctx.arc(tipx+Math.cos(a)*fly*10,sy2,Math.max(1.4,spikeH*0.11),0,6.284);ctx.fill();
+        ctx.globalCompositeOperation='lighter';sprite(tipx+Math.cos(a)*fly*10,sy2,spikeH*0.5+6,.35);ctx.globalCompositeOperation='source-over';}
+    }
+    // rim light along the lip
+    ctx.globalCompositeOperation='lighter';
+    ctx.strokeStyle=strobeOn?'rgba(255,255,255,.5)':'rgba(120,200,255,.55)';ctx.lineWidth=2;
+    ctx.beginPath();ctx.ellipse(cx,lipY,lipR,lipR*0.30,0,Math.PI,0);ctx.stroke();
+    ctx.globalCompositeOperation='source-over';
+    // λ_max annotation across two neighbouring cusps
+    var a1=0.13,a2=0.13+Math.PI*2/Nn;
+    var p1x=cx+lipR*1.16*Math.cos(a1),p1y=lipY+lipR*0.30*Math.sin(a1)-spikeH;
+    var p2x=cx+lipR*1.16*Math.cos(a2),p2y=lipY+lipR*0.30*Math.sin(a2)-spikeH;
+    ctx.strokeStyle='rgba(255,190,90,.9)';ctx.lineWidth=1.2;ctx.beginPath();
+    ctx.moveTo(p1x,p1y-12);ctx.lineTo(p2x,p2y-12);ctx.stroke();
+    ctx.fillStyle='#ffc46a';ctx.font='11px ui-monospace,monospace';
+    ctx.fillText('λ_max ≈ 9.02a = '+M.lam.toFixed(2)+' mm',Math.min(p1x,p2x)-10,Math.min(p1y,p2y)-18);
+  }
+  // ---- Rayleigh rebound jet after collapse
+  if(tau>150&&tau<225){var jf=(tau-150)/75,jh=M.h*mm*0.85*Math.sin(jf*Math.PI);
+    ctx.fillStyle='#eaf3ff';ctx.beginPath();ctx.moveTo(cx-5,pool);
+    ctx.quadraticCurveTo(cx-2.5,pool-jh*0.6,cx,pool-jh);
+    ctx.quadraticCurveTo(cx+2.5,pool-jh*0.6,cx+5,pool);ctx.fill();
+    ctx.beginPath();ctx.arc(cx,pool-jh-3,3.4,0,6.284);ctx.fill();}
+  // ---- incoming drop
+  if(tau<0){var f=(tau-TAU_LO)/(0-TAU_LO),dy=pool-hc-(1-f)*(pool-70)-8;
+    ctx.fillStyle='#ffffff';ctx.beginPath();ctx.ellipse(cx,dy,7,8.4+4*f,0,0,6.284);ctx.fill();
+    ctx.globalCompositeOperation='lighter';sprite(cx,dy,26,.5);ctx.globalCompositeOperation='source-over';}
+  // ---- Edgerton strobe framing
+  if(strobeOn){
+    ctx.strokeStyle='#fff';ctx.lineWidth=6;ctx.strokeRect(sx0+8,26,sw-16,H2-64);
+    ctx.fillStyle='rgba(255,255,255,'+(0.75*strobe)+')';ctx.fillRect(0,0,W,H2);
+    strobe=Math.max(0,strobe-0.05);
+    ctx.fillStyle='#fff';ctx.font='bold 13px ui-monospace,monospace';
+    ctx.fillText('EDGERTON · MIT · 1936 — 1/1,000,000 s STROBE  ·  click again to release',sx0+22,H2-52);
+  }
+  ctx.font='11px ui-monospace,monospace';ctx.fillStyle='#8fa6c4';
+  ctx.fillText('SIDE VIEW · milk pool · τ = '+tau.toFixed(0)+' ms after impact · playing at '+(sm>=1?'1×':'1/'+Math.round(1/sm)+'×'),sx0+10,20);
+  // ---- readouts
+  document.getElementById('vS').textContent=(sm>=1?'1×':'1/'+Math.round(1/sm)+'×');
+  document.getElementById('vH').textContent=Hd.toFixed(2)+' m';
+  document.getElementById('vG').textContent=sg.toFixed(0)+' mN/m'+(sg<38?'  (soapy)':sg>60?'  (clean water)':'  (milk)');
+  document.getElementById('rV').textContent=M.v.toFixed(2)+' m/s';
+  document.getElementById('rW').textContent=Math.round(M.We);
+  document.getElementById('rN').textContent=M.N;
+  document.getElementById('rH').textContent=M.h.toFixed(1)+' mm';
+  document.getElementById('rL').textContent=M.lam.toFixed(2)+' mm';
+  document.getElementById('rT').textContent=tau.toFixed(0)+' ms'+(strobeOn?'  FROZEN':'');
+  requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>

@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bénard Convection Cells</title>
+<style>
+  html,body{margin:0;height:100%;background:#04060c;overflow:hidden}
+  canvas{display:block;position:fixed;inset:0}
+  #ui{position:fixed;left:12px;top:12px;width:326px;z-index:10;
+      background:rgba(4,9,18,.74);border:1px solid #1d3c60;border-radius:9px;
+      padding:10px 12px 11px;color:#b9d6ef;font:11px/1.45 ui-monospace,Menlo,Consolas,monospace;
+      -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);box-shadow:0 0 26px #0af3}
+  #ui h1{margin:0 0 3px;font-size:13px;letter-spacing:.10em;color:#ffd08a;text-shadow:0 0 12px #f907}
+  .m{color:#8fb6d8}.sci{color:#7fe6d0}.lin{color:#6f8fae}
+  .row{display:flex;justify-content:space-between;gap:8px}
+  .k{color:#6f93b4}.v{color:#ffe6b8}
+  hr{border:0;border-top:1px solid #1d3c60;margin:7px 0}
+  input[type=range]{width:100%;height:14px;margin:1px 0 2px;accent-color:#ff9a3c;background:transparent}
+  label{display:block;color:#78a3c6;margin-top:3px}
+  a{color:#6fd7ff;text-decoration:none}a:hover{text-decoration:underline}
+  #reg{color:#ff9a3c;font-weight:bold}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>BÉNARD CONVECTION CELLS</h1>
+  <div class="m">Heat a thin fluid layer from below and, past a critical Rayleigh number, formless conduction self-organizes into a honeycomb of convection cells — order bought by throwing entropy upstairs.</div>
+  <div class="sci">Henri Bénard 1900 · Lord Rayleigh 1916</div>
+  <div class="lin">Bénard's spermaceti dish → Rayleigh's 1916 stability analysis → mantle convection &amp; solar granules</div>
+  <hr>
+  <label>ΔT across layer &nbsp;<span class="v" id="vT"></span></label>
+  <input type="range" id="sT" min="2" max="30" step="0.1" value="5">
+  <label>layer depth d &nbsp;<span class="v" id="vD"></span></label>
+  <input type="range" id="sD" min="1.2" max="3.0" step="0.01" value="1.5">
+  <div class="lin">drag either slider to take manual control · hover the layer for flow arrows · <span id="auto">AUTO-RAMP ON</span></div>
+  <hr>
+  <div class="row"><span class="k">Rayleigh Ra</span><span class="v" id="rRa">—</span></div>
+  <div class="row"><span class="k">critical Ra_c</span><span class="v">1708</span></div>
+  <div class="row"><span class="k">reduced ε=(Ra−Ra_c)/Ra_c</span><span class="v" id="rEps">—</span></div>
+  <div class="row"><span class="k">cell width λ ≈ 2d</span><span class="v" id="rLam">—</span></div>
+  <div class="row"><span class="k">pattern amplitude ⟨u²⟩^½</span><span class="v" id="rAmp">—</span></div>
+  <div class="row"><span class="k">regime</span><span id="reg">—</span></div>
+  <hr>
+  <div class="lin">model: Swift–Hohenberg amplitude equation on a 96² periodic grid — the standard weakly-nonlinear reduction of Rayleigh–Bénard, not a full Navier–Stokes solve. Quadratic term g·u² selects hexagons.</div>
+  <div style="margin-top:6px"><a href="index.html">← gallery</a></div>
+</div>
+<script>
+/*__MODEL_START__*/
+function makeBenard(N){
+  var n=N*N,u=new Float32Array(n),L=new Float32Array(n),LL=new Float32Array(n),
+      ip=new Int32Array(N),im=new Int32Array(N),i;
+  for(i=0;i<N;i++){ip[i]=(i+1)%N;im[i]=(i+N-1)%N;}
+  for(i=0;i<n;i++)u[i]=(Math.random()-0.5)*0.05;
+  function lap(s,d){for(var y=0;y<N;y++){var y0=y*N,yp=ip[y]*N,ym=im[y]*N;
+    for(var x=0;x<N;x++){d[y0+x]=s[y0+ip[x]]+s[y0+im[x]]+s[yp+x]+s[ym+x]-4*s[y0+x];}}}
+  return {u:u,N:N,
+    step:function(r,g,dt,noise){lap(u,L);lap(L,LL);
+      for(var i=0;i<n;i++){var a=u[i];
+        u[i]=a+dt*(r*a-(a+2*L[i]+LL[i])+g*a*a-a*a*a)+noise*(Math.random()-0.5);
+        if(u[i]>4)u[i]=4;else if(u[i]<-4)u[i]=-4;}},
+    rms:function(){var s=0;for(var i=0;i<n;i++)s+=u[i]*u[i];return Math.sqrt(s/n);}};
+}
+// Ra = C·ΔT·d³ ; C chosen so ΔT=10 K at d=1.2 mm sits exactly on Ra_c=1708
+function raOf(dT,d){return 98.84*dT*d*d*d;}
+function epsOf(dT,d){return (raOf(dT,d)-1708)/1708;}
+// on-screen cell width: Swift–Hohenberg wavelength 2π grid-units, rendered through a
+// depth-dependent zoom so the physical rule λ ≈ 2d holds -> px size linear in d
+function cellPx(d,panelW,N){var srcW=N*1.2/d; if(srcW>N)srcW=N; return 2*Math.PI*panelW/srcW;}
+/*__MODEL_END__*/
+
+var cv=document.getElementById('c'),ctx=cv.getContext('2d'),W=0,H=0,DPR=1;
+var N=96,sim=makeBenard(N),gc=document.createElement('canvas');gc.width=gc.height=N;
+var gx=gc.getContext('2d'),img=gx.createImageData(N,N),dat=img.data;
+var glow=document.createElement('canvas'),gg=glow.getContext('2d');
+var sT=document.getElementById('sT'),sD=document.getElementById('sD'),auto=true,t0=performance.now(),last=t0;
+var mx=-1,my=-1,panel={x:0,y:0,w:1,h:1};
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;
+  cv.width=W*DPR;cv.height=H*DPR;cv.style.width=W+'px';cv.style.height=H+'px';ctx.setTransform(DPR,0,0,DPR,0,0);
+  panel.x=352;panel.y=18;panel.w=Math.max(180,W-panel.x-18);panel.h=Math.max(140,H-36);
+  glow.width=Math.max(2,(panel.w/3)|0);glow.height=Math.max(2,(panel.h/3)|0);}
+addEventListener('resize',resize);resize();
+[sT,sD].forEach(function(s){s.addEventListener('input',function(){auto=false;document.getElementById('auto').textContent='MANUAL';});});
+cv.addEventListener('mousemove',function(e){mx=e.clientX;my=e.clientY;});
+cv.addEventListener('mouseleave',function(){mx=-1;});
+
+var STOPS=[[0,6,12,34],[0.34,10,58,124],[0.48,24,132,168],[0.60,255,120,40],[0.80,255,186,80],[1,255,246,214]];
+function pal(t,o){var i=0;while(i<STOPS.length-2&&t>STOPS[i+1][0])i++;
+  var a=STOPS[i],b=STOPS[i+1],f=(t-a[0])/(b[0]-a[0]);if(f<0)f=0;if(f>1)f=1;
+  o[0]=a[1]+(b[1]-a[1])*f;o[1]=a[2]+(b[2]-a[2])*f;o[2]=a[3]+(b[3]-a[3])*f;}
+
+function autoDT(t){ // wall-clock scripted ramp: crosses Ra_c near t=2.2 s, melts back, repeats
+  var p=t%34;
+  if(p<1.6)return 3;
+  if(p<2.6)return 3+4*(p-1.6);          // crosses Ra_c at t≈2.1 s
+  if(p<6.0)return 7+17*(p-2.6)/3.4;
+  if(p<17)return 24;
+  if(p<23)return 24-19*(p-17)/6;        // melt back below critical
+  if(p<27)return 5;
+  return 5+19*(p-27)/7;
+}
+var col=[0,0,0];
+function draw(now){
+  var dtw=Math.min(0.05,(now-last)/1000);last=now;var t=(now-t0)/1000;
+  if(auto){var dT=autoDT(t);sT.value=dT.toFixed(1);}
+  var dT=+sT.value,d=+sD.value,Ra=raOf(dT,d),eps=epsOf(dT,d);
+  var r=Math.max(-0.65,Math.min(0.95,eps));
+  var sub=4,dt=0.02*Math.min(2.2,dtw*60);
+  for(var s=0;s<sub;s++)sim.step(r,0.9,dt,0.022);
+  // ---- field -> pixels
+  var u=sim.u,N2=N;
+  for(var y=0;y<N2;y++){for(var x=0;x<N2;x++){var i=y*N2+x,v=u[i];
+      var tt=(v+1.2)/2.7;if(tt<0)tt=0;if(tt>1)tt=1;pal(tt,col);
+      var gxq=u[y*N2+((x+1)%N2)]-u[y*N2+((x+N2-1)%N2)],gyq=u[((y+1)%N2)*N2+x]-u[((y+N2-1)%N2)*N2+x];
+      var gm=Math.sqrt(gxq*gxq+gyq*gyq)*0.85;if(gm>1)gm=1;gm*=gm;
+      var o=i*4;
+      dat[o]=col[0]*(1-0.25*gm);dat[o+1]=col[1]+120*gm;dat[o+2]=col[2]+205*gm;dat[o+3]=255;}}
+  gx.putImageData(img,0,0);
+  ctx.clearRect(0,0,W,H);
+  var grd=ctx.createLinearGradient(0,0,0,H);grd.addColorStop(0,'#05080f');grd.addColorStop(1,'#02040a');
+  ctx.fillStyle=grd;ctx.fillRect(0,0,W,H);
+  // ---- fluid layer panel
+  var P=panel,A=P.w/P.h,srcW=Math.min(N,N*1.2/d),srcH=srcW/A;
+  if(srcH>N){srcH=N;srcW=N*A;if(srcW>N){srcW=N;srcH=N/A;}}
+  var sx=(N-srcW)/2,sy=(N-srcH)/2;
+  ctx.save();ctx.beginPath();ctx.roundRect(P.x,P.y,P.w,P.h,10);ctx.clip();
+  ctx.imageSmoothingEnabled=true;ctx.imageSmoothingQuality='high';
+  ctx.drawImage(gc,sx,sy,srcW,srcH,P.x,P.y,P.w,P.h);
+  gg.clearRect(0,0,glow.width,glow.height);
+  gg.drawImage(gc,sx,sy,srcW,srcH,0,0,glow.width,glow.height);
+  ctx.globalCompositeOperation='lighter';ctx.globalAlpha=0.5;ctx.filter='blur(5px)';
+  ctx.drawImage(glow,P.x,P.y,P.w,P.h);
+  ctx.filter='none';ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';
+  // hover arrows: rising cores (orange ↑) vs sinking walls (cyan ↓)
+  if(mx>P.x&&mx<P.x+P.w&&my>P.y&&my<P.y+P.h){
+    ctx.font='bold 15px ui-monospace,monospace';ctx.textAlign='center';ctx.textBaseline='middle';
+    for(var ay=-2;ay<=2;ay++)for(var ax=-2;ax<=2;ax++){
+      var px=mx+ax*36,py=my+ay*36;if(px<P.x||px>P.x+P.w||py<P.y||py>P.y+P.h)continue;
+      var gxi=(sx+(px-P.x)/P.w*srcW)|0,gyi=(sy+(py-P.y)/P.h*srcH)|0;
+      var val=u[((gyi%N)+N)%N*N+(((gxi%N)+N)%N)];
+      if(val>0.28){ctx.fillStyle='rgba(255,190,110,.95)';ctx.fillText('▲',px,py);}
+      else if(val<-0.28){ctx.fillStyle='rgba(120,225,255,.95)';ctx.fillText('▼',px,py);}}
+    ctx.textAlign='left';ctx.textBaseline='alphabetic';
+  }
+  ctx.restore();
+  ctx.strokeStyle='#1d4a74';ctx.lineWidth=1;ctx.beginPath();ctx.roundRect(P.x+.5,P.y+.5,P.w-1,P.h-1,10);ctx.stroke();
+  ctx.font='10px ui-monospace,monospace';ctx.fillStyle='#7fb4dc';
+  ctx.fillText('TOP VIEW — fluid layer heated from below   ▲ hot rising core   ▼ cold sinking wall',P.x+12,P.y+18);
+  var amp=sim.rms();
+  ctx.fillStyle=amp>0.22?'#ffb066':'#5f83a6';
+  ctx.fillText(amp>0.22?'HEXAGONAL CELLS — convection':'CONDUCTION — featureless shimmer',P.x+12,P.y+P.h-12);
+  // ---- Rayleigh gauge (left column)
+  var gxx=18,gy=H-232,gw=316;
+  ctx.fillStyle='rgba(4,9,18,.74)';ctx.strokeStyle='#1d3c60';
+  ctx.beginPath();ctx.roundRect(gxx,gy,gw,74,8);ctx.fill();ctx.stroke();
+  ctx.fillStyle='#78a3c6';ctx.font='10px ui-monospace,monospace';ctx.fillText('RAYLEIGH NUMBER  (log scale)',gxx+10,gy+16);
+  var bx=gxx+12,bw=gw-24,by=gy+28,bh=13;
+  function lg(v){return (Math.log10(v)-2.4)/(4.7-2.4);}
+  var fc=Math.max(0,Math.min(1,lg(1708)));
+  ctx.fillStyle='#123049';ctx.fillRect(bx,by,bw,bh);
+  var fr=Math.max(0,Math.min(1,lg(Ra)));
+  var lgr=ctx.createLinearGradient(bx,0,bx+bw,0);lgr.addColorStop(0,'#1e5fa8');lgr.addColorStop(fc,'#2ad7ff');lgr.addColorStop(Math.min(1,fc+0.02),'#ff8a2c');lgr.addColorStop(1,'#ffe08a');
+  ctx.fillStyle=lgr;ctx.fillRect(bx,by,bw*fr,bh);
+  ctx.strokeStyle='#ff4d6d';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(bx+bw*fc,by-4);ctx.lineTo(bx+bw*fc,by+bh+4);ctx.stroke();
+  ctx.fillStyle='#ff6f86';ctx.fillText('Ra_c=1708',bx+bw*fc-27,gy+58);
+  ctx.fillStyle='#fff';ctx.beginPath();ctx.moveTo(bx+bw*fr,by-6);ctx.lineTo(bx+bw*fr-5,by-14);ctx.lineTo(bx+bw*fr+5,by-14);ctx.fill();
+  ctx.fillStyle='#cfe6fa';ctx.fillText('Ra = '+Math.round(Ra),bx,gy+70);
+  // ---- side view of one roll (left column, bottom)
+  var vx=18,vy=H-150,vw=316,vh=134;
+  ctx.fillStyle='rgba(4,9,18,.74)';ctx.strokeStyle='#1d3c60';ctx.lineWidth=1;
+  ctx.beginPath();ctx.roundRect(vx,vy,vw,vh,8);ctx.fill();ctx.stroke();
+  ctx.fillStyle='#78a3c6';ctx.fillText('SIDE VIEW — one convection roll',vx+10,vy+15);
+  var ix=vx+14,iy=vy+26,iw=vw-28,ih=vh-52;
+  var cg=ctx.createLinearGradient(0,iy,0,iy+ih);cg.addColorStop(0,'#0d2b52');cg.addColorStop(1,'#4a1616');
+  ctx.fillStyle=cg;ctx.fillRect(ix,iy,iw,ih);
+  ctx.fillStyle='#8fd6ff';ctx.fillRect(ix,iy-3,iw,3);ctx.fillStyle='#ff5a34';ctx.fillRect(ix,iy+ih,iw,3);
+  ctx.strokeStyle='rgba(255,170,90,.55)';ctx.lineWidth=1.2;
+  var ecx=ix+iw/2,ecy=iy+ih/2,erx=iw*0.30,ery=ih*0.34;
+  ctx.beginPath();ctx.ellipse(ecx-erx-4,ecy,erx,ery,0,0,6.284);ctx.stroke();
+  ctx.beginPath();ctx.ellipse(ecx+erx+4,ecy,erx,ery,0,0,6.284);ctx.stroke();
+  var ph=(t*1.4)%(Math.PI*2);
+  for(var k=0;k<8;k++){var a2=ph+k*0.785;
+    ctx.fillStyle='rgba(255,214,150,.9)';
+    ctx.beginPath();ctx.arc(ecx-erx-4+erx*Math.cos(-a2),ecy+ery*Math.sin(-a2),2,0,6.284);ctx.fill();
+    ctx.beginPath();ctx.arc(ecx+erx+4+erx*Math.cos(a2),ecy+ery*Math.sin(a2),2,0,6.284);ctx.fill();}
+  ctx.fillStyle='#ffd3a0';ctx.font='9px ui-monospace,monospace';
+  ctx.fillText('cold surface',ix+2,iy-6);ctx.fillText('hot plate  ΔT = '+dT.toFixed(1)+' K',ix+2,iy+ih+15);
+  ctx.fillText('rises in the middle, sinks at the walls',ecx-92,ecy+ery+13);
+  // ---- readouts
+  document.getElementById('vT').textContent=dT.toFixed(1)+' K';
+  document.getElementById('vD').textContent=d.toFixed(2)+' mm';
+  document.getElementById('rRa').textContent=Math.round(Ra);
+  document.getElementById('rEps').textContent=(eps>=0?'+':'')+eps.toFixed(2);
+  document.getElementById('rLam').textContent=(2*d).toFixed(2)+' mm  ('+cellPx(d,P.w,N).toFixed(0)+' px)';
+  document.getElementById('rAmp').textContent=amp.toFixed(3);
+  var rg=document.getElementById('reg');
+  if(eps<0){rg.textContent='SUB-CRITICAL — pure conduction';rg.style.color='#6fd7ff';}
+  else if(amp<0.22){rg.textContent='CRYSTALLIZING — cells nucleating';rg.style.color='#ffe08a';}
+  else {rg.textContent='SUPER-CRITICAL — hexagons locked in';rg.style.color='#ff9a3c';}
+  requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>
