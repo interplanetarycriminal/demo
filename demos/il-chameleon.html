@@ -6,10 +6,10 @@
 <title>Chemical Chameleon</title>
 <style>
 html,body{margin:0;padding:0;height:100%;background:#06040c;overflow:hidden}
-canvas{display:block;position:fixed;inset:0}
+canvas{display:block;position:fixed;inset:0;touch-action:none}
 #ui{position:fixed;top:0;left:0;padding:10px 12px;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;
  color:#e2d3ff;background:rgba(10,6,20,.64);border-right:1px solid #3a2560;border-bottom:1px solid #3a2560;
- max-width:340px;z-index:10;backdrop-filter:blur(4px)}
+ max-width:340px;z-index:10;backdrop-filter:blur(4px);max-height:52vh;overflow:auto}
 #ui h1{margin:0 0 3px;font-size:14px;letter-spacing:.16em;color:#c69bff;text-shadow:0 0 12px #9a4dff77}
 .dim{color:#8a76ad}.lin{color:#7a68a0;font-style:italic}
 .tag{display:inline-block;margin-top:6px;padding:1px 6px;border:1px solid #4d3480;border-radius:8px;color:#a98fd6;font-size:9px;letter-spacing:.1em}
@@ -21,6 +21,7 @@ button:hover{background:#2a1a4a}button.on{background:#5a2fa0;color:#f2e6ff}
 #tip{width:100%;padding:7px;font-size:12px;letter-spacing:.1em}
 #tip:active{background:#7a45d0;color:#fff}
 sup,sub{font-size:8px}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 </head>
 <body>

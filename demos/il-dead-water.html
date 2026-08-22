@@ -3,11 +3,11 @@
 <title>Dead Water</title>
 <style>
 html,body{margin:0;height:100%;background:#02060c;overflow:hidden}
-canvas{display:block;position:fixed;inset:0}
-#ov{position:fixed;top:12px;left:12px;width:316px;padding:9px 11px;z-index:20;
+canvas{display:block;position:fixed;inset:0;touch-action:none}
+#ov{position:fixed;top:12px;left:12px;width:min(316px,calc(100vw - 20px));padding:9px 11px;z-index:20;
  background:rgba(3,9,17,.64);border:1px solid rgba(120,200,255,.28);border-radius:9px;
  backdrop-filter:blur(3px);font:10.5px/1.4 ui-monospace,Menlo,Consolas,monospace;color:#c7e6f7;
- box-shadow:0 0 26px rgba(0,150,255,.13)}
+ box-shadow:0 0 26px rgba(0,150,255,.13);max-height:52vh;overflow:auto}
 #ov h1{margin:0 0 4px;font-size:13px;letter-spacing:.16em;color:#8fe0ff;text-shadow:0 0 12px #2aa0ff}
 #ov .m{margin:0 0 4px;color:#93b2c4}
 #ov .s{margin:0 0 1px;color:#ffd08a}
@@ -20,6 +20,7 @@ canvas{display:block;position:fixed;inset:0}
 #ov td:last-child{text-align:right;color:#eafaff;font-variant-numeric:tabular-nums}
 #ov a{display:inline-block;margin-top:5px;color:#6bd3ff;text-decoration:none}
 #ov a:hover{text-shadow:0 0 9px #2aa0ff}
+@media (max-width:640px){#ov{font-size:11px;max-height:40vh}}
 </style></head><body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
 <canvas id="c"></canvas>

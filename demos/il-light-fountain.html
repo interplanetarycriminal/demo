@@ -1,10 +1,11 @@
 <title>Colladon's Light Fountain</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 html,body{margin:0;padding:0;height:100%;background:#03060c;overflow:hidden}
-canvas{display:block;position:fixed;inset:0}
+canvas{display:block;position:fixed;inset:0;touch-action:none}
 #ui{position:fixed;top:10px;left:10px;z-index:10;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;
  color:#cfe6ff;background:rgba(6,12,22,.62);border:1px solid rgba(110,220,255,.28);border-radius:8px;
- padding:10px 12px;max-width:340px;backdrop-filter:blur(6px);box-shadow:0 0 24px rgba(40,180,255,.18)}
+ padding:10px 12px;max-width:340px;backdrop-filter:blur(6px);box-shadow:0 0 24px rgba(40,180,255,.18);max-height:52vh;overflow:auto}
 #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.13em;color:#9ff;text-shadow:0 0 10px #0cf}
 #ui .m{color:#9fb6d0;margin:0 0 6px}
 #ui .sci{color:#ffd48a}
@@ -14,6 +15,7 @@ canvas{display:block;position:fixed;inset:0}
 #ui input[type=range]{width:100%;accent-color:#5cf}
 .big{color:#fff;font-size:12px}
 .good{color:#8dff9a}.warn{color:#ff9a6a}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>

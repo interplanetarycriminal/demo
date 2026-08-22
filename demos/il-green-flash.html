@@ -1,11 +1,12 @@
 <title>Green Flash</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 html,body{margin:0;padding:0;height:100%;background:#04060e;overflow:hidden}
-canvas{display:block;position:fixed;inset:0}
+canvas{display:block;position:fixed;inset:0;touch-action:none}
 #ui{position:fixed;top:0;left:0;margin:12px;padding:10px 12px;max-width:350px;
   background:rgba(5,9,18,.64);border:1px solid rgba(120,255,190,.25);border-radius:8px;
   color:#d6f5e6;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;
-  text-shadow:0 0 8px rgba(90,255,180,.4);backdrop-filter:blur(4px);z-index:10}
+  text-shadow:0 0 8px rgba(90,255,180,.4);backdrop-filter:blur(4px);z-index:10;max-height:52vh;overflow:auto}
 #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.14em;color:#7dffb0;text-shadow:0 0 12px rgba(90,255,150,.8)}
 #ui .m{color:#eafff4;opacity:.92}
 #ui .s{color:#ffcf7d;opacity:.8}
@@ -25,6 +26,7 @@ canvas{display:block;position:fixed;inset:0}
   border-radius:4px;color:#7dffb0;cursor:pointer;user-select:none;background:rgba(30,120,80,.2)}
 .btn:hover{background:rgba(60,200,130,.32)}
 .btn.on{background:rgba(90,255,170,.4);color:#04140c}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>

@@ -1,11 +1,12 @@
 <title>Fata Morgana</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 html,body{margin:0;padding:0;height:100%;background:#03050c;overflow:hidden}
-canvas{display:block;position:fixed;inset:0}
+canvas{display:block;position:fixed;inset:0;touch-action:none}
 #ui{position:fixed;top:0;left:0;margin:12px;padding:10px 12px;max-width:352px;
   background:rgba(4,8,18,.64);border:1px solid rgba(140,190,255,.25);border-radius:8px;
   color:#cfe6ff;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;
-  text-shadow:0 0 8px rgba(110,180,255,.5);backdrop-filter:blur(4px);z-index:10}
+  text-shadow:0 0 8px rgba(110,180,255,.5);backdrop-filter:blur(4px);z-index:10;max-height:52vh;overflow:auto}
 #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.14em;color:#c8b3ff;text-shadow:0 0 12px rgba(160,120,255,.75)}
 #ui .m{color:#e9f4ff;opacity:.92}
 #ui .s{color:#84c6ff;opacity:.75}
@@ -24,6 +25,7 @@ canvas{display:block;position:fixed;inset:0}
 .btn{display:inline-block;margin:2px 3px 2px 0;padding:3px 7px;border:1px solid rgba(160,120,255,.45);
   border-radius:4px;color:#c8b3ff;cursor:pointer;user-select:none;background:rgba(90,60,180,.18)}
 .btn:hover{background:rgba(140,100,255,.32)}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>

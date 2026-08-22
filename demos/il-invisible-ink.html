@@ -1,11 +1,12 @@
 <title>Invisible Ink</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 html,body{margin:0;padding:0;background:#06060a;overflow:hidden;height:100%}
-canvas{display:block;cursor:crosshair}
+canvas{display:block;cursor:crosshair;touch-action:none}
 #hud{position:fixed;top:0;left:0;margin:10px;padding:10px 12px;max-width:350px;
   background:rgba(8,8,14,.74);border:1px solid rgba(255,190,90,.32);border-radius:6px;
   color:#d6cdbd;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;z-index:10;
-  box-shadow:0 0 24px rgba(255,170,60,.15);backdrop-filter:blur(3px)}
+  box-shadow:0 0 24px rgba(255,170,60,.15);backdrop-filter:blur(3px);max-height:52vh;overflow:auto}
 #hud h1{margin:0 0 4px;font-size:13px;letter-spacing:.14em;color:#ffc46b;text-shadow:0 0 10px rgba(255,180,70,.7)}
 #hud .m{color:#a9a293}
 #hud .sci{color:#ffd9a0}
@@ -25,6 +26,7 @@ button.on{background:#3a2a0e;border-color:#ffb457;color:#fff}
 #rd b{color:#fff}
 #hist{margin-top:6px;padding:5px 6px;border-left:2px solid #6a5024;color:#b8ad97;font-size:10px;min-height:30px}
 kbd{background:#241c10;border:1px solid #5a4726;border-radius:3px;padding:0 3px;color:#ffd9a0}
+@media (max-width:640px){#hud{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>

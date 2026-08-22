@@ -1,10 +1,11 @@
 <title>Hot Ice Flask</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 html,body{margin:0;padding:0;background:#04060a;overflow:hidden;height:100%}
-canvas{display:block;position:fixed;top:0;left:0}
+canvas{display:block;position:fixed;top:0;left:0;touch-action:none}
 #ui{position:fixed;top:0;left:0;z-index:10;margin:10px;padding:10px 12px;max-width:350px;
   background:rgba(6,8,16,.64);border:1px solid rgba(255,170,90,.28);border-radius:6px;
-  color:#ffd8a8;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;text-shadow:0 0 8px rgba(255,150,60,.35)}
+  color:#ffd8a8;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;text-shadow:0 0 8px rgba(255,150,60,.35);max-height:52vh;overflow:auto}
 #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.09em;color:#ffe9cd}
 #ui .m{color:#e6bb8a}#ui .s{color:#b48d64}
 #ui .lin{color:#8d6f50;font-size:10px}
@@ -16,6 +17,7 @@ canvas{display:block;position:fixed;top:0;left:0}
   border-radius:9px;color:#ff9a9a;font-size:9.5px;letter-spacing:.06em}
 button{background:rgba(70,40,15,.6);color:#ffd9ac;border:1px solid rgba(255,170,90,.35);
   border-radius:4px;font:10px ui-monospace,monospace;padding:3px 7px;margin:4px 4px 0 0;cursor:pointer}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>

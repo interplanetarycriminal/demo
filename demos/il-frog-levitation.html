@@ -1,10 +1,11 @@
 <title>The Levitating Frog</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 html,body{margin:0;padding:0;background:#04060b;overflow:hidden;height:100%}
-canvas{display:block}
+canvas{display:block;touch-action:none}
 #ui{position:fixed;top:0;left:0;padding:10px 12px;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;
  color:#c9e6ff;background:rgba(3,7,14,.64);border-right:1px solid #16344c;border-bottom:1px solid #16344c;
- max-width:340px;text-shadow:0 0 8px rgba(90,190,255,.4);z-index:10;backdrop-filter:blur(3px)}
+ max-width:340px;text-shadow:0 0 8px rgba(90,190,255,.4);z-index:10;backdrop-filter:blur(3px);max-height:52vh;overflow:auto}
 #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.14em;color:#8ef0d8;text-transform:uppercase}
 #ui .m{color:#90b4cc;margin:0 0 5px}
 #ui .sci{color:#ffcf7a;margin:0 0 2px}
@@ -20,6 +21,7 @@ canvas{display:block}
 #ui a{color:#68d0ff;text-decoration:none;display:inline-block;margin-top:7px}
 #ui button,#ui select{background:#0d2637;color:#9fe7ff;border:1px solid #1d5674;font:10px ui-monospace,monospace;padding:3px 6px;cursor:pointer;border-radius:3px;margin-right:4px}
 #ui button:hover{background:#14405c}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
@@ -242,7 +244,7 @@ function sync(){
 sB.oninput=sync;selObj.onchange=function(){sync();body.z=0.06;body.v=0;body.fallen=false;};
 document.getElementById('bPerturb').onclick=function(){body.v+=(Math.random()-0.3)*0.35;};
 document.getElementById('bDrop').onclick=function(){body.z=0.16;body.v=0;body.fallen=false;};
-c.addEventListener('mousedown',function(e){
+c.addEventListener('pointerdown',function(e){
   var r=c.getBoundingClientRect(),px=e.clientX-r.left,py=e.clientY-r.top;
   if(Math.abs(px-boreCX())<boreHW()+40){body.z=Math.max(-0.10,Math.min(0.18,uz(py)));body.v=0;body.fallen=false;}
 });

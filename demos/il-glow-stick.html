@@ -1,10 +1,11 @@
 <title>Glow Stick Kinetics</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 html,body{margin:0;padding:0;background:#04060a;overflow:hidden;height:100%}
-canvas{display:block;position:fixed;top:0;left:0}
+canvas{display:block;position:fixed;top:0;left:0;touch-action:none}
 #ui{position:fixed;top:0;left:0;z-index:10;margin:10px;padding:10px 12px;max-width:340px;
   background:rgba(4,8,14,.62);border:1px solid rgba(120,255,190,.25);border-radius:6px;
-  color:#a9ffdc;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;text-shadow:0 0 8px rgba(60,255,180,.35)}
+  color:#a9ffdc;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;text-shadow:0 0 8px rgba(60,255,180,.35);max-height:52vh;overflow:auto}
 #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.09em;color:#d8fff0}
 #ui .m{color:#84e3c0}#ui .s{color:#5fae92}
 #ui .lin{color:#4d8b76;font-size:10px}
@@ -20,6 +21,7 @@ button.on{background:rgba(60,220,160,.35);color:#fff}
 .sw{display:inline-block;width:15px;height:15px;border-radius:3px;margin:4px 3px 0 0;cursor:pointer;
   border:1px solid rgba(255,255,255,.25);vertical-align:middle}
 .sw.on{border:2px solid #fff}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>

@@ -6,10 +6,10 @@
 <title>Blue Bottle</title>
 <style>
 html,body{margin:0;padding:0;height:100%;background:#04060c;overflow:hidden}
-canvas{display:block;position:fixed;inset:0}
+canvas{display:block;position:fixed;inset:0;touch-action:none}
 #ui{position:fixed;top:0;left:0;padding:10px 12px;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;
  color:#bfe8ff;background:rgba(4,8,18,.62);border-right:1px solid #12314a;border-bottom:1px solid #12314a;
- max-width:330px;z-index:10;backdrop-filter:blur(4px);text-shadow:0 0 8px #1e6ea033}
+ max-width:330px;z-index:10;backdrop-filter:blur(4px);text-shadow:0 0 8px #1e6ea033;max-height:52vh;overflow:auto}
 #ui h1{margin:0 0 3px;font-size:14px;letter-spacing:.16em;color:#7fd8ff;text-shadow:0 0 12px #35b6ff88}
 .dim{color:#5d87a6}.lin{color:#4f7d9c;font-style:italic}
 .tag{display:inline-block;margin-top:6px;padding:1px 6px;border:1px solid #2a5a7a;border-radius:8px;color:#6fa8c8;font-size:9px;letter-spacing:.1em}
@@ -23,6 +23,7 @@ button.on{background:#1d5a7a;color:#dff4ff}
 #shake{width:100%;padding:7px;font-size:12px;letter-spacing:.1em}
 #shake:active{background:#2a7aa8;color:#fff}
 sub{font-size:8px}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 </head>
 <body>

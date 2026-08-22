@@ -1,10 +1,11 @@
 <title>Acoustic Levitation</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 html,body{margin:0;padding:0;background:#04060b;overflow:hidden;height:100%}
-canvas{display:block;position:fixed;inset:0}
+canvas{display:block;position:fixed;inset:0;touch-action:none}
 #ui{position:fixed;top:0;left:0;padding:10px 12px;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;
  color:#cfe6ff;background:rgba(4,8,16,.62);border-right:1px solid #143048;border-bottom:1px solid #143048;
- max-width:352px;backdrop-filter:blur(6px);z-index:5}
+ max-width:352px;backdrop-filter:blur(6px);z-index:5;max-height:52vh;overflow:auto}
 #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.17em;color:#a6f0ff;text-shadow:0 0 12px #0ff8}
 #ui .m{color:#93b6cc}#ui .s{color:#ffc07a}#ui .l{color:#6f8fa6;font-style:italic}
 #ui a{color:#a6f0ff}#ui b{color:#fff}
@@ -16,6 +17,7 @@ button:hover{background:#123a55;box-shadow:0 0 10px #0ff5}
 hr{border:0;border-top:1px solid #14344d;margin:6px 0}
 .bar{height:7px;background:#0b1c2a;border:1px solid #1d4f6e;border-radius:3px;overflow:hidden;width:130px}
 .bar i{display:block;height:100%;background:linear-gradient(90deg,#0af,#7dffb0)}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>

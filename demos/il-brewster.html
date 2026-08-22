@@ -1,8 +1,9 @@
 <title>Brewster Glare</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 html,body{margin:0;height:100%;background:#03060c;overflow:hidden}
-canvas{display:block;position:fixed;inset:0}
-#ui{position:fixed;top:10px;left:10px;z-index:10;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#bfe;background:rgba(3,10,20,.7);border:1px solid rgba(110,200,255,.28);border-radius:8px;padding:10px 12px;max-width:340px;backdrop-filter:blur(6px);box-shadow:0 0 26px rgba(60,180,255,.14)}
+canvas{display:block;position:fixed;inset:0;touch-action:none}
+#ui{position:fixed;top:10px;left:10px;z-index:10;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#bfe;background:rgba(3,10,20,.7);border:1px solid rgba(110,200,255,.28);border-radius:8px;padding:10px 12px;max-width:340px;backdrop-filter:blur(6px);box-shadow:0 0 26px rgba(60,180,255,.14);max-height:52vh;overflow:auto}
 #ui h1{font-size:13px;margin:0 0 4px;color:#8ef;letter-spacing:.12em;text-shadow:0 0 10px #0cf8}
 #ui .m{color:#d6ecff;margin:0 0 5px}
 #ui .s{color:#ffd07a;margin:0 0 3px}
@@ -14,6 +15,7 @@ input[type=range]{width:160px;vertical-align:middle;accent-color:#0df}
 a{color:#8ef}
 button{background:#0b2030;color:#9fe;border:1px solid #2a6a88;border-radius:5px;font:11px monospace;padding:3px 8px;cursor:pointer;margin-top:6px}
 button:hover{background:#12374d}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>

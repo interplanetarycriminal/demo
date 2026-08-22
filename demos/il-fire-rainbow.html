@@ -1,11 +1,12 @@
 <title>Fire Rainbow</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
   html,body{margin:0;padding:0;height:100%;background:#04060d;overflow:hidden}
-  canvas{display:block;position:fixed;inset:0}
-  #ui{position:fixed;top:0;left:0;z-index:10;margin:10px;padding:10px 12px;width:330px;
+  canvas{display:block;position:fixed;inset:0;touch-action:none}
+  #ui{position:fixed;top:0;left:0;z-index:10;margin:10px;padding:10px 12px;width:min(330px,calc(100vw - 20px));
       background:rgba(4,8,18,.72);border:1px solid rgba(120,200,255,.28);border-radius:8px;
       font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#bfe6ff;
-      box-shadow:0 0 26px rgba(60,150,255,.18);backdrop-filter:blur(4px)}
+      box-shadow:0 0 26px rgba(60,150,255,.18);backdrop-filter:blur(4px);max-height:52vh;overflow:auto}
   #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.11em;color:#ffd9a0;text-shadow:0 0 12px #ff9a3c}
   .m{color:#9fd0e8}.s{color:#8fb4c8;font-style:italic}.l{color:#6f93a8}
   .row{display:flex;align-items:center;gap:6px;margin:3px 0}
@@ -15,6 +16,7 @@
   .on{color:#7dff9c}.off{color:#ff6a6a}
   a{color:#7fd4ff;text-decoration:none}a:hover{text-decoration:underline}
   b{color:#ffd9a0;font-weight:600}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>

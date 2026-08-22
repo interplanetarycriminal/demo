@@ -1,11 +1,12 @@
 <title>Disappearing Ink</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 html,body{margin:0;padding:0;background:#05070c;overflow:hidden;height:100%}
-canvas{display:block}
+canvas{display:block;touch-action:none}
 #hud{position:fixed;top:0;left:0;margin:10px;padding:10px 12px;max-width:340px;
   background:rgba(6,10,18,.72);border:1px solid rgba(90,140,255,.35);border-radius:6px;
   color:#cfd8e6;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;z-index:10;
-  box-shadow:0 0 24px rgba(70,120,255,.18);backdrop-filter:blur(3px)}
+  box-shadow:0 0 24px rgba(70,120,255,.18);backdrop-filter:blur(3px);max-height:52vh;overflow:auto}
 #hud h1{margin:0 0 4px;font-size:13px;letter-spacing:.14em;color:#7fb0ff;text-shadow:0 0 10px rgba(90,140,255,.8)}
 #hud .m{color:#9fb0c6}
 #hud .sci{color:#9ee7ff}
@@ -23,6 +24,7 @@ button:hover{background:#1a2740;box-shadow:0 0 10px rgba(90,140,255,.35)}
 #rd{margin-top:7px;padding-top:6px;border-top:1px solid rgba(255,255,255,.1);color:#9adfff}
 #rd b{color:#fff}
 kbd{background:#1b2330;border:1px solid #33415a;border-radius:3px;padding:0 3px;color:#cfe}
+@media (max-width:640px){#hud{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>

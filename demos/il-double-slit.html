@@ -1,11 +1,12 @@
 <title>Young's Double Slit</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 html,body{margin:0;padding:0;height:100%;background:#02040a;overflow:hidden}
-canvas#c{display:block;position:fixed;inset:0}
+canvas#c{display:block;position:fixed;inset:0;touch-action:none}
 #ui{position:fixed;top:0;left:0;margin:10px;padding:10px 12px;max-width:352px;
   background:rgba(4,8,16,.74);border:1px solid rgba(150,120,255,.30);border-radius:8px;
   color:#d8ccff;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;z-index:10;
-  box-shadow:0 0 26px rgba(130,90,255,.18),inset 0 0 20px rgba(90,60,200,.07);backdrop-filter:blur(3px)}
+  box-shadow:0 0 26px rgba(130,90,255,.18),inset 0 0 20px rgba(90,60,200,.07);backdrop-filter:blur(3px);max-height:52vh;overflow:auto}
 #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.09em;color:#b79bff;text-shadow:0 0 10px #7b4dff}
 .m{color:#c3b6e8}.s{color:#9fe8ff}.l{color:#8878aa;font-style:italic}
 .row{margin:5px 0;display:flex;align-items:center;gap:6px}
@@ -16,6 +17,7 @@ input[type=range]::-moz-range-thumb{width:11px;height:11px;border:0;border-radiu
 #rd{margin-top:6px;color:#8dffc9;text-shadow:0 0 8px rgba(60,255,190,.3)}
 a{color:#b79bff;text-decoration:none}a:hover{text-shadow:0 0 8px #b79bff}
 b.on{color:#7dffb0}b.off{color:#ff8090}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>

@@ -1,11 +1,12 @@
 <title>Jumping Ring</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
   html,body{margin:0;padding:0;height:100%;background:#03060c;overflow:hidden}
-  canvas{display:block;position:fixed;inset:0}
-  #ui{position:fixed;top:0;left:0;z-index:10;margin:10px;padding:10px 12px;width:336px;
+  canvas{display:block;position:fixed;inset:0;touch-action:none}
+  #ui{position:fixed;top:0;left:0;z-index:10;margin:10px;padding:10px 12px;width:min(336px,calc(100vw - 20px));
       background:rgba(3,7,16,.74);border:1px solid rgba(120,220,255,.28);border-radius:8px;
       font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#bfe9ff;
-      box-shadow:0 0 26px rgba(40,180,255,.18);backdrop-filter:blur(4px)}
+      box-shadow:0 0 26px rgba(40,180,255,.18);backdrop-filter:blur(4px);max-height:52vh;overflow:auto}
   #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.11em;color:#9ff0ff;text-shadow:0 0 12px #22c8ff}
   .m{color:#9fd0e8}.s{color:#8fb4c8;font-style:italic}.l{color:#6f93a8}
   .row{display:flex;align-items:center;gap:6px;margin:3px 0}
@@ -18,6 +19,7 @@
   button{font:10px ui-monospace,monospace;background:#0d2233;color:#9ff0ff;border:1px solid #2b6d8c;
          border-radius:4px;padding:3px 7px;cursor:pointer;margin:2px 3px 2px 0}
   button.act{background:#1d5a2c;border-color:#4de07a;color:#c8ffd8}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>

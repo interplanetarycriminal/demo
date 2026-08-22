@@ -6,11 +6,11 @@
 <title>Homopolar Motor</title>
 <style>
   html,body{margin:0;padding:0;height:100%;background:#05060d;overflow:hidden}
-  canvas{display:block;width:100vw;height:100vh}
+  canvas{display:block;width:100vw;height:100vh;touch-action:none}
   #ui{position:fixed;top:0;left:0;margin:10px;padding:10px 12px;max-width:350px;
       background:rgba(6,8,20,.74);border:1px solid rgba(160,140,255,.25);border-radius:6px;
       color:#cfc8ff;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;
-      text-shadow:0 0 6px rgba(140,110,255,.5);z-index:10;backdrop-filter:blur(3px)}
+      text-shadow:0 0 6px rgba(140,110,255,.5);z-index:10;backdrop-filter:blur(3px);max-height:52vh;overflow:auto}
   #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.12em;color:#a9f7ff;text-shadow:0 0 10px rgba(80,220,255,.7)}
   #ui .dim{color:#8b86b8}
   #ui .hot{color:#7dffc4}
@@ -23,6 +23,7 @@
   button:hover{background:rgba(140,110,255,.3)}
   button.on{background:rgba(125,255,196,.2);border-color:#7dffc4;color:#7dffc4}
   hr{border:0;border-top:1px solid rgba(160,140,255,.18);margin:6px 0}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 </head>
 <body>

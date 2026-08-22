@@ -1,10 +1,11 @@
 <title>Hydraulic Jump</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 html,body{margin:0;padding:0;background:#04070c;overflow:hidden;font-family:monospace}
-canvas{display:block}
+canvas{display:block;touch-action:none}
 #ui{position:fixed;top:0;left:0;padding:10px 12px;color:#9fe8ff;background:rgba(2,8,16,.62);
   font:11px/1.5 monospace;max-width:330px;border-right:1px solid #0a3a52;border-bottom:1px solid #0a3a52;
-  text-shadow:0 0 6px #0ff6;z-index:10}
+  text-shadow:0 0 6px #0ff6;z-index:10;max-height:52vh;overflow:auto}
 #ui h1{font-size:13px;margin:0 0 4px;color:#7ff9ff;letter-spacing:.09em;text-shadow:0 0 10px #0ff}
 #ui .m{color:#cfe9f5;margin:0 0 5px}
 #ui .s{color:#5fb0c8;margin:0 0 3px}
@@ -16,6 +17,7 @@ canvas{display:block}
 label{display:block;color:#79c7dd;margin:3px 0}
 input[type=range]{width:150px;vertical-align:middle;accent-color:#22d3ee}
 b{color:#fff}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
