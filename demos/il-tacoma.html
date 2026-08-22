@@ -197,15 +197,17 @@ function draw(now){
   ctx.fillText('M leads α by 90° ⇒ M is in phase with α̇ :',px0+10,py0+152);
   ctx.fillText('the air does net work every cycle → ζ < 0.',px0+10,py0+166);
   // ================= plots (bottom) =================
-  var ex=360,ey=H-158,ew=Math.max(200,W-ex-374),eh=142;
-  ctx.fillStyle='rgba(5,9,16,.78)';ctx.strokeStyle='#2b4258';
-  ctx.beginPath();ctx.roundRect(ex,ey,ew,eh,8);ctx.fill();ctx.stroke();
-  ctx.fillStyle='#8fa8bc';ctx.font='10px ui-monospace,monospace';
-  ctx.fillText('TORSIONAL AMPLITUDE — envelope grows once ζ flips negative',ex+10,ey+15);
-  var p0x=ex+34,p0y=ey+eh-16,pwid=ew-48,phg=eh-38;
+  var by2=H-158,bh2=142,bx0=360,gap=14,bAv=Math.max(430,W-bx0-14);
+  var lw=Math.round((bAv-gap)*0.55),rw=bAv-gap-lw;
+  var ex=bx0,ey=by2,ew=lw,eh=bh2;
+  ctx.save();ctx.fillStyle='rgba(5,9,16,.84)';ctx.strokeStyle='#2b4258';ctx.lineWidth=1;
+  ctx.beginPath();ctx.roundRect(ex+.5,ey+.5,ew-1,eh-1,8);ctx.fill();ctx.stroke();ctx.clip();
+  ctx.fillStyle='#8fa8bc';ctx.font='9px ui-monospace,monospace';
+  ctx.fillText('TORSIONAL AMPLITUDE  α(t) + ENVELOPE',ex+10,ey+14);
+  var p0x=ex+38,p0y=ey+eh-14,pwid=ew-50,phg=eh-38;
   ctx.strokeStyle='#22384c';ctx.beginPath();ctx.moveTo(p0x,p0y);ctx.lineTo(p0x+pwid,p0y);ctx.stroke();
   ctx.beginPath();ctx.moveTo(p0x,p0y-phg/2);ctx.lineTo(p0x+pwid,p0y-phg/2);ctx.stroke();
-  ctx.fillStyle='#5f7f96';ctx.fillText('45°',ex+8,p0y-phg+4);ctx.fillText('0°',ex+14,p0y-phg/2+4);
+  ctx.fillStyle='#5f7f96';ctx.fillText('+45°',ex+6,p0y-phg+4);ctx.fillText('0°',ex+6,p0y-phg/2+3);ctx.fillText('−45°',ex+6,p0y+3);
   ctx.strokeStyle='#ff4d5e';ctx.setLineDash([4,4]);ctx.beginPath();
   ctx.moveTo(p0x,p0y-phg);ctx.lineTo(p0x+pwid,p0y-phg);ctx.stroke();ctx.setLineDash([]);
   if(hist.length>1){
@@ -217,12 +219,14 @@ function draw(now){
       j2?ctx.lineTo(x3,y3):ctx.moveTo(x3,y3);}ctx.stroke();
     ctx.beginPath();for(var j3=0;j3<hist.length;j3++){var x4=p0x+pwid*j3/419,y4=p0y-phg/2+(hist[j3].e/45)*(phg/2);
       j3?ctx.lineTo(x4,y4):ctx.moveTo(x4,y4);}ctx.stroke();}
+  ctx.restore();
   // damping vs wind
-  var dx0=W-360,dy0=H-158,dw=346,dh=142;
-  ctx.fillStyle='rgba(5,9,16,.78)';ctx.strokeStyle='#2b4258';
-  ctx.beginPath();ctx.roundRect(dx0,dy0,dw,dh,8);ctx.fill();ctx.stroke();
-  ctx.fillStyle='#8fa8bc';ctx.fillText('NET DAMPING ζ vs WIND SPEED',dx0+10,dy0+15);
-  var qx=dx0+34,qy=dy0+22,qw=dw-52,qh=dh-46,zy=qy+qh*0.42;
+  var dx0=ex+ew+gap,dy0=by2,dw=rw,dh=bh2;
+  ctx.save();ctx.fillStyle='rgba(5,9,16,.84)';ctx.strokeStyle='#2b4258';ctx.lineWidth=1;
+  ctx.beginPath();ctx.roundRect(dx0+.5,dy0+.5,dw-1,dh-1,8);ctx.fill();ctx.stroke();ctx.clip();
+  ctx.fillStyle='#8fa8bc';ctx.font='9px ui-monospace,monospace';
+  ctx.fillText('NET DAMPING ζ vs WIND SPEED',dx0+10,dy0+14);
+  var qx=dx0+34,qy=dy0+24,qw=dw-52,qh=dh-48,zy=qy+qh*0.42;
   ctx.strokeStyle='#22384c';ctx.beginPath();ctx.moveTo(qx,zy);ctx.lineTo(qx+qw,zy);ctx.stroke();
   ctx.beginPath();ctx.moveTo(qx,qy);ctx.lineTo(qx,qy+qh);ctx.stroke();
   ctx.strokeStyle='#4fd6a0';ctx.lineWidth=2;ctx.beginPath();
@@ -236,7 +240,8 @@ function draw(now){
   ctx.fillStyle='#ff9d5c';ctx.fillText('ζ<0 GROWS',fbx+8,qy+qh-4);
   var mx2=qx+qw*Math.min(30,U)/30,my2=zy-z*(qh*0.42)/0.35;
   ctx.fillStyle=z<0?'#ff6a3c':'#4fd6a0';ctx.beginPath();ctx.arc(mx2,my2,5,0,6.284);ctx.fill();
-  ctx.fillStyle='#cfe6fa';ctx.fillText('ζ = '+(z>=0?'+':'')+z.toFixed(3),mx2+9,my2-7);
+  ctx.fillStyle='#cfe6fa';ctx.fillText('ζ = '+(z>=0?'+':'')+z.toFixed(3),Math.min(mx2+9,dx0+dw-70),my2-7);
+  ctx.restore();
   // readouts
   document.getElementById('vU').textContent=U.toFixed(1)+' m/s  ('+(U*3.6).toFixed(0)+' km/h)';
   document.getElementById('rZ').textContent=(z>=0?'+':'')+z.toFixed(3)+(z<0?'  NEGATIVE':'');
