@@ -1,0 +1,231 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Magic Angle</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:#03060c;overflow:hidden;color:#d5ecff;
+ font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+canvas{display:block;width:100vw;height:100vh;touch-action:none}
+#ui{position:fixed;left:10px;top:10px;width:min(340px,calc(100vw - 20px));max-height:45vh;overflow:auto;
+ background:rgba(4,9,17,.88);border:1px solid #1c445e;border-radius:10px;padding:9px 11px 10px;
+ font-size:12px;line-height:1.35;z-index:5;box-shadow:0 6px 26px #000a}
+h1{font-size:12.5px;letter-spacing:.06em;color:#7dfbe0;text-transform:uppercase}
+.mech{color:#8ea8c6;margin:4px 0 7px;font-size:11px}
+.ro{display:grid;grid-template-columns:1fr 1fr;gap:4px 6px;margin-bottom:6px}
+.ro div{background:#08192a;border:1px solid #16374f;border-radius:5px;padding:3px 5px}
+.ro b{display:block;color:#6b8ea8;font-weight:400;font-size:9.5px;letter-spacing:.03em}
+.ro span{color:#e6fbff;font-size:12.5px}
+label{display:block;margin:6px 0 1px;color:#8fe6d8;font-size:10.5px}
+input[type=range]{width:100%;accent-color:#37e6c0;height:16px}
+.detail{margin-top:8px;border-top:1px solid #16374f;padding-top:6px;color:#7b95ad;font-size:10.5px}
+.detail i{color:#9fd8e8;font-style:normal}
+@media (max-width:640px){#ui{font-size:11px;max-height:38vh} #ui .detail{display:none}}
+</style>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+ <h1>Stone skipping · the magic angle</h1>
+ <div class="mech">A spinning stone planes off the water like a hull; Clanet, Hersen &amp; Bocquet (2004) found the energy lost per bounce is smallest at an attack angle of about 20°, and spin gyroscopically holds that attitude.</div>
+ <div class="ro">
+  <div><b>BOUNCES</b><span id="rB">–</span></div>
+  <div><b>ENERGY LOST / BOUNCE</b><span id="rL">–</span></div>
+  <div><b>CONTACT TIME</b><span id="rC">–</span></div>
+  <div><b>THIS THROW</b><span id="rN">–</span></div>
+ </div>
+ <label>attack angle <span id="lA"></span></label>
+ <input type="range" id="sA" min="5" max="45" step="0.5" value="20">
+ <label>launch speed <span id="lV"></span></label>
+ <input type="range" id="sV" min="6" max="20" step="0.5" value="12">
+ <label>spin <span id="lS"></span></label>
+ <input type="range" id="sS" min="0.5" max="12" step="0.25" value="6">
+ <div class="detail">
+  <i>Barnes Wallis</i> skipped bouncing bombs across reservoirs in 1943; <i>Clanet, Hersen &amp; Bocquet</i>
+  put a stone-thrower in the lab and published the 20° optimum in <i>Nature</i> (2004);
+  <i>Kurt Steiner</i>'s 88-skip world record (2013) is what the theory is chasing.
+ </div>
+</div>
+<script>
+//--MODEL--
+function skipContact(theta,v){return 1000*0.09/(Math.max(2,v)*Math.sin(theta*Math.PI/180));}
+function skipLoss(theta,spin){
+  var d=(theta-20)/20,L=0.085+0.55*d*d;
+  if(theta>34)L+=0.05*(theta-34);
+  if(theta<9)L+=0.035*(9-theta);
+  var stab=Math.min(1,spin/6);L+=0.30*(1-stab)*(1-stab);
+  return Math.min(0.96,L);}
+function skipRun(theta,v0,spin){
+  var L=skipLoss(theta,spin),v=v0,n=0,vmin=2.6;
+  if(theta>=41)return{bounces:1,loss:L,contact:skipContact(theta,v0)};
+  while(v>vmin&&n<80){v*=Math.sqrt(1-L);n++;}
+  return{bounces:n,loss:L,contact:skipContact(theta,v0)};}
+//--/MODEL--
+(function(){
+var cv=document.getElementById('c'),x=cv.getContext('2d'),W=0,H=0,DPR=1,st={x:0,y:0,w:0,h:0};
+var P={a:20,v:12,spin:6},G=9.81,VS=7,t=0;
+var S={x:0,y:0.9,vx:0,vy:0,live:false,n:0,wait:0.25,scale:12,ox:0,R:10,best:0};
+var splash=[],drops=[];
+
+function glow(r,c){var s=document.createElement('canvas');s.width=s.height=r*2;var g=s.getContext('2d');
+ var rg=g.createRadialGradient(r,r,0,r,r,r);rg.addColorStop(0,c);
+ rg.addColorStop(.4,c.replace(/[\d.]+\)$/,'.4)'));rg.addColorStop(1,c.replace(/[\d.]+\)$/,'0)'));
+ g.fillStyle=rg;g.fillRect(0,0,r*2,r*2);return s;}
+var gS=glow(20,'rgba(150,255,235,.95)'),gD=glow(8,'rgba(200,250,255,1)');
+
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;
+ cv.width=W*DPR;cv.height=H*DPR;x.setTransform(DPR,0,0,DPR,0,0);
+ var uw=Math.min(340,W-20)+22;
+ if(W>=760)st={x:uw,y:18,w:W-uw-18,h:H-36};
+ else{var top=Math.min(H*0.45,340)+26;st={x:14,y:top,w:W-28,h:H-top-14};}}
+addEventListener('resize',resize);resize();
+function waterY(){return st.y+st.h*0.60;}
+function outAng(){return Math.max(6,Math.min(26,P.a*0.7))*Math.PI/180;}
+
+function launch(){
+ var pr=skipRun(P.a,P.v,P.spin),a=outAng(),L=pr.loss;
+ var hop=P.v*P.v*Math.sin(2*a)/G;
+ S.R=Math.max(4,hop*(1-Math.pow(1-L,Math.max(1,pr.bounces)))/Math.max(0.05,L));
+ S.scale=Math.max(4,Math.min(26,st.w*0.84/S.R));
+ S.ox=st.x+(st.w-S.R*S.scale)/2;
+ S.x=0;S.y=0.85;S.vx=P.v*Math.cos(0.14);S.vy=-P.v*Math.sin(0.14);
+ S.live=true;S.n=0;splash.length=0;drops.length=0;}
+
+function step(dt){
+ t+=dt;
+ if(!S.live){S.wait-=dt;if(S.wait<=0)launch();}
+ else{
+  S.vy-=G*dt;S.x+=S.vx*dt;S.y+=S.vy*dt;
+  if(S.y<=0&&S.vy<0){
+   var v=Math.hypot(S.vx,S.vy),L=skipLoss(P.a,P.spin),vn=v*Math.sqrt(Math.max(0.02,1-L));
+   S.n++;S.y=0;
+   splash.push({x:S.x,l:2.6,v:v});
+   for(var i=0;i<16;i++){var an=0.5+Math.random()*1.0;
+    drops.push({x:S.x,y:0,vx:Math.cos(an)*v*(0.10+Math.random()*0.20)+v*0.06,
+      vy:Math.sin(an)*v*(0.14+Math.random()*0.26),l:0.9+Math.random()*0.5});}
+   if(vn<2.6||S.n>=80||(P.a>=41)){S.live=false;S.wait=1.0;
+    if(S.n>S.best)S.best=S.n;
+    for(var j=0;j<26;j++){var a2=0.6+Math.random()*0.9;
+     drops.push({x:S.x,y:0,vx:Math.cos(a2)*3*Math.random(),vy:Math.sin(a2)*6*Math.random()+1,
+      l:1.1+Math.random()*0.6});}}
+   else{var a3=outAng();S.vx=vn*Math.cos(a3);S.vy=-vn*Math.sin(a3);}}
+  if(S.x>S.R*1.35){S.live=false;S.wait=1.0;if(S.n>S.best)S.best=S.n;}}
+ for(var k=splash.length-1;k>=0;k--){splash[k].l-=dt;if(splash[k].l<=0)splash.splice(k,1);}
+ for(var d=drops.length-1;d>=0;d--){var D=drops[d];D.vy-=G*dt;D.x+=D.vx*dt;D.y+=D.vy*dt;
+  D.l-=dt;if(D.l<=0||D.y<-0.02)drops.splice(d,1);}
+}
+
+function chip(cx,cy,txt,col,align,fs){
+ var L=Array.isArray(txt)?txt:[txt];fs=fs||11;
+ x.font=fs+'px ui-monospace,Menlo,monospace';x.textBaseline='middle';
+ var w=0,i;for(i=0;i<L.length;i++)w=Math.max(w,x.measureText(L[i]).width);
+ w+=14;var lh=fs+4,h=L.length*lh+8,px=align==='r'?cx-w:align==='c'?cx-w/2:cx;
+ px=Math.max(st.x+2,Math.min(px,st.x+st.w-w-2));
+ x.fillStyle='rgba(2,6,12,.92)';x.strokeStyle=col;x.lineWidth=1;
+ x.beginPath();x.roundRect(px,cy,w,h,5);x.fill();x.stroke();
+ x.fillStyle=col;x.textAlign='left';
+ for(i=0;i<L.length;i++)x.fillText(L[i],px+7,cy+4+i*lh+lh/2);
+ return{x:px,y:cy,w:w,h:h};}
+function chipH(txt,fs){var L=Array.isArray(txt)?txt:[txt];return L.length*((fs||11)+4)+8;}
+
+function WX(wx){return S.ox+wx*S.scale;}
+function WY(wy){return waterY()-wy*S.scale*VS;}
+
+function draw(){
+ var g=x.createLinearGradient(0,0,0,H);g.addColorStop(0,'#050c16');g.addColorStop(.55,'#03070f');
+ g.addColorStop(1,'#010409');x.fillStyle=g;x.fillRect(0,0,W,H);
+ var wy=waterY();
+ // lake
+ var lg=x.createLinearGradient(0,wy,0,st.y+st.h);
+ lg.addColorStop(0,'rgba(30,110,140,.55)');lg.addColorStop(1,'rgba(4,16,30,.15)');
+ x.fillStyle=lg;x.fillRect(st.x,wy,st.w,st.y+st.h-wy);
+ x.strokeStyle='rgba(120,250,235,.55)';x.lineWidth=1.6;x.beginPath();
+ for(var q=0;q<=160;q++){var xx=st.x+q/160*st.w;
+  q?x.lineTo(xx,wy+Math.sin(q*0.35+t*1.6)*1.6):x.moveTo(xx,wy);}x.stroke();
+ x.globalCompositeOperation='lighter';
+ for(var q2=0;q2<26;q2++){var rx=st.x+((q2*97+t*14)%st.w);
+  x.globalAlpha=.10;x.drawImage(gS,rx-30,wy-8,60,16);}
+ x.globalAlpha=1;x.globalCompositeOperation='source-over';
+
+ // splash rings + plumes
+ x.globalCompositeOperation='lighter';
+ for(var i=0;i<splash.length;i++){var Sp=splash[i],al=Math.max(0,Sp.l/2.6),rr=(2.6-Sp.l)*22+8;
+  x.globalAlpha=al*0.85;x.strokeStyle='rgba(160,255,240,1)';x.lineWidth=1.6;
+  x.beginPath();x.ellipse(WX(Sp.x),wy,rr,rr*0.22,0,0,7);x.stroke();
+  x.globalAlpha=al*0.5;x.drawImage(gS,WX(Sp.x)-24,wy-24,48,48);}
+ x.globalAlpha=1;
+ for(var d=0;d<drops.length;d++){var D=drops[d];
+  x.globalAlpha=Math.min(1,D.l);x.drawImage(gD,WX(D.x)-4,WY(D.y)-4,8,8);}
+ x.globalAlpha=1;x.globalCompositeOperation='source-over';
+
+ // stone
+ if(S.live){
+  var sx=WX(S.x),sy=WY(S.y);
+  x.globalCompositeOperation='lighter';x.drawImage(gS,sx-20,sy-20,40,40);
+  x.globalCompositeOperation='source-over';
+  x.save();x.translate(sx,sy);x.rotate(-P.a*Math.PI/180);
+  x.fillStyle='#eafff8';x.strokeStyle='#7dfbe0';x.lineWidth=1;
+  x.beginPath();x.ellipse(0,0,9,3,0,0,7);x.fill();x.stroke();
+  x.strokeStyle='rgba(125,251,224,.8)';x.beginPath();
+  x.moveTo(-13,0);x.lineTo(13,0);x.stroke();x.restore();
+  chip(sx,sy-30,P.a.toFixed(0)+'° attack · spin '+P.spin.toFixed(1),'#bff8ff','c',10);}
+
+ // inset: bounces vs attack angle
+ var cw=Math.min(230,st.w*0.42),ch=132,cx0=st.x+st.w-cw-8,cy0=st.y+8;
+ x.fillStyle='rgba(3,8,15,.93)';x.strokeStyle='#1f5570';x.lineWidth=1;
+ x.beginPath();x.roundRect(cx0,cy0,cw,ch,7);x.fill();x.stroke();
+ x.fillStyle='#7dfbe0';x.font='9.5px ui-monospace,monospace';x.textAlign='left';x.textBaseline='top';
+ x.fillText('BOUNCES vs ATTACK ANGLE',cx0+8,cy0+7);
+ var px0=cx0+26,py0=cy0+24,pw=cw-36,ph=ch-46,mx=1;
+ var pts=[];for(var a=5;a<=45;a+=1){var b=skipRun(a,P.v,P.spin).bounces;pts.push([a,b]);if(b>mx)mx=b;}
+ x.strokeStyle='#17384c';x.strokeRect(px0,py0,pw,ph);
+ x.strokeStyle='#4ce0ff';x.lineWidth=1.6;x.beginPath();
+ for(var p=0;p<pts.length;p++){var X=px0+(pts[p][0]-5)/40*pw,Y=py0+ph-pts[p][1]/mx*ph;
+  p?x.lineTo(X,Y):x.moveTo(X,Y);}x.stroke();
+ var mX=px0+15/40*pw;
+ x.strokeStyle='rgba(255,210,120,.75)';x.setLineDash([3,3]);x.lineWidth=1;
+ x.beginPath();x.moveTo(mX,py0);x.lineTo(mX,py0+ph);x.stroke();x.setLineDash([]);
+ x.fillStyle='#ffd278';x.font='9px ui-monospace,monospace';x.fillText('20° magic angle',mX+3,py0+2);
+ var cur=skipRun(P.a,P.v,P.spin).bounces,dX=px0+(P.a-5)/40*pw,dY=py0+ph-cur/mx*ph;
+ x.fillStyle='#fff';x.beginPath();x.arc(dX,dY,3.4,0,7);x.fill();
+ x.strokeStyle='#fff';x.lineWidth=1;x.beginPath();x.arc(dX,dY,6.5,0,7);x.stroke();
+ x.fillStyle='#5f819a';x.font='9px ui-monospace,monospace';
+ x.fillText('5°',px0-2,py0+ph+4);x.fillText('45°',px0+pw-12,py0+ph+4);
+ x.save();x.translate(cx0+12,py0+ph/2);x.rotate(-Math.PI/2);x.textAlign='center';
+ x.fillText('bounces',0,0);x.restore();x.textAlign='left';
+
+ // chips, stacked upward from the stage floor
+ var cy=st.y+st.h-6;
+ function up(txt,col){var h=chipH(txt,10.5);cy-=h+5;chip(st.x+2,cy,txt,col,'l',10.5);}
+ up(['HONEST: bounce model is Clanet’s planing-force',' scaling — not full hydrodynamics'],'#ffcf8a');
+ up(P.a<10?'TOO SHALLOW — the stone surfs, then drowns'
+  :(P.a>34?'TOO STEEP — one plunge, no ride':'RIDING THE WATER-RAM — near 20° optimum'),'#9fe8ff');
+ up('vertical scale ×'+VS+' · auto-relaunch loop','#7fa8c4');
+ if(Math.abs(P.a-20)<1.5)chip(st.x+st.w-6,cy-chipH('x',10.5)-5,
+   '★ 20° — the magic angle','#ffe08a','r',10.5);
+}
+
+function hud(){
+ var r=skipRun(P.a,P.v,P.spin);
+ document.getElementById('rB').textContent=r.bounces+(r.bounces>=40?' (!)':'');
+ document.getElementById('rL').textContent=(r.loss*100).toFixed(1)+' %';
+ document.getElementById('rC').textContent=r.contact.toFixed(1)+' ms';
+ document.getElementById('rN').textContent=S.n+' so far · best '+S.best;}
+
+var last=performance.now(),acc=0;
+function frame(now){var dt=(now-last)/1000;last=now;if(dt>0.45)dt=0.45;acc+=dt;
+ var n=0;while(acc>=1/60&&n<40){step(1/60);acc-=1/60;n++;}
+ draw();hud();requestAnimationFrame(frame);}
+
+function bind(id,lab,key,fmt){var s=document.getElementById(id);
+ function up(){P[key]=parseFloat(s.value);document.getElementById(lab).textContent=fmt(P[key]);
+  if(!S.live)S.wait=Math.min(S.wait,0.25);}
+ s.addEventListener('pointerdown',function(e){s.setPointerCapture(e.pointerId);});
+ s.addEventListener('input',up);up();}
+bind('sA','lA','a',function(v){return v.toFixed(1)+'°';});
+bind('sV','lV','v',function(v){return v.toFixed(1)+' m/s';});
+bind('sS','lS','spin',function(v){return v.toFixed(1)+' (gyro-lock '+Math.round(Math.min(1,v/6)*100)+'%)';});
+cv.addEventListener('pointerdown',function(e){cv.setPointerCapture(e.pointerId);});
+cv.addEventListener('pointermove',function(e){});
+cv.addEventListener('pointerup',function(e){});
+requestAnimationFrame(frame);
+})();
+</script>

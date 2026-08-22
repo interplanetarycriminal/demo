@@ -1,0 +1,212 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Regelation — The Wire That Passes Through Ice</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:#04070d;overflow:hidden;color:#cfe8ff;
+ font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+canvas{display:block;width:100vw;height:100vh;touch-action:none}
+#ui{position:fixed;left:10px;top:10px;width:min(340px,calc(100vw - 20px));max-height:45vh;overflow:auto;
+ background:rgba(5,10,18,.88);border:1px solid #1d3a56;border-radius:10px;padding:9px 11px 10px;
+ font-size:12px;line-height:1.35;z-index:5;box-shadow:0 6px 26px #000a}
+h1{font-size:12.5px;letter-spacing:.06em;color:#8ff0ff;text-transform:uppercase}
+.mech{color:#8ea8c6;margin:4px 0 7px;font-size:11px}
+.ro{display:grid;grid-template-columns:1fr 1fr;gap:4px 6px;margin-bottom:6px}
+.ro div{background:#0a1727;border:1px solid #17324c;border-radius:5px;padding:3px 5px}
+.ro b{display:block;color:#6f8bab;font-weight:400;font-size:9.5px;letter-spacing:.04em}
+.ro span{color:#eafcff;font-size:12.5px}
+label{display:block;margin:6px 0 1px;color:#9fd8f0;font-size:10.5px;letter-spacing:.03em}
+input[type=range]{width:100%;accent-color:#39e0ff;height:16px}
+button{width:100%;margin-top:7px;padding:6px;background:#0d2338;color:#7ff0ff;border:1px solid #2a5c80;
+ border-radius:6px;font:inherit;font-size:11px;cursor:pointer}
+button.on{background:#124c5e;color:#c8ffff;border-color:#4fd8ff}
+.detail{margin-top:8px;border-top:1px solid #17324c;padding-top:6px;color:#7d94b0;font-size:10.5px}
+.detail i{color:#9ec6e0;font-style:normal}
+@media (max-width:640px){#ui{font-size:11px;max-height:38vh} #ui .detail{display:none}}
+</style>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+ <h1>Regelation · the wire through ice</h1>
+ <div class="mech">A loaded wire raises the pressure beneath it, ice melts below at a lower melting point, the water flows around and refreezes above — the block heals behind the wire.</div>
+ <div class="ro">
+  <div><b>PRESSURE UNDER WIRE</b><span id="rP">–</span></div>
+  <div><b>ΔT_melt (−0.074 K/MPa)</b><span id="rT">–</span></div>
+  <div><b>DESCENT SPEED</b><span id="rV">–</span></div>
+  <div><b>LATENT-HEAT FLUX</b><span id="rQ">–</span></div>
+ </div>
+ <label>weight mass <span id="lM"></span></label>
+ <input type="range" id="sM" min="1" max="20" step="0.5" value="8">
+ <label>wire diameter <span id="lD"></span></label>
+ <input type="range" id="sD" min="0.2" max="2" step="0.05" value="0.6">
+ <button id="bK">wire: COPPER (k=401) — tap to switch to STRING</button>
+ <div class="detail">
+  <i>Michael Faraday</i> named regelation in 1850; <i>James Thomson</i> predicted pressure-melting in 1849 and
+  <i>William Thomson</i> measured it in 1857; <i>J. T. Bottomley</i> made the loaded-wire demo classic in 1872.
+  The same physics is argued over today in <i>glacier basal sliding</i>.
+ </div>
+</div>
+<script>
+//--MODEL--
+var RG={g:9.81,rhoIce:917,Lf:3.34e5,kCu:401,kStr:0.35,blockW:0.05,dTdP:-0.074};
+function regePressure(m,d){return m*RG.g/((d*1e-3)*RG.blockW)/1e6;}          // MPa
+function regeDT(P){return RG.dTdP*P;}                                        // K
+function regeSpeed(m,d,copper){                                              // m/s
+  var dT=Math.abs(regeDT(regePressure(m,d))), k=copper?RG.kCu:RG.kStr;
+  return 2.4e-3*k*dT/((d*1e-3)*RG.rhoIce*RG.Lf);}
+function regeFlux(m,d,copper){                                               // W
+  return RG.rhoIce*RG.Lf*regeSpeed(m,d,copper)*((d*1e-3)*RG.blockW);}
+//--/MODEL--
+(function(){
+var cv=document.getElementById('c'),x=cv.getContext('2d'),W=0,H=0,DPR=1,st={x:0,y:0,w:0,h:0};
+var TL=4500, BLOCK_MM=40;
+var P={m:8,d:0.6,copper:true};
+var wireMM=3, drops=[], scar=[], flash=[], t=0, resetT=-9;
+
+function glow(r,c){var s=document.createElement('canvas');s.width=s.height=r*2;var g=s.getContext('2d');
+ var rg=g.createRadialGradient(r,r,0,r,r,r);rg.addColorStop(0,c);rg.addColorStop(.35,c.replace(/[\d.]+\)$/,'.45)'));
+ rg.addColorStop(1,c.replace(/[\d.]+\)$/,'0)'));g.fillStyle=rg;g.fillRect(0,0,r*2,r*2);return s;}
+var gW=glow(26,'rgba(150,240,255,.95)'),gH=glow(30,'rgba(255,238,190,.9)'),gD=glow(9,'rgba(190,250,255,1)');
+
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;
+ cv.width=W*DPR;cv.height=H*DPR;x.setTransform(DPR,0,0,DPR,0,0);
+ var uw=Math.min(340,W-20)+22;
+ if(W>=760)st={x:uw,y:18,w:W-uw-18,h:H-36};
+ else{var top=Math.min(H*0.45,340)+26;st={x:14,y:top,w:W-28,h:H-top-14};}}
+addEventListener('resize',resize);resize();
+
+function block(){var bh=Math.min(st.h*0.44,250),bw=Math.min(st.w*0.34,260);
+ return{w:bw,h:bh,x:st.x+st.w*0.60-bw/2,y:st.y+st.h*0.45-bh/2};}
+
+function step(dt){
+ t+=dt;
+ var v=regeSpeed(P.m,P.d,P.copper)*1000*TL;      // mm/s of block, time-lapsed
+ if(resetT>0){resetT-=dt;if(resetT<=0){wireMM=2;scar.length=0;drops.length=0;}}
+ else{wireMM+=v*dt; if(wireMM>BLOCK_MM-2){wireMM=BLOCK_MM-2;resetT=1.1;}}
+ if(scar.length===0||wireMM-scar[scar.length-1]>0.5)scar.push(wireMM);
+ var rate=Math.min(60,v*26+2);
+ if(Math.random()<rate*dt&&resetT<=0)
+   drops.push({a:Math.random()<.5?Math.PI:0,ph:0,side:Math.random()<.5?-1:1,y0:wireMM,sp:1.1+Math.random()*.8});
+ for(var i=drops.length-1;i>=0;i--){var D=drops[i];D.ph+=dt*D.sp;
+   if(D.ph>1){flash.push({y:D.y0,s:D.side,l:0.55});drops.splice(i,1);}}
+ for(var j=flash.length-1;j>=0;j--){flash[j].l-=dt;if(flash[j].l<=0)flash.splice(j,1);}
+}
+
+function chip(cx,cy,txt,col,align,fs){
+ var L=Array.isArray(txt)?txt:[txt];fs=fs||11;
+ x.font=fs+'px ui-monospace,Menlo,monospace';x.textBaseline='middle';
+ var w=0,i;for(i=0;i<L.length;i++)w=Math.max(w,x.measureText(L[i]).width);
+ w+=14;var lh=fs+4,h=L.length*lh+8,px=align==='r'?cx-w:align==='c'?cx-w/2:cx;
+ px=Math.max(st.x+2,Math.min(px,st.x+st.w-w-2));
+ x.fillStyle='rgba(3,7,14,.9)';x.strokeStyle=col;x.lineWidth=1;
+ x.beginPath();x.roundRect(px,cy,w,h,5);x.fill();x.stroke();
+ x.fillStyle=col;x.textAlign='left';
+ for(i=0;i<L.length;i++)x.fillText(L[i],px+7,cy+4+i*lh+lh/2);
+ return{x:px,y:cy,w:w,h:h};}
+function chipH(txt,fs){var L=Array.isArray(txt)?txt:[txt];return L.length*((fs||11)+4)+8;}
+
+function draw(){
+ var g=x.createLinearGradient(0,0,0,H);g.addColorStop(0,'#050b14');g.addColorStop(1,'#02040a');
+ x.fillStyle=g;x.fillRect(0,0,W,H);
+ var B=block(),mmPx=B.h/BLOCK_MM,wy=B.y+wireMM*mmPx;
+
+ // ice block
+ x.save();x.beginPath();x.roundRect(B.x,B.y,B.w,B.h,10);x.clip();
+ var ig=x.createLinearGradient(B.x,B.y,B.x+B.w,B.y+B.h);
+ ig.addColorStop(0,'rgba(60,150,200,.42)');ig.addColorStop(.5,'rgba(120,215,255,.28)');
+ ig.addColorStop(1,'rgba(40,110,170,.40)');x.fillStyle=ig;x.fillRect(B.x,B.y,B.w,B.h);
+ x.strokeStyle='rgba(170,240,255,.16)';x.lineWidth=1;
+ for(var i=0;i<14;i++){var s=(i*97)%100/100,e=(i*53)%100/100;
+  x.beginPath();x.moveTo(B.x+s*B.w,B.y);x.lineTo(B.x+e*B.w,B.y+B.h);x.stroke();}
+ // refrozen scar above wire
+ if(scar.length>1){x.strokeStyle='rgba(210,250,255,.72)';x.lineWidth=Math.max(2,P.d*2.2);
+  x.beginPath();x.moveTo(B.x+B.w/2,B.y+scar[0]*mmPx);x.lineTo(B.x+B.w/2,wy);x.stroke();
+  x.strokeStyle='rgba(255,255,255,.28)';x.lineWidth=1;x.stroke();
+  for(var k=0;k<10;k++){var sy=B.y+(scar[0]+(wireMM-scar[0])*((k*0.17+t*0.09)%1))*mmPx;
+   x.globalAlpha=.5+.5*Math.sin(t*4+k);x.drawImage(gD,B.x+B.w/2-9,sy-9,18,18);x.globalAlpha=1;}}
+ // melt film below wire
+ var pulse=1+0.14*Math.sin(t*7);
+ x.globalCompositeOperation='lighter';
+ x.drawImage(gW,B.x+B.w/2-26*pulse,wy-14*pulse+7,52*pulse,28*pulse);
+ x.globalCompositeOperation='source-over';
+ x.fillStyle='rgba(235,255,255,.9)';x.beginPath();
+ x.ellipse(B.x+B.w/2,wy+4,B.w*0.10,3.4*pulse,0,0,7);x.fill();
+ // water creeping around the wire
+ for(var d2=0;d2<drops.length;d2++){var D=drops[d2],a=Math.PI*D.ph,r=9+P.d*3;
+  var dx=D.side*Math.sin(a)*r,dy=Math.cos(a)*r*0.9;
+  x.fillStyle='rgba(160,245,255,'+(0.9-0.3*D.ph)+')';
+  x.beginPath();x.arc(B.x+B.w/2+dx,wy+4-dy-4,2.2,0,7);x.fill();}
+ for(var f=0;f<flash.length;f++){var F=flash[f];x.globalAlpha=F.l/0.55;
+  x.drawImage(gD,B.x+B.w/2+F.s*11-9,B.y+F.y*mmPx-16,18,18);x.globalAlpha=1;}
+ x.restore();
+ x.strokeStyle='rgba(180,240,255,.55)';x.lineWidth=1.5;
+ x.beginPath();x.roundRect(B.x,B.y,B.w,B.h,10);x.stroke();
+
+ // wire + weights
+ var ext=Math.min(70,st.w*0.13),wx0=B.x-ext,wx1=B.x+B.w+ext;
+ x.strokeStyle=P.copper?'#ffb570':'#e8e2cf';x.lineWidth=Math.max(1.4,P.d*2.6);
+ x.beginPath();x.moveTo(wx0,wy);x.lineTo(wx1,wy);x.stroke();
+ x.strokeStyle=P.copper?'rgba(255,170,90,.35)':'rgba(230,225,205,.3)';x.lineWidth=x.lineWidth+5;x.stroke();
+ var hangY=B.y+B.h+Math.min(60,st.h*0.10);
+ [[wx0,-1],[wx1,1]].forEach(function(p){
+  x.strokeStyle='rgba(200,220,240,.6)';x.lineWidth=1.4;
+  x.beginPath();x.moveTo(p[0],wy);x.lineTo(p[0],hangY);x.stroke();
+  x.globalCompositeOperation='lighter';x.drawImage(gH,p[0]-30,hangY+2,60,60);
+  x.globalCompositeOperation='source-over';
+  x.fillStyle='#2a2213';x.strokeStyle='#ffd894';x.lineWidth=1.3;
+  x.beginPath();x.roundRect(p[0]-17,hangY,34,26,4);x.fill();x.stroke();
+  x.fillStyle='#ffe3a8';x.font='10px ui-monospace,monospace';x.textAlign='center';x.textBaseline='middle';
+  x.fillText((P.m/2).toFixed(1)+'kg',p[0],hangY+13);});
+
+ // arrows on the block: melt down, refreeze up
+ x.strokeStyle='rgba(235,255,255,.9)';x.lineWidth=1.8;
+ x.beginPath();x.moveTo(B.x+B.w*0.22,wy+8);x.lineTo(B.x+B.w*0.22,wy+26);x.stroke();
+ x.beginPath();x.moveTo(B.x+B.w*0.22,wy+30);x.lineTo(B.x+B.w*0.22-4,wy+23);
+ x.lineTo(B.x+B.w*0.22+4,wy+23);x.fillStyle='rgba(235,255,255,.9)';x.fill();
+ x.strokeStyle='rgba(150,230,255,.9)';
+ x.beginPath();x.moveTo(B.x+B.w*0.78,wy-8);x.lineTo(B.x+B.w*0.78,wy-26);x.stroke();
+ x.beginPath();x.moveTo(B.x+B.w*0.78,wy-30);x.lineTo(B.x+B.w*0.78-4,wy-23);
+ x.lineTo(B.x+B.w*0.78+4,wy-23);x.fillStyle='rgba(150,230,255,.9)';x.fill();
+
+ // legend card (explicit bounds, top-left of stage)
+ chip(st.x+6,st.y+6,['▼ MELT FILM · P↑ ⇒ T_melt↓',
+   '▲ REFROZEN SCAR · latent heat out',
+   'ΔT under wire '+regeDT(regePressure(P.m,P.d)).toFixed(3)+' K'],'#9fe8ff','l',10.5);
+
+ // bottom chips, stacked upward, clear of edges
+ var cy=st.y+st.h-6;
+ function up(txt,col){var h=chipH(txt,10.5);cy-=h+5;chip(st.x+2,cy,txt,col,'l',10.5);}
+ up('time-lapse ×'+TL+' — a real cut takes hours','#8fb6d8');
+ up(P.copper?['HONEST: rate is set by heat conducted',' back through the wire — copper wins']
+   :['HONEST: a string cannot carry the latent',' heat — it stalls, as Bottomley found'],'#ffcf8a');
+ up('Skating myth: friction melts ice, not P','#c9a6ff');
+ if(resetT>0)chip(st.x+st.w-6,st.y+6,'through — and the block is still whole','#9fffcf','r',10.5);
+}
+
+var last=performance.now(),acc=0;
+function frame(now){var dt=(now-last)/1000;last=now;if(dt>0.45)dt=0.45;acc+=dt;
+ var n=0;while(acc>=1/60&&n<40){step(1/60);acc-=1/60;n++;}
+ draw();hud();requestAnimationFrame(frame);}
+
+function hud(){
+ var Pr=regePressure(P.m,P.d),dT=regeDT(Pr),v=regeSpeed(P.m,P.d,P.copper),q=regeFlux(P.m,P.d,P.copper);
+ document.getElementById('rP').textContent=Pr.toFixed(2)+' MPa';
+ document.getElementById('rT').textContent=dT.toFixed(3)+' K';
+ document.getElementById('rV').textContent=(v*1e6).toFixed(v*1e6<1?3:2)+' µm/s';
+ document.getElementById('rQ').textContent=(q*1000).toFixed(q*1000<1?3:2)+' mW';}
+
+function bind(id,lab,key,fmt){var s=document.getElementById(id);
+ function up(){P[key]=parseFloat(s.value);document.getElementById(lab).textContent=fmt(P[key]);}
+ s.addEventListener('pointerdown',function(e){s.setPointerCapture(e.pointerId);});
+ s.addEventListener('input',up);up();}
+bind('sM','lM','m',function(v){return v.toFixed(1)+' kg';});
+bind('sD','lD','d',function(v){return v.toFixed(2)+' mm';});
+var bK=document.getElementById('bK');bK.classList.add('on');
+bK.addEventListener('pointerup',function(){P.copper=!P.copper;bK.classList.toggle('on',P.copper);
+ bK.textContent=P.copper?'wire: COPPER (k=401) — tap to switch to STRING':'wire: STRING (k=0.35) — tap for COPPER';});
+cv.addEventListener('pointerdown',function(e){cv.setPointerCapture(e.pointerId);});
+cv.addEventListener('pointermove',function(e){});
+cv.addEventListener('pointerup',function(e){});
+requestAnimationFrame(frame);
+})();
+</script>

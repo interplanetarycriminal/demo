@@ -1,0 +1,233 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Faraday Heaps</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:#05060c;overflow:hidden;color:#ffe9c9;
+ font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+canvas{display:block;width:100vw;height:100vh;touch-action:none}
+#ui{position:fixed;left:10px;top:10px;width:min(340px,calc(100vw - 20px));max-height:45vh;overflow:auto;
+ background:rgba(10,7,4,.88);border:1px solid #55381c;border-radius:10px;padding:9px 11px 10px;
+ font-size:12px;line-height:1.35;z-index:5;box-shadow:0 6px 26px #000a}
+h1{font-size:12.5px;letter-spacing:.06em;color:#ffc46a;text-transform:uppercase}
+.mech{color:#c1a184;margin:4px 0 7px;font-size:11px}
+.ro{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px 6px;margin-bottom:6px}
+.ro div{background:#170f07;border:1px solid #4a3218;border-radius:5px;padding:3px 5px}
+.ro b{display:block;color:#a5834f;font-weight:400;font-size:9.5px;letter-spacing:.03em}
+.ro span{color:#fff3dd;font-size:12.5px}
+label{display:block;margin:6px 0 1px;color:#ffcf8f;font-size:10.5px}
+input[type=range]{width:100%;accent-color:#ffa53a;height:16px}
+.detail{margin-top:8px;border-top:1px solid #4a3218;padding-top:6px;color:#b3906a;font-size:10.5px}
+.detail i{color:#ffd7a0;font-style:normal}
+@media (max-width:640px){#ui{font-size:11px;max-height:38vh} #ui .detail{display:none}}
+</style>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+ <h1>Faraday heaps · vibrated sand</h1>
+ <div class="mech">Shake a sand layer vertically and it will not stay flat: grains land harder where the layer is already thick, convection carries more grains there, and the bed self-organises into regularly spaced breathing heaps.</div>
+ <div class="ro">
+  <div><b>Γ = aω²/g</b><span id="rG">–</span></div>
+  <div><b>HEAPS</b><span id="rN">–</span></div>
+  <div><b>LAYER DEPTH</b><span id="rD">–</span></div>
+  <div><b>SPACING</b><span id="rS">–</span></div>
+  <div><b>DRIVE f</b><span id="rF">–</span></div>
+  <div><b>REGIME</b><span id="rR">–</span></div>
+ </div>
+ <label>drive acceleration Γ <span id="lG"></span></label>
+ <input type="range" id="sG" min="0.2" max="6" step="0.05" value="2.6">
+ <label>drive frequency <span id="lF"></span></label>
+ <input type="range" id="sF" min="15" max="70" step="1" value="32">
+ <div class="detail">
+  <i>Michael Faraday</i>, 1831 — the appendix to the paper that gave us his acoustic figures — reported that
+  vibrated powders gather into heaps. <i>Melo, Umbanhowar &amp; Swinney</i> (1994–96) found the period-doubled
+  <i>oscillons</i> at higher Γ; the whole field of vibrated-bed physics follows.
+ </div>
+</div>
+<script>
+//--MODEL--
+function bedMake(o){
+  var NB=96,b={NB:NB,Lx:140,h0:8,gamma:o.gamma,freq:o.freq,t:0,h:new Float32Array(NB),
+    seed:o.seed||7,oscAmp:0,oscFlip:1,phaseT:0};
+  for(var i=0;i<NB;i++){b.seed=(b.seed*1103515245+12345)&0x7fffffff;
+    b.h[i]=b.h0+((b.seed/0x7fffffff)-0.5)*0.30;}
+  return b;}
+function bedField(b,dt){
+  var NB=b.NB,h=b.h,a=30*Math.max(0,b.gamma-1)*Math.pow(b.freq/40,2),bh=100,D0=6,
+      Hs=0.52*b.h0,NS=30,ds=dt/NS,lap=new Float32Array(NB),bi=new Float32Array(NB),i;
+  for(var s=0;s<NS;s++){
+    for(i=0;i<NB;i++)lap[i]=h[(i+NB-1)%NB]-2*h[i]+h[(i+1)%NB];
+    for(i=0;i<NB;i++)bi[i]=lap[(i+NB-1)%NB]-2*lap[i]+lap[(i+1)%NB];
+    var mean=0;for(i=0;i<NB;i++)mean+=h[i];mean/=NB;
+    for(i=0;i<NB;i++){
+      var d=h[i]-mean,sat=1-(d*d)/(Hs*Hs);if(sat<-1)sat=-1;
+      h[i]+=ds*(-a*lap[i]*sat-bh*bi[i]+D0*lap[i]);}
+    mean=0;for(i=0;i<NB;i++)mean+=h[i];mean/=NB;
+    for(i=0;i<NB;i++){h[i]+=b.h0-mean;if(h[i]<0.8)h[i]=0.8;}}
+  return h;}
+function bedStep(b,dt){
+  b.t+=dt;bedField(b,dt);
+  var per=1/b.freq;b.phaseT+=dt;
+  while(b.phaseT>=per){b.phaseT-=per;b.oscFlip=-b.oscFlip;}
+  var tgt=b.gamma>4?0.8*(b.gamma-4):0;
+  b.oscAmp+=(tgt-b.oscAmp)*Math.min(1,dt*2.5);
+  return b;}
+function bedOsc(b,i){return b.oscAmp*b.oscFlip*Math.cos(i*2*Math.PI/8);}
+function bedMetrics(b){
+  var NB=b.NB,h=b.h,i,mean=0,v=0,pk=0;
+  for(i=0;i<NB;i++)mean+=h[i];mean/=NB;
+  for(i=0;i<NB;i++)v+=(h[i]-mean)*(h[i]-mean);
+  var amp=Math.sqrt(v/NB);
+  for(i=0;i<NB;i++){var l=h[(i+NB-1)%NB],r=h[(i+1)%NB];
+    if(h[i]>l&&h[i]>=r&&h[i]-mean>0.35*amp)pk++;}
+  return{amp:amp,heaps:pk,spacing:pk>0?b.Lx/pk:b.Lx,depth:mean};}
+function bedRun(gamma,freq,secs){
+  var b=bedMake({gamma:gamma,freq:freq}),n=Math.round(secs*60);
+  for(var i=0;i<n;i++)bedStep(b,1/60);
+  return bedMetrics(b);}
+//--/MODEL--
+(function(){
+var cv=document.getElementById('c'),x=cv.getContext('2d'),W=0,H=0,DPR=1,st={x:0,y:0,w:0,h:0};
+var B=bedMake({gamma:2.6,freq:32}),VE=2.0,TRAYMAG=6;
+var N=2400,gu=new Float32Array(N),gs=new Float32Array(N),gj=new Float32Array(N),gp=new Float32Array(N);
+for(var i=0;i<N;i++){gu[i]=Math.random();gs[i]=Math.pow(Math.random(),0.75);
+ gj[i]=Math.random()*6.28;gp[i]=Math.random();}
+var sp=document.createElement('canvas');sp.width=sp.height=10;
+(function(){var g=sp.getContext('2d'),rg=g.createRadialGradient(5,5,0,5,5,5);
+ rg.addColorStop(0,'rgba(255,231,170,1)');rg.addColorStop(.45,'rgba(255,168,60,.75)');
+ rg.addColorStop(1,'rgba(255,120,20,0)');g.fillStyle=rg;g.fillRect(0,0,10,10);})();
+var stc=document.createElement('canvas');stc.width=168;stc.height=84;
+var stx=stc.getContext('2d');stx.fillStyle='#0b0704';stx.fillRect(0,0,168,84);
+var stAcc=0;
+
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;
+ cv.width=W*DPR;cv.height=H*DPR;x.setTransform(DPR,0,0,DPR,0,0);
+ var uw=Math.min(340,W-20)+22;
+ if(W>=760)st={x:uw,y:18,w:W-uw-18,h:H-36};
+ else{var top=Math.min(H*0.45,340)+26;st={x:14,y:top,w:W-28,h:H-top-14};}}
+addEventListener('resize',resize);resize();
+
+function hAt(u){var f=u*B.NB,i=Math.floor(f)%B.NB,fr=f-Math.floor(f),j=(i+1)%B.NB;
+ return(B.h[i]+bedOsc(B,i))*(1-fr)+(B.h[j]+bedOsc(B,j))*fr;}
+
+function step(dt){
+ bedStep(B,dt);
+ var om=2*Math.PI*B.freq,A=B.gamma*9810/(om*om);      // tray amplitude, mm
+ B.trayA=A;B.trayY=A*Math.sin(om*B.t);
+ var conv=0.06*Math.max(0,B.gamma-1);
+ for(var k=0;k<N;k++){
+   var u=gu[k],e=0.004,g1=hAt((u+e)%1),g0=hAt((u-e+1)%1),grad=(g1-g0)/(2*e*B.Lx);
+   var dir=gs[k]>0.55?1:-1;                            // surface up-slope, base back down
+   gu[k]=(gu[k]+dir*grad*conv*dt+1)%1;
+   gs[k]+=dt*(gs[k]>0.55?-0.11:0.09)*Math.max(0,B.gamma-1)*(0.5+Math.abs(grad));
+   if(gs[k]>1)gs[k]=1;if(gs[k]<0.02)gs[k]=0.02;
+   gp[k]+=dt;}
+ stAcc+=dt;
+ var per=1/B.freq;
+ if(stAcc>=per){stAcc=0;
+   stx.drawImage(stc,-2,0);stx.fillStyle='#0b0704';stx.fillRect(166,0,2,84);
+   for(var q=0;q<42;q++){var hv=hAt(q/42)-B.h0,c=Math.max(0,Math.min(1,0.5+hv/(0.9*B.h0)));
+     stx.fillStyle='rgb('+Math.round(30+225*c)+','+Math.round(18+150*c)+','+Math.round(10+60*c)+')';
+     stx.fillRect(166,q*2,2,2);}}
+}
+
+function chip(cx,cy,txt,col,align,fs){
+ var L=Array.isArray(txt)?txt:[txt];fs=fs||11;
+ x.font=fs+'px ui-monospace,Menlo,monospace';x.textBaseline='middle';
+ var w=0,i;for(i=0;i<L.length;i++)w=Math.max(w,x.measureText(L[i]).width);
+ w+=14;var lh=fs+4,h=L.length*lh+8,px=align==='r'?cx-w:align==='c'?cx-w/2:cx;
+ px=Math.max(st.x+2,Math.min(px,st.x+st.w-w-2));
+ x.fillStyle='rgba(4,3,2,.92)';x.strokeStyle=col;x.lineWidth=1;
+ x.beginPath();x.roundRect(px,cy,w,h,5);x.fill();x.stroke();
+ x.fillStyle=col;x.textAlign='left';
+ for(i=0;i<L.length;i++)x.fillText(L[i],px+7,cy+4+i*lh+lh/2);
+ return{x:px,y:cy,w:w,h:h};}
+function chipH(txt,fs){var L=Array.isArray(txt)?txt:[txt];return L.length*((fs||11)+4)+8;}
+
+function draw(){
+ var g=x.createLinearGradient(0,0,0,H);g.addColorStop(0,'#0a0703');g.addColorStop(1,'#040308');
+ x.fillStyle=g;x.fillRect(0,0,W,H);
+ var trayW=Math.min(st.w*0.9,820),trayX=st.x+st.w/2-trayW/2,
+     baseY=st.y+st.h*0.70,pxmm=trayW/B.Lx,ty=baseY-B.trayY*pxmm*TRAYMAG;
+
+ // tray
+ x.strokeStyle='#8a6a3a';x.lineWidth=3;
+ x.beginPath();x.moveTo(trayX-10,ty-46);x.lineTo(trayX-10,ty);x.lineTo(trayX+trayW+10,ty);
+ x.lineTo(trayX+trayW+10,ty-46);x.stroke();
+ x.strokeStyle='rgba(255,170,70,.22)';x.lineWidth=9;x.stroke();
+
+ // grains
+ x.globalCompositeOperation='lighter';
+ var om=2*Math.PI*B.freq,fly=Math.max(0,B.gamma-1)*1.6;
+ for(var k=0;k<N;k++){
+   var u=gu[k],hh=hAt(u),yy=gs[k]*hh;
+   var hop=fly*Math.max(0,Math.sin(om*B.t*0.25+gj[k]))*gs[k]*gs[k];
+   var px=trayX+u*trayW,py=ty-(yy+hop)*pxmm*VE-2;
+   var r=2.6+(gs[k]>0.8?0.7:0);
+   x.globalAlpha=0.55+0.45*gs[k];
+   x.drawImage(sp,px-r,py-r,r*2,r*2);}
+ x.globalAlpha=1;x.globalCompositeOperation='source-over';
+
+ // surface line + convection arrows
+ x.strokeStyle='rgba(255,214,150,.55)';x.lineWidth=1.4;x.beginPath();
+ for(var q=0;q<=120;q++){var uu=q/120,yy2=ty-hAt(uu)*pxmm*VE-2;
+   q?x.lineTo(trayX+uu*trayW,yy2):x.moveTo(trayX+uu*trayW,yy2);}x.stroke();
+ var M=bedMetrics(B);
+ if(M.amp>0.35){
+  var mean=M.depth;
+  for(var i2=0;i2<B.NB;i2++){var l=B.h[(i2+B.NB-1)%B.NB],r2=B.h[(i2+1)%B.NB];
+   if(B.h[i2]>l&&B.h[i2]>=r2&&B.h[i2]-mean>0.35*M.amp){
+    var ux=(i2+0.5)/B.NB,ax=trayX+ux*trayW,ay=ty-B.h[i2]*pxmm*VE-10;
+    x.strokeStyle='rgba(120,235,255,.85)';x.lineWidth=1.6;
+    x.beginPath();x.moveTo(ax-16,ay+16);x.lineTo(ax-3,ay+2);x.stroke();
+    x.beginPath();x.moveTo(ax-3,ay+2);x.lineTo(ax-8,ay+3);x.lineTo(ax-5,ay+8);x.fill();
+    x.beginPath();x.moveTo(ax+16,ay+16);x.lineTo(ax+3,ay+2);x.stroke();
+    x.beginPath();x.moveTo(ax+3,ay+2);x.lineTo(ax+8,ay+3);x.lineTo(ax+5,ay+8);x.fill();}}}
+
+ // space-time inset card
+ var cw=176,ch=112,cx0=st.x+st.w-cw-8,cy0=st.y+8;
+ x.fillStyle='rgba(6,4,2,.92)';x.strokeStyle='#6b4a22';x.lineWidth=1;
+ x.beginPath();x.roundRect(cx0,cy0,cw,ch,7);x.fill();x.stroke();
+ x.fillStyle='#ffbe72';x.font='9.5px ui-monospace,monospace';x.textAlign='left';x.textBaseline='top';
+ x.fillText('SPACE–TIME  surface height',cx0+7,cy0+6);
+ x.drawImage(stc,cx0+5,cy0+20,cw-10,ch-30);
+ x.strokeStyle='#3d2a12';x.strokeRect(cx0+5,cy0+20,cw-10,ch-30);
+ x.fillStyle='#c9a678';x.fillText(B.gamma>4?'period-2 stripes ⇒ oscillons':'period-1 · steady heaps',cx0+7,cy0+ch-11);
+
+ // chips, stacked upward from the stage floor
+ var cy=st.y+st.h-6;
+ function up(txt,col){var h=chipH(txt,10.5);cy-=h+5;chip(st.x+2,cy,txt,col,'l',10.5);}
+ up(['HONEST: 2-D toy — heaping is modelled as a',' height-field instability driven by Γ;',
+     ' real trays also need interstitial air'],'#ffcf8a');
+ up(B.gamma<1?'Γ<1 — the bed never leaves the tray: flat'
+   :(B.gamma>4?'Γ>4 — peaks flip each cycle: OSCILLONS'
+   :'Γ>1.2 — convection rolls feed the heaps'),'#9fe8ff');
+ chip(trayX+trayW/2,ty+18,'tray motion ×'+TRAYMAG+' · height ×'+VE.toFixed(1),'#b79a76','c',10);
+}
+
+function hud(){
+ var M=bedMetrics(B);
+ document.getElementById('rG').textContent=B.gamma.toFixed(2);
+ document.getElementById('rN').textContent=(B.gamma<1?0:M.heaps);
+ document.getElementById('rD').textContent=M.depth.toFixed(1)+' mm';
+ document.getElementById('rS').textContent=(B.gamma<1?'–':M.spacing.toFixed(0)+' mm');
+ document.getElementById('rF').textContent=B.freq.toFixed(0)+' Hz';
+ document.getElementById('rR').textContent=B.gamma<1?'flat':(B.gamma>4?'oscillon':'heaping');}
+
+var last=performance.now(),acc=0;
+function frame(now){var dt=(now-last)/1000;last=now;if(dt>0.45)dt=0.45;acc+=dt;
+ var n=0;while(acc>=1/60&&n<40){step(1/60);acc-=1/60;n++;}
+ draw();hud();requestAnimationFrame(frame);}
+
+function bind(id,lab,key,fmt){var s=document.getElementById(id);
+ function up(){B[key]=parseFloat(s.value);document.getElementById(lab).textContent=fmt(B[key]);}
+ s.addEventListener('pointerdown',function(e){s.setPointerCapture(e.pointerId);});
+ s.addEventListener('input',up);up();}
+bind('sG','lG','gamma',function(v){return v.toFixed(2);});
+bind('sF','lF','freq',function(v){return v.toFixed(0)+' Hz';});
+cv.addEventListener('pointerdown',function(e){cv.setPointerCapture(e.pointerId);});
+cv.addEventListener('pointermove',function(e){});
+cv.addEventListener('pointerup',function(e){});
+requestAnimationFrame(frame);
+})();
+</script>
