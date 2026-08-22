@@ -237,19 +237,26 @@ function render(){
 
   var lrv=tot?up/tot:0;
   el('lr').textContent=(lrv*100).toFixed(0)+'%';
-  var v=el('verdict');
-  if(!isDiamond){v.className='warn';v.textContent='— glass: feeble fire';}
-  else if(pvD<37.5){v.className='warn';v.textContent='— FISH-EYE (too shallow, leaks out)';}
-  else if(pvD>43.5){v.className='warn';v.textContent='— NAILHEAD (too deep, dark centre)';}
-  else if(lrv>0.55){v.className='good';v.textContent='— BLAZING (Tolkowsky zone)';}
-  else {v.className='';v.textContent='';}
+  // BLAZE WINDOW, derived live from C alone:
+  //  1st pavilion hit has incidence = p  -> needs p > C
+  //  2nd pavilion hit has incidence = 180-3p -> needs p < (180-C)/3
+  //  table exit needs |180-4p| < C     -> needs p > (180-C)/4
+  var pLo=Math.max(C,(180-C)/4), pHi=(180-C)/3;
+  el('win').textContent=pLo.toFixed(1)+'° … '+pHi.toFixed(1)+'°';
+  var v=el('verdict'),mode='';
+  if(pvD<pLo){mode=pvD<C?'FISH-EYE — first facet is below C, light pours straight out'
+                        :'FISH-EYE — twice-reflected ray TIRs at the table and leaks out below';}
+  else if(pvD>pHi){mode='NAILHEAD — second pavilion facet drops below C, light lost downward';}
+  if(mode){v.className='warn';v.textContent=mode;}
+  else{v.className='good';v.textContent=(isDiamond?'BLAZING':'guiding, but Δn is 3× smaller — feeble fire')
+       +' — '+(pvD>39.9&&pvD<41.6?'Tolkowsky 40.75° ideal cut':'inside the blaze window');}
 
   // label the failure modes on canvas
   g.font='12px ui-monospace,monospace';g.textAlign='center';
-  if(isDiamond&&pvD<37.5){g.fillStyle='#ff9a6a';g.fillText('FISH-EYE — light escapes the pavilion',cx,cy+gem.pavD+34);}
-  if(isDiamond&&pvD>43.5){g.fillStyle='#ff9a6a';g.fillText('NAILHEAD — dark centre, light lost below',cx,cy+gem.pavD+34);}
+  if(mode){g.fillStyle='#ff9a6a';g.fillText(mode.split(' — ')[0]+' — '+mode.split(' — ')[1],cx,cy+gem.pavD+34);}
   g.fillStyle='rgba(180,215,255,0.7)';
-  g.fillText('pavilion '+pvD.toFixed(2)+'°   n='+nD.toFixed(3)+'   C='+C.toFixed(1)+'°',cx,cy+gem.pavD+56);
+  g.fillText('pavilion '+pvD.toFixed(2)+'°   n='+nD.toFixed(3)+'   C='+C.toFixed(1)+
+             '°   blaze window '+pLo.toFixed(1)+'–'+pHi.toFixed(1)+'°',cx,cy+gem.pavD+56);
   g.textAlign='left';
 
   // light-return meter

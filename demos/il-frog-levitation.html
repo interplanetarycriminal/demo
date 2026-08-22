@@ -72,11 +72,17 @@ var cur=OBJ.frog;
 function accel(z){
   return (cur.chi/(MU0*cur.rho))*BdB(z) - Gs;
 }
-// find equilibrium above centre by bisection on accel
+// The STABLE root lies ABOVE the peak of |B dB/dz| (below it the force grows with
+// height — that root is unstable). So bracket from z_peak upward.
+function peakZ(){
+  var mx=0,zm=0.001;
+  for(var z=0.0005;z<0.5;z+=0.0005){var v=-BdB(z);if(v>mx){mx=v;zm=z;}}
+  return zm;
+}
 function findEq(){
-  var lo=0.0005,hi=0.35, alo=accel(lo),ahi=accel(hi);
-  if(!(alo>0&&ahi<0))return null;
-  for(var i=0;i<60;i++){var mid=.5*(lo+hi),am=accel(mid);if(am>0)lo=mid;else hi=mid;}
+  var lo=peakZ(),hi=0.45;
+  if(!(accel(lo)>0&&accel(hi)<0))return null;
+  for(var i=0;i<60;i++){var mid=.5*(lo+hi);if(accel(mid)>0)lo=mid;else hi=mid;}
   return .5*(lo+hi);
 }
 // threshold B0 that first makes levitation possible (max of magnetic accel term == g)

@@ -1,0 +1,290 @@
+<title>Rubens Tube</title>
+<style>
+html,body{margin:0;padding:0;background:#06040a;overflow:hidden;height:100%}
+canvas{display:block;position:fixed;inset:0}
+#ui{position:fixed;top:0;left:0;padding:10px 12px;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;
+ color:#ffd9bd;background:rgba(10,5,14,.66);border-right:1px solid #4a2412;border-bottom:1px solid #4a2412;
+ max-width:360px;backdrop-filter:blur(6px);z-index:5}
+#ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.17em;color:#ffb46b;text-shadow:0 0 12px #f83a}
+#ui .m{color:#c9a68f}#ui .s{color:#ffe08a}#ui .l{color:#8a6f5e;font-style:italic}
+#ui .w{color:#7fd6ff}#ui a{color:#ffb46b}#ui b{color:#fff}
+.row{display:flex;align-items:center;gap:6px;margin:3px 0}
+input[type=range]{width:130px;accent-color:#ff8a3d;height:14px}
+button{background:#2a1208;color:#ffb46b;border:1px solid #6a3418;padding:3px 7px;font:11px ui-monospace,monospace;cursor:pointer;border-radius:3px}
+button:hover{background:#4a2010;box-shadow:0 0 10px #f846}
+button.on{background:#6a3418;color:#fff}
+#rd{margin-top:5px;color:#ffd9bd}
+table{border-collapse:collapse;margin-top:4px;font:10px ui-monospace,monospace}
+td{padding:1px 6px 1px 0;color:#c9a68f}td b{color:#fff}
+hr{border:0;border-top:1px solid #4a2412;margin:6px 0}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>RUBENS TUBE</h1>
+<div class="m">A standing sound wave in a gas-filled perforated pipe modulates internal pressure, so flame height draws the wave — fire as oscilloscope.</div>
+<div class="s">Heinrich Rubens, 1905</div>
+<div class="l">Kundt's dust tube 1866 → Rubens 1905 flames → concert-circuit music tubes</div>
+<div class="w">SIMULATION ONLY — no gas recipe here; this is the physics, not the build.</div>
+<hr>
+<div class="row">freq <input id="fq" type="range" min="60" max="700" step="0.5" value="171.5"><span id="fqv">171.5 Hz</span></div>
+<div class="row">drive <input id="dv" type="range" min="10" max="100" step="1" value="70"><span id="dvv">0.70</span></div>
+<div class="row"><button id="bS">SWEEP MODES</button><button id="bA" class="on">TIME-AVG</button><button id="bM">♪ MUSIC (enable audio)</button></div>
+<div class="m">keys: ←/→ nudge freq · [1..6] jump to mode n · A toggle avg/instant</div>
+<div id="rd"></div>
+<table id="tb"></table>
+<div class="m" style="margin-top:5px">Convention: holes are small, so flame height tracks the <b>time-averaged pressure amplitude</b> — humps sit at <b>pressure antinodes</b>. (With large holes the flow-velocity term can invert this; real tubes argue about it.)</div>
+<div style="margin-top:5px"><a href="index.html">← gallery</a></div>
+</div>
+<script>
+(function(){
+var c=document.getElementById('c'),g=c.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,devicePixelRatio||1);W=innerWidth;H=innerHeight;
+ c.width=W*DPR|0;c.height=H*DPR|0;c.style.width=W+'px';c.style.height=H+'px';g.setTransform(DPR,0,0,DPR,0,0);}
+addEventListener('resize',resize);resize();
+
+var CS=343;                 // m/s
+var L=1.0;                  // tube length, metres
+var NJ=80;                  // flame jets
+var f=171.5, drive=0.70, timeAvg=true, sweep=false, music=false, t=0;
+function lam(){return CS/f;}
+function modeReal(){return 2*L/lam();}                 // n = 2L/λ
+function modeN(){return Math.max(1,Math.round(modeReal()));}
+function resonance(){var d=Math.abs(modeReal()-modeN());return Math.max(0,1-d*3.2);}
+
+// closed-closed tube: pressure antinodes at both ends, p(x) ∝ cos(n π x / L)
+function pEnv(x,n){return Math.cos(n*Math.PI*x/L);}
+function fieldAmp(x){
+  var Q=resonance(), n=modeN();
+  var res=Q*Math.abs(pEnv(x,n));
+  var off=(1-Q)*0.34*Math.abs(Math.cos(2*Math.PI*x/lam()));  // weak, un-locked wave
+  return drive*(res+off);
+}
+// music mode: superpose the tube's modes weighted by the source spectrum
+var modeAmp=new Float32Array(9), modePh=new Float32Array(9);
+function fieldAmpMusic(x){
+  var s=0;
+  for(var n=1;n<=8;n++) s+=modeAmp[n]*pEnv(x,n)*Math.cos(modePh[n]);
+  return drive*Math.abs(s);
+}
+var smooth=new Float32Array(NJ);
+function jetAmp(i){
+  var x=(i+0.5)/NJ*L;
+  var a= music? fieldAmpMusic(x) : fieldAmp(x);
+  if(!timeAvg){ // instantaneous: let the whole envelope breathe at the drive rate
+    a*=Math.abs(Math.cos(2*Math.PI*(music?6:f/28)*t));
+  }
+  return a;
+}
+
+// ---------- audio ----------
+var AC=null,master=null,osc=null,oscG=null,seqT=0,step=0;
+function initAudio(){
+  if(AC)return;
+  try{AC=new (window.AudioContext||window.webkitAudioContext)();}catch(e){return;}
+  master=AC.createGain();master.gain.value=0.055;master.connect(AC.destination);
+}
+function note(freq,dur,type,gain){
+  if(!AC)return;var o=AC.createOscillator(),gn=AC.createGain();
+  o.type=type||'sawtooth';o.frequency.value=freq;
+  gn.gain.setValueAtTime(0,AC.currentTime);
+  gn.gain.linearRampToValueAtTime(gain||0.5,AC.currentTime+0.012);
+  gn.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+dur);
+  o.connect(gn);gn.connect(master);o.start();o.stop(AC.currentTime+dur+0.02);
+}
+function kick(){
+  if(!AC)return;var o=AC.createOscillator(),gn=AC.createGain();
+  o.frequency.setValueAtTime(140,AC.currentTime);
+  o.frequency.exponentialRampToValueAtTime(45,AC.currentTime+0.16);
+  gn.gain.setValueAtTime(0.9,AC.currentTime);
+  gn.gain.exponentialRampToValueAtTime(0.001,AC.currentTime+0.20);
+  o.connect(gn);gn.connect(master);o.start();o.stop(AC.currentTime+0.22);
+}
+var BASS=[82.4,82.4,110,82.4,123.5,110,98,82.4,146.8,110,82.4,98,123.5,110,98,65.4];
+function tick(dt){
+  if(!music)return;
+  seqT+=dt;
+  if(seqT>0.24){seqT-=0.24;
+    var bn=BASS[step%BASS.length];
+    note(bn,0.22,'sawtooth',0.42);
+    if(step%4===0)kick();
+    if(step%8===4)note(bn*2,0.12,'square',0.16);
+    // drive the tube's modes from the note's harmonic content
+    for(var n=1;n<=8;n++){
+      var hf=bn*n;
+      var w=Math.exp(-Math.abs(hf-f)/240)*0.8 + 0.25/n;
+      modeAmp[n]=Math.min(1.4,modeAmp[n]*0.35+w);
+    }
+    step++;
+  }
+  for(var n=1;n<=8;n++){modeAmp[n]*=Math.pow(0.30,dt);modePh[n]+=dt*(2.0+n*0.9);}
+}
+
+// ---------- UI ----------
+var fq=document.getElementById('fq'),fqv=document.getElementById('fqv');
+function setF(v){f=Math.max(60,Math.min(700,v));fq.value=f;fqv.textContent=f.toFixed(1)+' Hz';}
+fq.oninput=function(){setF(+fq.value)};
+var dv=document.getElementById('dv'),dvv=document.getElementById('dvv');
+dv.oninput=function(){drive=(+dv.value)/100;dvv.textContent=drive.toFixed(2);};
+var bA=document.getElementById('bA'),bM=document.getElementById('bM'),bS=document.getElementById('bS');
+bA.onclick=function(){timeAvg=!timeAvg;bA.className=timeAvg?'on':'';bA.textContent=timeAvg?'TIME-AVG':'INSTANT';};
+bS.onclick=function(){sweep=!sweep;bS.className=sweep?'on':'';};
+bM.onclick=function(){initAudio();if(AC&&AC.state==='suspended')AC.resume();
+  music=!music;bM.className=music?'on':'';bM.textContent=music?'♪ MUSIC ON':'♪ MUSIC (enable audio)';};
+addEventListener('keydown',function(e){
+  if(e.key==='ArrowLeft')setF(f-1); else if(e.key==='ArrowRight')setF(f+1);
+  else if(e.key==='a'||e.key==='A')bA.onclick();
+  else if(e.key>='1'&&e.key<='6')setF((+e.key)*CS/(2*L));
+});
+
+// ---------- flame rendering ----------
+function hash(i){var s=Math.sin(i*127.1+t*1.7)*43758.5453;return s-Math.floor(s);}
+function noise(i,ty){
+  return Math.sin(i*0.7+t*3.1+ty*0.8)*0.5+Math.sin(i*1.9-t*4.7+ty*1.6)*0.3+Math.sin(i*3.3+t*7.3)*0.2;
+}
+function drawFlames(x0,x1,ybase){
+  var w=(x1-x0)/NJ;
+  var maxH=Math.min(H*0.45,340);
+  g.save();
+  g.globalCompositeOperation='lighter';
+  for(var i=0;i<NJ;i++){
+    var a=jetAmp(i);
+    smooth[i]+=(a-smooth[i])*0.22;
+    var hgt=(0.10+smooth[i]*0.95)*maxH;
+    var cx=x0+(i+0.5)*w;
+    // layered flame: outer orange, inner yellow, core white-blue
+    var layers=[[w*1.35,'rgba(255,86,20,0.30)',1.00],
+                [w*0.95,'rgba(255,150,40,0.42)',0.82],
+                [w*0.60,'rgba(255,225,120,0.55)',0.55],
+                [w*0.34,'rgba(190,235,255,0.75)',0.26]];
+    for(var Lz=0;Lz<layers.length;Lz++){
+      var lw=layers[Lz][0],col=layers[Lz][1],fr=layers[Lz][2];
+      var hh=hgt*fr;
+      g.beginPath();
+      g.moveTo(cx-lw*0.5,ybase);
+      var SEG=9;
+      for(var s2=0;s2<=SEG;s2++){
+        var u=s2/SEG, y=ybase-hh*u;
+        var wob=noise(i*0.9+Lz*3.7,u*6)*lw*0.55*u*u;
+        var wid=lw*0.5*(1-u*u*0.92);
+        g.lineTo(cx-wid+wob,y);
+      }
+      for(var s3=SEG;s3>=0;s3--){
+        var u2=s3/SEG, y2=ybase-hh*u2;
+        var wob2=noise(i*0.9+Lz*3.7,u2*6)*lw*0.55*u2*u2;
+        var wid2=lw*0.5*(1-u2*u2*0.92);
+        g.lineTo(cx+wid2+wob2,y2);
+      }
+      g.closePath();
+      g.fillStyle=col;g.shadowColor=Lz<2?'#ff5c14':'#ffd27a';g.shadowBlur=Lz<2?18:8;
+      g.fill();
+    }
+  }
+  g.restore();
+  // heat shimmer above the row
+  g.save();g.globalCompositeOperation='lighter';
+  for(var k=0;k<26;k++){
+    var px=x0+((k*0.137+t*0.03)%1)*(x1-x0);
+    var py=ybase-maxH*(0.35+0.6*hash(k));
+    g.fillStyle='rgba(255,180,110,0.035)';
+    g.beginPath();g.arc(px,py,26+18*hash(k+9),0,7);g.fill();
+  }
+  g.restore();
+}
+function drawTube(x0,x1,ybase){
+  var h=26;
+  var grd=g.createLinearGradient(0,ybase,0,ybase+h);
+  grd.addColorStop(0,'#3a3f47');grd.addColorStop(.4,'#1a1d22');grd.addColorStop(1,'#0d0f12');
+  g.fillStyle=grd;g.fillRect(x0,ybase,x1-x0,h);
+  g.strokeStyle='#565d68';g.lineWidth=1.5;g.strokeRect(x0,ybase,x1-x0,h);
+  var w=(x1-x0)/NJ;
+  for(var i=0;i<NJ;i++){g.fillStyle='#000';g.beginPath();g.arc(x0+(i+0.5)*w,ybase+2,1.5,0,7);g.fill();}
+  // speaker
+  g.fillStyle='#161a20';g.fillRect(x0-46,ybase-16,42,h+32);
+  g.strokeStyle='#6a7480';g.strokeRect(x0-46,ybase-16,42,h+32);
+  var cone=6+6*Math.abs(Math.sin(2*Math.PI*Math.min(8,f/28)*t));
+  g.strokeStyle='#ffb46b';g.shadowColor='#ff8a3d';g.shadowBlur=12;g.lineWidth=2;
+  g.beginPath();g.ellipse(x0-25,ybase+h/2,cone,cone*1.5,0,0,7);g.stroke();g.shadowBlur=0;
+  g.fillStyle='#8a9099';g.font='10px monospace';g.fillText('SPEAKER',x0-48,ybase+h+30);
+  g.fillText('CLOSED END',x1-70,ybase+h+30);
+}
+function drawEnvelope(x0,x1,ybase){
+  var maxH=Math.min(H*0.45,340);
+  g.save();
+  g.beginPath();
+  for(var i=0;i<=200;i++){
+    var x=i/200*L, sx=x0+(i/200)*(x1-x0);
+    var a= music? fieldAmpMusic(x) : fieldAmp(x);
+    g.lineTo(sx,ybase-(0.10+a*0.95)*maxH);
+  }
+  g.setLineDash([5,5]);g.strokeStyle='rgba(127,214,255,.55)';g.lineWidth=1.4;
+  g.shadowColor='#7fd6ff';g.shadowBlur=8;g.stroke();g.shadowBlur=0;g.setLineDash([]);
+  g.fillStyle='rgba(127,214,255,.8)';g.font='10px monospace';
+  g.fillText('predicted |p(x)| envelope',x0+6,ybase-(0.10+1)*maxH-8);
+  g.restore();
+  // node markers
+  if(!music){
+    var n=modeN();
+    for(var k=0;k<n;k++){
+      var xn=(k+0.5)*L/n, sx=x0+xn/L*(x1-x0);
+      g.strokeStyle='rgba(120,160,220,.35)';g.setLineDash([2,6]);g.lineWidth=1;
+      g.beginPath();g.moveTo(sx,ybase);g.lineTo(sx,ybase-maxH);g.stroke();g.setLineDash([]);
+    }
+  }
+}
+// count humps directly from the rendered flame row (measurement, not assumption)
+function countHumps(){
+  var v=[];for(var i=0;i<NJ;i++)v.push(smooth[i]);
+  var mx=0;for(var i=0;i<NJ;i++)mx=Math.max(mx,v[i]);
+  if(mx<1e-4)return{n:0,sp:0};
+  var thr=mx*0.35, peaks=[];
+  for(var i=1;i<NJ-1;i++){
+    if(v[i]>thr && v[i]>=v[i-1] && v[i]>v[i+1]) peaks.push(i);
+  }
+  if(v[0]>thr && v[0]>v[1]) peaks.unshift(0);
+  if(v[NJ-1]>thr && v[NJ-1]>v[NJ-2]) peaks.push(NJ-1);
+  // merge near-duplicates
+  var m=[];for(var i=0;i<peaks.length;i++){if(!m.length||peaks[i]-m[m.length-1]>NJ/40)m.push(peaks[i]);}
+  var sp=0;
+  if(m.length>1){for(var i=1;i<m.length;i++)sp+=(m[i]-m[i-1]);sp=sp/(m.length-1)/NJ*L;}
+  return{n:m.length,sp:sp};
+}
+
+var last=performance.now();
+function frame(now){
+  var dt=Math.min(0.05,(now-last)/1000);last=now;t+=dt;
+  if(sweep)setF(f+dt*26>700?60:f+dt*26);
+  tick(dt);
+
+  g.fillStyle='#06040a';g.fillRect(0,0,W,H);
+  var gr=g.createRadialGradient(W/2,H*0.62,20,W/2,H*0.62,Math.max(W,H)*0.7);
+  gr.addColorStop(0,'rgba(60,18,4,.45)');gr.addColorStop(1,'rgba(6,4,10,0)');
+  g.fillStyle=gr;g.fillRect(0,0,W,H);
+
+  var x0=Math.max(120,W*0.10), x1=W-40, ybase=H*0.76;
+  drawFlames(x0,x1,ybase);
+  drawTube(x0,x1,ybase);
+  drawEnvelope(x0,x1,ybase);
+
+  var hh=countHumps();
+  var measLam = hh.sp>0 ? 2*hh.sp : 0;      // hump spacing = λ/2
+  var measC   = measLam*f;
+  var res=resonance();
+  document.getElementById('rd').innerHTML=
+   'mode n = 2L/λ = <b>'+modeReal().toFixed(2)+'</b> → nearest <b>'+modeN()+'</b>'+
+   '<br>resonance: '+(res>0.85?'<b style="color:#7dffb0">LOCKED</b>':'<span style="color:#ff6b8a">off ('+(res*100|0)+'%)</span>')+
+   '<br>humps counted in flames: <b>'+hh.n+'</b>'+
+   (music?'<br><span style="color:#7fd6ff">MUSIC: modes superposed — fast notes smear the pattern.</span>':'');
+  document.getElementById('tb').innerHTML=
+   '<tr><td>tube L</td><td><b>'+L.toFixed(2)+' m</b></td><td>drive f</td><td><b>'+f.toFixed(1)+' Hz</b></td></tr>'+
+   '<tr><td>λ predicted</td><td><b>'+lam().toFixed(3)+' m</b></td><td>λ/2</td><td><b>'+(lam()/2).toFixed(3)+' m</b></td></tr>'+
+   '<tr><td>hump spacing</td><td><b>'+(hh.sp?hh.sp.toFixed(3):'—')+' m</b></td><td>λ measured</td><td><b>'+(measLam?measLam.toFixed(3):'—')+' m</b></td></tr>'+
+   '<tr><td>c = λ·f</td><td><b style="color:#7dffb0">'+(measC?measC.toFixed(0):'—')+' m/s</b></td><td>c actual</td><td><b>343 m/s</b></td></tr>';
+  requestAnimationFrame(frame);
+}
+setF(171.5); // n = 1
+for(var i=0;i<NJ;i++)smooth[i]=0.3;
+requestAnimationFrame(frame);
+})();
+</script>

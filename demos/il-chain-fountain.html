@@ -83,7 +83,7 @@ layout();
 function dropPx(){return (floorY-rimY)*(+sD.value);}
 function reset(){
   layout();
-  pts.length=0;released=0;peakH=0;vAvg=0;
+  pts.length=0;released=0;peakH=0;vAvg=0;releaseAcc=0;
   // start: a short tail already over the rim so it begins moving
   for(var i=0;i<NLINK;i++){
     var x,y;
@@ -335,6 +335,7 @@ function frame(now){
 requestAnimationFrame(frame);
 
 // expose reduced model for verification
-window.__chain={dropPx:dropPx,measure:measure,setKick:function(v){KICK=v;reset();},reset:reset};
+window.__chain={dropPx:dropPx,measure:measure,step:step,reset:reset,
+  setKick:function(v){KICK=v;bKick.className=KICK?'on':'';bKick.textContent='KICK: '+(KICK?'ON':'OFF');reset();}};
 })();
 </script>

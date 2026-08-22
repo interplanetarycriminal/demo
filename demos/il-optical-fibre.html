@@ -64,8 +64,9 @@ var P0={x:0,y:0},P1={x:0,y:0},P2={x:0,y:0},P3={x:0,y:0},CORE=26;
 function layout(){
   P0={x:W*0.20,y:H*0.50};
   P3={x:W*0.95,y:H*0.50};
-  if(!P1.set){P1={x:W*0.45,y:H*0.28,set:true};}
-  if(!P2.set){P2={x:W*0.70,y:H*0.72,set:true};}
+  // control points start ON the axis: bend comes only from the slider / dragging
+  if(!P1.set){P1={x:W*0.45,y:H*0.50,set:true};}
+  if(!P2.set){P2={x:W*0.70,y:H*0.50,set:true};}
   CORE=Math.max(16,Math.min(34,H*0.045));
 }
 window.addEventListener('resize',resize);resize();

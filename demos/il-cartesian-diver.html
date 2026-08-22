@@ -53,14 +53,15 @@ dcB.onclick=function(){coupling=!coupling;dcB.className=coupling?'on':'';
 // ---- physics (SI-ish, water column of depth Dmax metres) ----
 var P0=101325, RHO_W=1000, G=9.81, DMAX=0.30;      // 30 cm bottle
 var Vshell=2.2e-6;                                  // rigid pipette shell volume m^3
-var Mshell=1.9e-3;                                  // shell mass kg (glass/plastic+water film)
-var st_={y:0.02, v:0, V0:0, P:P0};                  // y = depth (m), v = m/s
+var Mshell=2.92e-3;                                 // diver mass kg (shell + water it carries)
+var CQ=0.0693, CL=0.0006;                           // quadratic + linear drag coefficients
+var st_={y:0.02, v:0, V0:0, P:P0, rho:0, V:0, Vtot:0};  // y = depth (m), v = m/s (+ = up)
 
 function bubbleV0(){ return (+bs.value)*1e-8; }     // 0.3e-6 .. 1.5e-6 m^3 at P0
 function squeezePa(){
   var s = holding?1:(+sq.value)/100;
   if(holding) s=Math.max(s,(+sq.value)/100,0.55);
-  return s*(+st.value)/100*45000;                   // up to ~45 kPa gauge
+  return s*(+st.value)/100*70000;                   // up to ~140 kPa gauge
 }
 // Boyle: P*V = P0*V0  →  V = P0*V0/P
 function bubbleV(P,V0){ return P0*V0/P; }
@@ -79,11 +80,9 @@ function step(dt){
   st_.rho=rho; st_.V=V; st_.Vtot=Vtot;
   // F = (rho_w - rho_d) V g  - drag
   var Fb=(RHO_W-rho)*Vtot*G;
-  var m=Mshell;
-  var drag = 0.5*RHO_W*0.9*(Math.PI*0.007*0.007)*st_.v*Math.abs(st_.v);
-  var a=(Fb-drag)/m;
+  var drag = CQ*st_.v*Math.abs(st_.v) + CL*st_.v;
+  var a=(Fb-drag)/Mshell;
   st_.v += a*dt;
-  st_.v *= 0.985;
   st_.y -= st_.v*dt;               // buoyant force pushes UP → depth decreases
   if(st_.y<0.008){st_.y=0.008; if(st_.v>0)st_.v*=-0.25;}
   if(st_.y>DMAX-0.02){st_.y=DMAX-0.02; if(st_.v<0)st_.v*=-0.25;}
