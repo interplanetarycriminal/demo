@@ -1,0 +1,207 @@
+<title>Chladni Figures</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+html,body{margin:0;padding:0;background:#04060b;color:#dfe9ff;font:13px/1.45 ui-monospace,Menlo,Consolas,monospace;overflow:hidden}
+canvas{display:block;touch-action:none}
+#ui{position:fixed;top:10px;left:10px;width:min(340px,calc(100vw - 20px));max-height:45vh;overflow:auto;
+  background:rgba(6,10,20,.82);border:1px solid #1d2b48;border-radius:10px;padding:10px 12px;z-index:10;backdrop-filter:blur(6px)}
+#ui h1{font-size:15px;margin:0 0 4px;color:#8fd6ff;letter-spacing:.5px}
+#ui .mech{color:#9fb0cc;margin:0 0 8px;font-size:11.5px}
+.row{display:flex;justify-content:space-between;gap:8px;margin:2px 0}
+.k{color:#7d90b0}.v{color:#ffe08a;font-variant-numeric:tabular-nums}
+.readouts{background:#080e1c;border:1px solid #17233d;border-radius:7px;padding:6px 8px;margin:6px 0}
+label{display:block;margin:7px 0 0;font-size:11.5px;color:#9fb0cc}
+input[type=range]{width:100%;accent-color:#5fd0ff;margin:2px 0 0}
+.detail{margin-top:8px;border-top:1px solid #17233d;padding-top:6px;color:#8296b4;font-size:11px}
+.chip{display:inline-block;background:#0b1526;border:1px solid #24406b;color:#8fd6ff;border-radius:5px;padding:2px 6px;margin:4px 0;font-size:10.5px}
+button{background:#12203a;color:#bfe4ff;border:1px solid #2a4570;border-radius:6px;padding:4px 8px;font:inherit;font-size:11px;cursor:pointer}
+@media (max-width:640px){#ui{font-size:11px;max-height:38vh} #ui .detail{display:none}}
+</style>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>Chladni Figures</h1>
+  <p class="mech">A driven plate rings in one eigenmode; sand is shaken off the moving antinodes and piles on the silent nodal lines — the pattern <b>is</b> the mode's zero set.</p>
+  <div class="readouts">
+    <div class="row"><span class="k">drive f</span><span class="v" id="rF">—</span></div>
+    <div class="row"><span class="k">mode (m,n)</span><span class="v" id="rM">—</span></div>
+    <div class="row"><span class="k">resonance</span><span class="v" id="rR">—</span></div>
+    <div class="row"><span class="k">mean |A| at grains</span><span class="v" id="rA">—</span></div>
+    <div class="row"><span class="k">on nodal lines</span><span class="v" id="rN">—</span></div>
+  </div>
+  <canvas id="resp" width="316" height="56" style="width:100%;height:56px;border:1px solid #17233d;border-radius:6px;background:#070d18"></canvas>
+  <label>drive frequency <span id="lF" class="v"></span></label>
+  <input id="sF" type="range" min="0" max="1000" value="500">
+  <label>shake vigour</label>
+  <input id="sG" type="range" min="20" max="200" value="100">
+  <button id="btnAuto">auto-sweep: ON</button> <button id="btnScat">scatter</button>
+  <div class="chip">Model: ideal free-square modes cos·cos — real plates need Germain–Kirchhoff bending theory.</div>
+  <div class="detail">Ernst Chladni (1787) drew a violin bow down a sand-strewn brass plate and made sound visible. Napoleon set a prize for the mathematics; <b>Sophie Germain</b> won it in 1816 with the fourth-order plate equation. Lineage: Chladni's bow → Napoleon's prize → Germain 1816 → Kirchhoff → modern cymatics &amp; modal testing. Tap the plate to re-scatter the sand.</div>
+</div>
+<script>
+(function(){
+var c=document.getElementById('c'),g=c.getContext('2d');
+var resp=document.getElementById('resp'),rg=resp.getContext('2d');
+var W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
+  c.width=Math.round(W*DPR);c.height=Math.round(H*DPR);c.style.width=W+'px';c.style.height=H+'px';g.setTransform(DPR,0,0,DPR,0,0);}
+window.addEventListener('resize',resize);resize();
+
+// pre-rendered glow sprite
+var SP=document.createElement('canvas'),SS=16;SP.width=SP.height=SS;var sg=SP.getContext('2d');
+var grd=sg.createRadialGradient(SS/2,SS/2,0,SS/2,SS/2,SS/2);
+grd.addColorStop(0,'rgba(255,240,200,0.95)');grd.addColorStop(.35,'rgba(255,205,120,0.55)');
+grd.addColorStop(1,'rgba(255,160,60,0)');sg.fillStyle=grd;sg.fillRect(0,0,SS,SS);
+
+// modes sequence
+var MODES=[[1,2],[2,3],[3,5],[4,3],[2,6]];
+var seqI=0,morph=0,curM=1,curN=2,tgtM=2,tgtN=3;
+var N=3600,px=new Float32Array(N),py=new Float32Array(N);
+function scatter(){for(var i=0;i<N;i++){px[i]=Math.random();py[i]=Math.random();}}
+scatter();
+
+var auto=true,userF=0.5,vig=1.0,tSim=0;
+var sF=document.getElementById('sF'),sG=document.getElementById('sG');
+sF.addEventListener('input',function(){userF=sF.value/1000;auto=false;btnAuto.textContent='auto-sweep: OFF';});
+sG.addEventListener('input',function(){vig=sG.value/100;});
+var btnAuto=document.getElementById('btnAuto'),btnScat=document.getElementById('btnScat');
+btnAuto.addEventListener('click',function(){auto=!auto;btnAuto.textContent='auto-sweep: '+(auto?'ON':'OFF');});
+btnScat.addEventListener('click',scatter);
+
+// plate rect
+var PR={x:0,y:0,w:10,h:10};
+function layout(){var pad=Math.max(14,Math.min(W,H)*0.05);
+  var uiw=(W>760)?370:0; var avail=W-uiw-pad*2, availH=H-pad*2;
+  if(W<=760) availH=H-pad*2-Math.min(H*0.45,320)-8;
+  var s=Math.max(120,Math.min(avail,availH));
+  PR.w=PR.h=s; PR.x=uiw+pad+(avail-s)/2; PR.y=(W<=760)?(H-pad-s):(pad+(availH-s)/2);
+  if(PR.x<8)PR.x=8; if(PR.y<8)PR.y=8;}
+
+// amplitude of ideal square plate mode (Chladni superposition)
+function amp(x,y,m,n){
+  return Math.cos(m*Math.PI*x)*Math.cos(n*Math.PI*y)-Math.cos(n*Math.PI*x)*Math.cos(m*Math.PI*y);
+}
+function ampMorph(x,y){
+  var a=amp(x,y,curM,curN),b=amp(x,y,tgtM,tgtN);
+  return a*(1-morph)+b*morph;
+}
+// resonance: modal frequency ~ sqrt(m^2+n^2) normalised
+function modeF(m,n){return Math.sqrt(m*m+n*n)/Math.sqrt(41);}
+function driveF(){return auto?(0.18+0.62*(morphIdxF())):userF;}
+function morphIdxF(){var a=modeF(curM,curN),b=modeF(tgtM,tgtN);return (a*(1-morph)+b*morph-modeF(1,2))/(modeF(4,6)-modeF(1,2));}
+function resonanceQ(){ // 1 at resonance, →0 off
+  var f=driveF(), fm=(modeF(curM,curN)*(1-morph)+modeF(tgtM,tgtN)*morph);
+  var fn=(fm-modeF(1,2))/(modeF(4,6)-modeF(1,2));
+  var d=(f-fn)/0.085; return Math.exp(-d*d);
+}
+var meanA=1,onNode=0;
+
+function step(dt){
+  tSim+=dt;
+  if(auto){ morph+=dt*0.28; if(morph>=1){morph=0;curM=tgtM;curN=tgtN;seqI=(seqI+1)%MODES.length;tgtM=MODES[seqI][0];tgtN=MODES[seqI][1];} }
+  var Q=resonanceQ();
+  var base=0.0022*vig;
+  var sum=0,near=0;
+  for(var i=0;i<N;i++){
+    var x=px[i],y=py[i];
+    var a=ampMorph(x,y);
+    var aa=Math.abs(a);
+    sum+=aa;
+    if(aa<0.09)near++;
+    // step ~ |A|^2 on resonance ; off resonance everything jitters (re-scatter)
+    var s=base*(Q*(aa*aa*3.0)+(1-Q)*1.4)+0.00018;
+    x+=(Math.random()*2-1)*s*60*dt*10;
+    y+=(Math.random()*2-1)*s*60*dt*10;
+    if(x<0)x=-x; if(x>1)x=2-x; if(y<0)y=-y; if(y>1)y=2-y;
+    px[i]=x;py[i]=y;
+  }
+  meanA=sum/N; onNode=near/N;
+}
+
+function drawResp(){
+  var w=resp.width,h=resp.height;rg.clearRect(0,0,w,h);
+  rg.fillStyle='#070d18';rg.fillRect(0,0,w,h);
+  // peaks at each mode
+  rg.strokeStyle='#2a4570';rg.lineWidth=1;rg.beginPath();rg.moveTo(0,h-1);rg.lineTo(w,h-1);rg.stroke();
+  var pts=[];for(var k=0;k<MODES.length;k++){var m=MODES[k];pts.push((modeF(m[0],m[1])-modeF(1,2))/(modeF(4,6)-modeF(1,2)));}
+  rg.beginPath();
+  for(var x=0;x<=w;x++){var f=x/w,v=0;
+    for(var k2=0;k2<pts.length;k2++){var d=(f-pts[k2])/0.085;v=Math.max(v,Math.exp(-d*d));}
+    var yy=h-3-v*(h-8); if(x===0)rg.moveTo(x,yy);else rg.lineTo(x,yy);}
+  rg.strokeStyle='#5fd0ff';rg.lineWidth=1.4;rg.stroke();
+  for(var k3=0;k3<pts.length;k3++){var xx=pts[k3]*w;rg.fillStyle='#3a6ea8';rg.fillRect(xx-0.5,2,1,h-4);}
+  var fx=driveF()*w;
+  rg.fillStyle='#ffcf5c';rg.fillRect(fx-1,0,2,h);
+  rg.fillStyle='#7d90b0';rg.font='9px monospace';rg.fillText('response vs drive f',5,11);
+}
+
+function draw(){
+  layout();
+  g.fillStyle='#04060b';g.fillRect(0,0,W,H);
+  var x0=PR.x,y0=PR.y,S=PR.w;
+  // shimmer field
+  var Q=resonanceQ();
+  var cells=44,cw=S/cells;
+  g.globalCompositeOperation='lighter';
+  for(var i=0;i<cells;i++)for(var j=0;j<cells;j++){
+    var u=(i+0.5)/cells,v=(j+0.5)/cells;
+    var a=ampMorph(u,v)*Math.sin(tSim*7.0)*Q;
+    var m=Math.abs(a);
+    if(m<0.06)continue;
+    g.fillStyle=(a>0?'rgba(60,150,255,':'rgba(140,60,220,')+(m*0.16).toFixed(3)+')';
+    g.fillRect(x0+i*cw,y0+j*cw,cw+1,cw+1);
+  }
+  g.globalCompositeOperation='source-over';
+  // plate border
+  g.strokeStyle='#2a4570';g.lineWidth=2;g.strokeRect(x0-1,y0-1,S+2,S+2);
+  // nodal contour hint
+  g.globalCompositeOperation='lighter';
+  var sz=Math.max(4,S*0.016);
+  for(var k=0;k<N;k++){
+    g.drawImage(SP,x0+px[k]*S-sz/2,y0+py[k]*S-sz/2,sz,sz);
+  }
+  g.globalCompositeOperation='source-over';
+  // labels on chips
+  var lbl='mode ('+curM+','+curN+') → ('+tgtM+','+tgtN+')  '+(morph*100|0)+'%';
+  chip(x0+8,y0+8,lbl,'#8fd6ff');
+  chip(x0+8,y0+S-26,(Q>0.6?'ON RESONANCE — sand crystallising on nodes':'OFF RESONANCE — sand re-scattering'),Q>0.6?'#9dff9d':'#ff9d6b');
+  drawResp();
+  var f=driveF();
+  document.getElementById('rF').textContent=(0.6+f*7.4).toFixed(2)+' kHz';
+  document.getElementById('rM').textContent='('+curM+','+curN+')'+(auto?' →('+tgtM+','+tgtN+')':'');
+  document.getElementById('rR').textContent=(Q*100).toFixed(0)+'%';
+  document.getElementById('rA').textContent=meanA.toFixed(3);
+  document.getElementById('rN').textContent=(onNode*100).toFixed(1)+'%';
+  document.getElementById('lF').textContent=(0.6+f*7.4).toFixed(2)+' kHz';
+}
+function chip(x,y,txt,col){
+  g.font='11px ui-monospace,monospace';
+  var w=g.measureText(txt).width+12;
+  g.fillStyle='rgba(4,7,14,0.86)';g.strokeStyle='#22375c';g.lineWidth=1;
+  g.beginPath();g.rect(x,y,w,18);g.fill();g.stroke();
+  g.fillStyle=col;g.fillText(txt,x+6,y+13);
+}
+
+// pointer
+c.addEventListener('pointerdown',function(e){
+  c.setPointerCapture(e.pointerId);
+  var r=c.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
+  var u=(mx-PR.x)/PR.w,v=(my-PR.y)/PR.h;
+  for(var i=0;i<N;i++){
+    var d=Math.hypot(px[i]-u,py[i]-v);
+    if(d<0.28){var a=Math.random()*6.283,rr=0.02+Math.random()*0.18;
+      px[i]=Math.min(1,Math.max(0,u+Math.cos(a)*rr));py[i]=Math.min(1,Math.max(0,v+Math.sin(a)*rr));}
+  }
+});
+
+var last=performance.now(),acc=0;
+function frame(now){
+  var rdt=Math.min(0.45,(now-last)/1000);last=now;acc+=rdt;
+  var n=0;while(acc>=1/60&&n<40){step(1/60);acc-=1/60;n++;}
+  draw();requestAnimationFrame(frame);
+}
+// warm start so t=4s is mid-crystallising
+(function warm(){morph=0.0;for(var i=0;i<40;i++)step(1/60);})();
+requestAnimationFrame(frame);
+})();
+</script>

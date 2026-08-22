@@ -1,0 +1,324 @@
+<title>Worthington Jet</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+html,body{margin:0;padding:0;background:#04060b;color:#dfe9ff;font:13px/1.45 ui-monospace,Menlo,Consolas,monospace;overflow:hidden}
+canvas{display:block;touch-action:none}
+#ui{position:fixed;top:10px;left:10px;width:min(340px,calc(100vw - 20px));max-height:45vh;overflow:auto;
+  background:rgba(6,10,20,.84);border:1px solid #1d2b48;border-radius:10px;padding:10px 12px;z-index:10;backdrop-filter:blur(6px)}
+#ui h1{font-size:15px;margin:0 0 4px;color:#9fe8ff;letter-spacing:.5px}
+#ui .mech{color:#9fb0cc;margin:0 0 8px;font-size:11.5px}
+.row{display:flex;justify-content:space-between;gap:8px;margin:2px 0}
+.k{color:#7d90b0}.v{color:#ffe08a;font-variant-numeric:tabular-nums}
+.hot{color:#7dffb0}
+.readouts{background:#080e1c;border:1px solid #17233d;border-radius:7px;padding:6px 8px;margin:6px 0}
+label{display:block;margin:7px 0 0;font-size:11.5px;color:#9fb0cc}
+input[type=range]{width:100%;accent-color:#5fd0ff;margin:2px 0 0}
+.detail{margin-top:8px;border-top:1px solid #17233d;padding-top:6px;color:#8296b4;font-size:11px}
+.chip{display:inline-block;background:#0b1526;border:1px solid #24406b;color:#8fd6ff;border-radius:5px;padding:2px 6px;margin:4px 0;font-size:10.5px}
+button{background:#12203a;color:#bfe4ff;border:1px solid #2a4570;border-radius:6px;padding:4px 8px;font:inherit;font-size:11px;cursor:pointer}
+@media (max-width:640px){#ui{font-size:11px;max-height:38vh} #ui .detail{display:none}}
+</style>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>Worthington Jet</h1>
+  <p class="mech">The crater a drop digs collapses inward; all that converging water focuses on the axis and fires a thin jet <b>upward</b> — often higher than the drop fell — which then pinches off a satellite by Plateau–Rayleigh.</p>
+  <div class="readouts">
+    <div class="row"><span class="k">phase</span><span class="v" id="rP">—</span></div>
+    <div class="row"><span class="k">jet height / drop height</span><span class="v" id="rR">—</span></div>
+    <div class="row"><span class="k">jet width</span><span class="v" id="rW">—</span></div>
+    <div class="row"><span class="k">pinch-off in</span><span class="v" id="rC">—</span></div>
+    <div class="row"><span class="k">crater depth</span><span class="v" id="rD">—</span></div>
+  </div>
+  <label>drop height <span id="lH" class="v"></span></label>
+  <input id="sH" type="range" min="30" max="100" value="72">
+  <label>Bond number Bo (low = surface tension rules) <span id="lB" class="v"></span></label>
+  <input id="sB" type="range" min="15" max="300" value="60">
+  <label>slow-motion <span id="lS" class="v"></span></label>
+  <input id="sS" type="range" min="10" max="100" value="45">
+  <button id="btnG">strobe ghosts: ON</button>
+  <div class="chip">Model: axisymmetric toy — crater as a parabola with prescribed collapse, jet kinematics from geometric focusing. Not a Navier–Stokes solve.</div>
+  <div class="detail">A. M. Worthington photographed splashes by spark light from 1877 and published the plates as <i>A Study of Splashes</i> (1908). Lineage: Worthington's plates → Edgerton's strobes → cavity-collapse &amp; bubble-jet physics → inkjet printheads and needle-free injectors that ride the same focusing.</div>
+</div>
+<script>
+(function(){
+/*MODEL-START*/
+function jetModel(cyc,H,Bo){
+  // H: normalised drop height 0.3..1.0 ; Bo: Bond number 0.15..3
+  var v=Math.sqrt(H);
+  var Dmax=0.09+0.17*v;
+  var Rmax=Dmax*1.55;
+  var jetHmax=0.92*Math.pow(H,0.85)*Math.pow(1.6/(0.4+Bo),0.45);
+  var jetW=0.012+0.034*Bo/(1+0.5*Bo);
+  var s={t:cyc,phase:'fall',dropY:0,craterD:0,craterR:0,rim:0,jetH:0,jetW:jetW,
+         neck:1,sat:0,satY:0,jetHmax:jetHmax,Dmax:Dmax,Rmax:Rmax,ripple:0,live:0};
+  if(cyc<1.0){ s.phase='fall'; var f=cyc/1.0; s.dropY=-H*(1-f*f); s.live=1; }
+  else if(cyc<1.9){ s.phase='crater opens'; var a=(cyc-1.0)/0.9;
+    s.craterD=Dmax*Math.sin(a*Math.PI/2); s.craterR=Rmax*Math.pow(Math.sin(a*Math.PI/2),0.7);
+    s.rim=0.30*s.craterD; s.ripple=a; }
+  else if(cyc<2.7){ s.phase='crater collapses'; var b=(cyc-1.9)/0.8;
+    s.craterD=Dmax*Math.pow(1-b,1.35); s.craterR=Rmax*Math.pow(1-b,0.85);
+    s.rim=0.30*Dmax*(1-b); s.ripple=1+b; }
+  else if(cyc<3.9){ s.phase='JET RISES'; var d=(cyc-2.7)/1.2;
+    s.jetH=jetHmax*Math.sin(d*Math.PI/2);
+    s.craterD=0.05*Dmax*(1-d); s.ripple=2+d;
+    s.neck=d<0.72?1:Math.max(0.06,1-(d-0.72)/0.28*0.94);
+  }
+  else if(cyc<4.5){ s.phase='PINCH-OFF'; var e=(cyc-3.9)/0.6;
+    s.jetH=jetHmax*(1-0.55*e*e);
+    s.neck=e<0.25?Math.max(0.02,0.06-e*0.2):0;
+    s.sat=1; s.satY=jetHmax+0.10*Math.sin(Math.min(1,e*2.2)*Math.PI*0.5)-0.02;
+    s.ripple=3+e;
+  }
+  else { s.phase='fall-back'; var q=(cyc-4.5)/1.5;
+    s.jetH=jetHmax*0.45*Math.pow(1-q,1.6);
+    s.sat=q<0.85?1:0; s.satY=Math.max(0,jetHmax+0.10-2.2*q*q);
+    s.ripple=4+q;
+  }
+  s.ratio=jetHmax/H;
+  return s;
+}
+var PINCH_T=3.94, CYCLE=6.0;
+/*MODEL-END*/
+
+var c=document.getElementById('c'),g=c.getContext('2d');
+var W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
+  c.width=Math.round(W*DPR);c.height=Math.round(H*DPR);c.style.width=W+'px';c.style.height=H+'px';g.setTransform(DPR,0,0,DPR,0,0);}
+window.addEventListener('resize',resize);resize();
+
+var SP=document.createElement('canvas'),SS=32;SP.width=SP.height=SS;var sg=SP.getContext('2d');
+var gr=sg.createRadialGradient(SS/2,SS/2,0,SS/2,SS/2,SS/2);
+gr.addColorStop(0,'rgba(235,250,255,0.98)');gr.addColorStop(.3,'rgba(140,225,255,0.6)');
+gr.addColorStop(1,'rgba(60,150,255,0)');sg.fillStyle=gr;sg.fillRect(0,0,SS,SS);
+
+var dropH=0.72,Bo=0.60,slow=0.45,ghosts=true;
+var sH=document.getElementById('sH'),sB=document.getElementById('sB'),sS=document.getElementById('sS');
+sH.addEventListener('input',function(){dropH=sH.value/100;});
+sB.addEventListener('input',function(){Bo=sB.value/100;});
+sS.addEventListener('input',function(){slow=sS.value/100;});
+var btnG=document.getElementById('btnG');
+btnG.addEventListener('click',function(){ghosts=!ghosts;btnG.textContent='strobe ghosts: '+(ghosts?'ON':'OFF');});
+
+// start phase so wall-clock t=4s lands on the jet at full height
+var simT=PINCH_T-0.09-0.45*4.0; if(simT<0)simT+=CYCLE;
+var trail=[],trailAcc=0;
+
+var ST={x:0,y:0,w:10,h:10,surf:0,unit:1};
+function layout(){
+  var pad=12,uiw=(W>760)?362:0;
+  var stripH=Math.min(96,Math.max(64,H*0.15));
+  ST.x=Math.max(8,uiw+pad); ST.y=8;
+  ST.w=Math.max(140,W-ST.x-10); ST.h=Math.max(160,H-stripH-24);
+  if(W<=760){ST.x=8;ST.w=W-16;ST.y=Math.min(H*0.45,300)+16;ST.h=Math.max(140,H-ST.y-stripH-18);}
+  ST.surf=ST.y+ST.h*0.62;
+  ST.unit=Math.min(ST.h*0.56,ST.w*0.42);
+  ST.stripH=stripH;
+}
+
+function pool(x0,y0,w,h,surf){
+  var lg=g.createLinearGradient(0,surf,0,y0+h);
+  lg.addColorStop(0,'#0d2a44');lg.addColorStop(1,'#050c18');
+  g.fillStyle=lg;g.fillRect(x0,surf,w,y0+h-surf);
+  var sk=g.createLinearGradient(0,y0,0,surf);
+  sk.addColorStop(0,'#05070e');sk.addColorStop(1,'#081426');
+  g.fillStyle=sk;g.fillRect(x0,y0,w,surf-y0);
+}
+
+function drawSurface(s,cx,U,surf,x0,w){
+  // water surface with crater carved at axis + travelling ripples
+  g.beginPath();
+  var steps=90;
+  g.moveTo(x0,surf+40);
+  for(var i=0;i<=steps;i++){
+    var x=x0+w*i/steps;
+    var dx=(x-cx)/U;
+    var y=surf;
+    var R=s.craterR;
+    if(R>0.001&&Math.abs(dx)<R){ var q=dx/R; y=surf+U*s.craterD*(1-q*q); }
+    else if(R>0.001&&Math.abs(dx)<R*1.5){ var t2=(Math.abs(dx)-R)/(R*0.5); y=surf-U*s.rim*(1-t2)*(1-t2); }
+    var rr=Math.abs(dx)-s.ripple*0.30;
+    y-=U*0.012*Math.exp(-rr*rr*7)*Math.cos(rr*22)*(s.ripple>0?1:0);
+    g.lineTo(x,y);
+  }
+  g.lineTo(x0+w,surf+40);g.closePath();
+  var lg=g.createLinearGradient(0,surf-U*0.2,0,surf+U*0.4);
+  lg.addColorStop(0,'#1a4e7a');lg.addColorStop(1,'#0a2036');
+  g.fillStyle=lg;g.fill();
+  g.strokeStyle='rgba(140,220,255,0.75)';g.lineWidth=1.4;
+  g.beginPath();
+  for(var i2=0;i2<=steps;i2++){
+    var x=x0+w*i2/steps,dx=(x-cx)/U,y=surf,R=s.craterR;
+    if(R>0.001&&Math.abs(dx)<R){var q=dx/R;y=surf+U*s.craterD*(1-q*q);}
+    else if(R>0.001&&Math.abs(dx)<R*1.5){var t2=(Math.abs(dx)-R)/(R*0.5);y=surf-U*s.rim*(1-t2)*(1-t2);}
+    var rr=Math.abs(dx)-s.ripple*0.30;
+    y-=U*0.012*Math.exp(-rr*rr*7)*Math.cos(rr*22)*(s.ripple>0?1:0);
+    if(i2===0)g.moveTo(x,y);else g.lineTo(x,y);
+  }
+  g.stroke();
+}
+
+function jetPath(s,cx,U,surf,alpha,col){
+  if(s.jetH<=0.002)return;
+  var hh=s.jetH*U, w0=s.jetW*U;
+  g.beginPath();
+  var n=26;
+  for(var i=0;i<=n;i++){
+    var f=i/n, y=surf-hh*f;
+    var taper=Math.pow(1-f*0.72,0.9);
+    var neck=1;
+    if(s.neck<1){ var nf=Math.exp(-Math.pow((f-0.80)/0.10,2)); neck=1-(1-s.neck)*nf; }
+    var wid=w0*(1.9*Math.pow(1-f,1.6)+0.55)*taper*neck;
+    if(f>0.94)wid=w0*0.95*Math.sqrt(Math.max(0.02,1-(f-0.94)/0.06*0.6));
+    g.lineTo(cx-wid,y);
+  }
+  for(var j=n;j>=0;j--){
+    var f2=j/n,y2=surf-hh*f2;
+    var taper2=Math.pow(1-f2*0.72,0.9);
+    var neck2=1;
+    if(s.neck<1){var nf2=Math.exp(-Math.pow((f2-0.80)/0.10,2));neck2=1-(1-s.neck)*nf2;}
+    var wid2=w0*(1.9*Math.pow(1-f2,1.6)+0.55)*taper2*neck2;
+    if(f2>0.94)wid2=w0*0.95*Math.sqrt(Math.max(0.02,1-(f2-0.94)/0.06*0.6));
+    g.lineTo(cx+wid2,y2);
+  }
+  g.closePath();
+  g.globalAlpha=alpha;g.fillStyle=col;g.fill();
+  g.globalAlpha=1;
+}
+
+function chip(x,y,txt,col){
+  g.font='11px ui-monospace,monospace';
+  var w=g.measureText(txt).width+12;
+  x=Math.max(ST.x+6,Math.min(x,ST.x+ST.w-w-6));
+  g.fillStyle='rgba(4,7,14,0.88)';g.strokeStyle='#22375c';g.lineWidth=1;
+  g.beginPath();g.rect(x,y,w,18);g.fill();g.stroke();
+  g.fillStyle=col;g.fillText(txt,x+6,y+13);
+  return w;
+}
+
+function miniFrame(x,y,w,h,which,active){
+  g.save();g.beginPath();g.rect(x,y,w,h);g.clip();
+  g.fillStyle=active?'#0b1a2e':'#070d18';g.fillRect(x,y,w,h);
+  var cx=x+w/2,surf=y+h*0.60,U=h*0.42;
+  var st=[jetModel(1.02,0.72,0.6),jetModel(1.85,0.72,0.6),jetModel(2.35,0.72,0.6),jetModel(3.88,0.72,0.6),jetModel(4.10,0.72,0.6)][which];
+  g.fillStyle='#0a2036';g.fillRect(x,surf,w,y+h-surf);
+  g.strokeStyle=active?'#8fd6ff':'#3a5478';g.lineWidth=1.2;
+  g.beginPath();
+  for(var i=0;i<=30;i++){var px=x+w*i/30,dx=(px-cx)/U,yy=surf,R=st.craterR;
+    if(R>0.001&&Math.abs(dx)<R){var q=dx/R;yy=surf+U*st.craterD*(1-q*q);}
+    else if(R>0.001&&Math.abs(dx)<R*1.5){var t2=(Math.abs(dx)-R)/(R*0.5);yy=surf-U*st.rim*(1-t2)*(1-t2);}
+    if(i===0)g.moveTo(px,yy);else g.lineTo(px,yy);}
+  g.stroke();
+  if(which===0){g.globalCompositeOperation='lighter';g.drawImage(SP,cx-5,surf-U*0.42-5,10,10);g.globalCompositeOperation='source-over';}
+  if(st.jetH>0.002){g.fillStyle=active?'#bfe9ff':'#5f86ad';
+    var jh=st.jetH*U,jw=Math.max(1.2,st.jetW*U*1.1);
+    g.beginPath();g.moveTo(cx-jw*1.6,surf);g.lineTo(cx-jw*0.4,surf-jh);g.lineTo(cx+jw*0.4,surf-jh);g.lineTo(cx+jw*1.6,surf);g.closePath();g.fill();}
+  if(st.sat){g.fillStyle=active?'#eaf7ff':'#6f96bd';g.beginPath();g.arc(cx,surf-st.satY*U,Math.max(1.6,U*0.05),0,6.283);g.fill();}
+  g.restore();
+  g.strokeStyle=active?'#3f6fa8':'#1d2b48';g.lineWidth=1;g.strokeRect(x+.5,y+.5,w-1,h-1);
+  g.fillStyle=active?'#bfe4ff':'#6d81a0';g.font='9.5px ui-monospace,monospace';
+  var names=['impact','crater','collapse','jet','pinch'];
+  g.fillText(names[which],x+5,y+h-5);
+}
+
+function draw(){
+  layout();
+  g.fillStyle='#04060b';g.fillRect(0,0,W,H);
+  var cyc=simT%CYCLE, s=jetModel(cyc,dropH,Bo);
+  var cx=ST.x+ST.w/2,U=ST.unit,surf=ST.surf;
+  pool(ST.x,ST.y,ST.w,ST.h,surf);
+  // reference line: drop release height
+  g.strokeStyle='rgba(255,208,120,0.35)';g.setLineDash([5,5]);g.lineWidth=1;
+  g.beginPath();g.moveTo(ST.x+8,surf-dropH*U);g.lineTo(ST.x+ST.w-8,surf-dropH*U);g.stroke();g.setLineDash([]);
+  chip(ST.x+ST.w-190,surf-dropH*U-22,'drop released from here','#ffd27a');
+
+  // ghost strobe of earlier jets
+  if(ghosts){
+    for(var i=0;i<trail.length;i++){
+      var t=trail[i],a=0.05+0.16*(i/Math.max(1,trail.length-1));
+      jetPath(t,cx,U,surf,a,'#7fd8ff');
+      if(t.sat){g.globalAlpha=a*1.2;g.fillStyle='#bfe9ff';g.beginPath();g.arc(cx,surf-t.satY*U,U*0.030,0,6.283);g.fill();g.globalAlpha=1;}
+    }
+  }
+  drawSurface(s,cx,U,surf,ST.x,ST.w);
+  // jet
+  g.globalCompositeOperation='lighter';
+  jetPath(s,cx,U,surf,0.35,'#2f8fd0');
+  g.globalCompositeOperation='source-over';
+  jetPath(s,cx,U,surf,0.95,'#cfeeff');
+  // tip bead
+  if(s.jetH>0.02&&!s.sat){
+    g.globalCompositeOperation='lighter';
+    var tb=U*(0.030+s.jetW*0.9);
+    g.drawImage(SP,cx-tb*2.1,surf-s.jetH*U-tb*2.1,tb*4.2,tb*4.2);
+    g.globalCompositeOperation='source-over';
+    g.fillStyle='#eaf9ff';g.beginPath();g.arc(cx,surf-s.jetH*U,tb,0,6.283);g.fill();
+  }
+  // satellite droplet
+  if(s.sat){
+    var sy=surf-s.satY*U,sr=U*0.033;
+    g.globalCompositeOperation='lighter';g.drawImage(SP,cx-sr*3,sy-sr*3,sr*6,sr*6);g.globalCompositeOperation='source-over';
+    g.fillStyle='#f2fbff';g.beginPath();g.arc(cx,sy,sr,0,6.283);g.fill();
+    chip(cx+sr+10,sy-9,'satellite: Plateau–Rayleigh pinch','#7dffb0');
+  }
+  // falling drop
+  if(s.phase==='fall'){
+    var dy=surf+s.dropY*U,dr=U*0.035;
+    g.globalCompositeOperation='lighter';g.drawImage(SP,cx-dr*3,dy-dr*3,dr*6,dr*6);g.globalCompositeOperation='source-over';
+    g.fillStyle='#eaf9ff';g.beginPath();g.arc(cx,dy,dr,0,6.283);g.fill();
+  }
+  // axis + height gauge
+  g.strokeStyle='rgba(120,170,220,0.18)';g.setLineDash([3,6]);g.beginPath();
+  g.moveTo(cx,ST.y+8);g.lineTo(cx,ST.y+ST.h-8);g.stroke();g.setLineDash([]);
+  if(s.jetH>0.02){
+    var jy=surf-s.jetH*U;
+    g.strokeStyle='#7dffb0';g.lineWidth=1.2;g.beginPath();
+    g.moveTo(cx+U*0.16,jy);g.lineTo(cx+U*0.30,jy);g.stroke();
+    chip(cx+U*0.32,jy-9,'jet '+(s.jetH/dropH).toFixed(2)+'× drop height',s.jetH>=dropH?'#7dffb0':'#ffd27a');
+  }
+  chip(ST.x+8,ST.y+8,'phase: '+s.phase,'#8fd6ff');
+  if(s.ratio>1)chip(ST.x+8,ST.y+30,'the pool throws it back harder than it fell','#7dffb0');
+
+  // sequence strip
+  var sy0=ST.y+ST.h+8,sh=ST.stripH-4,pad=6;
+  var sx0=ST.x,sw=ST.w;
+  var fw=(sw-pad*4)/5;
+  var act=[cyc<1.15,cyc>=1.15&&cyc<1.95,cyc>=1.95&&cyc<2.7,cyc>=2.7&&cyc<3.9,cyc>=3.9];
+  for(var k=0;k<5;k++)miniFrame(sx0+k*(fw+pad),sy0,fw,sh-2,k,act[k]);
+
+  document.getElementById('rP').textContent=s.phase;
+  var rEl=document.getElementById('rR');
+  rEl.textContent=s.ratio.toFixed(2)+'×'+(s.ratio>1?'  ↑ higher than it fell':'');
+  rEl.className=s.ratio>1?'v hot':'v';
+  document.getElementById('rW').textContent=(s.jetW*100).toFixed(1)+' % depth-unit';
+  var toP=(PINCH_T-cyc+CYCLE)%CYCLE;
+  document.getElementById('rC').textContent=toP.toFixed(2)+' s (sim)';
+  document.getElementById('rD').textContent=(s.craterD*100).toFixed(1)+' units';
+  document.getElementById('lH').textContent=dropH.toFixed(2);
+  document.getElementById('lB').textContent=Bo.toFixed(2);
+  document.getElementById('lS').textContent=slow.toFixed(2)+'×';
+}
+
+c.addEventListener('pointerdown',function(e){
+  c.setPointerCapture(e.pointerId);
+  simT=1.0-0.001; trail.length=0;   // retrigger a splash
+});
+
+function step(dt){
+  simT+=dt*slow;
+  trailAcc+=dt*slow;
+  if(trailAcc>0.075){trailAcc=0;
+    var st=jetModel(simT%CYCLE,dropH,Bo);
+    if(st.jetH>0.02||st.sat){trail.push(st);if(trail.length>7)trail.shift();}
+    else if(trail.length&&(simT%CYCLE)<1.0)trail.length=0;
+  }
+}
+var last=performance.now(),acc=0;
+function frame(now){
+  var rdt=Math.min(0.45,(now-last)/1000);last=now;acc+=rdt;
+  var n=0;while(acc>=1/60&&n<40){step(1/60);acc-=1/60;n++;}
+  draw();requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+})();
+</script>

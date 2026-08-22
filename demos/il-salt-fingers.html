@@ -1,0 +1,233 @@
+<title>Salt Fingers</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+html,body{margin:0;padding:0;background:#04060b;color:#dfe9ff;font:13px/1.45 ui-monospace,Menlo,Consolas,monospace;overflow:hidden}
+canvas{display:block;touch-action:none}
+#ui{position:fixed;top:10px;left:10px;width:min(340px,calc(100vw - 20px));max-height:45vh;overflow:auto;
+  background:rgba(6,10,20,.84);border:1px solid #1d2b48;border-radius:10px;padding:10px 12px;z-index:10;backdrop-filter:blur(6px)}
+#ui h1{font-size:15px;margin:0 0 4px;color:#ffd27a;letter-spacing:.5px}
+#ui .mech{color:#9fb0cc;margin:0 0 8px;font-size:11.5px}
+.row{display:flex;justify-content:space-between;gap:8px;margin:2px 0}
+.k{color:#7d90b0}.v{color:#7fe8ff;font-variant-numeric:tabular-nums}
+.readouts{background:#080e1c;border:1px solid #17233d;border-radius:7px;padding:6px 8px;margin:6px 0}
+label{display:block;margin:7px 0 0;font-size:11.5px;color:#9fb0cc}
+input[type=range]{width:100%;accent-color:#ffcf5c;margin:2px 0 0}
+.detail{margin-top:8px;border-top:1px solid #17233d;padding-top:6px;color:#8296b4;font-size:11px}
+.chip{display:inline-block;background:#0b1526;border:1px solid #24406b;color:#8fd6ff;border-radius:5px;padding:2px 6px;margin:4px 0;font-size:10.5px}
+button{background:#12203a;color:#bfe4ff;border:1px solid #2a4570;border-radius:6px;padding:4px 8px;font:inherit;font-size:11px;cursor:pointer}
+@media (max-width:640px){#ui{font-size:11px;max-height:38vh} #ui .detail{display:none}}
+</style>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>Salt Fingers</h1>
+  <p class="mech">Warm-salty over cold-fresh is stable in bulk — but heat diffuses ~100× faster than salt, so a parcel nudged down loses its heat, keeps its salt, turns heavy, and keeps sinking.</p>
+  <div class="readouts">
+    <div class="row"><span class="k">finger width</span><span class="v" id="rW">—</span></div>
+    <div class="row"><span class="k">growth rate σ</span><span class="v" id="rG">—</span></div>
+    <div class="row"><span class="k">flux ratio γ</span><span class="v" id="rX">—</span></div>
+    <div class="row"><span class="k">Δρ across front</span><span class="v" id="rD">—</span></div>
+    <div class="row"><span class="k">regime</span><span class="v" id="rR">—</span></div>
+  </div>
+  <label>diffusivity ratio τ = κ<sub>S</sub>/κ<sub>T</sub> = <span id="lT" class="v"></span></label>
+  <input id="sT" type="range" min="1" max="100" value="8">
+  <label>density ratio R<sub>ρ</sub> = αΔT/βΔS = <span id="lR" class="v"></span></label>
+  <input id="sR" type="range" min="105" max="400" value="160">
+  <button id="btnR">restart</button>
+  <div class="chip">Model: coarse 2-D Boussinesq advection–diffusion of T &amp; S on a 120×80 grid with a vorticity-free buoyancy-drag velocity closure — a cartoon of finger convection, not DNS.</div>
+  <div class="detail">Jevons (1857) noticed the curiosity; <b>Melvin Stern (1960)</b> named the "oceanographic perpetual salt fountain" and gave the instability its theory. Lineage: Jevons 1857 → Stern 1960 → thermohaline staircases in the Mediterranean outflow &amp; Tyrrhenian Sea → C–O semiconvective staircases in stars. Push τ→1 and the fingers die: equal diffusivities, no engine.</div>
+</div>
+<script>
+(function(){
+var c=document.getElementById('c'),g=c.getContext('2d');
+var W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
+  c.width=Math.round(W*DPR);c.height=Math.round(H*DPR);c.style.width=W+'px';c.style.height=H+'px';g.setTransform(DPR,0,0,DPR,0,0);}
+window.addEventListener('resize',resize);resize();
+
+var NX=120,NY=80,NC=NX*NY;
+var T=new Float32Array(NC),S=new Float32Array(NC),Tn=new Float32Array(NC),Sn=new Float32Array(NC),V=new Float32Array(NC);
+var tau=0.08,Rrho=1.6,tSim=0;
+function idx(i,j){return j*NX+i;}
+function init(){
+  tSim=0;
+  for(var j=0;j<NY;j++)for(var i=0;i<NX;i++){
+    var y=j/(NY-1); // 0 top (warm salty), 1 bottom (cold fresh)
+    var pr=0.5+0.5*Math.tanh((0.5-y)*9.0);
+    var n=(Math.random()-0.5)*0.02+0.02*Math.sin(i*0.9)*Math.exp(-Math.pow((y-0.5)*8,2));
+    T[idx(i,j)]=pr+n;         // warm=1 top
+    S[idx(i,j)]=pr+n*1.02;    // salty=1 top
+  }
+  V.fill(0);
+}
+init();
+
+// buoyancy: b = beta*S - alpha*T (heavy positive). Rrho = alpha dT / beta dS
+function stepSim(dt){
+  tSim+=dt;
+  var alpha=Rrho, beta=1.0;
+  var kT=0.85, kS=0.85*tau;
+  // velocity closure: vertical velocity relaxes toward buoyancy forcing (drag-limited plume)
+  for(var j=1;j<NY-1;j++)for(var i=0;i<NX;i++){
+    var k=idx(i,j);
+    var b=beta*S[k]-alpha*T[k];
+    // horizontal-mean removal so only the finger anomaly drives flow
+    V[k]+= (b*46.0 - V[k]*3.2)*dt;
+  }
+  // remove row-mean vertical velocity (incompressibility, crudely)
+  for(var j2=0;j2<NY;j2++){var s=0;for(var i2=0;i2<NX;i2++)s+=V[idx(i2,j2)];s/=NX;
+    for(var i3=0;i3<NX;i3++)V[idx(i3,j2)]-=s;}
+  // advect (upwind) + diffuse
+  var dy=1.0/NY, cflT, cflS;
+  for(var j3=0;j3<NY;j3++)for(var i4=0;i4<NX;i4++){
+    var k=idx(i4,j3);
+    var im=idx((i4-1+NX)%NX,j3),ip=idx((i4+1)%NX,j3);
+    var jm=idx(i4,Math.max(0,j3-1)),jp=idx(i4,Math.min(NY-1,j3+1));
+    var lapT=(T[im]+T[ip]+T[jm]+T[jp]-4*T[k]);
+    var lapS=(S[im]+S[ip]+S[jm]+S[jp]-4*S[k]);
+    var w=V[k];
+    var upT=(w>0)?(T[k]-T[jm]):(T[jp]-T[k]);
+    var upS=(w>0)?(S[k]-S[jm]):(S[jp]-S[k]);
+    Tn[k]=T[k]+dt*(kT*lapT - w*upT*0.9);
+    Sn[k]=S[k]+dt*(kS*lapS - w*upS*0.9);
+    if(Tn[k]<-0.4)Tn[k]=-0.4; if(Tn[k]>1.4)Tn[k]=1.4;
+    if(Sn[k]<-0.4)Sn[k]=-0.4; if(Sn[k]>1.4)Sn[k]=1.4;
+  }
+  // clamp reservoirs top & bottom
+  for(var i5=0;i5<NX;i5++){
+    for(var jj=0;jj<3;jj++){Tn[idx(i5,jj)]=1;Sn[idx(i5,jj)]=1;}
+    for(var jj2=NY-3;jj2<NY;jj2++){Tn[idx(i5,jj2)]=0;Sn[idx(i5,jj2)]=0;}
+  }
+  T.set(Tn);S.set(Sn);
+}
+
+// diagnostics
+var fw=0,growth=0,fluxR=0,prevAmp=0.02;
+function diagnose(){
+  var j=Math.floor(NY*0.5),cross=0,prev=0,amp=0,fT=0,fS=0;
+  for(var i=0;i<NX;i++){
+    var k=idx(i,j);var v=V[k];
+    if(i>0&&((v>0)!==(prev>0)))cross++;
+    prev=v;amp+=Math.abs(v);
+    fT+=v*(T[k]-0.5);fS+=v*(S[k]-0.5);
+  }
+  amp/=NX;
+  fw=cross>1?(NX/cross)*(1.0/NX)*100:100; // % of tank width
+  growth=Math.max(0,(amp-prevAmp)/Math.max(1e-4,prevAmp))*60;
+  prevAmp=prevAmp*0.94+amp*0.06;
+  fluxR=Math.abs(fS)>1e-6?Math.abs(Rrho*fT/fS):0;
+}
+
+var img=null,idata=null;
+function ensureImg(w,h){if(!img||img.width!==w||img.height!==h){img=document.createElement('canvas');img.width=w;img.height=h;idata=img.getContext('2d').createImageData(w,h);}}
+
+var TANK={x:0,y:0,w:10,h:10};
+function layout(){
+  var pad=14, uiw=(W>760)?370:0;
+  var insetW=(W>760)?Math.min(230,W*0.2):0;
+  var availW=W-uiw-insetW-pad*3, availH=H-pad*2;
+  if(W<=760){availH=H-pad*2-Math.min(H*0.45,300)-8;availW=W-pad*2;}
+  TANK.w=Math.max(120,availW);TANK.h=Math.max(120,availH);
+  TANK.x=uiw+pad;TANK.y=(W<=760)?(H-pad-TANK.h):pad;
+  if(TANK.x<8)TANK.x=8;if(TANK.y<8)TANK.y=8;
+}
+
+function draw(){
+  layout();
+  g.fillStyle='#04060b';g.fillRect(0,0,W,H);
+  ensureImg(NX,NY);
+  var d=idata.data;
+  for(var j=0;j<NY;j++)for(var i=0;i<NX;i++){
+    var k=idx(i,j),o=k*4;
+    var s=Math.max(0,Math.min(1,S[k])),t=Math.max(0,Math.min(1,T[k]));
+    // salinity gold, temperature cyan; anomaly S-T lights up fingers
+    var an=Math.max(0,Math.min(1,(s-t)*3.2+0.5));
+    var v=Math.abs(V[k])*0.9;
+    var r=s*205*0.9 + an*70 + v*90;
+    var gg=s*150*0.8 + t*95 + v*80;
+    var b=t*225*0.95 + (1-an)*40 + v*70;
+    d[o]=Math.min(255,r*0.9+14);d[o+1]=Math.min(255,gg*0.9+16);d[o+2]=Math.min(255,b*0.9+26);d[o+3]=255;
+  }
+  img.getContext('2d').putImageData(idata,0,0);
+  g.imageSmoothingEnabled=true;
+  g.drawImage(img,TANK.x,TANK.y,TANK.w,TANK.h);
+  g.strokeStyle='#2a4570';g.lineWidth=2;g.strokeRect(TANK.x-1,TANK.y-1,TANK.w+2,TANK.h+2);
+
+  diagnose();
+  chip(TANK.x+8,TANK.y+8,'warm + salty (light by heat, heavy by salt)','#ffd27a');
+  chip(TANK.x+8,TANK.y+TANK.h-26,'cold + fresh','#7fe8ff');
+  var alive=tau<0.55;
+  chip(TANK.x+8,TANK.y+TANK.h/2-9,alive?'FINGERS: heat leaks sideways, salt does not':'τ→1: equal diffusion, fingers dead','#dfe9ff');
+
+  // inset staircase
+  if(W>760){
+    var iw=Math.min(216,W*0.19),ih=Math.min(250,H*0.42);
+    var ix=W-iw-14, iy=14;
+    g.fillStyle='rgba(6,10,20,0.9)';g.strokeStyle='#1d2b48';g.lineWidth=1;
+    g.beginPath();g.rect(ix,iy,iw,ih);g.fill();g.stroke();
+    g.fillStyle='#9fb0cc';g.font='10px ui-monospace,monospace';
+    g.fillText('ocean staircase  T,S vs depth',ix+8,iy+14);
+    var px0=ix+12,py0=iy+26,pw=iw-38,ph=ih-42;
+    g.strokeStyle='#22375c';g.strokeRect(px0,py0,pw,ph);
+    var steps=6;
+    for(var q=0;q<2;q++){
+      g.beginPath();
+      for(var st=0;st<=steps*2;st++){
+        var f=st/(steps*2);
+        var lev=Math.floor(f*steps)/steps;
+        var mix=(f*steps)%1;
+        var val=1-(lev+(mix>0.72?(mix-0.72)/0.28/steps:0));
+        var xx=px0+ (q===0? val*pw*0.44+pw*0.06 : val*pw*0.44+pw*0.5);
+        var yy=py0+f*ph;
+        if(st===0)g.moveTo(xx,yy);else g.lineTo(xx,yy);
+      }
+      g.strokeStyle=q===0?'#7fe8ff':'#ffd27a';g.lineWidth=1.6;g.stroke();
+    }
+    g.fillStyle='#7fe8ff';g.fillText('T',px0+pw*0.20,py0+ph+13);
+    g.fillStyle='#ffd27a';g.fillText('S',px0+pw*0.66,py0+ph+13);
+    g.fillStyle='#7d90b0';g.fillText('mixed layers',ix+8,iy+ih-6);
+  }
+
+  document.getElementById('rW').textContent=fw.toFixed(1)+' % tank';
+  document.getElementById('rG').textContent=growth.toFixed(2)+' /s';
+  document.getElementById('rX').textContent=fluxR.toFixed(2);
+  document.getElementById('rD').textContent=(Rrho-1).toFixed(2)+' (Rρ-1)';
+  document.getElementById('rR').textContent=alive?'finger convection':'diffusive / dead';
+  document.getElementById('lT').textContent=tau.toFixed(2);
+  document.getElementById('lR').textContent=Rrho.toFixed(2);
+}
+function chip(x,y,txt,col){
+  g.font='11px ui-monospace,monospace';
+  var w=g.measureText(txt).width+12;
+  g.fillStyle='rgba(4,7,14,0.86)';g.strokeStyle='#22375c';g.lineWidth=1;
+  g.beginPath();g.rect(x,y,w,18);g.fill();g.stroke();
+  g.fillStyle=col;g.fillText(txt,x+6,y+13);
+}
+
+var sT=document.getElementById('sT'),sR=document.getElementById('sR');
+sT.addEventListener('input',function(){tau=sT.value/100;});
+sR.addEventListener('input',function(){Rrho=sR.value/100;});
+document.getElementById('btnR').addEventListener('click',init);
+c.addEventListener('pointerdown',function(e){
+  c.setPointerCapture(e.pointerId);
+  var r=c.getBoundingClientRect();
+  var u=(e.clientX-r.left-TANK.x)/TANK.w,v=(e.clientY-r.top-TANK.y)/TANK.h;
+  if(u<0||u>1||v<0||v>1)return;
+  var ci=Math.floor(u*NX),cj=Math.floor(v*NY);
+  for(var j=-4;j<=4;j++)for(var i=-4;i<=4;i++){
+    var ii=(ci+i+NX)%NX,jj=Math.max(1,Math.min(NY-2,cj+j));
+    V[idx(ii,jj)]+=1.2;
+  }
+});
+
+var last=performance.now(),acc=0;
+function frame(now){
+  var rdt=Math.min(0.45,(now-last)/1000);last=now;acc+=rdt;
+  var n=0;while(acc>=1/60&&n<20){for(var s=0;s<3;s++)stepSim(1/180);acc-=1/60;n++;}
+  draw();requestAnimationFrame(frame);
+}
+// pre-grow so t=4s catches fingers mid-development
+(function warm(){for(var i=0;i<420;i++)stepSim(1/180);})();
+requestAnimationFrame(frame);
+})();
+</script>
