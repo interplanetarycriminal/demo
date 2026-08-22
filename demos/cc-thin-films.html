@@ -1,0 +1,407 @@
+<title>Films That Tattle</title>
+<style>
+html,body{margin:0;padding:0;background:#04050a;overflow:hidden;height:100%}
+canvas{display:block;position:fixed;top:0;left:0}
+#ui{position:fixed;top:0;left:0;padding:10px 12px;color:#cfe6ff;background:rgba(4,6,12,.66);
+  font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;max-width:352px;z-index:10;
+  border-right:1px solid #6cf3;border-bottom:1px solid #6cf3;text-shadow:0 0 6px #6cf6}
+#ui h1{font-size:13px;margin:0 0 4px;color:#7fd4ff;letter-spacing:.05em;text-shadow:0 0 10px #0af}
+#ui .th{color:#ffd36e;margin:0 0 6px;text-shadow:0 0 8px #fa06}
+#ui .hint{color:#7a94ad;margin:6px 0}
+#ui .row{display:flex;justify-content:space-between;gap:8px}
+#ui b{color:#fff;font-weight:600}
+#ui a{color:#7fd4ff;text-decoration:none;border-bottom:1px dotted #7fd4ff88}
+#ui .sep{height:1px;background:#6cf2;margin:6px 0}
+#ui .pun{color:#b98cff;text-shadow:0 0 8px #93f6}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>CHEAT CODE #96 — FILMS THAT TATTLE</h1>
+<div class="th">A few hundred nanometres of transparent film encodes its own thickness in color — nanometrology a $6 sensor can read.</div>
+<div class="hint">[1] oil slick &nbsp; [2] uniform film &nbsp; [3] soap drain &nbsp; [4] temper colors &nbsp; [drag] probe &nbsp; [←/→] thickness / heat</div>
+<div class="sep"></div>
+<div class="row"><span>act</span><b id="r_act">OIL SLICK</b></div>
+<div class="row"><span>film index n</span><b id="r_n">1.45</b></div>
+<div class="row"><span>probe thickness d</span><b id="r_d">— nm</b></div>
+<div class="row"><span>optical path 2nd</span><b id="r_opd">— nm</b></div>
+<div class="row"><span>R(λ) peak at</span><b id="r_pk">— nm</b></div>
+<div class="row"><span>order m</span><b id="r_m">—</b></div>
+<div class="row" id="row_T"><span>peak temperature</span><b id="r_T">—</b></div>
+<div class="sep"></div>
+<div class="hint" id="r_cap">Maxima at 2nd=(m+½)λ, minima at 2nd=mλ (one π flip: air→oil→water).</div>
+<div class="pun">"color on a thin transparent layer IS a thickness/temperature measurement, pre-computed by wave interference."</div>
+<div><a href="index.html">← gallery</a></div>
+</div>
+<script>
+"use strict";
+var c=document.getElementById('c'),g=c.getContext('2d');
+var W=0,H=0,DPR=1;
+
+/* ================= COLOR SCIENCE (approximate CIE — Wyman multi-lobe Gaussian fits) ============ */
+function gs(x,mu,s1,s2){var t=(x-mu)/(x<mu?s1:s2);return Math.exp(-0.5*t*t);}
+function xbar(l){return 1.056*gs(l,599.8,37.9,31.0)+0.362*gs(l,442.0,16.0,26.7)-0.065*gs(l,501.1,20.4,26.2);}
+function ybar(l){return 0.821*gs(l,568.8,46.9,40.5)+0.286*gs(l,530.9,16.3,31.1);}
+function zbar(l){return 1.217*gs(l,437.0,11.8,36.0)+0.681*gs(l,459.0,26.0,13.8);}
+var LAM=[],XB=[],YB=[],ZB=[],YSUM=0;
+for(var l=380;l<=730;l+=5){LAM.push(l);XB.push(xbar(l));YB.push(ybar(l));ZB.push(zbar(l));YSUM+=ybar(l);}
+function xyz2srgb(X,Y,Z){
+  var r= 3.2406*X-1.5372*Y-0.4986*Z, gg=-0.9689*X+1.8758*Y+0.0415*Z, b= 0.0557*X-0.2040*Y+1.0570*Z;
+  function G(v){v=v<0?0:v;v=v<=0.0031308?12.92*v:1.055*Math.pow(v,1/2.4)-0.055;return Math.max(0,Math.min(1,v))*255;}
+  return [G(r),G(gg),G(b)];
+}
+
+/* ================= REAL THIN-FILM INTERFERENCE =================
+   Two-beam: R(λ) = R1 + R2 + 2√(R1R2)·cos(δ)
+   δ = 4πnd/λ + Δφ
+   Δφ = π for the DIELECTRIC stack (air n0=1 → oil n=1.45 → water n2=1.33):
+        one π flip at the top interface only  ⇒  maxima at 2nd=(m+½)λ, minima at 2nd=mλ.
+   Δφ = 0 for the OXIDE-ON-METAL stack: the metal's own reflection phase ≈ π cancels the
+        top flip  ⇒  maxima at 2nd=mλ, minima at 2nd=(m+½)λ.  (why steel goes straw FIRST) */
+function fresnel(n1,n2){var r=(n1-n2)/(n1+n2);return r*r;}
+function Rlambda(lam,d,n,R1,R2,flip){
+  var delta=4*Math.PI*n*d/lam+(flip?Math.PI:0);
+  return R1+R2+2*Math.sqrt(R1*R2)*Math.cos(delta);
+}
+function filmRGB(d,n,R1,R2,flip,gain){
+  var X=0,Y=0,Z=0;
+  for(var i=0;i<LAM.length;i++){
+    var R=Rlambda(LAM[i],d,n,R1,R2,flip);
+    X+=R*XB[i];Y+=R*YB[i];Z+=R*ZB[i];
+  }
+  var k=(gain||1)/YSUM;
+  return xyz2srgb(X*k,Y*k,Z*k);
+}
+/* LUT so per-pixel painting is cheap */
+var DMAX=1000, LUT_OIL=new Uint8Array(DMAX*3), LUT_OX=new Uint8Array(DMAX*3);
+var N_OIL=1.45, R1_OIL=fresnel(1.0,1.45), R2_OIL=fresnel(1.45,1.33);
+var N_OX =2.40, R1_OX =fresnel(1.0,2.40), R2_OX =0.62; /* steel is a good mirror */
+(function buildLUTs(){
+  for(var d=0;d<DMAX;d++){
+    var a=filmRGB(d,N_OIL,R1_OIL,R2_OIL,true, 7.5);
+    LUT_OIL[d*3]=a[0];LUT_OIL[d*3+1]=a[1];LUT_OIL[d*3+2]=a[2];
+    var b=filmRGB(d,N_OX ,R1_OX ,R2_OX ,false,1.35);
+    LUT_OX[d*3]=b[0];LUT_OX[d*3+1]=b[1];LUT_OX[d*3+2]=b[2];
+  }
+})();
+function lut(L,d){var i=Math.max(0,Math.min(DMAX-1,Math.round(d)))*3;return [L[i],L[i+1],L[i+2]];}
+
+/* ================= PARABOLIC OXIDE GROWTH → TEMPER COLOR =================
+   d = A·exp(−Q/(2RT)) ·√(t/t0)   (parabolic: d² ∝ t·exp(−Q/RT))
+   Monotonically increasing in T ⇒ color march straw→brown→purple→blue is a max-thermometer. */
+var Q=33000, RGAS=8.314, AOX=2525;
+function oxideThickness(TC,tmin){var TK=TC+273.15;return AOX*Math.exp(-Q/(2*RGAS*TK))*Math.sqrt((tmin||10)/10);}
+function tempFromThickness(d,tmin){ // invert
+  var s=Math.sqrt((tmin||10)/10);
+  var TK=-Q/(2*RGAS*Math.log(Math.max(1e-9,d/(AOX*s))));return TK-273.15;
+}
+var TEMPER=[[205,'light straw'],[226,'dark straw'],[245,'brown'],[265,'brown-purple'],
+            [277,'purple'],[288,'dark blue'],[299,'blue'],[315,'light blue']];
+function temperName(T){var s='—';for(var i=0;i<TEMPER.length;i++)if(T>=TEMPER[i][0]-11)s=TEMPER[i][1];
+  if(T<194)s='(no visible oxide)';if(T>326)s='grey — past temper range';return s;}
+
+/* ================= STATE ================= */
+var act=1, uniformD=420, drainD=900, probeX=0, probeY=0, dragging=false;
+var heatT=340, heatMin=10;
+var t0=performance.now()/1000,T=0,prevT=0, popT=-1;
+var field=null,fw=0,fh=0,fimg=null;
+
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
+  c.width=Math.round(W*DPR);c.height=Math.round(H*DPR);c.style.width=W+'px';c.style.height=H+'px';
+  g.setTransform(DPR,0,0,DPR,0,0);
+  buildField();
+  if(probeX===0){probeX=W*0.5;probeY=H*0.5;}
+}
+window.addEventListener('resize',resize);
+
+/* stage rect (where the physics is painted) */
+function SX(){return Math.round(W*0.29);}
+function SY(){return Math.round(H*0.10);}
+function SW(){return Math.round(W*0.46);}
+function SH(){return Math.round(H*0.56);}
+
+var blobs=[];
+function buildField(){
+  fw=Math.max(16,Math.ceil(SW()/3));fh=Math.max(16,Math.ceil(SH()/3));
+  field=new Float32Array(fw*fh);
+  fimg=g.createImageData(fw,fh);
+  blobs=[];var s=987654321;
+  function r(){s=(s*1664525+1013904223)&0x7fffffff;return s/0x7fffffff;}
+  for(var i=0;i<7;i++)blobs.push({x:r(),y:r(),s:.12+r()*.30,a:(r()*2-1)});
+}
+/* smooth thickness map 100 → 800 nm */
+function thickAt(u,v){
+  var d=430, i;
+  for(i=0;i<blobs.length;i++){var b=blobs[i];
+    var dx=(u-b.x),dy=(v-b.y),r2=(dx*dx+dy*dy)/(b.s*b.s);
+    d+=b.a*300*Math.exp(-r2);}
+  d+=120*Math.sin(u*7.5+v*3.1)+70*Math.cos(v*9.0-u*2.0);
+  d+=60*Math.sin((u+v)*14.0);
+  return Math.max(100,Math.min(800,d));
+}
+
+/* ================= INPUT ================= */
+window.addEventListener('keydown',function(e){
+  var k=e.key.toLowerCase();
+  if(k==='1'){act=1;}
+  else if(k==='2'){act=2;}
+  else if(k==='3'){act=3;drainD=900;popT=-1;}
+  else if(k==='4'){act=4;}
+  else if(e.key==='ArrowLeft'){if(act===4)heatT=Math.max(150,heatT-6);else uniformD=Math.max(20,uniformD-15);e.preventDefault();}
+  else if(e.key==='ArrowRight'){if(act===4)heatT=Math.min(430,heatT+6);else uniformD=Math.min(980,uniformD+15);e.preventDefault();}
+});
+c.addEventListener('pointerdown',function(e){dragging=true;probeX=e.clientX;probeY=e.clientY;});
+c.addEventListener('pointermove',function(e){if(dragging){probeX=e.clientX;probeY=e.clientY;}});
+window.addEventListener('pointerup',function(){dragging=false;});
+
+/* ================= DRAW HELPERS ================= */
+function glow(col,b){g.shadowColor=col;g.shadowBlur=b;}
+function noglow(){g.shadowBlur=0;}
+function txt(s,x,y,col,size,al){g.fillStyle=col;g.font=(size||11)+'px ui-monospace,Menlo,monospace';
+  g.textAlign=al||'left';g.fillText(s,x,y);g.textAlign='left';}
+var tmp=document.createElement('canvas'),tctx=tmp.getContext('2d');
+function blit(imgd,dx,dy,dw,dh,smooth){
+  if(tmp.width!==imgd.width||tmp.height!==imgd.height){tmp.width=imgd.width;tmp.height=imgd.height;}
+  tctx.putImageData(imgd,0,0);
+  g.imageSmoothingEnabled=smooth!==false;
+  g.drawImage(tmp,0,0,imgd.width,imgd.height,dx,dy,dw,dh);
+}
+
+/* ================= ACTS ================= */
+function probeThickness(){
+  var x=SX(),y=SY(),w=SW(),h=SH();
+  var u=(probeX-x)/w, v=(probeY-y)/h;
+  u=Math.max(0,Math.min(1,u));v=Math.max(0,Math.min(1,v));
+  if(act===1)return thickAt(u,v);
+  if(act===2)return uniformD;
+  if(act===3)return Math.max(2,drainD*(0.35+0.85*v));
+  return oxideThickness(barTempAt(u),heatMin);
+}
+function barTempAt(u){return heatT-(heatT-95)*Math.pow(u,1.25);}
+
+function drawOil(){
+  var x=SX(),y=SY(),w=SW(),h=SH(),dd=fimg.data;
+  for(var j=0;j<fh;j++)for(var i=0;i<fw;i++){
+    var u=i/(fw-1),v=j/(fh-1);
+    var d=thickAt(u,v);field[j*fw+i]=d;
+    var col=lut(LUT_OIL,d),o=(j*fw+i)*4;
+    // puddle edge falloff
+    var e=Math.min(1,Math.min(u,1-u)*7)*Math.min(1,Math.min(v,1-v)*7);
+    dd[o]=col[0]*e;dd[o+1]=col[1]*e;dd[o+2]=col[2]*e;dd[o+3]=255;
+  }
+  glow('#48f',18);blit(fimg,x,y,w,h,true);noglow();
+  g.strokeStyle='rgba(120,200,255,.30)';g.lineWidth=1.5;g.strokeRect(x+.5,y+.5,w-1,h-1);
+  txt('OIL SLICK — film thickness 100→800 nm, rendered from R(λ) integrated to RGB',x,y-8,'#7fd4ff',11);
+  txt('every contour is an iso-thickness line. the rainbow IS a topographic map.',x,y+h+16,'#7a94ad',10);
+}
+
+function drawUniform(){
+  var x=SX(),y=SY(),w=SW(),h=SH();
+  var col=lut(LUT_OIL,uniformD);
+  glow('rgb('+col.join(',')+')',34);
+  g.fillStyle='rgb('+col[0]+','+col[1]+','+col[2]+')';
+  g.fillRect(x,y,w,h*0.62);noglow();
+  g.strokeStyle='rgba(120,200,255,.30)';g.strokeRect(x+.5,y+.5,w-1,h*0.62-1);
+  txt('UNIFORM FILM — sweep d with ←/→ and watch the whole Newton sequence',x,y-8,'#7fd4ff',11);
+  // the full sequence strip
+  var sy2=y+h*0.68,sh2=h*0.20;
+  var strip=g.createImageData(360,1),sd=strip.data;
+  for(var i=0;i<360;i++){var d=i/359*980,cc=lut(LUT_OIL,d);
+    sd[i*4]=cc[0];sd[i*4+1]=cc[1];sd[i*4+2]=cc[2];sd[i*4+3]=255;}
+  blit(strip,x,sy2,w,sh2,true);
+  g.strokeStyle='rgba(120,200,255,.30)';g.strokeRect(x+.5,sy2+.5,w-1,sh2-1);
+  var mx=x+uniformD/980*w;
+  glow('#fff',12);g.strokeStyle='#fff';g.lineWidth=2;
+  g.beginPath();g.moveTo(mx,sy2-6);g.lineTo(mx,sy2+sh2+6);g.stroke();noglow();
+  txt('0 nm',x,sy2+sh2+16,'#7a94ad',9);txt('980 nm',x+w,sy2+sh2+16,'#7a94ad',9,'right');
+  txt('d = '+Math.round(uniformD)+' nm',mx,sy2-10,'#fff',11,'center');
+}
+
+function drawDrain(dt){
+  var x=SX(),y=SY(),w=SW(),h=SH();
+  if(popT<0){drainD-=dt*115;if(drainD<6){popT=T;}}
+  var alive=popT<0;
+  if(!alive&&T-popT>1.9){drainD=900;popT=-1;}
+  var cx=x+w/2,cy=y+h/2,R=Math.min(w,h)*0.45;
+  txt('SOAP BUBBLE — the film drains, d shrinks, colors run backwards to BLACK FILM, then pop',x,y-8,'#7fd4ff',11);
+  if(alive){
+    var bands=90;
+    for(var i=bands;i>0;i--){
+      var f=i/bands;
+      var d=Math.max(2,drainD*(0.22+1.05*f)); // thicker at the bottom
+      var col=lut(LUT_OIL,d);
+      g.fillStyle='rgb('+col[0]+','+col[1]+','+col[2]+')';
+      g.beginPath();
+      var yTop=cy-R+ (1-f)*2*R;
+      g.rect(cx-R,yTop,2*R,2*R/bands+1.4);
+      g.save();g.beginPath();g.arc(cx,cy,R,0,7);g.clip();
+      g.fillRect(cx-R,yTop,2*R,2*R/bands+1.6);
+      g.restore();
+    }
+    glow('#8cf',22);g.strokeStyle='rgba(180,230,255,.55)';g.lineWidth=2;
+    g.beginPath();g.arc(cx,cy,R,0,7);g.stroke();noglow();
+    if(drainD<70){txt('BLACK FILM  d < '+Math.round(drainD)+' nm ≪ λ/4 → both reflections cancel',
+      cx,cy-R-14,'#b98cff',11,'center');}
+    txt('d(top) = '+Math.round(drainD*0.22)+' nm   d(bottom) = '+Math.round(drainD*1.27)+' nm',cx,cy+R+18,'#7a94ad',10,'center');
+  } else {
+    var a=(T-popT)/1.9;
+    for(var k=0;k<26;k++){
+      var ang=k/26*Math.PI*2+popT,rr=R*(0.3+a*2.2);
+      g.fillStyle='rgba(180,230,255,'+(1-a)*0.7+')';
+      g.beginPath();g.arc(cx+Math.cos(ang)*rr,cy+Math.sin(ang)*rr,3*(1-a)+1,0,7);g.fill();}
+    txt('POP.',cx,cy,'#b98cff',26,'center');
+  }
+}
+
+function drawTemper(){
+  var x=SX(),y=SY(),w=SW(),h=SH();
+  var bh=h*0.30,by=y+h*0.14;
+  var strip=g.createImageData(Math.max(32,Math.floor(w/2)),1),sd=strip.data,nn=strip.width;
+  for(var i=0;i<nn;i++){
+    var u=i/(nn-1),Tc=barTempAt(u),d=oxideThickness(Tc,heatMin);
+    var col=(Tc<194)?[168,172,178]:lut(LUT_OX,d);
+    if(Tc>326){var f=Math.min(1,(Tc-326)/60);col=[col[0]*(1-f)+120*f,col[1]*(1-f)+120*f,col[2]*(1-f)+124*f];}
+    sd[i*4]=col[0];sd[i*4+1]=col[1];sd[i*4+2]=col[2];sd[i*4+3]=255;}
+  glow('#f80',20);blit(strip,x,by,w,bh,true);noglow();
+  // steel sheen
+  var sh2=g.createLinearGradient(0,by,0,by+bh);
+  sh2.addColorStop(0,'rgba(255,255,255,.22)');sh2.addColorStop(.35,'rgba(255,255,255,0)');
+  sh2.addColorStop(1,'rgba(0,0,0,.30)');g.fillStyle=sh2;g.fillRect(x,by,w,bh);
+  g.strokeStyle='rgba(200,220,255,.35)';g.lineWidth=1.5;g.strokeRect(x+.5,by+.5,w-1,bh-1);
+  txt('POLISHED STEEL BAR — heated from the LEFT. Oxide grows parabolically; color records PEAK T.',x,y-8,'#7fd4ff',11);
+  // flame
+  for(var k=0;k<9;k++){var fx=x-16+Math.sin(T*7+k)*4,fy=by+bh*0.5+(k-4)*bh*0.09;
+    glow('#f60',14);g.fillStyle='rgba(255,'+(120+k*12)+',40,'+(0.5+0.3*Math.sin(T*9+k))+')';
+    g.beginPath();g.arc(fx,fy,4+Math.sin(T*11+k)*2,0,7);g.fill();noglow();}
+  txt(Math.round(heatT)+'°C',x-22,by-8,'#ff8a3d',11,'right');
+  // temperature axis
+  g.strokeStyle='rgba(160,190,220,.30)';g.lineWidth=1;
+  for(i=0;i<=6;i++){var u2=i/6,xx=x+u2*w;
+    g.beginPath();g.moveTo(xx,by+bh);g.lineTo(xx,by+bh+6);g.stroke();
+    txt(Math.round(barTempAt(u2))+'°',xx,by+bh+18,'#7a94ad',9,'center');}
+  txt('distance from the heat →',x+w/2,by+bh+32,'#7a94ad',9,'center');
+  // reference chart
+  var cy2=by+bh+52;
+  txt('STANDARD TEMPER CHART (color → peak temperature)',x,cy2,'#7fd4ff',10);
+  for(i=0;i<TEMPER.length;i++){
+    var Tt=TEMPER[i][0],dd=oxideThickness(Tt,heatMin),cc=lut(LUT_OX,dd);
+    var bx=x+i*(w/TEMPER.length);
+    g.fillStyle='rgb('+cc[0]+','+cc[1]+','+cc[2]+')';g.fillRect(bx,cy2+8,w/TEMPER.length-3,16);
+    txt(Tt+'°',bx+2,cy2+36,'#9ab',9);
+    txt(TEMPER[i][1],bx+2,cy2+46,'#7a94ad',8);
+  }
+  txt('a forensic max-thermometer written in oxide — weld inspectors read heat-affected zones this way',
+    x,y+h+16,'#ffd36e',10);
+}
+
+/* ================= SPECTRUM PANEL ================= */
+function drawSpectrum(d){
+  var w=Math.min(340,W*0.29),h=196,x=W-w-14,y=14;
+  g.fillStyle='rgba(4,8,16,.88)';g.fillRect(x,y,w,h);
+  g.strokeStyle='rgba(120,200,255,.28)';g.strokeRect(x+.5,y+.5,w-1,h-1);
+  var oxide=(act===4), n=oxide?N_OX:N_OIL, R1=oxide?R1_OX:R1_OIL, R2=oxide?R2_OX:R2_OIL, flip=!oxide;
+  txt('R(λ) AT THE PROBE   d='+Math.round(d)+' nm  n='+n,x+8,y+15,'#7fd4ff',11);
+  var px=x+34,py=y+24,pw=w-46,ph=h-64;
+  // spectrum background bar
+  var sp=g.createImageData(180,1),sd=sp.data;
+  for(var i=0;i<180;i++){var lam=380+i/179*350;
+    var X=0,Y=0,Z=0;
+    // narrow-band color at lam
+    X=xbar(lam);Y=ybar(lam);Z=zbar(lam);
+    var cc=xyz2srgb(X*1.0,Y*1.0,Z*1.0);
+    sd[i*4]=cc[0]*0.5;sd[i*4+1]=cc[1]*0.5;sd[i*4+2]=cc[2]*0.5;sd[i*4+3]=255;}
+  blit(sp,px,py+ph+2,pw,10,true);
+  g.fillStyle='rgba(4,8,16,.35)';g.fillRect(px,py,pw,ph);
+  g.strokeStyle='rgba(120,200,255,.16)';g.strokeRect(px+.5,py+.5,pw-1,ph-1);
+  var Rmax=Math.pow(Math.sqrt(R1)+Math.sqrt(R2),2);
+  function X2(lam){return px+(lam-380)/350*pw;}
+  function Y2(R){return py+ph-(R/Rmax)*(ph-6)-3;}
+  glow('#7fd4ff',9);g.strokeStyle='#7fd4ff';g.lineWidth=1.8;g.beginPath();
+  var pkLam=0,pkR=-1;
+  for(i=0;i<=180;i++){var lam2=380+i/180*350,R=Rlambda(lam2,d,n,R1,R2,flip);
+    if(R>pkR){pkR=R;pkLam=lam2;}
+    if(i===0)g.moveTo(X2(lam2),Y2(R));else g.lineTo(X2(lam2),Y2(R));}
+  g.stroke();noglow();
+  // mark extrema predicted by 2nd = (m+1/2)λ  [dielectric]  or  2nd = mλ  [oxide/metal]
+  var opd=2*n*d, order=0;
+  for(var m=0;m<8;m++){
+    var lamMax=oxide?(opd/Math.max(1,m)):(opd/(m+0.5));
+    if(lamMax<380||lamMax>730)continue;
+    var xx=X2(lamMax);
+    g.strokeStyle='rgba(255,211,110,.55)';g.setLineDash([3,3]);g.lineWidth=1;
+    g.beginPath();g.moveTo(xx,py);g.lineTo(xx,py+ph);g.stroke();g.setLineDash([]);
+    txt('m='+(oxide?m:m),xx+2,py+11,'rgba(255,211,110,.85)',9);
+    order=m;
+  }
+  for(i=380;i<=730;i+=70){txt(i,X2(i),py+ph+24,'#7a94ad',9,'center');}
+  txt('R',px-6,py+12,'#7a94ad',9,'right');
+  txt(oxide?'oxide/metal: Δφ=0 ⇒ maxima at 2nd=mλ':'air/oil/water: Δφ=π ⇒ maxima at 2nd=(m+½)λ',
+    x+8,y+h-8,'#ffd36e',9);
+  return {pk:pkLam,order:order,opd:opd};
+}
+
+function drawSwatch(d){
+  var w=Math.min(340,W*0.29),x=W-w-14,y=222,h=76;
+  g.fillStyle='rgba(4,8,16,.88)';g.fillRect(x,y,w,h);
+  g.strokeStyle='rgba(120,200,255,.28)';g.strokeRect(x+.5,y+.5,w-1,h-1);
+  var oxide=(act===4);
+  var col=lut(oxide?LUT_OX:LUT_OIL,d);
+  txt('COLOR ⇄ THICKNESS  (what a $6 RGB sensor sees)',x+8,y+15,'#7fd4ff',11);
+  glow('rgb('+col.join(',')+')',18);
+  g.fillStyle='rgb('+col[0]+','+col[1]+','+col[2]+')';g.fillRect(x+10,y+24,72,42);noglow();
+  g.strokeStyle='rgba(255,255,255,.35)';g.strokeRect(x+10.5,y+24.5,71,41);
+  txt('R '+Math.round(col[0])+'  G '+Math.round(col[1])+'  B '+Math.round(col[2]),x+92,y+38,'#cfe6ff',11);
+  txt('⇒ d = '+Math.round(d)+' nm',x+92,y+54,'#fff',13);
+  if(oxide){
+    var Tp=tempFromThickness(d,heatMin);
+    txt('⇒ peak T = '+Math.round(Tp)+' °C  '+temperName(Tp),x+92,y+68,'#ffd36e',10);
+  } else {
+    txt('measured to ± few nm from color alone',x+92,y+68,'#7a94ad',9);
+  }
+}
+
+function drawProbe(d){
+  var x=SX(),y=SY(),w=SW(),h=SH();
+  var px=Math.max(x,Math.min(x+w,probeX)),py=Math.max(y,Math.min(y+h,probeY));
+  if(act===4){py=Math.max(y+h*0.14,Math.min(y+h*0.44,py));}
+  glow('#fff',14);g.strokeStyle='#fff';g.lineWidth=2;
+  g.beginPath();g.arc(px,py,11,0,7);g.stroke();noglow();
+  g.strokeStyle='rgba(255,255,255,.45)';g.lineWidth=1;
+  g.beginPath();g.moveTo(px-19,py);g.lineTo(px-13,py);g.moveTo(px+13,py);g.lineTo(px+19,py);
+  g.moveTo(px,py-19);g.lineTo(px,py-13);g.moveTo(px,py+13);g.lineTo(px,py+19);g.stroke();
+  txt(Math.round(d)+' nm',px+16,py-14,'#fff',11);
+}
+
+/* ================= MAIN ================= */
+function frame(){
+  var now=performance.now()/1000;T=now-t0;var dt=Math.min(.05,T-prevT);prevT=T;
+  g.fillStyle='#04050a';g.fillRect(0,0,W,H);
+  if(act===1)drawOil();
+  else if(act===2)drawUniform();
+  else if(act===3)drawDrain(dt);
+  else drawTemper();
+
+  var d=probeThickness();
+  var sp=drawSpectrum(d);
+  drawSwatch(d);
+  if(act!==3)drawProbe(d);
+
+  var oxide=(act===4);
+  document.getElementById('r_act').textContent=['','OIL SLICK','UNIFORM FILM','SOAP DRAIN','TEMPER COLORS'][act];
+  document.getElementById('r_n').textContent=(oxide?N_OX:N_OIL).toFixed(2)+(oxide?'  (Fe₃O₄)':'  (oil)');
+  document.getElementById('r_d').textContent=Math.round(d)+' nm';
+  document.getElementById('r_opd').textContent=Math.round(sp.opd)+' nm';
+  document.getElementById('r_pk').textContent=Math.round(sp.pk)+' nm';
+  document.getElementById('r_m').textContent=sp.order;
+  document.getElementById('row_T').style.display=oxide?'flex':'none';
+  if(oxide){var Tp=tempFromThickness(d,heatMin);
+    document.getElementById('r_T').textContent=Math.round(Tp)+' °C — '+temperName(Tp);}
+  document.getElementById('r_cap').textContent=oxide
+    ?'Δφ=0 (metal): maxima at 2nd=mλ. Oxide d grows parabolically with peak T ⇒ monotone color march.'
+    :'Δφ=π (one flip): maxima at 2nd=(m+½)λ, minima at 2nd=mλ. Colors from approximate CIE integration.';
+  requestAnimationFrame(frame);
+}
+resize();frame();
+</script>
