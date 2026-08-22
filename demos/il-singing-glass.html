@@ -125,7 +125,7 @@ function topView(){
   // frequency badge beside the ring, clear of both bottom cards
   ctx.textAlign='left';
   var lx=cx+R*1.2+12,ly=cy-6;
-  if(LAY.sx-96*LAY.sc-10-lx<134){lx=cx-R*0.95;ly=cy+R+44;}   // cramped window: drop it below the ring
+  if(LAY.sx-96*LAY.sc-10-lx<134){lx=cx-44;ly=cy-10;}   // cramped window: drop it below the ring
   ctx.font='600 22px ui-monospace,monospace';ctx.fillStyle=A>0.02?'#7ff0ff':'#5a6d7d';
   ctx.shadowColor='#39d7ff';ctx.shadowBlur=A>0.02?14:0;ctx.fillText(f.toFixed(0)+' Hz',lx,ly);ctx.shadowBlur=0;
   ctx.font='10.5px ui-monospace,monospace';ctx.fillStyle='#8aa4bd';ctx.fillText('ring eigenfrequency',lx,ly+16);
@@ -192,7 +192,7 @@ function stickslip(x,y,w,h){
   ctx.save();ctx.translate(x,y);
   ctx.fillStyle='rgba(4,8,15,.8)';ctx.strokeStyle='rgba(120,220,255,.24)';ctx.lineWidth=1;
   ctx.beginPath();ctx.rect(0,0,w,h);ctx.fill();ctx.stroke();
-  ctx.fillStyle='#7ff0ff';ctx.font='11px ui-monospace,monospace';ctx.fillText('STICK–SLIP CYCLE, locked to the ring phase',10,17);
+  ctx.fillStyle='#7ff0ff';ctx.font='11px ui-monospace,monospace';ctx.fillText('STICK–SLIP CYCLE — phase-locked',10,17);
   var L=12,Rr=w-12,Tp=32,B=h-34,mid=(Tp+B)/2;
   ctx.strokeStyle='rgba(120,220,255,.16)';ctx.beginPath();ctx.moveTo(L,mid);ctx.lineTo(Rr,mid);ctx.stroke();
   ctx.strokeStyle='#ffd27f';ctx.lineWidth=2;ctx.beginPath();
@@ -211,7 +211,7 @@ function stickslip(x,y,w,h){
   ctx.strokeStyle='#ffd27f';ctx.lineWidth=2.5;ctx.beginPath();ctx.moveTo(L,ly-3);ctx.lineTo(L+16,ly-3);ctx.stroke();
   ctx.fillStyle='#ffd27f';ctx.fillText(lab,L+22,ly);
   ctx.strokeStyle='rgba(127,240,255,.85)';ctx.beginPath();ctx.moveTo(x2,ly-3);ctx.lineTo(x2+16,ly-3);ctx.stroke();
-  ctx.fillStyle='#7ff0ff';ctx.fillText('rim displacement',x2+22,ly);
+  ctx.fillStyle='#7ff0ff';ctx.fillText('rim motion',x2+22,ly);
   if(!wet){ctx.fillStyle='#ff8fa4';ctx.font='11px ui-monospace,monospace';ctx.fillText('DRY = no stick phase = no energy in',L+8,Tp-4);}
   ctx.restore();
 }

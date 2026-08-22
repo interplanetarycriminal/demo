@@ -195,16 +195,16 @@ function frame(now){
   var iw=Math.min(452,Math.max(300,W*0.36)),ix=W-14-iw;
   inset(ix,H-134,iw,120,S.t);
   // caption strip (left of the diagram card, below the stage)
-  var by=H-96;
+  var by=34;
   ctx.font='600 13px ui-monospace,monospace';
   if(S.dead){ctx.fillStyle='#ff5f7a';
-    ctx.fillText('DEAD AT '+Math.round(RH*100)+'% RH — no evaporation, no engine.',24,by);
+    ctx.fillText('DEAD AT '+Math.round(RH*100)+'% RH — no evaporation, no engine.',386,by);
     ctx.fillStyle='#ffd27f';ctx.font='11.5px ui-monospace,monospace';
-    ctx.fillText('never perpetual: it drinks DRYNESS — press L for the heat lamp',24,by+20);}
+    ctx.fillText('never perpetual: it drinks DRYNESS — press L for the heat lamp',386,by+20);}
   else{ctx.fillStyle='#7fe0b0';
-    ctx.fillText('phase: '+S.mode.toUpperCase()+'  ·  a heat engine running on room-air dryness',24,by);
+    ctx.fillText('phase: '+S.mode.toUpperCase()+'  ·  a heat engine running on room-air dryness',386,by);
     ctx.fillStyle='#8aa4bd';ctx.font='11.5px ui-monospace,monospace';
-    ctx.fillText('drag HUMIDITY to 100% and watch the engine die mid-cycle',24,by+20);}
+    ctx.fillText('drag HUMIDITY to 100% and watch the engine die mid-cycle',386,by+20);}
   if(now-shown>90){shown=now;
     els.r1.textContent=S.dT.toFixed(3)+' K';els.r2.textContent=S.dp.toFixed(2)+' kPa';
     els.r3.textContent=S.h.toFixed(2)+' cm / 12';els.r4.textContent=S.cyc;
