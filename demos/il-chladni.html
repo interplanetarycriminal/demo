@@ -29,8 +29,7 @@ button{background:#12203a;color:#bfe4ff;border:1px solid #2a4570;border-radius:6
     <div class="row"><span class="k">mean |A| at grains</span><span class="v" id="rA">—</span></div>
     <div class="row"><span class="k">on nodal lines</span><span class="v" id="rN">—</span></div>
   </div>
-  <canvas id="resp" width="316" height="56" style="width:100%;height:56px;border:1px solid #17233d;border-radius:6px;background:#070d18"></canvas>
-  <label>drive frequency <span id="lF" class="v"></span></label>
+  <label>drive frequency <span id="lF" class="v"></span> <span style="color:#5d708c">(response curve, lower left)</span></label>
   <input id="sF" type="range" min="0" max="1000" value="500">
   <label>shake vigour</label>
   <input id="sG" type="range" min="20" max="200" value="100">
@@ -41,7 +40,6 @@ button{background:#12203a;color:#bfe4ff;border:1px solid #2a4570;border-radius:6
 <script>
 (function(){
 var c=document.getElementById('c'),g=c.getContext('2d');
-var resp=document.getElementById('resp'),rg=resp.getContext('2d');
 var W=0,H=0,DPR=1;
 function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
   c.width=Math.round(W*DPR);c.height=Math.round(H*DPR);c.style.width=W+'px';c.style.height=H+'px';g.setTransform(DPR,0,0,DPR,0,0);}
@@ -53,9 +51,11 @@ var grd=sg.createRadialGradient(SS/2,SS/2,0,SS/2,SS/2,SS/2);
 grd.addColorStop(0,'rgba(255,240,200,0.95)');grd.addColorStop(.35,'rgba(255,205,120,0.55)');
 grd.addColorStop(1,'rgba(255,160,60,0)');sg.fillStyle=grd;sg.fillRect(0,0,SS,SS);
 
-// modes sequence
+// modes sequence: long LOCK dwell, then a brief detune sweep that re-scatters and morphs
 var MODES=[[1,2],[2,3],[3,5],[4,3],[2,6]];
-var seqI=0,morph=0,curM=1,curN=2,tgtM=2,tgtN=3;
+var CYC=8.4, cyc=1.0, detune=0, morph=0;
+var curIdx=2,tgtIdx=3;
+var curM=MODES[curIdx][0],curN=MODES[curIdx][1],tgtM=MODES[tgtIdx][0],tgtN=MODES[tgtIdx][1];
 var N=3600,px=new Float32Array(N),py=new Float32Array(N);
 function scatter(){for(var i=0;i<N;i++){px[i]=Math.random();py[i]=Math.random();}}
 scatter();
@@ -68,19 +68,34 @@ var btnAuto=document.getElementById('btnAuto'),btnScat=document.getElementById('
 btnAuto.addEventListener('click',function(){auto=!auto;btnAuto.textContent='auto-sweep: '+(auto?'ON':'OFF');});
 btnScat.addEventListener('click',scatter);
 
-// plate rect
+// plate rect + response card
 var PR={x:0,y:0,w:10,h:10};
-function layout(){var pad=Math.max(14,Math.min(W,H)*0.05);
-  var uiw=(W>760)?370:0; var avail=W-uiw-pad*2, availH=H-pad*2;
-  if(W<=760) availH=H-pad*2-Math.min(H*0.45,320)-8;
-  var s=Math.max(120,Math.min(avail,availH));
-  PR.w=PR.h=s; PR.x=uiw+pad+(avail-s)/2; PR.y=(W<=760)?(H-pad-s):(pad+(availH-s)/2);
-  if(PR.x<8)PR.x=8; if(PR.y<8)PR.y=8;}
+var CARD={x:10,y:10,w:300,h:110};
+function layout(){
+  if(W>760){
+    var uiw=Math.min(362,W*0.42),pad=10;
+    var availW=W-uiw-pad-10, availH=H-20;
+    var s=Math.max(140,Math.min(availW,availH));
+    PR.w=PR.h=s; PR.x=uiw+pad+(availW-s)/2; PR.y=10+(availH-s)/2;
+    CARD.w=Math.min(340,uiw-14);CARD.h=118;CARD.x=10;CARD.y=Math.max(H*0.5,H-CARD.h-10);
+  }else{
+    var top=Math.min(H*0.38,262)+16;
+    CARD.x=8;CARD.y=top;CARD.w=W-16;CARD.h=76;
+    var yTop=CARD.y+CARD.h+8, room=H-yTop-8;
+    var s2=Math.max(110,Math.min(W-16,room));
+    PR.w=PR.h=s2;PR.x=(W-s2)/2;PR.y=yTop+(room-s2)/2;
+  }
+  if(PR.x<8)PR.x=8; if(PR.y<8)PR.y=8;
+}
 
-// amplitude of ideal square plate mode (Chladni superposition)
+/*MODEL-START*/
+// amplitude of ideal free-square plate mode (Chladni superposition); nodal set = zeros
 function amp(x,y,m,n){
   return Math.cos(m*Math.PI*x)*Math.cos(n*Math.PI*y)-Math.cos(n*Math.PI*x)*Math.cos(m*Math.PI*y);
 }
+// random-walk step: on resonance step ~ |A|^2 (grains freeze on nodes); off resonance all jitter
+function stepSize(aa,Q,vig){return 0.0022*vig*(Q*(aa*aa*3.0)+(1-Q)*1.4)+0.00018;}
+/*MODEL-END*/
 function ampMorph(x,y){
   var a=amp(x,y,curM,curN),b=amp(x,y,tgtM,tgtN);
   return a*(1-morph)+b*morph;
@@ -109,7 +124,7 @@ function step(dt){
     sum+=aa;
     if(aa<0.09)near++;
     // step ~ |A|^2 on resonance ; off resonance everything jitters (re-scatter)
-    var s=base*(Q*(aa*aa*3.0)+(1-Q)*1.4)+0.00018;
+    var s=stepSize(aa,Q,vig);
     x+=(Math.random()*2-1)*s*60*dt*10;
     y+=(Math.random()*2-1)*s*60*dt*10;
     if(x<0)x=-x; if(x>1)x=2-x; if(y<0)y=-y; if(y>1)y=2-y;
