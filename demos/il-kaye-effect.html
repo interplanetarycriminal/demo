@@ -1,0 +1,338 @@
+<title>Kaye Effect</title>
+<style>
+html,body{margin:0;padding:0;height:100%;background:#04030a;overflow:hidden}
+canvas{display:block;width:100%;height:100%}
+#ui{position:fixed;top:0;left:0;padding:10px 12px;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;
+ color:#dcd0ff;background:rgba(8,5,18,.62);border-right:1px solid #312;border-bottom:1px solid #312;
+ max-width:340px;text-shadow:0 0 8px #a5f6;backdrop-filter:blur(3px)}
+#ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.14em;color:#c8a4ff;text-transform:uppercase;text-shadow:0 0 12px #a0f}
+.m{color:#e6d8ff}.s{color:#9ff5d0}.l{color:#998aa8}.k{color:#ffd27f}
+#ui a{color:#c8a4ff;text-decoration:none;border-bottom:1px dotted #c8a4ff88}
+label{display:block;margin-top:3px;color:#a99bbd}
+input[type=range]{width:145px;vertical-align:middle;accent-color:#b070ff}
+#rd{margin-top:6px;color:#f2ecff;white-space:pre;font-size:11px}
+button{background:#140a22;color:#c8a4ff;border:1px solid #4a2a6a;font:11px ui-monospace,monospace;padding:2px 6px;cursor:pointer;margin:4px 4px 0 0}
+button.on{background:#a0f3;color:#fff}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>Kaye Effect</h1>
+<div class="m">A falling stream of shear-thinning liquid leaps back out of its own heap: a thin, strongly-sheared slip layer forms at the impact dimple and ricochets the incoming jet like a ramp.</div>
+<div class="s">A. Kaye, <i>Nature</i> 1963 · mechanism pinned by high-speed video (Versluis et al., 2000s)</div>
+<div class="l">LINEAGE: Kaye's 1963 letter → high-speed-camera slip-layer mechanism → wormlike-micelle fluids generally</div>
+<div class="k">CLICK the heap to nudge a leap · drag pour point · sliders below · M = slow-mo</div>
+<label>pour height <input id="ph" type="range" min="20" max="100" value="66"></label>
+<label>flow rate <input id="fr" type="range" min="20" max="100" value="62"></label>
+<label>thinning index n <input id="nn" type="range" min="20" max="100" value="35"></label>
+<button id="mo">slow-mo: OFF</button><button id="nw">set n = 1 (Newtonian control)</button>
+<div id="rd"></div>
+<a href="index.html">← gallery</a>
+</div>
+<script>
+(function(){
+var c=document.getElementById('c'),x=c.getContext('2d'),W=0,H=0,DPR=1;
+function rz(){DPR=Math.min(2,window.devicePixelRatio||1);W=c.clientWidth;H=c.clientHeight;
+ c.width=Math.round(W*DPR);c.height=Math.round(H*DPR);x.setTransform(DPR,0,0,DPR,0,0);initHeap();}
+window.addEventListener('resize',rz);
+
+var phS=document.getElementById('ph'),frS=document.getElementById('fr'),nnS=document.getElementById('nn'),
+    moB=document.getElementById('mo'),nwB=document.getElementById('nw'),rd=document.getElementById('rd');
+var slowmo=false;
+moB.onclick=function(){slowmo=!slowmo;moB.className=slowmo?'on':'';moB.textContent='slow-mo: '+(slowmo?'ON':'OFF')};
+nwB.onclick=function(){nnS.value=100};
+window.addEventListener('keydown',function(e){if(e.key==='m'||e.key==='M')moB.onclick();});
+
+// ---- rheology: power law  eta = K * gdot^(n-1) ----
+var K=9.0;
+function nIndex(){ return (+nnS.value)/100; }        // 0.20 .. 1.00
+function eta(g,n){ return Math.min(400,K*Math.pow(Math.max(1e-3,g),n-1)); }
+
+// ---- heap (1D height field) ----
+var heap=[],NH=0,baseY=0;
+function initHeap(){
+  NH=Math.max(60,Math.floor(W/5));
+  heap=new Array(NH);
+  baseY=H*0.86;
+  for(var i=0;i<NH;i++)heap[i]=0;
+}
+function hx(i){return i/(NH-1)*W;}
+function ix(px){return Math.max(0,Math.min(NH-1,Math.round(px/W*(NH-1))));}
+
+var pourX=0, drag=false;
+c.addEventListener('mousedown',function(e){var r=c.getBoundingClientRect();var mx=e.clientX-r.left,my=e.clientY-r.top;
+  if(my<baseY-70){drag=true;pourX=mx;} else {forceLeap();}});
+c.addEventListener('mousemove',function(e){if(drag){var r=c.getBoundingClientRect();pourX=e.clientX-r.left;}});
+window.addEventListener('mouseup',function(){drag=false});
+c.addEventListener('touchstart',function(e){var r=c.getBoundingClientRect();var t=e.touches[0];
+ var my=t.clientY-r.top; if(my<baseY-70){pourX=t.clientX-r.left;} else forceLeap(); e.preventDefault();},{passive:false});
+
+// ---- state ----
+var jet={x:0,y:0},leap=null,leapCount=0,lastLeapT=-99,simT=0;
+var dimple=0, slipQ=0, slipLayerH=0, gdotImpact=0;
+var pending=0;
+var trail=[];
+
+function pourY(){ return baseY - 40 - (+phS.value)/100*(H*0.55); }
+function flowQ(){ return (+frS.value)/100; }
+
+function forceLeap(){ pending=1; }
+
+function tryLeap(dt,n){
+  // Slip layer forms when the impact shear rate is high AND the fluid actually thins (n<1).
+  // Thinning strength: how much eta drops from rest to impact shear.
+  var thinning = 1 - eta(gdotImpact,n)/eta(0.5,n);      // 0 when n=1 (no thinning) → 1 strongly thinning
+  if(n>=0.999) thinning=0;
+  slipQ = Math.max(0,thinning) * Math.min(1,gdotImpact/60) * Math.min(1,dimple/10);
+  slipLayerH = slipQ*6;
+  // stochastic intermittency: rate grows with slipQ, zero if slipQ ~ 0
+  var rate = slipQ>0.18 ? (slipQ-0.18)*3.2 : 0;
+  var fire=false;
+  if(rate>0 && Math.random() < rate*dt) fire=true;
+  if(pending>0 && slipQ>0.10){ fire=true; pending=0; }
+  else if(pending>0){ pending=Math.max(0,pending-dt); }
+  if(fire && !leap && simT-lastLeapT>0.55){
+    var dir = Math.random()<0.5?-1:1;
+    var v0 = 210+ 260*slipQ + 90*flowQ();
+    var ang = (-0.85 - 0.5*slipQ) ;           // upward-ish
+    leap={t:0,dur:0.9+1.4*slipQ,dir:dir,v:v0,ang:ang,pts:[],dimpleX:pourX};
+    leapCount++;lastLeapT=simT;
+  }
+}
+
+function step(dt){
+  simT+=dt;
+  var n=nIndex(), Q=flowQ();
+  if(pourX<=0)pourX=W*0.5;
+  pourX=Math.max(60,Math.min(W-60,pourX));
+  var py=pourY(), fall=baseY-py;
+  var vImpact=Math.sqrt(2*981*Math.max(1,fall)/100)*10;    // px/s-ish
+  var streamR=2.0+3.0*Q;
+  gdotImpact = vImpact/Math.max(0.8,streamR*0.55);
+  window.__vimp=vImpact;
+
+  // heap growth under the pour point
+  var i0=ix(pourX);
+  var dep=Q*70*dt;
+  for(var k=-4;k<=4;k++){
+    var i=i0+k; if(i<0||i>=NH)continue;
+    heap[i]+=dep*Math.exp(-k*k/6);
+  }
+  // impact dimple: jet punches a depression at the contact
+  var target = Math.min(26, 4+gdotImpact*0.22);
+  dimple += (target-dimple)*Math.min(1,dt*5);
+  heap[i0]-=dimple*dt*2.2;
+  if(heap[i0]<0)heap[i0]=0;
+
+  // viscoelastic relaxation / slumping of the pile (thinner → slumps faster)
+  var slump = 26 + 90*(1-n);
+  for(var pass=0;pass<2;pass++){
+    for(var i=1;i<NH-1;i++){
+      var avg=(heap[i-1]+heap[i+1])*0.5;
+      heap[i]+=(avg-heap[i])*Math.min(0.5,slump*dt*0.02);
+    }
+  }
+  for(var i=0;i<NH;i++){heap[i]*=(1-dt*0.10); if(heap[i]<0)heap[i]=0;}
+  heap[0]*=0.9;heap[NH-1]*=0.9;
+
+  tryLeap(dt,n);
+
+  // integrate the leaping lasso
+  if(leap){
+    leap.t+=dt;
+    // build an arc of fluid ribbon points
+    var pts=[];
+    var g=900;
+    var Np=46;
+    var span=Math.min(1,leap.t/0.35);
+    for(var i=0;i<Np;i++){
+      var tt=(i/(Np-1))*0.95*span* (leap.dur*0.55);
+      var vx=Math.cos(leap.ang)*leap.v*leap.dir;
+      var vy=Math.sin(leap.ang)*leap.v;
+      var px=leap.dimpleX+vx*tt;
+      var pyy=baseY-heapAt(leap.dimpleX)-dimple*0.4 + vy*tt + 0.5*g*tt*tt;
+      pts.push([px,pyy]);
+    }
+    leap.pts=pts;
+    // ribbon lands → adds to heap where it falls
+    var last=pts[pts.length-1];
+    if(last && last[1]>baseY-heapAt(last[0])-2){
+      var li=ix(last[0]); if(li>=0&&li<NH)heap[li]+=Q*30*dt;
+    }
+    var decay = leap.t>leap.dur*0.65 ? (1-(leap.t-leap.dur*0.65)/(leap.dur*0.35)) : 1;
+    leap.a=Math.max(0,decay);
+    if(leap.t>leap.dur){leap=null;}
+  }
+
+  trail.push({t:simT,q:slipQ,g:gdotImpact,leap:!!leap});
+  if(trail.length>240)trail.shift();
+}
+function heapAt(px){ var i=ix(px); return heap[i]||0; }
+
+function glow(col,b,fn){x.save();x.shadowColor=col;x.shadowBlur=b;fn();x.restore();}
+
+function draw(){
+  var n=nIndex();
+  x.fillStyle='#04030a';x.fillRect(0,0,W,H);
+  var g=x.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#07051a');g.addColorStop(1,'#160a24');
+  x.fillStyle=g;x.fillRect(0,0,W,H);
+  // floor
+  x.fillStyle='rgba(60,30,90,.35)';x.fillRect(0,baseY,W,H-baseY);
+  x.strokeStyle='rgba(200,160,255,.25)';x.beginPath();x.moveTo(0,baseY);x.lineTo(W,baseY);x.stroke();
+
+  // heap surface
+  x.beginPath();x.moveTo(0,baseY);
+  for(var i=0;i<NH;i++){x.lineTo(hx(i),baseY-heap[i]);}
+  x.lineTo(W,baseY);x.closePath();
+  var hg=x.createLinearGradient(0,baseY-90,0,baseY);
+  hg.addColorStop(0,'rgba(200,150,255,.55)');hg.addColorStop(1,'rgba(90,40,150,.75)');
+  x.fillStyle=hg;x.fill();
+  glow('#b070ff',16,function(){x.strokeStyle='#d0a8ff';x.lineWidth=1.6;
+    x.beginPath();for(var i=0;i<NH;i++){i?x.lineTo(hx(i),baseY-heap[i]):x.moveTo(hx(i),baseY-heap[i]);}x.stroke();});
+
+  // falling stream
+  var py=pourY(), R=2.0+3.0*flowQ();
+  var landY=baseY-heapAt(pourX)+dimple*0.5;
+  glow('#c8a4ff',18,function(){
+    x.strokeStyle='rgba(220,190,255,.92)';x.lineWidth=R*2;x.lineCap='round';
+    x.beginPath();
+    for(var t=0;t<=1.0001;t+=0.05){
+      var yy=py+(landY-py)*t;
+      var wob=Math.sin(simT*9+t*10)*1.2*flowQ();
+      t?x.lineTo(pourX+wob,yy):x.moveTo(pourX+wob,yy);
+    }
+    x.stroke();
+  });
+  // nozzle
+  x.fillStyle='#2a1a3f';x.fillRect(pourX-14,py-26,28,26);
+  x.strokeStyle='#8f6fc0';x.strokeRect(pourX-14,py-26,28,26);
+  x.fillStyle='#a99bbd';x.font='10px ui-monospace,monospace';x.fillText('drag me',pourX-18,py-32);
+
+  // impact dimple + slip layer highlight
+  var dx=pourX, dy=baseY-heapAt(pourX);
+  glow('#7ffbe0',14,function(){
+    x.strokeStyle='rgba(127,251,224,'+(0.25+0.7*slipQ)+')';x.lineWidth=1.6;
+    x.beginPath();x.ellipse(dx,dy+2,10+dimple*0.5,4+dimple*0.25,0,0,6.283);x.stroke();
+  });
+
+  // the LEAP
+  if(leap&&leap.pts.length>1){
+    var a=leap.a===undefined?1:leap.a;
+    glow('#ffd27f',26,function(){
+      x.strokeStyle='rgba(255,232,190,'+(0.95*a)+')';x.lineWidth=R*1.7;x.lineJoin='round';x.lineCap='round';
+      x.beginPath();
+      for(var i=0;i<leap.pts.length;i++){var p=leap.pts[i];i?x.lineTo(p[0],p[1]):x.moveTo(p[0],p[1]);}
+      x.stroke();
+    });
+    // leading droplet
+    var lp=leap.pts[leap.pts.length-1];
+    glow('#fff',20,function(){x.fillStyle='rgba(255,255,255,'+a+')';x.beginPath();x.arc(lp[0],lp[1],R*1.4,0,6.283);x.fill();});
+    x.fillStyle='rgba(255,210,127,'+a+')';x.font='12px ui-monospace,monospace';
+    x.fillText('LEAP — slip layer ricochets the jet',Math.min(W-260,dx+20),dy-70);
+  }
+
+  drawInset(n);
+  drawCurve(n);
+  hud(n);
+}
+
+function drawInset(n){
+  var iw=Math.min(250,W*0.24), ih=110, ix0=W-iw-24, iy0=H-ih-24;
+  if(W<760){iw=Math.min(230,W-30);ix0=W-iw-12;}
+  x.fillStyle='rgba(6,4,14,.8)';x.fillRect(ix0,iy0,iw,ih);
+  x.strokeStyle='rgba(200,160,255,.3)';x.strokeRect(ix0,iy0,iw,ih);
+  x.fillStyle='#c8a4ff';x.font='10px ui-monospace,monospace';
+  x.fillText('CUTAWAY: impact dimple, shear-rate colour',ix0+6,iy0+13);
+  // heap cross-section
+  var by=iy0+ih-14;
+  x.beginPath();x.moveTo(ix0+6,by);
+  for(var i=0;i<=40;i++){
+    var u=i/40, px=ix0+6+u*(iw-12);
+    var prof=34*Math.exp(-Math.pow((u-0.5)*4.2,2)) - (dimple*0.9)*Math.exp(-Math.pow((u-0.5)*15,2));
+    x.lineTo(px,by-Math.max(0,prof));
+  }
+  x.lineTo(ix0+iw-6,by);x.closePath();
+  x.fillStyle='rgba(110,60,170,.7)';x.fill();
+  // slip layer band coloured by shear rate
+  var layers=22;
+  for(var i=0;i<layers;i++){
+    var u=i/(layers-1), px=ix0+6+ (0.5-0.16+0.32*u)*(iw-12);
+    var prof=34*Math.exp(-Math.pow(((0.5-0.16+0.32*u)-0.5)*4.2,2)) - (dimple*0.9)*Math.exp(-Math.pow(((0.5-0.16+0.32*u)-0.5)*15,2));
+    var top=by-Math.max(0,prof);
+    var g=gdotImpact*Math.exp(-Math.pow((u-0.5)*3.0,2));
+    var e=eta(g,n);
+    var hot=Math.max(0,Math.min(1,1-e/eta(0.5,n)));
+    var thick=1.2+slipLayerH*Math.exp(-Math.pow((u-0.5)*3.0,2));
+    x.fillStyle='rgba('+Math.round(120+135*hot)+','+Math.round(240*hot+60)+','+Math.round(255-100*hot)+','+(0.25+0.65*hot)+')';
+    x.fillRect(px-3,top-thick,6,thick+1.5);
+  }
+  x.fillStyle= slipQ>0.2?'#7ffbe0':'#887';
+  x.font='10px ui-monospace,monospace';
+  x.fillText(slipQ>0.2?'slip layer PRESENT (η collapsed)':'no slip layer (η uniform)',ix0+6,iy0+ih-3);
+  // incoming jet arrow
+  x.strokeStyle='rgba(220,190,255,.8)';x.lineWidth=2;
+  x.beginPath();x.moveTo(ix0+iw*0.5,iy0+20);x.lineTo(ix0+iw*0.5,by-34);x.stroke();
+}
+
+function drawCurve(n){
+  var cw=Math.min(250,W*0.24), ch=118, cx0=W-cw-24, cy0=24;
+  if(W<760){cw=Math.min(230,W-30);cx0=W-cw-12;}
+  x.fillStyle='rgba(6,4,14,.78)';x.fillRect(cx0,cy0,cw,ch);
+  x.strokeStyle='rgba(200,160,255,.3)';x.strokeRect(cx0,cy0,cw,ch);
+  function px(g){return cx0+(Math.log10(Math.max(0.05,g))-Math.log10(0.05))/(Math.log10(500)-Math.log10(0.05))*cw;}
+  function py(e){return cy0+ch-(Math.log10(Math.max(0.05,e))-Math.log10(0.05))/(Math.log10(500)-Math.log10(0.05))*ch;}
+  // Newtonian reference n=1
+  x.strokeStyle='rgba(255,255,255,.28)';x.setLineDash([4,3]);x.lineWidth=1.3;x.beginPath();
+  for(var g=0.05;g<=500;g*=1.2){var X=px(g),Y=py(eta(g,1));g===0.05?x.moveTo(X,Y):x.lineTo(X,Y);}
+  x.stroke();x.setLineDash([]);
+  x.fillStyle='rgba(255,255,255,.5)';x.font='10px ui-monospace,monospace';
+  x.fillText('n=1 Newtonian: flat → NO leaps',cx0+6,cy0+ch-6);
+  // current thinning curve
+  glow('#c8a4ff',12,function(){
+    x.strokeStyle='#d8b4ff';x.lineWidth=2;x.beginPath();var f=true;
+    for(var g=0.05;g<=500;g*=1.15){var X=px(g),Y=py(eta(g,n));f?(x.moveTo(X,Y),f=false):x.lineTo(X,Y);}
+    x.stroke();});
+  // slip-layer operating point
+  var op=px(gdotImpact), oy=py(eta(gdotImpact,n));
+  glow(slipQ>0.2?'#7ffbe0':'#fff',18,function(){
+    x.fillStyle=slipQ>0.2?'#7ffbe0':'#fff';x.beginPath();x.arc(op,oy,4.5,0,6.283);x.fill();});
+  x.fillStyle='#e6d8ff';x.fillText('η(γ̇) = K·γ̇ⁿ⁻¹   n='+n.toFixed(2),cx0+6,cy0-6);
+  x.fillStyle='#9ff5d0';x.fillText('slip-layer op. point',Math.min(cx0+cw-110,op+7),oy-6);
+  // leap timeline
+  var ty=cy0+ch+10;
+  x.fillStyle='rgba(6,4,14,.6)';x.fillRect(cx0,ty,cw,20);
+  x.strokeStyle='rgba(200,160,255,.2)';x.strokeRect(cx0,ty,cw,20);
+  for(var i=0;i<trail.length;i++){
+    var tr=trail[i],X=cx0+i/240*cw;
+    if(tr.leap){x.fillStyle='rgba(255,210,127,.85)';x.fillRect(X,ty+2,2,16);}
+    else{x.fillStyle='rgba(127,251,224,'+(0.15+0.5*tr.q)+')';x.fillRect(X,ty+16-12*tr.q,1.5,2+12*tr.q);}
+  }
+  x.fillStyle='#998aa8';x.font='10px ui-monospace,monospace';
+  x.fillText('intermittency: slip strength & leaps',cx0,ty+32);
+}
+
+function hud(n){
+  rd.textContent=
+   'n (thinning)   '+n.toFixed(2)+(n>=0.999?'  ◀ Newtonian: leaps impossible':'')+'\n'+
+   'γ̇ at impact    '+gdotImpact.toFixed(1)+' s⁻¹\n'+
+   'η(γ̇)          '+eta(gdotImpact,n).toFixed(2)+' Pa·s  (η rest '+eta(0.5,n).toFixed(1)+')\n'+
+   'slip strength  '+(slipQ*100).toFixed(0)+' %\n'+
+   'dimple depth   '+dimple.toFixed(1)+' px\n'+
+   'leaps so far   '+leapCount+'   '+(leap?'◀ LEAPING NOW':'')+'\n'+
+   'time           '+simT.toFixed(1)+' s'+(slowmo?'   [slow-mo ×0.25]':'');
+}
+
+var last=0;
+function loop(t){
+  if(!last)last=t;
+  var dt=Math.min(0.033,(t-last)/1000);last=t;
+  if(slowmo)dt*=0.25;
+  var sub=2;for(var i=0;i<sub;i++)step(dt/sub);
+  draw();
+  requestAnimationFrame(loop);
+}
+rz();pourX=W*0.5;requestAnimationFrame(loop);
+})();
+</script>

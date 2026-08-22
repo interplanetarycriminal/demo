@@ -53,12 +53,12 @@ window.addEventListener('resize',resize);
 var TC=92.0;          // YBCO
 var S={T:77,k:0.55,m:1.0,flipped:false,boil:true,expel:0};
 // expel = order parameter 0..1 : fraction of field excluded (superconducting fraction)
-function scFrac(T){ if(T>=TC)return 0; var t=1-T/TC; return Math.max(0,Math.min(1,Math.pow(t,0.5)*1.35)); }
+function scFrac(T){ if(T>=TC)return 0; var t=1-T/TC; return Math.max(0,Math.min(1,Math.pow(t,0.5)*2.2)); }
 
 // ---------- physics model ----------
 // image-dipole repulsion: F_img = C * m^2 * expel / gap^4  (2D-ish dipole-over-mirror)
 // pinning: restoring spring toward the pinned position, stiffness ∝ k * expel
-var C=2.2e-4;
+var C=2.3e-7;
 var mag={x:0,y:0.022,vx:0,vy:0,ang:0,va:0};   // metres, y measured from puck face (up positive)
 var pinned={x:0,y:0.022,set:false};
 var G=9.81, MASS=1.0;                          // arbitrary-mass model: forces expressed as accelerations
@@ -67,18 +67,17 @@ function imageForce(gap){                      // upward accel from Meissner ima
   var gp=Math.max(0.0015,gap);
   return C*S.m*S.m*S.expel/Math.pow(gp,4);
 }
-// net vertical accel; sign flips with orientation (flipped: magnet is BELOW the puck, gravity still down)
+// net accel. In BOTH modes y = gap from the puck face (>0). Upright: +y is up.
+// Flipped: +y is DOWN (away from the puck underside), so gravity and Meissner
+// repulsion BOTH point +y and only pinning holds the magnet up.
 function netAccel(x,y){
-  var dir=S.flipped?-1:1;                      // in flipped mode the "gap" grows downward
-  var gap=Math.abs(y);
-  var Fimg=imageForce(gap)*dir*(y>=0?1:-1);    // repulsion always pushes away from face
-  var ax=0, ay=Fimg - G;
+  var gap=Math.abs(y), F=imageForce(gap), ax=0, ay;
   if(S.flipped){
-    // hanging below: repulsion pushes DOWN, pinning holds it UP. Net vertical:
-    ay=-imageForce(gap) - G + pinK()*(pinned.y-y);
-    ax=pinK()*(pinned.x-x);
+    ay = F + G + pinK()*(pinned.y-y);          // dA/dy = -4F/y - k < 0  → stable both ways
+    ax = pinK()*(pinned.x-x);
     return [ax,ay];
   }
+  ay = F - G;
   if(pinned.set){ ay+=pinK()*(pinned.y-y); ax+=pinK()*(pinned.x-x); }
   else { ax+= -x*(2.0*S.expel); }              // weak lateral centring from field shape
   return [ax,ay];

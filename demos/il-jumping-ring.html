@@ -63,14 +63,16 @@ window.addEventListener('resize',resize);
    A SLIT ring has no closed path: R -> infinity, Ir -> 0, F -> 0.
 ============================================ */
 var Pk={
-  M0:0.9e-3,        /* H, coil-ring mutual at z=0 */
+  M0:1.6e-5,        /* H, coil-ring mutual scale */
   z0:0.062,         /* m, falloff scale */
+  zOff:0.030,       /* m, ring rests above the winding midplane (gradient ≠ 0 at rest) */
   L:2.2e-7,         /* H, ring self inductance */
   R0:2.6e-4,        /* ohm, solid aluminium ring at room temp */
-  Ipk:180           /* A peak coil current */
+  Ipk:30            /* A peak coil current */
 };
-function Mz(z){var u=z/Pk.z0;return Pk.M0/Math.pow(1+u*u,1.5);}
-function dMz(z){var u=z/Pk.z0;return -3*Pk.M0*u/(Pk.z0*Math.pow(1+u*u,2.5));}
+function uOf(z){return (z+Pk.zOff)/Pk.z0;}
+function Mz(z){var u=uOf(z);return Pk.M0/Math.pow(1+u*u,1.5);}
+function dMz(z){var u=uOf(z);return -3*Pk.M0*u/(Pk.z0*Math.pow(1+u*u,2.5));}
 function ringR(){return S.slit? 1e3 : Pk.R0/S.sigma;}
 function forceAt(z,f){
   var w=2*Math.PI*f,R=ringR(),Z2=R*R+w*w*Pk.L*Pk.L;
@@ -101,7 +103,7 @@ window.addEventListener('keyup',function(e){if(e.code==='Space')energize(false);
 c.addEventListener('pointerdown',function(){energize(true);});
 window.addEventListener('pointerup',function(){energize(false);});
 
-var Z_MAX=0.42;
+var Z_MAX=0.70;
 function step(dt){
   S.t+=dt;
   var F=(S.energized?forceAt(S.z,S.freq):0);
@@ -193,7 +195,7 @@ function frame(now){
   var rw=54,rh=10;
   var Ir=S.energized?ringAmp(S.z,S.freq):0;
   var irNow=Ir*Math.sin(phi-Math.PI/2-phaseLag(S.freq));
-  var iNorm=Math.min(1,Math.abs(irNow)/2200);
+  var iNorm=Math.min(1,Math.abs(irNow)/1200);
   g.save();
   if(S.energized&&!S.slit){g.globalCompositeOperation='lighter';neon(cx,ry,86,'90,230,255',0.06+0.30*iNorm);g.globalCompositeOperation='source-over';}
   g.lineWidth=7;
@@ -264,7 +266,7 @@ function drawPhasor(phi){
     g.strokeStyle='rgba('+p.c+',0.95)';g.lineWidth=2;
     g.beginPath();g.moveTo(cx,cy);g.lineTo(ex,ey);g.stroke();
     g.fillStyle='rgba('+p.c+',0.95)';g.beginPath();g.arc(ex,ey,3,0,Math.PI*2);g.fill();
-    g.fillText(p.l,x0-6,y0+2*R+14+i*0);
+    g.fillText(p.l,ex+(ex>cx?5:-5-g.measureText(p.l).width),ey-5);
   }
   g.fillStyle='#8fc4dc';
   g.fillText('I lags Φ by '+(90+lag*180/Math.PI).toFixed(0)+'° → mean F > 0',x0-6,y0+2*R+18);

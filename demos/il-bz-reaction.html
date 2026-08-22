@@ -1,0 +1,259 @@
+<title>BZ Spirals</title>
+<style>
+html,body{margin:0;padding:0;background:#04050a;overflow:hidden;height:100%}
+canvas{display:block;position:fixed;inset:0}
+#ui{position:fixed;top:0;left:0;padding:12px 14px;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;
+  color:#ffc4d6;background:rgba(8,4,10,.66);backdrop-filter:blur(6px);border-right:1px solid #55203a;
+  border-bottom:1px solid #55203a;max-width:344px;z-index:10;text-shadow:0 0 8px #f068}
+#ui h1{margin:0 0 4px;font-size:14px;letter-spacing:.14em;color:#ff6a9c;text-transform:uppercase}
+#ui .m{color:#dcb6c4}#ui .s{color:#9fe8ff}#ui .l{color:#9fe0a8}#ui .k{color:#9a7d8a}
+#ui .story{color:#cfa8ff;margin-top:5px;font-style:italic}
+#ui a{color:#ff6a9c;text-decoration:none;border-bottom:1px dotted #ff6a9c}
+.tag{display:inline-block;margin-top:6px;padding:1px 6px;border:1px solid #7a3050;border-radius:8px;color:#b98da0;font-size:10px}
+.row{display:flex;align-items:center;gap:6px;margin:3px 0}
+.row label{width:96px;color:#9a7d8a}
+input[type=range]{flex:1;height:14px;accent-color:#f69;background:transparent}
+#read{margin-top:6px;color:#ffe0ea}#read b{color:#fff}
+button{background:#2a0c1a;color:#ff6a9c;border:1px solid #7a3050;border-radius:4px;
+  font:11px ui-monospace,monospace;padding:3px 9px;cursor:pointer;margin:3px 4px 0 0}
+button:hover{background:#3f1228;box-shadow:0 0 10px #f068}
+</style>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>BZ Spirals</h1>
+<div class="m">An autocatalytic redox cycle coupled by diffusion in a thin dish sends target and spiral colour waves across the liquid — chemistry computing patterns, no life required.</div>
+<div class="s">Boris Belousov 1951 · Anatol Zhabotinsky 1960s · Arthur Winfree mapped the spirals</div>
+<div class="story">Belousov's paper was rejected as "impossible" — oscillation looked like a violation of equilibrium. He left science. Zhabotinsky revived the recipe a decade later; Prigogine's dissipative structures explained why an open system may keep beating.</div>
+<div class="l">LINEAGE: Belousov 1951 → Zhabotinsky 1960s → Winfree's spiral atlas · cousins: cardiac spiral waves, slime-mold aggregation</div>
+<div class="row"><label>excitability ε</label><input id="sE" type="range" min="0.010" max="0.120" step="0.001" value="0.036"></div>
+<div class="row"><label>threshold a</label><input id="sA" type="range" min="0.40" max="1.10" step="0.005" value="0.75"></div>
+<div class="row"><label>recovery b</label><input id="sB" type="range" min="0.001" max="0.060" step="0.001" value="0.020"></div>
+<div class="row"><label>diffusion</label><input id="sD" type="range" min="0.20" max="1.60" step="0.01" value="0.85"></div>
+<div class="row"><label>speed</label><input id="sV" type="range" min="1" max="14" step="1" value="6"></div>
+<div><button id="bSeed">RESET · random seed</button><button id="bSpiral">MAKE SPIRALS</button></div>
+<div class="k">CLICK to poke a wave · DRAG a tear through a wavefront → the broken ends curl into counter-rotating spirals</div>
+<div id="read"></div>
+<span class="tag">simulation — no recipe · 2-var Oregonator-style FitzHugh–Nagumo excitable medium</span>
+<div style="margin-top:6px"><a href="index.html">← gallery</a></div>
+</div>
+<script>
+"use strict";
+var cv=document.getElementById('c'),g=cv.getContext('2d'),W=0,H=0,DPR=1;
+// ---- grid ------------------------------------------------------------
+var N=230, M=230;           // decent grid
+var u=new Float32Array(N*M), v=new Float32Array(N*M);
+var un=new Float32Array(N*M), vn=new Float32Array(N*M);
+var img=null,idata=null,off=document.createElement('canvas');
+off.width=N;off.height=M;
+var octx=off.getContext('2d');
+img=octx.createImageData(N,M);idata=img.data;
+for(var i=0;i<N*M;i++)idata[i*4+3]=255;
+
+function idx(x,y){return y*N+x;}
+function seed(rand){
+  for(var i=0;i<N*M;i++){u[i]=0;v[i]=0.05;}
+  var k=rand?6+((Math.random()*7)|0):7;
+  for(var s=0;s<k;s++){
+    var cx=(Math.random()*N)|0, cy=(Math.random()*M)|0, r=3+Math.random()*5;
+    for(var y=-8;y<=8;y++)for(var x=-8;x<=8;x++){
+      var X=cx+x,Y=cy+y;if(X<0||Y<0||X>=N||Y>=M)continue;
+      if(x*x+y*y<r*r)u[idx(X,Y)]=1;
+    }
+  }
+  // a couple of pre-broken fronts => spontaneous spirals
+  makeSpiralPair((N*0.32)|0,(M*0.5)|0);
+}
+function makeSpiralPair(cx,cy){
+  // half-plane of excited u meeting a half-plane of refractory v: the classic spiral initial condition
+  for(var y=0;y<M;y++)for(var x=0;x<N;x++){
+    var d=x-cx;
+    if(d>0&&d<10&&Math.abs(y-cy)<M*0.42){u[idx(x,y)]=1;}
+    if(d>=10&&d<40&&y<cy){v[idx(x,y)]=0.42;}
+  }
+}
+seed(false);
+
+var sE=document.getElementById('sE'),sA=document.getElementById('sA'),sB=document.getElementById('sB'),
+    sD=document.getElementById('sD'),sV=document.getElementById('sV'),read=document.getElementById('read');
+document.getElementById('bSeed').onclick=function(){seed(true);};
+document.getElementById('bSpiral').onclick=function(){
+  for(var i=0;i<N*M;i++){u[i]=0;v[i]=0.03;}
+  makeSpiralPair((N*0.35)|0,(M*0.45)|0);
+  makeSpiralPair((N*0.72)|0,(M*0.62)|0);
+};
+addEventListener('keydown',function(e){if(e.key==='x'||e.key==='X')seed(true);});
+
+// ---- Barkley excitable-medium update (2-var Oregonator-style) --------
+//   du/dt = (1/eps) u (1-u) (u - (v+b)/a) + D lap(u)
+//   dv/dt = u - v
+var DT=0.022, DX=1.0;
+function stepSim(){
+  var eps=+sE.value, a=+sA.value, b=+sB.value, D=+sD.value;
+  var kd=D*DT/(DX*DX);
+  for(var y=0;y<M;y++){
+    var ym=(y-1+M)%M, yp=(y+1)%M;
+    for(var x=0;x<N;x++){
+      var xm=(x-1+N)%N, xp=(x+1)%N;
+      var i=y*N+x;
+      var uc=u[i];
+      var lap=u[y*N+xm]+u[y*N+xp]+u[ym*N+x]+u[yp*N+x]-4*uc;
+      var thr=(v[i]+b)/a;
+      var du=uc*(1-uc)*(uc-thr)/eps;
+      var nu=uc+DT*du+kd*lap;
+      if(nu<0)nu=0; else if(nu>1)nu=1;
+      un[i]=nu;
+      var nv=v[i]+DT*(uc-v[i]);
+      if(nv<0)nv=0; else if(nv>1)nv=1;
+      vn[i]=nv;
+    }
+  }
+  var t=u;u=un;un=t; t=v;v=vn;vn=t;
+}
+
+// ---- ferroin colour map (red <-> blue) -------------------------------
+var LUT=new Uint8Array(256*256*3);
+(function(){
+  for(var iu=0;iu<256;iu++)for(var iv=0;iv<256;iv++){
+    var U=iu/255,V=iv/255;
+    // reduced ferroin = deep red; oxidised (ferriin) = blue; refractory tail purple
+    var r=210*U+120*(1-U)*(1-V)*0.9+30;
+    var gg=40*U+30*(1-U)+90*V*(1-U);
+    var bb=90*U+250*V*(1-U)*1.0+40;
+    var k=(iu*256+iv)*3;
+    LUT[k]=Math.min(255,r|0);LUT[k+1]=Math.min(255,gg|0);LUT[k+2]=Math.min(255,bb|0);
+  }
+})();
+function render(){
+  var d=idata;
+  for(var i=0;i<N*M;i++){
+    var iu=(u[i]*255)|0, iv=(v[i]*255)|0;
+    if(iu>255)iu=255;if(iv>255)iv=255;if(iu<0)iu=0;if(iv<0)iv=0;
+    var k=(iu*256+iv)*3, j=i*4;
+    d[j]=LUT[k];d[j+1]=LUT[k+1];d[j+2]=LUT[k+2];
+  }
+  octx.putImageData(img,0,0);
+}
+
+// ---- interaction -----------------------------------------------------
+var dish={x:0,y:0,r:0};
+function layout(){
+  DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;
+  cv.width=W*DPR|0;cv.height=H*DPR|0;cv.style.width=W+'px';cv.style.height=H+'px';
+  g.setTransform(DPR,0,0,DPR,0,0);
+  var r=Math.min(W,H)*0.42;
+  dish={x:W*0.54,y:H*0.5,r:r};
+}
+addEventListener('resize',layout);layout();
+
+function toGrid(px,py){
+  var gx=(px-(dish.x-dish.r))/(2*dish.r)*N;
+  var gy=(py-(dish.y-dish.r))/(2*dish.r)*M;
+  return [gx,gy];
+}
+function poke(gx,gy,rad){
+  for(var y=-rad;y<=rad;y++)for(var x=-rad;x<=rad;x++){
+    if(x*x+y*y>rad*rad)continue;
+    var X=((gx+x)|0),Y=((gy+y)|0);
+    if(X<0||Y<0||X>=N||Y>=M)continue;
+    u[idx(X,Y)]=1;v[idx(X,Y)]=0;
+  }
+}
+function tear(gx,gy,rad){
+  // wipe a hole in BOTH fields: erases the front locally, leaving two free ends that curl
+  for(var y=-rad;y<=rad;y++)for(var x=-rad;x<=rad;x++){
+    if(x*x+y*y>rad*rad)continue;
+    var X=((gx+x)|0),Y=((gy+y)|0);
+    if(X<0||Y<0||X>=N||Y>=M)continue;
+    u[idx(X,Y)]=0;v[idx(X,Y)]=0;
+  }
+}
+var dragging=false,dragged=false,tears=0,pokes=0;
+cv.addEventListener('pointerdown',function(e){
+  dragging=true;dragged=false;
+  cv.setPointerCapture&&cv.setPointerCapture(e.pointerId);
+  var p=toGrid(e.clientX,e.clientY);lastP=p;
+});
+var lastP=null;
+cv.addEventListener('pointermove',function(e){
+  if(!dragging)return;
+  var p=toGrid(e.clientX,e.clientY);
+  if(lastP){
+    var dx=p[0]-lastP[0],dy=p[1]-lastP[1],dist=Math.hypot(dx,dy);
+    if(dist>0.8){
+      dragged=true;
+      var steps=Math.ceil(dist);
+      for(var s=0;s<=steps;s++)tear(lastP[0]+dx*s/steps,lastP[1]+dy*s/steps,4);
+      tears++;
+    }
+  }
+  lastP=p;
+});
+addEventListener('pointerup',function(e){
+  if(dragging&&!dragged&&lastP){poke(lastP[0],lastP[1],4);pokes++;}
+  dragging=false;lastP=null;
+});
+
+// ---- activity / wave metrics ----------------------------------------
+var actHist=[],frames=0,fps=60,lastT=performance.now();
+function metrics(){
+  var exc=0,ref=0;
+  for(var i=0;i<N*M;i+=3){if(u[i]>0.5)exc++;if(v[i]>0.25)ref++;}
+  return {exc:exc*3,ref:ref*3};
+}
+
+var last=performance.now(),acc=0,simT=0;
+function frame(now){
+  var dt=(now-last)/1000;last=now;
+  fps=fps*0.92+(1/Math.max(1e-3,dt))*0.08;
+  var steps=+sV.value;
+  for(var s=0;s<steps;s++){stepSim();simT+=DT;}
+  render();
+
+  g.fillStyle='#04050a';g.fillRect(0,0,W,H);
+  var rg=g.createRadialGradient(dish.x,dish.y,dish.r*0.2,dish.x,dish.y,dish.r*1.9);
+  rg.addColorStop(0,'rgba(70,10,40,.35)');rg.addColorStop(1,'rgba(0,0,0,0)');
+  g.fillStyle=rg;g.fillRect(0,0,W,H);
+
+  // petri dish clip
+  g.save();
+  g.beginPath();g.arc(dish.x,dish.y,dish.r,0,6.2832);g.clip();
+  g.imageSmoothingEnabled=true;
+  g.drawImage(off,dish.x-dish.r,dish.y-dish.r,dish.r*2,dish.r*2);
+  g.restore();
+  // glass rim glow
+  g.save();
+  g.shadowColor='rgba(255,90,150,.7)';g.shadowBlur=28;
+  g.strokeStyle='rgba(255,150,190,.55)';g.lineWidth=3;
+  g.beginPath();g.arc(dish.x,dish.y,dish.r,0,6.2832);g.stroke();
+  g.shadowBlur=0;
+  g.strokeStyle='rgba(255,255,255,.12)';g.lineWidth=1;
+  g.beginPath();g.arc(dish.x,dish.y,dish.r*0.985,0,6.2832);g.stroke();
+  g.restore();
+
+  var m=metrics();
+  actHist.push(m.exc);if(actHist.length>240)actHist.shift();
+  // activity sparkline
+  var px=W-250,py=H-90,pw=230,ph=64;
+  g.save();g.fillStyle='rgba(10,4,10,.65)';g.fillRect(px-8,py-16,pw+16,ph+26);
+  g.strokeStyle='rgba(160,60,100,.5)';g.strokeRect(px,py,pw,ph);
+  g.fillStyle='#9a7d8a';g.font='10px ui-monospace,monospace';g.textAlign='left';
+  g.fillText('excited-cell count (wave activity)',px-4,py-4);
+  var mx=1;for(var i=0;i<actHist.length;i++)if(actHist[i]>mx)mx=actHist[i];
+  g.beginPath();g.strokeStyle='#ff6a9c';g.lineWidth=1.5;
+  for(var i2=0;i2<actHist.length;i2++){
+    var X=px+pw*(i2/Math.max(1,actHist.length-1)),Y=py+ph-ph*(actHist[i2]/mx)*0.94;
+    i2?g.lineTo(X,Y):g.moveTo(X,Y);
+  }
+  g.shadowColor='#ff6a9c';g.shadowBlur=8;g.stroke();g.restore();
+
+  var regime = (+sE.value<0.030)?'sharp spirals':((+sE.value>0.085)?'near-chaotic / breakup':'targets ⇄ spirals');
+  read.innerHTML=
+    'grid <b>'+N+'×'+M+'</b> · sim t=<b>'+simT.toFixed(1)+'</b> · <b>'+fps.toFixed(0)+'</b> fps<br>'+
+    'excited=<b>'+m.exc+'</b> refractory=<b>'+m.ref+'</b><br>'+
+    'regime: <b>'+regime+'</b> (ε='+(+sE.value).toFixed(3)+', a='+(+sA.value).toFixed(2)+', b='+(+sB.value).toFixed(3)+')<br>'+
+    'pokes=<b>'+pokes+'</b> tears=<b>'+tears+'</b> → free ends curl into counter-rotating spirals';
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>

@@ -1,0 +1,528 @@
+<meta charset="utf-8">
+<title>Supercooled Snap-Freeze</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;background:#04070e;overflow:hidden}
+  canvas{display:block;position:fixed;inset:0}
+  #ui{position:fixed;top:0;left:0;z-index:10;margin:12px;padding:11px 13px;max-width:355px;
+      background:rgba(4,10,20,.72);border:1px solid rgba(120,200,255,.28);border-radius:7px;
+      color:#bfe6ff;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;
+      backdrop-filter:blur(6px);box-shadow:0 0 24px rgba(60,150,255,.15)}
+  #ui h1{margin:0 0 3px;font-size:13px;letter-spacing:.16em;color:#8ff0ff;text-shadow:0 0 12px #29d6ff}
+  #ui .m{color:#dff3ff}
+  #ui .d{color:#6b93b4}
+  #ui .k{color:#ffd27a}
+  #ui a{color:#7ef0c0;text-decoration:none}
+  #ui a:hover{text-decoration:underline}
+  #ui hr{border:0;border-top:1px solid rgba(120,200,255,.16);margin:7px 0}
+  #ui input[type=range]{width:128px;vertical-align:middle;accent-color:#4fd8ff;height:12px}
+  .row{display:flex;justify-content:space-between;gap:8px}
+  .val{color:#8ff0ff}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>SUPERCOOLED SNAP-FREEZE</h1>
+  <div class="m">Pure still water stays liquid below 0&deg;C until a nucleation site appears — then latent heat slams the mix back up to exactly 0&deg;C.</div>
+  <div class="d">Fahrenheit's supercooling notes, 1720s &middot; classical nucleation theory (Volmer; Becker&ndash;D&ouml;ring, 1935)</div>
+  <div class="d">LINEAGE: Fahrenheit 1720s &rarr; nucleation theory &rarr; freezer-bottle party trick; cousins: supersaturated "hot ice", cloud seeding, aircraft icing.</div>
+  <hr>
+  <div><span class="k">CLICK bottle</span> = tap/nucleate &middot; <span class="k">S</span> seed crystal &middot; <span class="k">R</span> new run &middot; <span class="k">C</span> clear scatter</div>
+  <div>target &Delta;T <input id="dt" type="range" min="5" max="15" step="0.5" value="11"> <span class="val" id="dtv">-11.0&deg;C</span></div>
+  <div>purity <input id="pu" type="range" min="0" max="100" step="1" value="88"> <span class="val" id="puv">88%</span></div>
+  <hr>
+  <div class="row"><span class="d">temperature</span><span class="val" id="rT">+18.0 &deg;C</span></div>
+  <div class="row"><span class="d">state</span><span class="val" id="rS">cooling</span></div>
+  <div class="row"><span class="d">spontaneous nucleation risk</span><span class="val" id="rP">0.0 %/s</span></div>
+  <div class="row"><span class="d">frozen fraction f = c&Delta;T/L</span><span class="val" id="rF">0.0 %</span></div>
+  <div class="row"><span class="d">latent budget</span><span class="val" id="rL">&mdash;</span></div>
+  <hr>
+  <div class="d">Bottled instant slushy: the freezer must still pull 334 J/g out before the mix can drop below 0&deg;C again.</div>
+  <div><a href="index.html">&larr; gallery</a></div>
+</div>
+<script>
+"use strict";
+var C = 4.19, L = 334;              // J/g/K, J/g
+var cv = document.getElementById('c'), ctx = cv.getContext('2d');
+var W = 0, H = 0, DPR = 1;
+function resize(){
+  DPR = Math.min(2, window.devicePixelRatio || 1);
+  W = window.innerWidth; H = window.innerHeight;
+  cv.width = Math.round(W*DPR); cv.height = Math.round(H*DPR);
+  cv.style.width = W+'px'; cv.style.height = H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize', resize); resize();
+
+var el = function(i){return document.getElementById(i);};
+var dtS = el('dt'), puS = el('pu');
+var targetDT = 11, purity = 0.88;
+function syncUI(){
+  targetDT = parseFloat(dtS.value); purity = parseFloat(puS.value)/100;
+  el('dtv').textContent = '-'+targetDT.toFixed(1)+'°C';
+  el('puv').textContent = puS.value+'%';
+}
+dtS.addEventListener('input', syncUI); puS.addEventListener('input', syncUI); syncUI();
+
+// ---------- physics state ----------
+var S = null, scatter = [], t0 = performance.now();
+function newRun(){
+  S = {
+    T: 18, phase:'cooling', trace:[], t:0, f:0, frozen:0,
+    dtGoal: targetDT, purity: purity, risk:0, cum:0,
+    nucT:0, nucX:0, nucY:0, nucTime:-1, seeds:[], crystals:[], flash:0,
+    barrierScale:1, cause:'', released:0, sinkRate:0.9, plateauStart:-1
+  };
+}
+// instantaneous frozen fraction from sensible-heat / latent-heat budget
+function fracFrozen(dT){ var f = C*dT/L; return f<0?0:(f>1?1:f); }
+
+// spontaneous nucleation hazard rate (per second): steeply rising with depth,
+// killed by purity (dirty water nucleates almost at once near 0)
+function hazard(dT, pur){
+  if (dT <= 0) return 0;
+  var impurity = 1 - pur;                       // 0 clean .. 1 dirty
+  var base = Math.pow(dT/16, 4.2);              // depth term
+  var site = 0.02 + 6.5*Math.pow(impurity,1.7); // available heterogeneous sites
+  return base*site;
+}
+
+function nucleate(x, y, cause){
+  if (!S || S.phase !== 'super') return;
+  S.phase = 'freezing'; S.cause = cause; S.nucT = S.T;
+  S.nucX = x; S.nucY = y; S.nucTime = S.t; S.flash = 1;
+  S.f = fracFrozen(-S.T);       // T is negative here
+  S.released = S.f * L;         // J/g dumped as latent heat
+  S.crystals = [];
+  buildDendrites(x, y);
+  scatter.push({dT:-S.T, pur:S.purity, spont: cause==='spontaneous'});
+  if (scatter.length > 220) scatter.shift();
+}
+
+// ---------- bottle geometry ----------
+var B = {x:0,y:0,w:0,h:0};
+function layout(){
+  var h = Math.min(H*0.62, 460), w = h*0.34;
+  B.h = h; B.w = w; B.x = W*0.30 - w/2; B.y = H*0.5 - h/2;
+}
+
+// dendritic crystal tree: recursive feathery branches from nucleation point
+function buildDendrites(x,y){
+  var arms = 6, i, a;
+  for (i=0;i<arms;i++){
+    a = (i/arms)*Math.PI*2 + Math.random()*0.4;
+    growBranch(x, y, a, B.h*0.55, 0, 2.4);
+  }
+}
+function growBranch(x,y,ang,len,depth,wdt){
+  if (depth > 4 || len < 6) return;
+  var segs = 7, px=x, py=y, i, t, nx, ny, pts=[[x,y]];
+  for (i=1;i<=segs;i++){
+    t = i/segs;
+    ang += (Math.random()-0.5)*0.16;
+    nx = px + Math.cos(ang)*len/segs; ny = py + Math.sin(ang)*len/segs;
+    pts.push([nx,ny]); px=nx; py=ny;
+    if (i%2===0 && depth<4){
+      growBranch(nx,ny,ang+0.85,len*0.36,depth+1,wdt*0.6);
+      growBranch(nx,ny,ang-0.85,len*0.36,depth+1,wdt*0.6);
+    }
+  }
+  S.crystals.push({pts:pts, w:wdt, d:depth, delay: depth*0.05 + Math.random()*0.06});
+}
+
+// ---------- drawing helpers ----------
+function glow(col, blur){ ctx.shadowColor = col; ctx.shadowBlur = blur; }
+function noGlow(){ ctx.shadowBlur = 0; }
+
+function drawFreezer(){
+  var g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#061224'); g.addColorStop(0.55,'#04101d'); g.addColorStop(1,'#020509');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  // frosty grid shelf
+  ctx.strokeStyle='rgba(90,170,230,.07)'; ctx.lineWidth=1;
+  var i;
+  for(i=0;i<W;i+=46){ctx.beginPath();ctx.moveTo(i,0);ctx.lineTo(i,H);ctx.stroke();}
+  for(i=0;i<H;i+=46){ctx.beginPath();ctx.moveTo(0,i);ctx.lineTo(W,i);ctx.stroke();}
+  // shelf line under bottle
+  ctx.strokeStyle='rgba(120,200,255,.22)'; ctx.lineWidth=2; glow('#3aa8ff',18);
+  ctx.beginPath(); ctx.moveTo(B.x-90, B.y+B.h+14); ctx.lineTo(B.x+B.w+90, B.y+B.h+14); ctx.stroke(); noGlow();
+}
+
+function bottlePath(){
+  var x=B.x, y=B.y, w=B.w, h=B.h, r=w*0.28, neck=w*0.34, sh=h*0.16;
+  ctx.beginPath();
+  ctx.moveTo(x+w/2-neck/2, y);
+  ctx.lineTo(x+w/2-neck/2, y+sh*0.5);
+  ctx.quadraticCurveTo(x, y+sh, x, y+sh+r*0.4);
+  ctx.lineTo(x, y+h-r);
+  ctx.quadraticCurveTo(x, y+h, x+r, y+h);
+  ctx.lineTo(x+w-r, y+h);
+  ctx.quadraticCurveTo(x+w, y+h, x+w, y+h-r);
+  ctx.lineTo(x+w, y+sh+r*0.4);
+  ctx.quadraticCurveTo(x+w, y+sh, x+w/2+neck/2, y+sh*0.5);
+  ctx.lineTo(x+w/2+neck/2, y);
+  ctx.closePath();
+}
+
+function drawBottle(now){
+  var waterTop = B.y + B.h*0.24;
+  ctx.save();
+  bottlePath(); ctx.clip();
+
+  // liquid
+  var cold = Math.max(0, Math.min(1, (18 - S.T)/33));
+  var lg = ctx.createLinearGradient(0,waterTop,0,B.y+B.h);
+  lg.addColorStop(0,'rgba('+Math.round(70-40*cold)+','+Math.round(170+30*cold)+',255,.30)');
+  lg.addColorStop(1,'rgba('+Math.round(20+20*cold)+',90,'+Math.round(180+60*cold)+',.55)');
+  ctx.fillStyle = lg; ctx.fillRect(B.x, waterTop, B.w, B.h);
+
+  // supercooled shimmer
+  if (S.phase==='super'){
+    var k;
+    for(k=0;k<26;k++){
+      var px = B.x + ((k*97.3 + now*0.012*(1+k%3))%B.w);
+      var py = waterTop + ((k*53.7 + now*0.02)%(B.y+B.h-waterTop));
+      ctx.fillStyle='rgba(150,230,255,'+(0.05+0.09*Math.sin(now*0.004+k)).toFixed(3)+')';
+      ctx.fillRect(px,py,1.6,1.6);
+    }
+  }
+
+  // dendrites
+  if (S.phase==='freezing' || S.phase==='slush'){
+    var age = S.t - S.nucTime;
+    var i,j,cr,p,prog,n;
+    ctx.lineCap='round';
+    for(i=0;i<S.crystals.length;i++){
+      cr = S.crystals[i];
+      prog = (age - cr.delay)/0.85;
+      if (prog<=0) continue; if (prog>1) prog=1;
+      n = Math.max(2, Math.floor(cr.pts.length*prog));
+      ctx.beginPath(); ctx.moveTo(cr.pts[0][0], cr.pts[0][1]);
+      for(j=1;j<n;j++){p=cr.pts[j];ctx.lineTo(p[0],p[1]);}
+      ctx.lineWidth = cr.w; ctx.strokeStyle='rgba(200,245,255,'+(0.85-cr.d*0.13)+')';
+      glow('#9beaff', 12-cr.d*2); ctx.stroke(); noGlow();
+    }
+    // slush haze proportional to frozen fraction
+    var haze = S.f * (age>1?1:age);
+    ctx.fillStyle='rgba(215,245,255,'+(0.10+0.85*haze).toFixed(3)+')';
+    ctx.fillRect(B.x, waterTop, B.w, B.h);
+    // slush speckle
+    if (S.phase==='slush'){
+      for(i=0;i<70;i++){
+        var sx=B.x+((i*61.1+ (i%5)*13)%B.w), sy=waterTop+((i*83.9)%(B.y+B.h-waterTop));
+        ctx.fillStyle='rgba(255,255,255,'+(0.05+0.25*S.f)+')';
+        ctx.fillRect(sx,sy,2.5,2.5);
+      }
+    }
+  }
+
+  // nucleation flash
+  if (S.flash>0.001){
+    var fg = ctx.createRadialGradient(S.nucX,S.nucY,2,S.nucX,S.nucY,B.h*0.6);
+    fg.addColorStop(0,'rgba(255,255,255,'+(0.85*S.flash)+')');
+    fg.addColorStop(1,'rgba(120,230,255,0)');
+    ctx.fillStyle=fg; ctx.fillRect(B.x-10,B.y-10,B.w+20,B.h+20);
+  }
+  ctx.restore();
+
+  // glass
+  bottlePath();
+  ctx.strokeStyle='rgba(170,225,255,.55)'; ctx.lineWidth=2; glow('#5fd0ff',16); ctx.stroke(); noGlow();
+  ctx.strokeStyle='rgba(255,255,255,.20)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(B.x+B.w*0.20,B.y+B.h*0.30); ctx.lineTo(B.x+B.w*0.20,B.y+B.h*0.88); ctx.stroke();
+
+  // seeds falling
+  var s,q;
+  for(q=0;q<S.seeds.length;q++){
+    s=S.seeds[q];
+    ctx.fillStyle='rgba(230,250,255,.95)'; glow('#bff0ff',14);
+    ctx.beginPath(); ctx.arc(s.x,s.y,3,0,6.283); ctx.fill(); noGlow();
+  }
+
+  ctx.font='10px ui-monospace,monospace'; ctx.textAlign='center';
+  ctx.fillStyle='rgba(150,210,240,.65)';
+  ctx.fillText(S.phase==='slush'?'INSTANT SLUSHY':'500 mL PURE WATER, UNDISTURBED', B.x+B.w/2, B.y+B.h+34);
+  ctx.textAlign='left';
+}
+
+// ---------- thermometer trace (the money plot) ----------
+var P = {x:0,y:0,w:0,h:0};
+function tracePlot(){
+  P.x = Math.min(W*0.46, W-360); P.w = Math.max(260, W - P.x - 40);
+  P.h = Math.min(300, H*0.42); P.y = H*0.16;
+  var Tmax=20, Tmin=-20;
+  var ty = function(T){ return P.y + (Tmax-T)/(Tmax-Tmin)*P.h; };
+  var tx = function(t){ return P.x + Math.min(1, t/28)*P.w; };
+
+  // impossible zone (0 .. -20) shaded
+  ctx.fillStyle='rgba(120,60,220,.10)';
+  ctx.fillRect(P.x, ty(0), P.w, ty(Tmin)-ty(0));
+  ctx.strokeStyle='rgba(160,110,255,.35)'; ctx.setLineDash([4,4]);
+  ctx.strokeRect(P.x, ty(0), P.w, ty(Tmin)-ty(0)); ctx.setLineDash([]);
+
+  ctx.strokeStyle='rgba(120,200,255,.28)'; ctx.lineWidth=1;
+  ctx.strokeRect(P.x,P.y,P.w,P.h);
+
+  // 0 C line
+  ctx.strokeStyle='rgba(255,220,130,.85)'; ctx.lineWidth=1.5; glow('#ffcf6a',10);
+  ctx.beginPath(); ctx.moveTo(P.x,ty(0)); ctx.lineTo(P.x+P.w,ty(0)); ctx.stroke(); noGlow();
+  ctx.font='10px ui-monospace,monospace'; ctx.fillStyle='#ffd27a';
+  ctx.fillText('0 °C  freezing point', P.x+6, ty(0)-5);
+  ctx.fillStyle='rgba(180,140,255,.75)';
+  ctx.fillText('SUPERCOOLED — liquid below 0°C', P.x+6, ty(0)+14);
+
+  ctx.fillStyle='rgba(140,190,220,.7)';
+  var g;
+  for(g=Tmax; g>=Tmin; g-=10){
+    ctx.fillText((g>0?'+':'')+g, P.x-24, ty(g)+3);
+    ctx.strokeStyle='rgba(120,200,255,.10)';
+    ctx.beginPath(); ctx.moveTo(P.x,ty(g)); ctx.lineTo(P.x+P.w,ty(g)); ctx.stroke();
+  }
+  ctx.fillStyle='rgba(140,190,220,.55)';
+  ctx.fillText('time →', P.x+P.w-46, P.y+P.h+14);
+
+  // the trace
+  if (S.trace.length>1){
+    ctx.beginPath();
+    var i,p;
+    for(i=0;i<S.trace.length;i++){
+      p=S.trace[i];
+      if(i===0) ctx.moveTo(tx(p[0]),ty(p[1])); else ctx.lineTo(tx(p[0]),ty(p[1]));
+    }
+    ctx.strokeStyle='#6ff0ff'; ctx.lineWidth=2; glow('#2fd8ff',14); ctx.stroke(); noGlow();
+    p=S.trace[S.trace.length-1];
+    ctx.fillStyle='#eaffff'; glow('#7ff5ff',16);
+    ctx.beginPath(); ctx.arc(tx(p[0]),ty(p[1]),3.5,0,6.283); ctx.fill(); noGlow();
+  }
+
+  if (S.nucTime>=0){
+    var nx=tx(S.nucTime);
+    ctx.strokeStyle='rgba(255,120,190,.6)'; ctx.setLineDash([3,3]);
+    ctx.beginPath(); ctx.moveTo(nx,P.y); ctx.lineTo(nx,P.y+P.h); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle='#ff8fc6';
+    ctx.fillText((S.cause==='spontaneous'?'SPONTANEOUS':'TAP')+' → latent heat', nx+4, P.y+P.h-24);
+    ctx.fillStyle='rgba(255,210,120,.9)';
+    ctx.fillText('plateau at 0°C: 334 J/g must leave first', nx+4, P.y+P.h-10);
+  }
+  ctx.fillStyle='#9fd8f0'; ctx.font='11px ui-monospace,monospace';
+  ctx.fillText('THERMOMETER TRACE', P.x, P.y-8);
+}
+
+// ---------- nucleation barrier inset ----------
+function barrierInset(){
+  var x=P.x, y=P.y+P.h+52, w=Math.min(280,P.w*0.62), h=140;
+  ctx.strokeStyle='rgba(120,200,255,.22)'; ctx.lineWidth=1; ctx.strokeRect(x,y,w,h);
+  ctx.fillStyle='#9fd8f0'; ctx.font='11px ui-monospace,monospace';
+  ctx.fillText('ΔG(r) NUCLEATION BARRIER', x, y-8);
+  var dT = Math.max(0.4, -Math.min(0, S.T));
+  // dG = A r^2 - B r^3 ; B grows with supercooling; tap/seed knocks barrier down
+  var A = 1.0, Bc = 0.055*dT*S.barrierScale + 0.02;
+  var mid = y+h*0.62, sc = 1;
+  var maxG = 4*A*A*A/(27*Bc*Bc);
+  sc = Math.min(1, (h*0.45)/Math.max(1e-6,maxG));
+  ctx.beginPath();
+  var i,r,G,px,py, rmax = 1.6*A/Bc, best=0, bestr=0;
+  for(i=0;i<=120;i++){
+    r = i/120*rmax; G = A*r*r - Bc*r*r*r;
+    if (G>best){best=G;bestr=r;}
+    px = x+ (r/rmax)*w; py = mid - G*sc;
+    if (py < y+4) py = y+4;
+    if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+  }
+  ctx.strokeStyle='#b98bff'; ctx.lineWidth=2; glow('#8a5cff',12); ctx.stroke(); noGlow();
+  ctx.strokeStyle='rgba(120,200,255,.25)';
+  ctx.beginPath(); ctx.moveTo(x,mid); ctx.lineTo(x+w,mid); ctx.stroke();
+  // critical radius marker
+  var cx = x + (bestr/rmax)*w, cy = Math.max(y+4, mid - best*sc);
+  ctx.fillStyle='#ffd27a'; glow('#ffb648',12);
+  ctx.beginPath(); ctx.arc(cx,cy,4,0,6.283); ctx.fill(); noGlow();
+  ctx.strokeStyle='rgba(255,210,122,.4)'; ctx.setLineDash([3,3]);
+  ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(cx,y+h); ctx.stroke(); ctx.setLineDash([]);
+  ctx.font='10px ui-monospace,monospace'; ctx.fillStyle='#ffd27a';
+  ctx.fillText('r*  critical radius', cx+6, y+h-6);
+  ctx.fillStyle='rgba(185,139,255,.9)';
+  ctx.fillText('barrier ΔG* '+(S.barrierScale<0.99?'CRUSHED by seed/tap':'↓ as ΔT deepens'), x+6, y+14);
+  ctx.fillStyle='rgba(140,190,220,.6)';
+  ctx.fillText('cluster radius r →', x+w-118, mid+14);
+}
+
+// ---------- scatter: spontaneous freeze T vs purity ----------
+function scatterPlot(){
+  var w=Math.min(210,P.w*0.34), h=140, x=P.x+P.w-w, y=P.y+P.h+52;
+  ctx.strokeStyle='rgba(120,200,255,.22)'; ctx.strokeRect(x,y,w,h);
+  ctx.fillStyle='#9fd8f0'; ctx.font='11px ui-monospace,monospace';
+  ctx.fillText('RUNS: ΔT vs PURITY', x, y-8);
+  ctx.font='10px ui-monospace,monospace'; ctx.fillStyle='rgba(140,190,220,.6)';
+  ctx.fillText('dirty', x+3, y+h-4); ctx.fillText('pure', x+w-28, y+h-4);
+  ctx.fillText('-16°C', x+3, y+11); ctx.fillText('0°C', x+3, y+h-16);
+  var i,p,px,py;
+  for(i=0;i<scatter.length;i++){
+    p=scatter[i];
+    px = x + p.pur*(w-14) + 7;
+    py = y + (1 - Math.min(1,p.dT/16))*(h-26) + 8;
+    ctx.fillStyle = p.spont ? 'rgba(255,140,190,.9)' : 'rgba(110,240,255,.75)';
+    glow(p.spont?'#ff6fb0':'#3fd8ff',8);
+    ctx.beginPath(); ctx.arc(px,py,3,0,6.283); ctx.fill(); noGlow();
+  }
+  ctx.fillStyle='rgba(255,140,190,.85)'; ctx.fillText('● spontaneous', x+w-96, y+13);
+  ctx.fillStyle='rgba(110,240,255,.8)'; ctx.fillText('● tapped', x+w-96, y+25);
+}
+
+// ---------- crackle particles ----------
+var crack = [];
+function crackle(x,y,n){
+  var i;
+  for(i=0;i<n;i++) crack.push({x:x,y:y,a:Math.random()*6.283,v:40+Math.random()*160,l:1});
+}
+function drawCrackle(dt){
+  var i,p;
+  for(i=crack.length-1;i>=0;i--){
+    p=crack[i]; p.l-=dt*1.6;
+    if(p.l<=0){crack.splice(i,1);continue;}
+    p.x+=Math.cos(p.a)*p.v*dt; p.y+=Math.sin(p.a)*p.v*dt;
+    ctx.fillStyle='rgba(220,250,255,'+p.l.toFixed(3)+')'; glow('#bff0ff',10);
+    ctx.fillRect(p.x,p.y,2,2); noGlow();
+  }
+}
+
+// ---------- interaction ----------
+function hitBottle(mx,my){
+  return mx>B.x-18 && mx<B.x+B.w+18 && my>B.y-10 && my<B.y+B.h+18;
+}
+cv.addEventListener('pointerdown', function(e){
+  var mx=e.clientX, my=e.clientY;
+  if (!S) return;
+  if (S.phase==='super' && hitBottle(mx,my)){
+    S.barrierScale = 0.25;
+    var nx = Math.max(B.x+6, Math.min(B.x+B.w-6, mx));
+    var ny = Math.max(B.y+B.h*0.28, Math.min(B.y+B.h-8, my));
+    nucleate(nx,ny,'tap'); crackle(nx,ny,60);
+  } else if (S.phase==='slush' || S.phase==='cooling'){
+    // tapping a normal bottle does nothing dramatic
+    crackle(mx,my,6);
+  }
+});
+window.addEventListener('keydown', function(e){
+  var k=e.key.toLowerCase();
+  if(k==='r') newRun();
+  else if(k==='c') scatter=[];
+  else if(k==='s' && S && S.phase==='super'){
+    S.seeds.push({x:B.x+B.w/2, y:B.y+B.h*0.10, vy:0});
+  }
+});
+
+// ---------- integration ----------
+function step(dt, now){
+  S.t += dt;
+  var goal = -S.dtGoal;
+
+  if (S.phase==='cooling'){
+    // Newtonian cooling toward the freezer setpoint (a bit below the goal)
+    var amb = goal - 3;
+    S.T += (amb - S.T)*0.30*dt;
+    if (S.T < 0.0001) S.phase = 'super';
+  }
+
+  if (S.phase==='super'){
+    var amb2 = goal - 3;
+    S.T += (amb2 - S.T)*0.30*dt;
+    var dT = -S.T;
+    S.barrierScale = 1;
+    S.risk = hazard(dT, S.purity);
+    // survival: P(no nucleation in dt) = exp(-rate*dt)
+    if (Math.random() < 1 - Math.exp(-S.risk*dt)){
+      var nx = B.x + B.w*(0.2+Math.random()*0.6);
+      var ny = B.y + B.h*(0.45+Math.random()*0.45);
+      nucleate(nx,ny,'spontaneous'); crackle(nx,ny,50);
+    }
+  }
+
+  // falling seed crystal
+  var q,s;
+  for(q=S.seeds.length-1;q>=0;q--){
+    s=S.seeds[q]; s.vy += 500*dt; s.y += s.vy*dt;
+    if (s.y > B.y+B.h*0.55){
+      S.seeds.splice(q,1);
+      if (S.phase==='super'){ S.barrierScale=0.15; nucleate(s.x,s.y,'seed'); crackle(s.x,s.y,70); }
+    }
+  }
+
+  if (S.phase==='freezing'){
+    // latent heat release drives T to exactly 0 within the front's transit time
+    var span = 0.55;
+    var u = Math.min(1, (S.t - S.nucTime)/span);
+    S.T = S.nucT*(1-u);          // linear snap-back
+    if (u>=1){ S.T = 0; S.phase='slush'; S.plateauStart = S.t; S.frozen = S.f; }
+  }
+
+  if (S.phase==='slush'){
+    // EXACTLY 0 C while any liquid remains: freezer must remove L*(1-f) J/g
+    S.T = 0;
+    var need = L*(1 - S.f);
+    S.cum += S.sinkRate*dt;          // J/g removed by freezer
+    if (S.cum >= need){ S.phase='solid'; }
+  }
+
+  if (S.phase==='solid'){
+    var amb3 = goal - 3;
+    S.T += (amb3 - S.T)*0.12*dt;
+  }
+
+  S.flash *= Math.pow(0.02, dt);
+  if (S.trace.length===0 || S.t - S.trace[S.trace.length-1][0] > 0.03){
+    S.trace.push([S.t, S.T]);
+    if (S.t > 28) { S.trace.shift(); }
+  }
+}
+
+function readouts(){
+  el('rT').textContent = (S.T>=0?'+':'') + S.T.toFixed(2) + ' °C';
+  var names = {cooling:'cooling (normal)', super:'SUPERCOOLED — liquid below 0°C',
+               freezing:'NUCLEATING — front racing', slush:'slush @ 0°C plateau', solid:'fully frozen'};
+  el('rS').textContent = names[S.phase];
+  el('rP').textContent = S.phase==='super' ? (100*(1-Math.exp(-S.risk))).toFixed(1)+' %/s' : '—';
+  var f = (S.phase==='cooling'||S.phase==='super') ? fracFrozen(-S.T) : S.f;
+  el('rF').textContent = (100*f).toFixed(1)+' %  ('+C+'×'+Math.max(0,(S.phase==='super'||S.phase==='cooling')?-S.T:-S.nucT).toFixed(1)+'/'+L+')';
+  if (S.phase==='slush'){
+    var need = L*(1-S.f);
+    el('rL').textContent = (need-S.cum).toFixed(0)+' / '+need.toFixed(0)+' J/g left to remove';
+  } else if (S.phase==='freezing'){
+    el('rL').textContent = S.released.toFixed(1)+' J/g latent released';
+  } else if (S.phase==='solid'){
+    el('rL').textContent = 'latent heat fully removed';
+  } else {
+    el('rL').textContent = 'sensible heat only: '+(C*Math.max(0,-S.T)).toFixed(1)+' J/g below 0';
+  }
+}
+
+var last = performance.now();
+newRun(); layout();
+function frame(now){
+  var dt = Math.min(0.05, (now-last)/1000); last = now;
+  layout();
+  step(dt, now);
+  drawFreezer();
+  drawBottle(now);
+  tracePlot();
+  barrierInset();
+  scatterPlot();
+  drawCrackle(dt);
+
+  if (S.phase==='super'){
+    ctx.font='12px ui-monospace,monospace'; ctx.textAlign='center';
+    var a = 0.55+0.45*Math.sin(now*0.006);
+    ctx.fillStyle='rgba(255,160,210,'+a.toFixed(2)+')'; glow('#ff6fb0',14);
+    ctx.fillText('CLICK THE BOTTLE', B.x+B.w/2, B.y-18); noGlow();
+    ctx.textAlign='left';
+  }
+  if (S.phase==='solid' || (S.phase==='slush' && S.t-S.plateauStart>3)){
+    ctx.font='11px ui-monospace,monospace'; ctx.textAlign='center';
+    ctx.fillStyle='rgba(160,215,240,.75)';
+    ctx.fillText('press R for another run', B.x+B.w/2, B.y-18);
+    ctx.textAlign='left';
+  }
+  readouts();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>

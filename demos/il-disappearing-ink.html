@@ -1,0 +1,263 @@
+<title>Disappearing Ink</title>
+<style>
+html,body{margin:0;padding:0;background:#05070c;overflow:hidden;height:100%}
+canvas{display:block}
+#hud{position:fixed;top:0;left:0;margin:10px;padding:10px 12px;max-width:340px;
+  background:rgba(6,10,18,.72);border:1px solid rgba(90,140,255,.35);border-radius:6px;
+  color:#cfd8e6;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;z-index:10;
+  box-shadow:0 0 24px rgba(70,120,255,.18);backdrop-filter:blur(3px)}
+#hud h1{margin:0 0 4px;font-size:13px;letter-spacing:.14em;color:#7fb0ff;text-shadow:0 0 10px rgba(90,140,255,.8)}
+#hud .m{color:#9fb0c6}
+#hud .sci{color:#9ee7ff}
+#hud .lin{color:#7f8fa6;font-size:10px}
+#hud a{color:#6fe3ff;text-decoration:none}
+#hud a:hover{text-decoration:underline}
+.tag{display:inline-block;margin-top:6px;padding:1px 6px;border:1px solid rgba(120,255,200,.4);
+  border-radius:10px;color:#7effc9;font-size:9.5px;letter-spacing:.08em}
+.row{display:flex;align-items:center;gap:6px;margin-top:5px}
+.row label{width:92px;color:#8fa2b8}
+input[type=range]{flex:1;accent-color:#7fb0ff;background:transparent}
+button{background:#101827;color:#cfe3ff;border:1px solid #35507e;border-radius:4px;
+  font:10px ui-monospace,monospace;padding:3px 7px;cursor:pointer;margin:4px 4px 0 0}
+button:hover{background:#1a2740;box-shadow:0 0 10px rgba(90,140,255,.35)}
+#rd{margin-top:7px;padding-top:6px;border-top:1px solid rgba(255,255,255,.1);color:#9adfff}
+#rd b{color:#fff}
+kbd{background:#1b2330;border:1px solid #33415a;border-radius:3px;padding:0 3px;color:#cfe}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="hud">
+<h1>DISAPPEARING INK</h1>
+<div class="m">Thymolphthalein is vivid blue above pH ≈ 9.3; atmospheric CO₂ dissolves into the wet blotch as carbonic acid, the pH glides down through the indicator range, and the stain fades out of existence.</div>
+<div class="sci">Indicator science · Ostwald's theory of indicators (1890s) · novelty ink, 20th c.</div>
+<div class="lin">LINEAGE: Boyle's litmus (17th c.) → Ostwald indicator theory → joke-shop ink · phenolphthalein cousin next door</div>
+<div class="row"><label>ventilation</label><input id="sv" type="range" min="0.02" max="0.9" step="0.005" value="0.22"></div>
+<div class="row"><label>spray pH</label><input id="sp" type="range" min="9.5" max="12.5" step="0.05" value="11.4"></div>
+<div>
+<button id="bv">vinegar dab (instant kill)</button>
+<button id="bb">base re-spray</button>
+<button id="bc">clear shirt</button>
+</div>
+<div class="m" style="margin-top:5px">controls: <kbd>click</kbd> splat · <kbd>drag</kbd> smear · <kbd>V</kbd> vinegar · <kbd>B</kbd> respray</div>
+<div id="rd"></div>
+<span class="tag">simulation — no recipe</span>
+<div style="margin-top:6px"><a href="index.html">← gallery</a></div>
+</div>
+<script>
+(function(){
+var c=document.getElementById('c'),g=c.getContext('2d');
+var W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
+ c.width=W*DPR|0;c.height=H*DPR|0;c.style.width=W+'px';c.style.height=H+'px';g.setTransform(DPR,0,0,DPR,0,0);}
+window.addEventListener('resize',resize);
+
+var sv=document.getElementById('sv'),sp=document.getElementById('sp'),rd=document.getElementById('rd');
+
+// ---- chemistry -------------------------------------------------------
+var PKA=9.9;                 // thymolphthalein-ish midpoint
+var PH_FLOOR=6.4;            // CO2-saturated equilibrium
+function fracIonized(pH){ return 1/(1+Math.pow(10,PKA-pH)); }   // Henderson–Hasselbalch
+
+// blotches, each aging independently
+var blots=[];
+function makeBlot(x,y,r,pH){
+  var d=[];
+  for(var i=0;i<26;i++){
+    var a=Math.random()*6.283,rr=Math.pow(Math.random(),0.6)*r*1.15;
+    d.push({x:x+Math.cos(a)*rr,y:y+Math.sin(a)*rr,r:r*(0.14+Math.random()*0.42),ph:Math.random()*6.28});
+  }
+  var dr=[];
+  for(var j=0;j<14;j++){
+    var a2=Math.random()*6.283,rr2=r*(1.1+Math.random()*0.9);
+    dr.push({x:x+Math.cos(a2)*rr2,y:y+Math.sin(a2)*rr2,r:1.5+Math.random()*4.5});
+  }
+  return {x:x,y:y,r:r,pH:pH,pH0:pH,born:performance.now()/1000,drops:d,spatter:dr,age:0};
+}
+
+function stepBlot(b,dt,k){
+  // first-order approach to CO2-saturated equilibrium
+  b.pH = PH_FLOOR + (b.pH-PH_FLOOR)*Math.exp(-k*dt);
+  b.age+=dt;
+}
+
+// ---- shirt background ------------------------------------------------
+function drawShirt(){
+  var cx=W*0.33, cy=H*0.55, w=Math.min(W*0.44,520), h=Math.min(H*0.72,620);
+  g.save();
+  var gr=g.createLinearGradient(cx-w/2,cy-h/2,cx+w/2,cy+h/2);
+  gr.addColorStop(0,'#161d29');gr.addColorStop(0.5,'#1d2634');gr.addColorStop(1,'#131a25');
+  g.fillStyle=gr;
+  g.beginPath();
+  var L=cx-w/2,R=cx+w/2,T=cy-h/2,B=cy+h/2;
+  g.moveTo(L+w*0.18,T);
+  g.lineTo(L,T+h*0.14);g.lineTo(L+w*0.10,T+h*0.30);g.lineTo(L+w*0.10,B);
+  g.lineTo(R-w*0.10,B);g.lineTo(R-w*0.10,T+h*0.30);g.lineTo(R,T+h*0.14);
+  g.lineTo(R-w*0.18,T);
+  g.bezierCurveTo(cx+w*0.08,T+h*0.10,cx-w*0.08,T+h*0.10,L+w*0.18,T);
+  g.closePath();g.fill();
+  g.strokeStyle='rgba(140,180,230,.22)';g.lineWidth=1.5;g.stroke();
+  // weave texture
+  g.globalAlpha=0.06;g.strokeStyle='#8fb6e0';g.lineWidth=1;
+  for(var y=T;y<B;y+=6){g.beginPath();g.moveTo(L+w*0.10,y);g.lineTo(R-w*0.10,y);g.stroke()}
+  g.globalAlpha=1;
+  g.restore();
+  return {L:L,R:R,T:T,B:B};
+}
+
+// ---- sigmoid plot ----------------------------------------------------
+function drawSigmoid(active){
+  var w=Math.min(W*0.36,420),h=Math.min(H*0.34,260),x=W-w-40,y=H*0.16;
+  g.save();
+  g.fillStyle='rgba(8,12,20,.66)';g.fillRect(x,y,w,h);
+  g.strokeStyle='rgba(120,160,220,.3)';g.lineWidth=1;g.strokeRect(x,y,w,h);
+  var P0=6,P1=13;
+  function X(p){return x+w*(p-P0)/(P1-P0)}
+  function Y(f){return y+h-h*f}
+  g.strokeStyle='rgba(120,160,220,.10)';
+  for(var p=P0;p<=P1;p++){g.beginPath();g.moveTo(X(p),y);g.lineTo(X(p),y+h);g.stroke();}
+  g.fillStyle='#6b7f96';g.font='9px ui-monospace,monospace';
+  for(var p2=P0;p2<=P1;p2+=1){g.fillText(p2,X(p2)-3,y+h+11)}
+  // 10-90 band
+  var lo=PKA-Math.log10(9),hi=PKA+Math.log10(9);
+  g.fillStyle='rgba(90,140,255,.10)';g.fillRect(X(lo),y,X(hi)-X(lo),h);
+  g.setLineDash([3,4]);g.strokeStyle='rgba(150,190,255,.4)';
+  g.beginPath();g.moveTo(X(PKA),y);g.lineTo(X(PKA),y+h);g.stroke();g.setLineDash([]);
+  // curve
+  g.strokeStyle='#6fa8ff';g.lineWidth=2;g.shadowColor='#4f8cff';g.shadowBlur=10;
+  g.beginPath();
+  for(var i=0;i<=200;i++){var pp=P0+(P1-P0)*i/200,f=fracIonized(pp);
+    if(i===0)g.moveTo(X(pp),Y(f));else g.lineTo(X(pp),Y(f))}
+  g.stroke();g.shadowBlur=0;
+  // operating points
+  for(var b=0;b<blots.length;b++){
+    var bl=blots[b],f=fracIonized(bl.pH);
+    var main=(b===blots.length-1);
+    g.fillStyle=main?'#ffffff':'rgba(160,200,255,.55)';
+    g.beginPath();g.arc(X(bl.pH),Y(f),main?5:3,0,6.283);g.fill();
+    if(main){
+      g.strokeStyle='rgba(255,255,255,.35)';g.lineWidth=1;
+      g.beginPath();g.moveTo(X(bl.pH),Y(f));g.lineTo(X(bl.pH),y+h);g.stroke();
+      g.beginPath();g.moveTo(X(bl.pH),Y(f));g.lineTo(x,Y(f));g.stroke();
+    }
+  }
+  g.fillStyle='#9fb0c6';g.font='10px ui-monospace,monospace';
+  g.fillText('fraction ionized  vs  pH   (Henderson–Hasselbalch, pKa='+PKA+')',x+6,y-8);
+  g.fillText('colourless',x+6,y+h-8);g.fillText('blue',x+w-30,y+14);
+  g.fillText('10–90% spans '+(2*Math.log10(9)).toFixed(2)+' pH units',x+6,y+h+24);
+  g.restore();
+}
+
+function drawMeter(){
+  var x=W-70,y=H*0.60,h=Math.min(H*0.30,240),w=16;
+  g.save();
+  g.fillStyle='rgba(8,12,20,.6)';g.fillRect(x-4,y-4,w+8,h+8);
+  var gr=g.createLinearGradient(0,y,0,y+h);
+  gr.addColorStop(0,'#4f8cff');gr.addColorStop(0.5,'#2b6f8f');gr.addColorStop(1,'#7a4a2a');
+  g.fillStyle=gr;g.fillRect(x,y,w,h);
+  g.strokeStyle='rgba(160,200,255,.35)';g.strokeRect(x,y,w,h);
+  var pH=blots.length?blots[blots.length-1].pH:7;
+  var t=(13-pH)/(13-5);t=Math.max(0,Math.min(1,t));
+  var py=y+h*t;
+  g.strokeStyle='#fff';g.lineWidth=2;g.shadowColor='#fff';g.shadowBlur=8;
+  g.beginPath();g.moveTo(x-6,py);g.lineTo(x+w+6,py);g.stroke();g.shadowBlur=0;
+  g.fillStyle='#fff';g.font='11px ui-monospace,monospace';g.textAlign='right';
+  g.fillText('pH '+pH.toFixed(2),x-10,py+4);
+  g.fillText('13',x-10,y+10);g.fillText('5',x-10,y+h);
+  g.textAlign='left';
+  g.fillStyle='#9fb0c6';g.font='10px ui-monospace,monospace';
+  g.save();g.translate(x+w+22,y+h/2);g.rotate(Math.PI/2);g.textAlign='center';
+  g.fillText('pH METER',0,0);g.restore();
+  g.restore();
+}
+
+// ---- blot render -----------------------------------------------------
+function drawBlot(b,tnow){
+  var f=fracIonized(b.pH);
+  if(f<0.004)return;
+  var wet=Math.min(1,b.age*1.6);
+  g.save();
+  g.globalCompositeOperation='source-over';
+  for(var i=0;i<b.drops.length;i++){var d=b.drops[i];
+    var wob=Math.sin(tnow*0.8+d.ph)*1.2;
+    var gr=g.createRadialGradient(d.x+wob,d.y,0,d.x+wob,d.y,d.r);
+    gr.addColorStop(0,'rgba(70,110,255,'+(0.72*f)+')');
+    gr.addColorStop(0.55,'rgba(50,80,220,'+(0.5*f)+')');
+    gr.addColorStop(1,'rgba(40,60,180,0)');
+    g.fillStyle=gr;g.beginPath();g.arc(d.x+wob,d.y,d.r,0,6.283);g.fill();
+  }
+  for(var j=0;j<b.spatter.length;j++){var s=b.spatter[j];
+    g.fillStyle='rgba(90,130,255,'+(0.55*f)+')';
+    g.beginPath();g.arc(s.x,s.y,s.r,0,6.283);g.fill();
+  }
+  // core + glow
+  var gc=g.createRadialGradient(b.x,b.y,0,b.x,b.y,b.r*1.4);
+  gc.addColorStop(0,'rgba(90,140,255,'+(0.55*f)+')');
+  gc.addColorStop(1,'rgba(60,90,220,0)');
+  g.globalCompositeOperation='lighter';
+  g.fillStyle=gc;g.beginPath();g.arc(b.x,b.y,b.r*1.5,0,6.283);g.fill();
+  g.globalCompositeOperation='source-over';
+  // edge ring while wet
+  g.strokeStyle='rgba(140,180,255,'+(0.28*f*(1-wet*0.5))+')';g.lineWidth=1.4;
+  g.beginPath();g.arc(b.x,b.y,b.r*1.08,0,6.283);g.stroke();
+  g.restore();
+}
+
+// ---- interaction -----------------------------------------------------
+var down=false,shirt=null;
+function splat(x,y,r){
+  blots.push(makeBlot(x,y,r||(24+Math.random()*30),parseFloat(sp.value)));
+  if(blots.length>40)blots.shift();
+}
+c.addEventListener('pointerdown',function(e){down=true;splat(e.clientX,e.clientY)});
+c.addEventListener('pointermove',function(e){if(down&&Math.random()<0.5)splat(e.clientX,e.clientY,10+Math.random()*16)});
+window.addEventListener('pointerup',function(){down=false});
+function vinegar(){for(var i=0;i<blots.length;i++)blots[i].pH=4.2}
+function respray(){for(var i=0;i<blots.length;i++)blots[i].pH=parseFloat(sp.value);
+  if(!blots.length)splat(W*0.33,H*0.5,40)}
+document.getElementById('bv').onclick=vinegar;
+document.getElementById('bb').onclick=respray;
+document.getElementById('bc').onclick=function(){blots=[]};
+window.addEventListener('keydown',function(e){var k=e.key.toLowerCase();
+  if(k==='v')vinegar();else if(k==='b')respray();else if(k==='c')blots=[]});
+
+// seed
+splat(window.innerWidth*0.33,window.innerHeight*0.5,42);
+
+// ---- loop ------------------------------------------------------------
+var last=performance.now();
+function frame(now){
+  var dt=Math.min(0.05,(now-last)/1000);last=now;
+  var k=parseFloat(sv.value);
+  for(var i=0;i<blots.length;i++)stepBlot(blots[i],dt,k);
+
+  g.fillStyle='#05070c';g.fillRect(0,0,W,H);
+  shirt=drawShirt();
+  var t=now/1000;
+  for(var j=0;j<blots.length;j++)drawBlot(blots[j],t);
+  drawSigmoid();
+  drawMeter();
+
+  var b=blots.length?blots[blots.length-1]:null;
+  if(b){
+    var f=fracIonized(b.pH);
+    var lbl=f>0.5?'VIVID':(f>0.05?'FADING':'GONE');
+    g.fillStyle=f>0.05?'#7fb0ff':'#5c6b80';
+    g.font='15px ui-monospace,monospace';g.textAlign='center';
+    g.fillText(lbl+'  ·  '+(f*100).toFixed(1)+'% ionized',W*0.33,shirt.B+30);
+    g.textAlign='left';
+    var half=Math.log((b.pH0-6.4)/Math.max(1e-6,(PKA-6.4)))/k;
+    rd.innerHTML='blotches <b>'+blots.length+'</b> (aging independently)<br>'+
+      'pH <b>'+b.pH.toFixed(2)+'</b> → floor 6.40  ·  k = <b>'+k.toFixed(3)+'</b> /s<br>'+
+      'fraction ionized <b>'+f.toFixed(3)+'</b>  age <b>'+b.age.toFixed(1)+'s</b><br>'+
+      'τ = <b>'+(1/k).toFixed(1)+'s</b>  half-fade at t ≈ <b>'+(half>0?half.toFixed(1):'—')+'s</b>';
+  }else{
+    g.fillStyle='rgba(180,205,235,.7)';g.font='13px ui-monospace,monospace';g.textAlign='center';
+    g.fillText('click the shirt to spray',W*0.33,H*0.5);g.textAlign='left';
+    rd.innerHTML='no blotches — click to spray';
+  }
+  requestAnimationFrame(frame);
+}
+resize();requestAnimationFrame(frame);
+})();
+</script>

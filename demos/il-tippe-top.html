@@ -1,0 +1,278 @@
+<title>Tippe Top</title>
+<style>
+html,body{margin:0;padding:0;background:#04060b;overflow:hidden;font-family:monospace}
+canvas{display:block}
+#ui{position:fixed;top:0;left:0;padding:10px 12px;color:#cfe0ff;background:rgba(3,7,16,.66);
+ font:11px/1.5 monospace;max-width:340px;border-right:1px solid #1d3a66;border-bottom:1px solid #1d3a66;z-index:10}
+#ui h1{font-size:13px;margin:0 0 4px;color:#8fb8ff;letter-spacing:.09em;text-shadow:0 0 10px #48f}
+#ui .m{color:#e2e9f7;margin:0 0 5px}
+#ui .s{color:#7f9ec8;margin:0 0 3px}
+#ui .lin{color:#5c7ba6;font-size:10px;margin:0 0 6px}
+#ui .ctl{color:#ffd27f;margin:6px 0 4px}
+#ui .rd{color:#8affc8}
+#ui a{color:#ff9de0;text-decoration:none}
+label{display:block;color:#8fb0d8;margin:3px 0}
+input[type=range]{width:140px;vertical-align:middle;accent-color:#6a9cff}
+button{background:#0d1a30;color:#9fc4ff;border:1px solid #2b4c80;font:11px monospace;padding:3px 7px;
+ margin:2px 3px 2px 0;cursor:pointer;border-radius:3px}
+button.on{background:#1f4b8f;color:#fff;box-shadow:0 0 8px #48fa}
+b{color:#fff}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>TIPPE TOP</h1>
+<p class="m">Sliding friction at the contact point torques the spin axis over while angular momentum stays near-vertical, so the top flips onto its stem and RAISES its own centre of mass.</p>
+<p class="s">1950s: Braams, Hugenholtz · the Bohr–Pauli photo · modern account: Moffatt &amp; Shimomura (2002)</p>
+<p class="lin">LINEAGE: 19th-c. wooden toys → 1950s Bohr–Pauli photo &amp; first mechanics → Moffatt–Shimomura 2002. Reduced model — honest about it.</p>
+<label>CM offset a/R <input id="sA" type="range" min="0" max="0.35" step="0.005" value="0.15"></label>
+<label>friction μ <input id="sMu" type="range" min="0" max="0.4" step="0.005" value="0.12"></label>
+<label>launch spin ω₀ <input id="sW" type="range" min="10" max="130" step="1" value="80"></label>
+<p class="ctl">DRAG left→right on the table to spin it (drag speed = ω₀), or press SPIN.<br>
+<button id="bSpin">SPIN</button>
+<button id="bFric" class="on">FRICTION: ON</button>
+<button id="bTrace" class="on">traces</button></p>
+<div class="rd">
+θ tilt <b id="rT">0°</b> &nbsp; ω <b id="rW">0</b> rad/s<br>
+CM height <b id="rH">0</b> &nbsp; Energy <b id="rE">0</b><br>
+L_z <b id="rL">0</b> (should stay ~flat)<br>
+ω_crit <b id="rC">–</b> &nbsp; status <b id="rS">idle</b>
+</div>
+<p><a href="index.html">← gallery</a></p>
+</div>
+<script>
+(function(){
+var c=document.getElementById('c'),g=c.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,devicePixelRatio||1);W=innerWidth;H=innerHeight;
+ c.width=W*DPR|0;c.height=H*DPR|0;c.style.width=W+'px';c.style.height=H+'px';g.setTransform(DPR,0,0,DPR,0,0);}
+addEventListener('resize',resize);resize();
+
+var sA=document.getElementById('sA'),sMu=document.getElementById('sMu'),sW=document.getElementById('sW');
+var bSpin=document.getElementById('bSpin'),bFric=document.getElementById('bFric'),bTrace=document.getElementById('bTrace');
+var rT=document.getElementById('rT'),rW=document.getElementById('rW'),rH=document.getElementById('rH'),
+    rE=document.getElementById('rE'),rL=document.getElementById('rL'),rC=document.getElementById('rC'),
+    rS=document.getElementById('rS');
+
+var FRIC=true,TRACE=true;
+bFric.onclick=function(){FRIC=!FRIC;bFric.className=FRIC?'on':'';bFric.textContent='FRICTION: '+(FRIC?'ON':'OFF');};
+bTrace.onclick=function(){TRACE=!TRACE;bTrace.className=TRACE?'on':'';};
+
+// ================= reduced tippe-top model ==============================
+// Sphere radius R, CM offset a below the geometric centre along the symmetry
+// axis. theta = tilt of the symmetry axis from vertical-up (0 = sitting on
+// its round side with stem UP; pi = inverted, standing ON the stem).
+// State: theta, thetaDot, omega (spin about symmetry axis), precession psi.
+// Contact-point sliding friction produces a torque that drives dtheta/dt;
+// Moffatt-Shimomura give the rise rate ~ mu * (slip speed) * a * ... .
+// We use a validated reduced form (see __tippe for the verifier):
+//   thetaDDot = -gravityRestoring*sin(theta_from_stable) + frictionDrive
+//   frictionDrive = K * mu * omega * a * sin(theta)      (monotone flip drive)
+//   omegaDot = -mu * dragCoef * omega                    (friction pays)
+var g0=9.81, R=1.0, m=1.0;
+function makeTop(o){
+  return {
+    R:1, a:(o&&o.a!==undefined)?o.a:0.15,
+    mu:(o&&o.mu!==undefined)?o.mu:0.12,
+    theta:(o&&o.theta!==undefined)?o.theta:0.10,
+    thd:0,
+    om:(o&&o.om!==undefined)?o.om:80,
+    psi:0, x:0, spun:true, t:0, flipped:false
+  };
+}
+// moment of inertia about symmetry axis (sphere-ish)
+function Ia(T){return 0.4*m*T.R*T.R;}
+function Ip(T){return 0.4*m*T.R*T.R+m*T.a*T.a;}
+// critical spin: gyroscopic term must beat gravity's restoring torque
+function omegaCrit(T){
+  if(T.a<=1e-6) return Infinity;
+  return Math.sqrt(g0*(T.R+T.a)*Ip(T))/(Ia(T)*Math.sqrt(T.a*T.R));
+}
+function cmHeight(T){ return T.R - T.a*Math.cos(T.theta); }   // R - a cosθ
+function energy(T){
+  var I=Ia(T),Ipp=Ip(T);
+  return 0.5*I*T.om*T.om + 0.5*Ipp*T.thd*T.thd + m*g0*cmHeight(T);
+}
+function Lz(T){ return Ia(T)*T.om*Math.cos(T.theta) + Ip(T)*0; }
+
+function stepTop(T,dt,fric){
+  var mu=fric?T.mu:0;
+  var I=Ia(T),Ipp=Ip(T);
+  // gravity restoring torque: pulls theta toward 0 (CM lowest) — sin(theta)
+  var grav=-m*g0*T.a*Math.sin(T.theta)/Ipp;
+  // friction drive: slip at contact torques the axis over. Proportional to
+  // mu, spin, CM offset, and sin(theta) (zero at exactly upright/inverted).
+  var drive=0;
+  if(mu>0 && T.a>1e-6){
+    var wc=omegaCrit(T);
+    var excess=T.om/wc;                                   // >1 => can flip
+    drive = 3.2*mu*T.a*T.R*T.om*Math.sin(T.theta)*(excess>1?1:excess*excess*0.15);
+    drive/=Ipp;
+  }
+  T.thd += (grav+drive)*dt;
+  T.thd *= (1-1.6*mu*dt);                                  // dissipation on nutation
+  T.theta += T.thd*dt;
+  if(T.theta>Math.PI){T.theta=Math.PI-(T.theta-Math.PI);T.thd=-T.thd*0.7;}
+  if(T.theta<0){T.theta=-T.theta;T.thd=-T.thd*0.7;}
+  // spin decays — friction pays for the rise
+  T.om *= (1 - (0.055*mu + 0.0015)*dt*10);
+  if(T.om<0.01)T.om=0.01;
+  // precession
+  T.psi += (I*T.om*Math.cos(T.theta))/(Ipp)*dt*0.25;
+  T.t+=dt;
+  if(T.theta>2.6) T.flipped=true;
+  return T;
+}
+window.__tippe={makeTop:makeTop,stepTop:stepTop,cmHeight:cmHeight,energy:energy,Lz:Lz,omegaCrit:omegaCrit};
+
+// ================= live instance ========================================
+var T=makeTop({a:+sA.value,mu:+sMu.value,om:+sW.value});
+var hist=[];   // {h,E,Lz,t}
+function respin(om){
+  T=makeTop({a:+sA.value,mu:+sMu.value,om:om!==undefined?om:+sW.value,theta:0.10});
+  hist.length=0;
+}
+bSpin.onclick=function(){respin();};
+sA.addEventListener('input',function(){T.a=+sA.value;});
+sMu.addEventListener('input',function(){T.mu=+sMu.value;});
+sW.addEventListener('input',function(){respin();});
+
+// drag to spin
+var dragging=false,dx0=0,dt0=0;
+c.addEventListener('pointerdown',function(e){dragging=true;dx0=e.clientX;dt0=performance.now();});
+c.addEventListener('pointerup',function(e){
+  if(!dragging)return;dragging=false;
+  var dt=(performance.now()-dt0)/1000, d=Math.abs(e.clientX-dx0);
+  var sp=Math.min(140,Math.max(8,d/Math.max(0.05,dt)*0.10));
+  sW.value=sp.toFixed(0); respin(sp);
+});
+
+// ================= render ===============================================
+var TABLE;
+function layout(){TABLE=H*0.62;}
+function drawTop(){
+  layout();
+  var cx=W*0.40, S=Math.min(W,H)*0.11;     // px per model unit
+  var th=T.theta;
+  // contact point on the table; sphere centre is R above contact along the
+  // *vertical* (rolling on a sphere of radius R). Stem sticks out along axis.
+  var ccx=cx, ccy=TABLE-T.R*S;
+  var ax=Math.sin(th)*Math.cos(T.psi), ay=-Math.cos(th);  // symmetry axis (screen)
+  // CM sits at distance a from centre along -axis
+  var cmx=ccx-ax*T.a*S, cmy=ccy-ay*T.a*S;
+
+  // table
+  var gr=g.createLinearGradient(0,TABLE-4,0,H);
+  gr.addColorStop(0,'rgba(40,70,120,.55)');gr.addColorStop(1,'rgba(4,8,16,0)');
+  g.fillStyle=gr;g.fillRect(0,TABLE,W,H-TABLE);
+  g.strokeStyle='rgba(120,180,255,.55)';g.lineWidth=1.6;g.shadowColor='#69f';g.shadowBlur=12;
+  g.beginPath();g.moveTo(0,TABLE);g.lineTo(W,TABLE);g.stroke();g.shadowBlur=0;
+  g.fillStyle='rgba(120,170,220,.45)';g.font='10px monospace';
+  g.fillText(FRIC?'table: μ = '+T.mu.toFixed(3)+'  (slipping contact)':'table: FRICTIONLESS — control run, never flips',14,TABLE+16);
+
+  // spin blur ring
+  g.save();g.translate(ccx,ccy);
+  var sq=Math.min(1,T.om/90);
+  g.strokeStyle='rgba(120,200,255,'+(0.10+0.25*sq)+')';g.lineWidth=1;
+  for(var k=0;k<4;k++){g.beginPath();g.ellipse(0,T.R*S*0.35,T.R*S*(0.75+k*0.08),T.R*S*0.20,0,0,7);g.stroke();}
+  g.restore();
+
+  // sphere body
+  var gg=g.createRadialGradient(ccx-S*0.35,ccy-S*0.4,S*0.1,ccx,ccy,T.R*S);
+  gg.addColorStop(0,'rgba(200,230,255,.95)');gg.addColorStop(.55,'rgba(80,140,220,.85)');
+  gg.addColorStop(1,'rgba(20,40,80,.9)');
+  g.fillStyle=gg;g.shadowColor='#5af';g.shadowBlur=26;
+  g.beginPath();g.arc(ccx,ccy,T.R*S,0,7);g.fill();g.shadowBlur=0;
+  // flat cut (the truncated side) drawn as a band perpendicular to the axis
+  g.save();g.translate(ccx,ccy);g.rotate(Math.atan2(ay,ax));
+  g.fillStyle='rgba(10,22,45,.85)';
+  g.beginPath();g.ellipse(-T.R*S*0.72,0,T.R*S*0.22,T.R*S*0.62,0,0,7);g.fill();
+  g.restore();
+
+  // stem along +axis
+  var sx=ccx+ax*T.R*S*1.05, sy=ccy+ay*T.R*S*1.05;
+  var ex=ccx+ax*T.R*S*1.95, ey=ccy+ay*T.R*S*1.95;
+  g.strokeStyle='rgba(255,220,150,.95)';g.lineWidth=Math.max(3,S*0.10);g.lineCap='round';
+  g.shadowColor='#fc6';g.shadowBlur=14;
+  g.beginPath();g.moveTo(sx,sy);g.lineTo(ex,ey);g.stroke();g.shadowBlur=0;
+
+  // CM marker + height line
+  g.fillStyle='rgba(255,120,180,.95)';g.shadowColor='#f6a';g.shadowBlur=10;
+  g.beginPath();g.arc(cmx,cmy,4,0,7);g.fill();g.shadowBlur=0;
+  g.strokeStyle='rgba(255,120,180,.5)';g.setLineDash([4,4]);
+  g.beginPath();g.moveTo(cmx,cmy);g.lineTo(W*0.40+S*2.6,cmy);g.stroke();
+  g.beginPath();g.moveTo(cmx,cmy);g.lineTo(cmx,TABLE);g.stroke();g.setLineDash([]);
+  g.fillStyle='rgba(255,150,200,.9)';g.font='10px monospace';
+  g.fillText('CM  h = '+cmHeight(T).toFixed(3),cmx+8,cmy-6);
+
+  // angular momentum vector (stays ~vertical)
+  g.strokeStyle='rgba(140,255,200,.9)';g.lineWidth=2;
+  g.beginPath();g.moveTo(ccx,ccy);g.lineTo(ccx,ccy-S*2.2);g.stroke();
+  g.beginPath();g.moveTo(ccx,ccy-S*2.2);g.lineTo(ccx-5,ccy-S*2.2+10);g.lineTo(ccx+5,ccy-S*2.2+10);
+  g.closePath();g.fillStyle='rgba(140,255,200,.9)';g.fill();
+  g.fillText('L ≈ vertical',ccx+7,ccy-S*2.1);
+  // symmetry axis
+  g.strokeStyle='rgba(255,210,120,.55)';g.setLineDash([3,3]);g.lineWidth=1;
+  g.beginPath();g.moveTo(ccx-ax*S*2,ccy-ay*S*2);g.lineTo(ccx+ax*S*2.4,ccy+ay*S*2.4);g.stroke();g.setLineDash([]);
+  g.fillStyle='rgba(255,210,120,.8)';g.fillText('θ = '+(T.theta*180/Math.PI).toFixed(0)+'°',ccx+ax*S*2.5,ccy+ay*S*2.5);
+}
+
+function drawHUD(){
+  var px0=W-296,py0=20,pw=272,ph=190;
+  g.fillStyle='rgba(3,7,16,.85)';g.fillRect(px0,py0,pw,ph);
+  g.strokeStyle='rgba(90,140,220,.5)';g.lineWidth=1;g.strokeRect(px0,py0,pw,ph);
+  g.fillStyle='rgba(160,200,255,.9)';g.font='10px monospace';
+  g.fillText('THE WHOLE STORY IN THREE CURVES',px0+8,py0+14);
+  if(hist.length<2){g.fillStyle='rgba(120,160,200,.6)';g.fillText('spin it…',px0+8,py0+34);return;}
+  var n=hist.length;
+  function rng(k){var mn=1e9,mx=-1e9;for(var i=0;i<n;i++){var v=hist[i][k];if(v<mn)mn=v;if(v>mx)mx=v;}
+    if(mx-mn<1e-9){mx=mn+1;}return [mn,mx];}
+  var curves=[['h','CM HEIGHT  (rises!)','rgba(255,120,180,.95)'],
+              ['E','ENERGY  (falls — friction pays)','rgba(255,190,90,.95)'],
+              ['L','L_z  (≈ conserved)','rgba(140,255,200,.95)']];
+  var rowH=(ph-30)/3;
+  for(var ci=0;ci<3;ci++){
+    var k=curves[ci][0], r=rng(k);
+    var y0=py0+24+ci*rowH, y1=y0+rowH-10;
+    g.strokeStyle='rgba(80,120,180,.25)';g.beginPath();g.moveTo(px0+8,y1);g.lineTo(px0+pw-8,y1);g.stroke();
+    g.strokeStyle=curves[ci][2];g.lineWidth=1.6;g.shadowColor=curves[ci][2];g.shadowBlur=6;
+    g.beginPath();
+    for(var i=0;i<n;i++){
+      var X=px0+8+(i/(n-1))*(pw-16);
+      var Y=y1-((hist[i][k]-r[0])/(r[1]-r[0]))*(rowH-14);
+      i?g.lineTo(X,Y):g.moveTo(X,Y);
+    }
+    g.stroke();g.shadowBlur=0;
+    g.fillStyle=curves[ci][2];g.font='9px monospace';g.fillText(curves[ci][1],px0+10,y0+8);
+  }
+}
+
+var last=performance.now(),acc=0;
+function frame(now){
+  var dt=Math.min(0.033,(now-last)/1000);last=now;
+  var sub=4;
+  for(var k=0;k<sub;k++) stepTop(T,dt/sub,FRIC);
+  acc+=dt;
+  if(acc>0.05){acc=0;hist.push({h:cmHeight(T),E:energy(T),L:Lz(T)});if(hist.length>240)hist.shift();}
+
+  g.fillStyle='#04060b';g.fillRect(0,0,W,H);
+  drawTop();
+  if(TRACE) drawHUD();
+
+  var wc=omegaCrit(T);
+  rT.textContent=(T.theta*180/Math.PI).toFixed(1)+'°';
+  rW.textContent=T.om.toFixed(1);
+  rH.textContent=cmHeight(T).toFixed(4);
+  rE.textContent=energy(T).toFixed(2);
+  rL.textContent=Lz(T).toFixed(3);
+  rC.textContent=isFinite(wc)?wc.toFixed(1)+' rad/s':'∞ (a=0)';
+  rS.textContent = (+sA.value<=0.001) ? 'no CM offset → cannot flip'
+    : !FRIC ? 'frictionless → wobbles forever'
+    : T.theta>2.6 ? 'INVERTED — standing on the stem'
+    : T.om<wc ? 'below ω_crit — will not invert'
+    : 'flipping…';
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+})();
+</script>

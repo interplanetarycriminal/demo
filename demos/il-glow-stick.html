@@ -1,0 +1,251 @@
+<title>Glow Stick Kinetics</title>
+<style>
+html,body{margin:0;padding:0;background:#04060a;overflow:hidden;height:100%}
+canvas{display:block;position:fixed;top:0;left:0}
+#ui{position:fixed;top:0;left:0;z-index:10;margin:10px;padding:10px 12px;max-width:340px;
+  background:rgba(4,8,14,.62);border:1px solid rgba(120,255,190,.25);border-radius:6px;
+  color:#a9ffdc;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;text-shadow:0 0 8px rgba(60,255,180,.35)}
+#ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.09em;color:#d8fff0}
+#ui .m{color:#84e3c0}#ui .s{color:#5fae92}
+#ui .lin{color:#4d8b76;font-size:10px}
+#ui .r{color:#ffe28a;margin-top:6px;white-space:pre}
+#ui a{color:#7dffd0}
+#ui label{display:block;margin-top:5px;color:#8fe8c6}
+#ui input[type=range]{width:100%;accent-color:#3fe0a0}
+.tag{display:inline-block;margin-top:6px;padding:1px 6px;border:1px solid rgba(255,120,120,.4);
+  border-radius:9px;color:#ff9a9a;font-size:9.5px;letter-spacing:.06em}
+button{background:rgba(20,60,50,.6);color:#bfffe6;border:1px solid rgba(90,255,190,.3);
+  border-radius:4px;font:10px ui-monospace,monospace;padding:3px 7px;margin:4px 4px 0 0;cursor:pointer}
+button.on{background:rgba(60,220,160,.35);color:#fff}
+.sw{display:inline-block;width:15px;height:15px;border-radius:3px;margin:4px 3px 0 0;cursor:pointer;
+  border:1px solid rgba(255,255,255,.25);vertical-align:middle}
+.sw.on{border:2px solid #fff}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>GLOW STICK — PEROXYOXALATE</h1>
+<div class="m">Cracking breaks the inner vial; a peroxide–oxalate reaction pumps energy into a dye that fluoresces — the dye picks the colour, the reaction only pays the bill.</div>
+<div class="s">Chandross, 1963 · Cyalume, 1970s</div>
+<div class="lin">LINEAGE: Chandross 1963 → Cyalume patents → luminol (forensic cousin, energy from redox)</div>
+<div>dye: <span id="swatches"></span></div>
+<label>temperature <span id="vt">20</span> °C</label>
+<input id="T" type="range" min="-15" max="90" value="20">
+<div><button id="fridge">fridge 4°C</button><button id="boil">boiling 95°C</button><button id="fresh">new stick</button></div>
+<div class="m" style="margin-top:6px">CLICK to crack · HOLD to shake &amp; mix</div>
+<div class="r" id="ro">—</div>
+<a href="index.html">← gallery</a>
+<span class="tag">simulation — no recipe</span>
+</div>
+<script>
+(function(){
+var c=document.getElementById('c'),x=c.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;
+ c.width=W*DPR;c.height=H*DPR;c.style.width=W+'px';c.style.height=H+'px';x.setTransform(DPR,0,0,DPR,0,0);}
+addEventListener('resize',resize);
+
+var DYES=[
+ {n:'9,10-diphenylanthracene',lam:430,col:[110,150,255]},
+ {n:'perylene / blue-green',   lam:475,col:[90,220,255]},
+ {n:'9,10-bis(phenylethynyl)anthracene',lam:490,col:[110,255,180]},
+ {n:'rubrene',                 lam:550,col:[255,225,90]},
+ {n:'rhodamine 6G',            lam:590,col:[255,140,90]},
+ {n:'rhodamine B',             lam:610,col:[255,90,140]}
+];
+var dye=2;
+var sw=document.getElementById('swatches');
+DYES.forEach(function(d,i){var e=document.createElement('span');e.className='sw'+(i===dye?' on':'');
+ e.style.background='rgb('+d.col.join(',')+')';e.title=d.n;
+ e.onclick=function(){dye=i;[].forEach.call(sw.children,function(k,j){k.className='sw'+(j===i?' on':'');});};
+ sw.appendChild(e);});
+
+// ---- state ----
+var cracked=false,mixed=0,fuel=1,T=20,t=0,shake=0,flash=0,shards=[],bubbles=[];
+var curves=[],curLive=null;
+var Tin=document.getElementById('T');
+Tin.oninput=function(){T=+this.value;document.getElementById('vt').textContent=T;};
+document.getElementById('fridge').onclick=function(){Tin.value=4;Tin.oninput();};
+document.getElementById('boil').onclick=function(){Tin.value=95;Tin.oninput();};
+document.getElementById('fresh').onclick=function(){newStick();};
+function newStick(){
+  if(curLive&&curLive.pts.length>3){curves.push(curLive);if(curves.length>7)curves.shift();}
+  curLive=null;cracked=false;mixed=0;fuel=1;t=0;shards=[];bubbles=[];flash=0;
+}
+
+// Arrhenius: rate constant k(T); brightness = k*fuel, lifetime ~ 1/k  => k*∫ = fuel (conserved photons)
+var Ea=42000,R=8.314,A=1;
+function kOf(Tc){return Math.exp(-Ea/R/(Tc+273.15))/Math.exp(-Ea/R/293.15)*0.055;}
+
+var down=false,mx=0,my=0;
+function pos(e){var t2=e.touches?e.touches[0]:e;return{x:t2.clientX,y:t2.clientY};}
+c.addEventListener('mousedown',function(e){var p=pos(e);mx=p.x;my=p.y;down=true;doCrack();});
+addEventListener('mouseup',function(){down=false;});
+addEventListener('mousemove',function(e){var p=pos(e);mx=p.x;my=p.y;});
+c.addEventListener('touchstart',function(e){var p=pos(e);mx=p.x;my=p.y;down=true;doCrack();e.preventDefault();},{passive:false});
+addEventListener('touchend',function(){down=false;});
+function doCrack(){
+  if(cracked)return;cracked=true;flash=1;t=0;
+  curLive={T:T,dye:dye,pts:[],col:DYES[dye].col.slice()};
+  for(var i=0;i<70;i++)shards.push({p:Math.random(),o:(Math.random()-0.5)*16,vo:(Math.random()-0.5)*40,
+    r:Math.random()*6.283,vr:(Math.random()-0.5)*8,l:1,s:2+Math.random()*4});
+}
+
+function stickGeom(){var sx=W*0.5,sy=H*0.5,len=Math.min(H*0.62,520),w=Math.max(26,len*0.075);
+ return {x:sx,y:sy,len:len,w:w};}
+
+var last=performance.now();
+function step(dt){
+  t+=dt;flash*=Math.exp(-dt*6);
+  if(cracked){
+    if(down){shake=Math.min(1,shake+dt*3);mixed=Math.min(1,mixed+dt*0.9);}
+    else{shake*=Math.exp(-dt*4);mixed=Math.min(1,mixed+dt*0.22);}
+    var k=kOf(T);
+    var d=fuel*k*dt;fuel=Math.max(0,fuel-d);
+    if(curLive){var I=k*fuel*mixed;
+      if(curLive.pts.length===0||t-curLive.pts[curLive.pts.length-1][0]>0.25)curLive.pts.push([t,I]);
+      if(curLive.pts.length>900)curLive.pts.shift();}
+  }
+  for(var i=shards.length-1;i>=0;i--){var s=shards[i];s.o+=s.vo*dt;s.r+=s.vr*dt;s.l-=dt*0.8;if(s.l<=0)shards.splice(i,1);}
+  if(cracked&&mixed<1&&Math.random()<dt*40)bubbles.push({p:Math.random(),o:(Math.random()-0.5)*10,l:1,v:0.25+Math.random()*0.4});
+  for(var b=bubbles.length-1;b>=0;b--){var q=bubbles[b];q.p-=q.v*dt;q.l-=dt*0.7;if(q.l<=0||q.p<0)bubbles.splice(b,1);}
+}
+
+function intensity(){return cracked?kOf(T)*fuel*mixed:0;}
+
+function draw(){
+  var g=stickGeom(),D=DYES[dye],I=intensity();
+  x.fillStyle='#04060a';x.fillRect(0,0,W,H);
+  // ambient bloom from stick
+  var amb=Math.min(1,I*7);
+  if(amb>0.005){
+    var rg=x.createRadialGradient(g.x,g.y,0,g.x,g.y,g.len*1.5);
+    rg.addColorStop(0,'rgba('+D.col.join(',')+','+(amb*0.30)+')');
+    rg.addColorStop(1,'rgba(0,0,0,0)');
+    x.fillStyle=rg;x.fillRect(0,0,W,H);
+  }
+  x.save();
+  x.translate(g.x+ (shake?Math.sin(t*45)*shake*10:0), g.y+(shake?Math.cos(t*38)*shake*7:0));
+  x.rotate(-0.22+(shake?Math.sin(t*30)*shake*0.10:0));
+  var hl=g.len/2,hw=g.w/2;
+  // tube body
+  x.fillStyle='rgba(18,24,32,.9)';
+  rr(-hw,-hl,g.w,g.len,hw);x.fill();
+  // fluid glow inside
+  x.globalCompositeOperation='lighter';
+  var a=Math.min(1,I*9);
+  if(a>0.004){
+    var lg=x.createLinearGradient(-hw,0,hw,0);
+    lg.addColorStop(0,'rgba('+D.col.join(',')+','+(a*0.35)+')');
+    lg.addColorStop(0.5,'rgba(255,255,255,'+(a*0.75)+')');
+    lg.addColorStop(1,'rgba('+D.col.join(',')+','+(a*0.35)+')');
+    x.fillStyle=lg;rr(-hw+3,-hl+4,g.w-6,g.len-8,hw-3);x.fill();
+    // mixing swirl when partially mixed
+    if(mixed<1){x.fillStyle='rgba(10,14,20,'+(1-mixed)*0.55+')';
+      for(var s=0;s<10;s++){var yy=-hl+8+(g.len-16)*((s/10+ (t*0.15)%1)%1);
+        x.fillRect(-hw+3,yy,g.w-6,(g.len/26)*(1-mixed));}}
+  }
+  // crack flash
+  if(flash>0.01){x.fillStyle='rgba(255,255,255,'+flash*0.9+')';rr(-hw,-hl,g.w,g.len,hw);x.fill();}
+  x.globalCompositeOperation='source-over';
+  // inner vial (uncracked) / shards
+  if(!cracked){
+    x.strokeStyle='rgba(180,210,235,.55)';x.lineWidth=1.5;
+    rr(-hw+7,-hl+22,g.w-14,g.len-44,(g.w-14)/2);x.stroke();
+    x.fillStyle='rgba(150,190,220,.10)';x.fill();
+    x.fillStyle='rgba(190,220,245,.8)';x.font='11px ui-monospace,monospace';x.textAlign='center';
+    x.save();x.rotate(Math.PI/2);x.fillText('inner vial: H₂O₂',0,4);x.restore();x.textAlign='left';
+  }else{
+    for(var i=0;i<shards.length;i++){var sh=shards[i];
+      x.save();x.translate(sh.o,-hl+22+(g.len-44)*sh.p);x.rotate(sh.r);
+      x.fillStyle='rgba(220,240,255,'+sh.l*0.8+')';x.fillRect(-sh.s/2,-sh.s/6,sh.s,sh.s/3);x.restore();}
+  }
+  for(var b=0;b<bubbles.length;b++){var q=bubbles[b];
+    x.fillStyle='rgba(255,255,255,'+q.l*0.3+')';
+    x.beginPath();x.arc(q.o,-hl+10+(g.len-20)*q.p,1.8,0,6.283);x.fill();}
+  // tube outline + caps
+  x.strokeStyle='rgba(160,190,215,.35)';x.lineWidth=1.5;rr(-hw,-hl,g.w,g.len,hw);x.stroke();
+  x.fillStyle='rgba(40,48,58,.95)';rr(-hw-2,-hl-8,g.w+4,12,4);x.fill();rr(-hw-2,hl-4,g.w+4,12,4);x.fill();
+  x.restore();
+
+  if(!cracked){x.fillStyle='rgba(200,255,230,.85)';x.font='13px ui-monospace,monospace';x.textAlign='center';
+    x.fillText('CLICK TO CRACK',g.x,g.y+g.len/2+52);x.textAlign='left';}
+  else if(mixed<0.99){x.fillStyle='rgba(255,230,150,.85)';x.font='12px ui-monospace,monospace';x.textAlign='center';
+    x.fillText('HOLD TO SHAKE — mixing '+(mixed*100|0)+'%',g.x,g.y+g.len/2+52);x.textAlign='left';}
+
+  drawChain(D);
+  drawCurves(D,I);
+}
+function rr(px,py,w,h,r){x.beginPath();
+ x.moveTo(px+r,py);x.arcTo(px+w,py,px+w,py+h,r);x.arcTo(px+w,py+h,px,py+h,r);
+ x.arcTo(px,py+h,px,py,r);x.arcTo(px,py,px+w,py,r);x.closePath();}
+
+function drawChain(D){
+  var w=Math.min(300,W*0.27),h=104,ix=12,iy=H-h-14;
+  x.fillStyle='rgba(4,12,10,.8)';x.strokeStyle='rgba(90,255,190,.28)';
+  x.fillRect(ix,iy,w,h);x.strokeRect(ix+.5,iy+.5,w,h);
+  x.fillStyle='#a9ffdc';x.font='10px ui-monospace,monospace';
+  x.fillText('ENERGY PATH — dye picks λ, not the reaction',ix+8,iy+15);
+  var boxes=[['oxalate','+H₂O₂','#7fd9c0'],['high-E','intermed.','#ffd48a'],['dye*','excited','rgb('+D.col.join(',')+')'],['photon',D.lam+' nm','rgb('+D.col.join(',')+')']];
+  var bw=(w-40)/4;
+  for(var i=0;i<4;i++){
+    var bx=ix+10+i*(bw+8);
+    x.strokeStyle=boxes[i][2];x.lineWidth=1;x.strokeRect(bx,iy+26,bw,34);
+    x.fillStyle=boxes[i][2];x.font='9px ui-monospace,monospace';
+    x.fillText(boxes[i][0],bx+4,iy+40);x.fillText(boxes[i][1],bx+4,iy+52);
+    if(i<3){x.strokeStyle='rgba(160,220,200,.6)';x.beginPath();
+      x.moveTo(bx+bw+1,iy+43);x.lineTo(bx+bw+7,iy+43);x.stroke();
+      x.beginPath();x.moveTo(bx+bw+7,iy+43);x.lineTo(bx+bw+3,iy+40);x.lineTo(bx+bw+3,iy+46);x.fill();}
+  }
+  x.fillStyle='#5fae92';x.font='9px ui-monospace,monospace';
+  x.fillText('same chemistry — swap the fluorophore, swap the colour',ix+8,iy+76);
+  x.fillText(DYES[dye].n,ix+8,iy+90);
+}
+
+function drawCurves(D,I){
+  var w=Math.min(330,W*0.29),h=170,ix=W-w-14,iy=H-h-14;
+  x.fillStyle='rgba(4,10,14,.8)';x.strokeStyle='rgba(90,255,190,.28)';
+  x.fillRect(ix,iy,w,h);x.strokeRect(ix+.5,iy+.5,w,h);
+  x.fillStyle='#a9ffdc';x.font='10px ui-monospace,monospace';
+  x.fillText('BRIGHTNESS vs TIME — area is fixed',ix+8,iy+14);
+  var px=ix+30,py=iy+24,pw=w-42,ph=h-52;
+  x.strokeStyle='rgba(120,200,180,.3)';x.strokeRect(px+.5,py+.5,pw,ph);
+  var TMAX=180,IMAX=0.11;
+  function plot(cv,alpha,lw){
+    if(cv.pts.length<2)return;
+    x.strokeStyle='rgba('+cv.col.join(',')+','+alpha+')';x.lineWidth=lw;x.beginPath();
+    for(var i=0;i<cv.pts.length;i++){
+      var X=px+Math.min(1,cv.pts[i][0]/TMAX)*pw, Y=py+ph-Math.min(1,cv.pts[i][1]/IMAX)*ph;
+      i?x.lineTo(X,Y):x.moveTo(X,Y);}
+    x.stroke();x.lineWidth=1;
+  }
+  for(var i=0;i<curves.length;i++)plot(curves[i],0.30,1);
+  if(curLive)plot(curLive,0.95,2);
+  x.fillStyle='#5fae92';x.font='9px ui-monospace,monospace';
+  x.fillText('0',px-4,py+ph+12);x.fillText(TMAX+'s',px+pw-18,py+ph+12);
+  x.save();x.translate(px-8,py+ph/2);x.rotate(-Math.PI/2);x.textAlign='center';x.fillText('I',0,0);x.restore();x.textAlign='left';
+  x.fillStyle='#7fd9c0';
+  x.fillText('hot: blazes & dies · cold: dim & lasts (freezer trick)',ix+8,iy+h-8);
+  x.fillText('saved runs: '+curves.length,ix+w-90,iy+h-8);
+}
+
+function loop(t2){
+  var dt=Math.min(0.05,(t2-last)/1000);last=t2;
+  step(dt);draw();
+  var k=kOf(T),I=intensity();
+  var life=k>0?1/k:Infinity;
+  document.getElementById('ro').textContent=
+    'state       '+(cracked?(mixed<0.99?'mixing':'glowing'):'sealed')+
+    '\nk(T)        '+k.toFixed(5)+' /s'+
+    '\nbrightness  '+I.toFixed(5)+
+    '\nfuel left   '+(fuel*100).toFixed(1)+'%'+
+    '\nlifetime τ  '+(life>9999?'—':life.toFixed(1)+' s')+
+    '\nI₀·τ        '+(k*1*life).toFixed(3)+'  (invariant)'+
+    '\nλ emit      '+DYES[dye].lam+' nm';
+  requestAnimationFrame(loop);
+}
+resize();
+requestAnimationFrame(function(t2){last=t2;loop(t2);});
+})();
+</script>
+</body>

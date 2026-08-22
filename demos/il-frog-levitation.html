@@ -51,7 +51,7 @@ window.addEventListener('resize',resize);
 
 var MU0=4*Math.PI*1e-7, Gs=9.81;
 // on-axis profile of a solenoid of half-length a: B(z)=B0/(1+(z/a)^2)^(3/2)  (Lorentzian-cubed, standard analytic bore model)
-var A=0.10;           // 10 cm characteristic half-length of the 32 mm bore Bitter coil
+var A=0.124;          // characteristic half-length of the 32 mm bore Bitter coil
 var B0=16.0;
 
 function Bz(z){var u=z/A;return B0/Math.pow(1+u*u,1.5);}
@@ -231,7 +231,7 @@ function sync(){
   B0=sB.value/10;                      // 0 .. 30 T
   vB.textContent=B0.toFixed(1)+' T';
   cur=OBJ[selObj.value];
-  if(selObj.value==='human'){A=0.10;} else {A=0.10;}
+  A=0.124;
 }
 sB.oninput=sync;selObj.onchange=function(){sync();body.z=0.06;body.v=0;body.fallen=false;};
 document.getElementById('bPerturb').onclick=function(){body.v+=(Math.random()-0.3)*0.35;};
@@ -266,7 +266,7 @@ function frame(now){
 
   g.save();g.font='11px ui-monospace,monospace';g.textAlign='center';
   g.fillStyle='rgba(150,200,225,.75)';
-  g.fillText('B(z) = B₀ / (1 + (z/a)²)^{3/2},  a = 10 cm  —  analytic on-axis solenoid profile',W/2,H-22);
+  g.fillText('B(z) = B₀ / (1 + (z/a)²)^{3/2},  a = 12.4 cm  —  analytic on-axis solenoid profile; peak B·dB/dz ≈ 1370 T²/m at 16 T',W/2,H-22);
   g.fillStyle='rgba(255,190,120,.7)';
   g.fillText('every water molecule feels the same pull — that is why the whole animal floats, unharmed',W/2,H-6);
   g.restore();

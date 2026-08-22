@@ -20,6 +20,7 @@ canvas{display:block;position:fixed;inset:0}
 #ui button:hover{background:#12395c}
 #ui .st{font-weight:bold}
 </style>
+<body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
 <canvas id="c"></canvas>
 <div id="ui">
@@ -96,7 +97,7 @@ function forces(px,py,vx,vy,rad,mass){
   var u=jetSpeed(s,r);
   // axial drag: jet pushes ball along axis; balances gravity component
   var area=rad*rad*3.14159;
-  var CD=0.00055;
+  var CD=0.000185;
   var rel=u; // jet moving, ball approx slow
   var Fd=CD*area*rel*rel/ (rad/16); // scale-ish
   var fax=A.ax*Fd, fay=A.ay*Fd;
