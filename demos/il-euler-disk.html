@@ -23,19 +23,18 @@
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
 <div id="ui">
 <b>EULER'S DISK</b><br>
-A spun disk rolls on its rim: as the tilt &alpha; collapses the contact point's precession &Omega; &prop; 1/&radic;sin&alpha; <i>diverges</i> — the whirr speeds up as the energy runs out, ending in a finite-time singularity.<br>
-<span class="m">H. K. Moffatt, <i>Nature</i> 404, 833 (2000)</span><br>
-<span class="detail m">Lineage: Bendik's "Euler's Disk" toy patent 1987 &rarr; Moffatt's air-layer theory 2000 &rarr; replies (van den Engh, Bildsten, Kessler) putting rolling friction &amp; vibration back in.</span><br>
+A spun disk rolls on its rim: as the tilt &alpha; collapses, the precession &Omega; &prop; 1/&radic;sin&alpha; <i>diverges</i> — the whirr speeds up as the energy runs out.<br>
+&alpha; <span id="rA">—</span> &nbsp; &Omega; <span id="rW">—</span> &nbsp; <span id="rRev">—</span><br>
+t<sub>f</sub>&minus;t <span id="rT">—</span> &nbsp; whirr <span id="rF">—</span><br>
+log-log slope <span id="rS">—</span> <span class="m">(theory <span id="rP">1/3</span>)</span><br>
 <span class="k">dissipation model</span>
 <span class="seg"><button id="bM" class="on">Moffatt air-layer</button><button id="bR">rolling friction</button></span><br>
 <span class="k">initial tilt &alpha;&#8320;</span> <span id="rA0">40&deg;</span>
 <input type="range" id="sA0" min="12" max="55" step="1" value="40">
-<span class="detail k">air-gap viscosity &times;</span><input class="detail" type="range" id="sMu" min="40" max="200" step="5" value="100"><br>
 <span class="k">tap / drag the disk</span> <span class="m">= re-spin it</span><br>
-&alpha; <span id="rA">—</span> &nbsp; &Omega; <span id="rW">—</span> &nbsp; <span id="rRev">—</span><br>
-t<sub>f</sub>&minus;t <span id="rT">—</span> &nbsp; whirr <span id="rF">—</span><br>
-log-log slope <span id="rS">—</span> <span class="m">(theory <span id="rP">1/3</span>)</span><br>
-<a href="index.html">&larr; gallery</a>
+<a href="index.html">&larr; gallery</a><br>
+<span class="detail k">air-gap viscosity &times;</span><input class="detail" type="range" id="sMu" min="40" max="200" step="5" value="100">
+<span class="detail m">H. K. Moffatt, <i>Nature</i> 404, 833 (2000). Lineage: Bendik's "Euler's Disk" toy patent 1987 &rarr; Moffatt's air-layer theory 2000 &rarr; replies (van den Engh, Bildsten, Kessler) putting rolling friction &amp; vibration back in.</span>
 </div>
 <canvas id="c"></canvas>
 <script>
@@ -172,6 +171,10 @@ function chip(x,y,w,h,a){ctx.fillStyle='rgba(8,8,16,'+(a||.78)+')';ctx.strokeSty
   ctx.lineWidth=1;ctx.beginPath();ctx.rect(x,y,w,h);ctx.fill();ctx.stroke();}
 function txt(s,x,y,col,f,al){ctx.fillStyle=col;ctx.font=f||'12px ui-monospace,Menlo,monospace';
   ctx.textAlign=al||'left';ctx.textBaseline='alphabetic';ctx.fillText(s,x,y);ctx.textAlign='left';}
+function wrap(s,maxw){var w=s.split(' '),ls=[],cur='';
+  for(var i=0;i<w.length;i++){var t=cur?cur+' '+w[i]:w[i];
+    if(ctx.measureText(t).width>maxw&&cur){ls.push(cur);cur=w[i];}else cur=t;}
+  if(cur)ls.push(cur);return ls;}
 
 function drawInset(x,y,w,h,p,slope){
   chip(x,y,w,h,.84);
@@ -280,10 +283,13 @@ function frame(now){
   var bx=pad, by=H-pad-bh;
   drawPitch(bx,by,bw,bh,f,14);
   if(!narrow){
-    var cx0=bx+bw+10, cw=W-pad-cx0;
-    if(cw>250){ chip(cx0,by,cw,bh,.72);
-      txt('WHY IT ENDS WITH A SHUDDER: Ω → ∞ in finite time, so the',cx0+9,by+16,'#dfe6ff','11px ui-monospace,monospace');
-      txt('last rev takes ~0 s — rim slams into contact. '+MODELS[S.model].note,cx0+9,by+31,'#9aa6c8','11px ui-monospace,monospace');
+    var cx0=bx+bw+10, cw=Math.min(W-pad-cx0, W-32);
+    if(cw>250){
+      ctx.font='11px ui-monospace,Menlo,monospace';
+      var ls=wrap('WHY IT ENDS WITH A SHUDDER: Ω → ∞ in finite time, so the last revolution takes ~0 s — the rim slams down. Sink: '+MODELS[S.model].note+'.',cw-18);
+      var chh=ls.length*15+11, cyy=H-pad-chh;
+      chip(cx0,cyy,cw,chh,.76);
+      for(var q=0;q<ls.length;q++)txt(ls[q],cx0+9,cyy+15+q*15,q?'#9aa6c8':'#dfe6ff','11px ui-monospace,monospace');
     }
   }
   // readouts

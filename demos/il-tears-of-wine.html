@@ -20,17 +20,15 @@
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
 <div id="ui">
 <b>TEARS OF WINE</b><br>
-Alcohol evaporates fastest from the ultrathin meniscus film, so surface tension &sigma; rises there; the high-&sigma; ring <i>pulls</i> liquid up the glass until the ridge overloads and beads streak back down as tears.<br>
-<span class="m">James Thomson, 1855 — a decade before Marangoni</span><br>
-<span class="detail m">Lineage: Thomson 1855 (evaporation-driven flow) &rarr; Marangoni 1865 (the name) &rarr; Gibbs (thermodynamic footing) &rarr; today: coffee-ring &amp; thin-film Marangoni theory.</span><br>
+Alcohol evaporates fastest from the ultrathin meniscus film, so &sigma; rises there; the high-&sigma; ring <i>pulls</i> liquid up the glass until the ridge overloads and beads streak back down.<br>
+&Delta;&sigma; film <span id="rDs">—</span> &nbsp; climb <span id="rV">—</span><br>
+tear period <span id="rT">—</span> &nbsp; in flight <span id="rN">—</span><br>
 <span class="k">ABV</span> <span id="rAbv">13%</span>
 <input type="range" id="sAbv" min="0" max="40" step="1" value="13">
 <span class="k">air dryness (evaporation)</span> <span id="rHum">dry</span>
 <input type="range" id="sHum" min="0" max="100" step="1" value="72">
-<span class="detail m">0% ABV = dead calm. Strength is non-monotonic: it peaks near ~20% then falls — the film runs out of &sigma; contrast.</span><br>
-&Delta;&sigma; film <span id="rDs">—</span> &nbsp; climb <span id="rV">—</span><br>
-tear period <span id="rT">—</span> &nbsp; tears in flight <span id="rN">—</span><br>
-<a href="index.html">&larr; gallery</a>
+<a href="index.html">&larr; gallery</a><br>
+<span class="detail m">James Thomson, 1855 — a decade before Marangoni. Lineage: Thomson 1855 (evaporation-driven flow) &rarr; Marangoni 1865 (the name) &rarr; Gibbs (thermodynamic footing) &rarr; today's coffee-ring &amp; thin-film Marangoni theory. 0% ABV = dead calm; strength is non-monotonic, peaking near ~20%.</span>
 </div>
 <canvas id="c"></canvas>
 <script>
@@ -199,6 +197,10 @@ function chip(x,y,w,h,a){ctx.fillStyle='rgba(14,6,10,'+(a||.8)+')';ctx.strokeSty
   ctx.lineWidth=1;ctx.beginPath();ctx.rect(x,y,w,h);ctx.fill();ctx.stroke();}
 function txt(s,x,y,col,f,al){ctx.fillStyle=col;ctx.font=f||'12px ui-monospace,Menlo,monospace';
   ctx.textAlign=al||'left';ctx.fillText(s,x,y);ctx.textAlign='left';}
+function wrap(s,maxw){var w=s.split(' '),ls=[],cur='';
+  for(var i=0;i<w.length;i++){var t=cur?cur+' '+w[i]:w[i];
+    if(ctx.measureText(t).width>maxw&&cur){ls.push(cur);cur=w[i];}else cur=t;}
+  if(cur)ls.push(cur);return ls;}
 
 function drawInset(x,y,w,h,ds,flux){
   chip(x,y,w,h,.86);
@@ -256,21 +258,25 @@ function frame(now){
   var iw=narrow?Math.min(W-2*pad,320):238, ih=narrow?120:158;
   var ix=narrow?pad:W-pad-iw, iy=narrow?H-pad-ih:pad;
   drawInset(ix,iy,iw,ih,ds,flux);
-  var lines=[
-    ['legs / tears / church windows — the ridge is the "leg", the bead is the "tear"','#f3ded2'],
-    ['honesty: tear SIZE is set by gravity vs Marangoni pull; big legs ≠ good wine','#c2a397'],
-    ['(legs mostly report alcohol + glycerol, not quality — Thomson knew that in 1855)','#c2a397']
-  ];
-  var cw=Math.min(narrow?W-2*pad:W-2*pad-iw-12, 470), ch=lines.length*15+12;
+  var cw=Math.min(narrow?W-2*pad:W-2*pad-iw-12, 470);
+  ctx.font='11px ui-monospace,Menlo,monospace';
+  var lines=wrap('legs / tears / church windows — the ridge is the "leg", the bead is the "tear".',cw-18);
+  var nh=lines.length;
+  lines=lines.concat(wrap('honesty: tear SIZE is set by gravity vs the Marangoni pull — and big legs ≠ good wine; they mostly report alcohol + glycerol.',cw-18));
+  var ch=lines.length*15+12;
   var cx0=pad, cy0=narrow?H-pad-ih-ch-8:H-pad-ch;
   if(cw>210&&cy0>GTOP-40){ chip(cx0,cy0,cw,ch,.74);
-    for(i=0;i<lines.length;i++)txt(lines[i][0],cx0+9,cy0+15+i*15,lines[i][1],'11px ui-monospace,monospace'); }
+    for(i=0;i<lines.length;i++)txt(lines[i],cx0+9,cy0+15+i*15,i<nh?'#f3ded2':'#c2a397','11px ui-monospace,monospace'); }
   // state chip near the glass
   var st = S.abv<0.5?'0% ABV → dead calm: no σ contrast, no climb'
          : tearsForm(flux)?'tears forming — ridge overloaded'
          : 'below threshold: film creeps, no beads';
-  chip(GX-halfW(GTOP)-6, GTOP-30, Math.min(320, 2*halfW(GTOP)+80), 22, .8);
-  txt(st, GX-halfW(GTOP)+3, GTOP-14, '#ffd9b8','11px ui-monospace,monospace');
+  ctx.font='11px ui-monospace,Menlo,monospace';
+  var stw=ctx.measureText(st).width+18, panelR=Math.min(340,W-20)+22;
+  var stx=Math.max(GX-halfW(GTOP)-6, panelR), sty=GTOP-30;
+  if(stx+stw>W-14){ stx=Math.max(panelR, W-14-stw); }
+  if(stx+stw<=W-14){ chip(stx,sty,stw,22,.82);
+    txt(st, stx+9, sty+15, '#ffd9b8','11px ui-monospace,monospace'); }
   document.getElementById('rDs').textContent=ds.toFixed(2)+' mN/m';
   document.getElementById('rV').textContent=(flux*0.9).toFixed(2)+' mm/s';
   var per=tearPeriod(flux);

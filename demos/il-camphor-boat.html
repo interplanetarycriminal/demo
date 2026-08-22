@@ -20,17 +20,16 @@
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
 <div id="ui">
 <b>CAMPHOR BOAT</b><br>
-Camphor dissolving off the stern <i>lowers</i> surface tension behind the boat; the intact high-&sigma; water ahead out-pulls it — a surface-tension outboard motor with no moving parts.<br>
-<span class="m">Lord Rayleigh, Proc. Roy. Soc. 47, 364 (1890)</span><br>
-<span class="detail m">Lineage: "camphor dances" reported 1686 (Vogel/Römer) &rarr; Rayleigh 1890 measures the film &amp; kills it with a trace of oil &rarr; today's self-propelled droplets &amp; Marangoni surfers.</span><br>
+Camphor off the stern <i>lowers</i> surface tension behind the boat; the intact high-&sigma; water ahead out-pulls it — an outboard motor with no moving parts.<br>
+thrust <span id="rF">—</span> &nbsp; speed <span id="rV">—</span><br>
+&sigma; ahead <span id="rSa">—</span> &nbsp; &sigma; behind <span id="rSb">—</span><br>
 <span class="k">camphor release</span> <span id="rRel">1.0&times;</span>
 <input type="range" id="sRel" min="0" max="200" step="2" value="100">
 <span class="k">surface contamination (soap)</span> <span id="rCon">4%</span>
 <input type="range" id="sCon" min="0" max="100" step="1" value="4">
-<span class="k">tap the water</span> <span class="m">= drop a soap dot (it shoves the boat away)</span><br>
-thrust <span id="rF">—</span> &nbsp; speed <span id="rV">—</span><br>
-&sigma; ahead <span id="rSa">—</span> &nbsp; &sigma; behind <span id="rSb">—</span><br>
-<a href="index.html">&larr; gallery</a>
+<span class="k">tap the water</span> <span class="m">= soap dot</span><br>
+<a href="index.html">&larr; gallery</a><br>
+<span class="detail m">Lord Rayleigh, Proc. Roy. Soc. 47, 364 (1890). Lineage: "camphor dances" reported 1686 (Vogel/Römer) &rarr; Rayleigh 1890 measures the film &amp; kills it with a trace of oil &rarr; today's self-propelled droplets &amp; Marangoni surfers.</span>
 </div>
 <canvas id="c"></canvas>
 <script>
@@ -77,21 +76,35 @@ function diffuse(dt){
     var l=cam[i>0?k-1:k], r=cam[i<NX-1?k+1:k], u=cam[j>0?k-NX:k], d=cam[j<NY-1?k+NX:k];
     tmp[k]=cam[k]+a*(l+r+u+d-4*cam[k]);
   }
-  var decay=Math.pow(0.55,dt);           // evaporation / dissolution away from the surface
+  var decay=Math.pow(0.72,dt);           // evaporation / dissolution away from the surface
   for(k=0;k<NX*NY;k++)cam[k]=tmp[k]*decay;
 }
-function renderField(contam){
-  var d=img.data,k,c,sig,t;
-  for(k=0;k<NX*NY;k++){
+// static mottle so the clean surface reads as water, not flat paint
+var MOT=new Float32Array(NX*NY);
+(function(){var i,j,k;for(j=0;j<NY;j++)for(i=0;i<NX;i++){k=idx(i,j);
+  MOT[k]=0.72*Math.sin(i*0.37+j*0.19)*Math.sin(j*0.51-i*0.11)
+        +0.45*Math.sin(i*0.93-j*0.63)+0.30*Math.sin(j*1.31+i*0.27);}})();
+var SI=new Float32Array(NX),SJ=new Float32Array(NY);
+function renderField(contam,tt){
+  var d=img.data,i,j,k,c,sig,t,n;
+  for(i=0;i<NX;i++)SI[i]=Math.sin(i*0.21+tt*0.55);
+  for(j=0;j<NY;j++)SJ[j]=Math.sin(j*0.17-tt*0.42);
+  for(j=0;j<NY;j++)for(i=0;i<NX;i++){ k=idx(i,j);
     c=cam[k]; sig=sigmaOf(c,contam); t=(SIG_W-sig)/(SIG_W-SIG_C);   // 0 clean .. 1 saturated
-    d[k*4  ]= 10+ 190*Math.pow(t,1.4);
-    d[k*4+1]= 26+  78*Math.pow(Math.max(0,1-t),1.4)+24*t;
-    d[k*4+2]= 52+  92*Math.pow(Math.max(0,1-t),1.1)+60*t;
+    n=1+0.16*MOT[k]+0.13*SI[i]*SJ[j];                                // ripple/mottle texture
+    var lo=Math.max(0,1-t);
+    d[k*4  ]=Math.min(255,(10+195*Math.pow(t,1.4))*n+6*lo);
+    d[k*4+1]=Math.min(255,(24+ 86*Math.pow(lo,1.4)+26*t)*n);
+    d[k*4+2]=Math.min(255,(48+104*Math.pow(lo,1.1)+66*t)*n);
     d[k*4+3]=255;
   }
   fctx.putImageData(img,0,0);
-  ctx.save();ctx.imageSmoothingEnabled=true;ctx.globalAlpha=0.95;
-  ctx.drawImage(fc,TX,TY,TW,TH);ctx.restore();
+  ctx.save();ctx.imageSmoothingEnabled=true;ctx.drawImage(fc,TX,TY,TW,TH);ctx.restore();
+  // tank vignette + inner wall shading
+  var vg=ctx.createRadialGradient(TX+TW/2,TY+TH/2,Math.min(TW,TH)*0.18,TX+TW/2,TY+TH/2,Math.max(TW,TH)*0.68);
+  vg.addColorStop(0,'rgba(0,0,0,0)');vg.addColorStop(1,'rgba(2,5,12,.72)');
+  ctx.fillStyle=vg;ctx.fillRect(TX,TY,TW,TH);
+  ctx.strokeStyle='rgba(8,16,28,.85)';ctx.lineWidth=7;ctx.strokeRect(TX+3.5,TY+3.5,TW-7,TH-7);
 }
 
 // ---- tank layout
@@ -139,14 +152,14 @@ function step(dt){
   B.w += (sl-sr)*0.30*dt + (Math.sin(S.t*0.83)+0.6*Math.sin(S.t*1.97+1.1))*0.55*dt;
   B.w *= Math.pow(0.22,dt);
   B.th += B.w*dt;
-  B.v_ = Math.max(0, B.v_ + accel(F, B.v_, 220, 1.5, 0.9)*dt);
+  B.v_ = Math.max(0, B.v_ + accel(F, B.v_, 160, 1.5, 0.9)*dt);
   B.u += Math.cos(B.th)*B.v_*dt; B.v += Math.sin(B.th)*B.v_*dt;
   // wall bounces
   var m=LEN*0.9;
   if(B.u<m){B.u=m;B.th=Math.PI-B.th;B.v_*=0.55;} if(B.u>1-m){B.u=1-m;B.th=Math.PI-B.th;B.v_*=0.55;}
   if(B.v<m*TW/TH){B.v=m*TW/TH;B.th=-B.th;B.v_*=0.55;} if(B.v>1-m*TW/TH){B.v=1-m*TW/TH;B.th=-B.th;B.v_*=0.55;}
   B.trail.push([B.u,B.v,0]);
-  while(B.trail.length>150)B.trail.shift();
+  while(B.trail.length>340)B.trail.shift();
   for(i=0;i<B.trail.length;i++)B.trail[i][2]+=dt;
 }
 function drawBoat(){
@@ -172,30 +185,35 @@ function drawBoat(){
 }
 function drawTrail(){
   ctx.globalCompositeOperation='lighter';
-  for(var i=0;i<B.trail.length;i++){var t=B.trail[i],a=Math.max(0,1-t[2]/2.4);
-    if(a<=0)continue; glow(sx(t[0]),sy(t[1]),6+16*a,0.055*a);}
+  for(var i=0;i<B.trail.length;i++){var t=B.trail[i],a=Math.max(0,1-t[2]/5.2);
+    if(a<=0)continue; glow(sx(t[0]),sy(t[1]),7+20*a,0.05*a);}
   ctx.globalCompositeOperation='source-over';
 }
 function chip(x,y,w,h,a){ctx.fillStyle='rgba(3,9,18,'+(a||.8)+')';ctx.strokeStyle='rgba(110,220,220,.24)';
   ctx.lineWidth=1;ctx.beginPath();ctx.rect(x,y,w,h);ctx.fill();ctx.stroke();}
 function txt(s,x,y,col,f,al){ctx.fillStyle=col;ctx.font=f||'12px ui-monospace,Menlo,monospace';
   ctx.textAlign=al||'left';ctx.fillText(s,x,y);ctx.textAlign='left';}
+function wrap(s,maxw){var w=s.split(' '),ls=[],cur='';
+  for(var i=0;i<w.length;i++){var t=cur?cur+' '+w[i]:w[i];
+    if(ctx.measureText(t).width>maxw&&cur){ls.push(cur);cur=w[i];}else cur=t;}
+  if(cur)ls.push(cur);return ls;}
 
+var GAUGE_H=112;
 function drawGauge(x,y,w,h){
-  chip(x,y,w,h,.84);
-  txt('σ ACROSS THE HULL',x+9,y+15,'#7ff0dd','10px ui-monospace,monospace');
-  var bx=x+9,bw=w-18, by=y+24, bh=10;
-  function bar(v,yy,col,lab){
-    var f=Math.max(0,Math.min(1,(v-SIG_C)/(SIG_W-SIG_C)));
-    ctx.fillStyle='rgba(120,150,180,.16)';ctx.fillRect(bx,yy,bw,bh);
-    ctx.fillStyle=col;ctx.fillRect(bx,yy,bw*f,bh);
-    txt(lab+' '+v.toFixed(1),bx+2,yy+bh+12,'#bfe0ee','10px ui-monospace,monospace');
+  chip(x,y,w,h,.86);
+  var bx=x+9,bw=w-18,bh=9,cy=y+16;
+  txt('σ ACROSS THE HULL  (mN/m)',bx,cy,'#7ff0dd','10px ui-monospace,monospace');
+  function bar(v,col,lab){
+    cy+=14; txt(lab+'  '+v.toFixed(1),bx,cy,'#bfe0ee','10px ui-monospace,monospace');
+    cy+=6; var f=Math.max(0,Math.min(1,(v-SIG_C)/(SIG_W-SIG_C)));
+    ctx.fillStyle='rgba(120,150,180,.16)';ctx.fillRect(bx,cy,bw,bh);
+    ctx.fillStyle=col;ctx.fillRect(bx,cy,bw*f,bh); cy+=bh;
   }
-  bar(S.sa,by,'rgba(120,240,220,.92)','σ ahead');
-  bar(S.sb,by+30,'rgba(240,120,180,.92)','σ behind');
-  var dsg=S.sa-S.sb;
-  txt('Δσ '+dsg.toFixed(2)+' mN/m  →  thrust '+S.F.toFixed(1)+' µN',x+9,y+h-8,
-      dsg>0.15?'#c8ffe8':'#ff9c9c','10px ui-monospace,monospace');
+  bar(S.sa,'rgba(120,240,220,.92)','σ ahead ');
+  bar(S.sb,'rgba(240,120,180,.92)','σ behind');
+  var dsg=S.sa-S.sb; cy+=16;
+  txt('Δσ '+dsg.toFixed(2)+'  →  thrust '+S.F.toFixed(1)+' µN',bx,cy,
+      dsg>0.15?'#c8ffe8':'#ff9c9c','11px ui-monospace,monospace');
 }
 
 // tap = soap dot
@@ -207,8 +225,8 @@ function drop(e){var r=cv.getBoundingClientRect();
   S.soaps.push({u:u,v:v,life:2.6}); deposit(u,v,0.9,0.055); }
 
 // warm start so t≈4 s catches a mid-swoop with a live wake
-(function(){ layout(); B.v_=0.19; B.th=-0.55;
-  for(var k=0;k<70;k++){ step(1/60); } })();
+(function(){ layout(); B.v_=0.30; B.th=-0.62;
+  for(var k=0;k<170;k++){ step(1/60); } })();
 
 var SUB=1/60,acc=0,last=performance.now()/1000;
 function frame(now){
@@ -218,9 +236,9 @@ function frame(now){
   layout();
   for(var i=0;i<n;i++)step(SUB);
   ctx.fillStyle='#04070d';ctx.fillRect(0,0,W,H);
-  renderField(S.contam);
+  renderField(S.contam,S.t);
   // tank rim
-  ctx.strokeStyle='rgba(140,220,235,.35)';ctx.lineWidth=2;ctx.strokeRect(TX,TY,TW,TH);
+  ctx.strokeStyle='rgba(140,220,235,.42)';ctx.lineWidth=2;ctx.strokeRect(TX,TY,TW,TH);
   drawTrail();
   // soap dots
   ctx.globalCompositeOperation='lighter';
@@ -231,18 +249,15 @@ function frame(now){
   drawBoat();
   // ---- HUD, explicit bounds, >=8px from edges
   var pad=Math.max(14,TX), narrow=W<640;
-  var gw=narrow?Math.min(W-2*pad,300):228, gh=88;
+  var gw=narrow?Math.min(W-2*pad,300):236, gh=GAUGE_H;
   var gx=W-pad-gw, gy=narrow?H-pad-gh:pad;
   drawGauge(gx,gy,gw,gh);
-  var honest=[
-    ['Rayleigh 1890: one touch of oil and the boat dies — the whole surface','#cfe6f5'],
-    ['drops to low σ, so there is no contrast left to pull against.','#8fa6b8'],
-    ['That is why the camphor trick never works in dirty water.','#8fa6b8']
-  ];
-  var cw=Math.min(narrow?W-2*pad:W-2*pad-gw-14,440), ch=honest.length*15+12;
-  var hx=pad, hy=H-pad-ch;
-  if(cw>200){ chip(hx,hy,cw,ch,.78);
-    for(i=0;i<honest.length;i++)txt(honest[i][0],hx+9,hy+15+i*15,honest[i][1],'11px ui-monospace,monospace'); }
+  var cw=Math.min(narrow?W-2*pad:W-2*pad-gw-14,440);
+  ctx.font='11px ui-monospace,Menlo,monospace';
+  var honest=wrap('Rayleigh 1890: one touch of oil and the boat dies — the whole surface drops to low σ, so no contrast is left to pull against. That is why the camphor trick never works in dirty water.',cw-18);
+  var ch=honest.length*15+12, hx=pad, hy=H-pad-ch;
+  if(cw>200){ chip(hx,hy,cw,ch,.80);
+    for(i=0;i<honest.length;i++)txt(honest[i],hx+9,hy+15+i*15,i?'#8fa6b8':'#cfe6f5','11px ui-monospace,monospace'); }
   // dead-surface warning, docked under the gauge (never over the stage centre)
   if(S.contam>0.72||S.F<0.12){
     chip(gx,gy+gh+8,gw,24,.86);
