@@ -1,11 +1,12 @@
 <title>Inferior Mirage</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 html,body{margin:0;padding:0;height:100%;background:#05060a;overflow:hidden}
-canvas{display:block;position:fixed;inset:0}
+canvas{display:block;position:fixed;inset:0;touch-action:none}
 #ui{position:fixed;top:0;left:0;margin:12px;padding:10px 12px;max-width:340px;
   background:rgba(6,10,18,.62);border:1px solid rgba(120,200,255,.25);border-radius:8px;
   color:#bfe9ff;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;
-  text-shadow:0 0 8px rgba(90,190,255,.5);backdrop-filter:blur(4px);z-index:10}
+  text-shadow:0 0 8px rgba(90,190,255,.5);backdrop-filter:blur(4px);z-index:10;max-height:52vh;overflow:auto}
 #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.14em;color:#ffd9a0;text-shadow:0 0 12px rgba(255,180,90,.7)}
 #ui .m{color:#eaf6ff;opacity:.92}
 #ui .s{color:#7fc9ff;opacity:.75}
@@ -21,6 +22,7 @@ canvas{display:block;position:fixed;inset:0}
 #ui b{color:#ffd9a0;font-weight:600}
 #ui a{color:#7fc9ff;text-decoration:none;border-bottom:1px dotted #7fc9ff}
 #ui .k{color:#8fa}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>

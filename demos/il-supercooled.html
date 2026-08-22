@@ -1,12 +1,13 @@
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Supercooled Snap-Freeze</title>
 <style>
   html,body{margin:0;padding:0;height:100%;background:#04070e;overflow:hidden}
-  canvas{display:block;position:fixed;inset:0}
+  canvas{display:block;position:fixed;inset:0;touch-action:none}
   #ui{position:fixed;top:0;left:0;z-index:10;margin:12px;padding:11px 13px;max-width:355px;
       background:rgba(4,10,20,.72);border:1px solid rgba(120,200,255,.28);border-radius:7px;
       color:#bfe6ff;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;
-      backdrop-filter:blur(6px);box-shadow:0 0 24px rgba(60,150,255,.15)}
+      backdrop-filter:blur(6px);box-shadow:0 0 24px rgba(60,150,255,.15);max-height:52vh;overflow:auto}
   #ui h1{margin:0 0 3px;font-size:13px;letter-spacing:.16em;color:#8ff0ff;text-shadow:0 0 12px #29d6ff}
   #ui .m{color:#dff3ff}
   #ui .d{color:#6b93b4}
@@ -17,6 +18,7 @@
   #ui input[type=range]{width:128px;vertical-align:middle;accent-color:#4fd8ff;height:12px}
   .row{display:flex;justify-content:space-between;gap:8px}
   .val{color:#8ff0ff}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>

@@ -3,11 +3,11 @@
 <title>Tea-Leaf Paradox</title>
 <style>
 html,body{margin:0;height:100%;background:#04070c;overflow:hidden}
-canvas{display:block;position:fixed;inset:0}
-#ov{position:fixed;top:14px;left:14px;width:314px;padding:12px 13px;z-index:20;
+canvas{display:block;position:fixed;inset:0;touch-action:none}
+#ov{position:fixed;top:14px;left:14px;width:min(314px,calc(100vw - 20px));padding:12px 13px;z-index:20;
  background:rgba(4,9,16,.62);border:1px solid rgba(90,220,255,.28);border-radius:9px;
  backdrop-filter:blur(3px);font:11.5px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#bfe6f5;
- box-shadow:0 0 26px rgba(0,180,255,.13)}
+ box-shadow:0 0 26px rgba(0,180,255,.13);max-height:52vh;overflow:auto}
 #ov h1{margin:0 0 5px;font-size:14px;letter-spacing:.16em;color:#7ff0ff;text-shadow:0 0 12px #29c5ff}
 #ov .m{margin:0 0 6px;color:#96b9cc}
 #ov .s{margin:0 0 2px;color:#ffd08a}
@@ -19,6 +19,7 @@ canvas{display:block;position:fixed;inset:0}
 #ov td:last-child{text-align:right;color:#eafcff;font-variant-numeric:tabular-nums}
 #ov a{display:inline-block;margin-top:8px;color:#6be0ff;text-decoration:none;font-size:10.5px}
 #ov a:hover{text-shadow:0 0 9px #29c5ff}
+@media (max-width:640px){#ov{font-size:11px;max-height:40vh}}
 </style></head><body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
 <canvas id="c"></canvas>

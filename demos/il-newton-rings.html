@@ -1,11 +1,12 @@
 <title>Newton's Rings</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 html,body{margin:0;padding:0;height:100%;background:#03050a;overflow:hidden}
-canvas#c{display:block;position:fixed;inset:0}
+canvas#c{display:block;position:fixed;inset:0;touch-action:none}
 #ui{position:fixed;top:0;left:0;margin:10px;padding:10px 12px;max-width:352px;
   background:rgba(5,9,16,.74);border:1px solid rgba(255,170,120,.28);border-radius:8px;
   color:#ffd9bd;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;z-index:10;
-  box-shadow:0 0 24px rgba(255,140,60,.16),inset 0 0 20px rgba(200,90,30,.06);backdrop-filter:blur(3px)}
+  box-shadow:0 0 24px rgba(255,140,60,.16),inset 0 0 20px rgba(200,90,30,.06);backdrop-filter:blur(3px);max-height:52vh;overflow:auto}
 #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.09em;color:#ffb066;text-shadow:0 0 10px #ff8a2a}
 .m{color:#e8c8ac}.s{color:#9fe0ff}.l{color:#a08a76;font-style:italic}
 .row{margin:5px 0;display:flex;align-items:center;gap:6px}
@@ -18,6 +19,7 @@ table{border-collapse:collapse;margin-top:5px;font:10px/1.4 ui-monospace,monospa
 td,th{border:1px solid rgba(255,170,120,.18);padding:1px 4px;text-align:right;color:#ffe3c8}
 th{color:#ffb066}
 a{color:#ffb066;text-decoration:none}a:hover{text-shadow:0 0 8px #ffb066}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>

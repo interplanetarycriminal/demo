@@ -1,10 +1,11 @@
 <title>Laminar Unmixing</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 html,body{margin:0;height:100%;background:#04050a;overflow:hidden}
-canvas{display:block;position:fixed;inset:0}
-#ov{position:fixed;top:0;left:0;width:322px;padding:14px 16px 16px;box-sizing:border-box;
+canvas{display:block;position:fixed;inset:0;touch-action:none}
+#ov{position:fixed;top:0;left:0;width:min(322px,calc(100vw - 20px));padding:14px 16px 16px;box-sizing:border-box;
  font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#cfe6ff;background:rgba(5,8,15,.64);
- backdrop-filter:blur(3px);border-right:1px solid rgba(90,190,255,.18);border-bottom:1px solid rgba(90,190,255,.18);z-index:20}
+ backdrop-filter:blur(3px);border-right:1px solid rgba(90,190,255,.18);border-bottom:1px solid rgba(90,190,255,.18);z-index:20;max-height:52vh;overflow:auto}
 #ov h1{margin:0 0 4px;font:600 15px/1.2 ui-monospace,monospace;color:#5ff0d8;letter-spacing:.5px;text-shadow:0 0 14px rgba(60,240,210,.55)}
 .mech{color:#9fd0f5;margin:0 0 6px}
 .sci{color:#ffcf6b;margin:0 0 2px}
@@ -18,6 +19,7 @@ input[type=range]{width:100%;height:16px;accent-color:#5ff0d8;background:transpa
 label{display:block;color:#8fb6d6;font-size:11px;margin-top:4px}
 a{color:#6fd6ff;text-decoration:none;border-bottom:1px dotted rgba(111,214,255,.5)}
 kbd{color:#ffcf6b}
+@media (max-width:640px){#ov{font-size:11px;max-height:40vh}}
 </style>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
 <canvas id="c"></canvas>

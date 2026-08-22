@@ -6,10 +6,10 @@
 <title>Chemical Traffic Light</title>
 <style>
 html,body{margin:0;padding:0;height:100%;background:#05070a;overflow:hidden}
-canvas{display:block;position:fixed;inset:0}
+canvas{display:block;position:fixed;inset:0;touch-action:none}
 #ui{position:fixed;top:0;left:0;padding:10px 12px;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;
  color:#cfe9d6;background:rgba(5,10,10,.64);border-right:1px solid #1c3a2c;border-bottom:1px solid #1c3a2c;
- max-width:335px;z-index:10;backdrop-filter:blur(4px)}
+ max-width:335px;z-index:10;backdrop-filter:blur(4px);max-height:52vh;overflow:auto}
 #ui h1{margin:0 0 3px;font-size:14px;letter-spacing:.16em;color:#8dffb0;text-shadow:0 0 12px #35ff8a66}
 .dim{color:#6d9282}.lin{color:#5c8a76;font-style:italic}
 .tag{display:inline-block;margin-top:6px;padding:1px 6px;border:1px solid #2d6047;border-radius:8px;color:#79b998;font-size:9px;letter-spacing:.1em}
@@ -21,6 +21,7 @@ button:hover{background:#164536}button.on{background:#1f6a48;color:#e6fff2}
 #shake{width:100%;padding:7px;font-size:12px;letter-spacing:.1em}
 #shake:active{background:#2f8a5e;color:#fff}
 sub{font-size:8px}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 </head>
 <body>

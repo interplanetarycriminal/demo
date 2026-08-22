@@ -1,9 +1,10 @@
 <title>Tippe Top</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 html,body{margin:0;padding:0;background:#04060b;overflow:hidden;font-family:monospace}
-canvas{display:block}
+canvas{display:block;touch-action:none}
 #ui{position:fixed;top:0;left:0;padding:10px 12px;color:#cfe0ff;background:rgba(3,7,16,.66);
- font:11px/1.5 monospace;max-width:340px;border-right:1px solid #1d3a66;border-bottom:1px solid #1d3a66;z-index:10}
+ font:11px/1.5 monospace;max-width:340px;border-right:1px solid #1d3a66;border-bottom:1px solid #1d3a66;z-index:10;max-height:52vh;overflow:auto}
 #ui h1{font-size:13px;margin:0 0 4px;color:#8fb8ff;letter-spacing:.09em;text-shadow:0 0 10px #48f}
 #ui .m{color:#e2e9f7;margin:0 0 5px}
 #ui .s{color:#7f9ec8;margin:0 0 3px}
@@ -17,6 +18,7 @@ button{background:#0d1a30;color:#9fc4ff;border:1px solid #2b4c80;font:11px monos
  margin:2px 3px 2px 0;cursor:pointer;border-radius:3px}
 button.on{background:#1f4b8f;color:#fff;box-shadow:0 0 8px #48fa}
 b{color:#fff}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>

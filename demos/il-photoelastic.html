@@ -1,8 +1,9 @@
 <title>Photoelastic Fringes</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 html,body{margin:0;height:100%;background:#020308;overflow:hidden}
-canvas{display:block;position:fixed;inset:0}
-#ui{position:fixed;top:10px;left:10px;z-index:10;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#cfe;background:rgba(4,8,16,.72);border:1px solid rgba(150,120,255,.3);border-radius:8px;padding:10px 12px;max-width:335px;backdrop-filter:blur(6px);box-shadow:0 0 26px rgba(140,90,255,.16)}
+canvas{display:block;position:fixed;inset:0;touch-action:none}
+#ui{position:fixed;top:10px;left:10px;z-index:10;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#cfe;background:rgba(4,8,16,.72);border:1px solid rgba(150,120,255,.3);border-radius:8px;padding:10px 12px;max-width:335px;backdrop-filter:blur(6px);box-shadow:0 0 26px rgba(140,90,255,.16);max-height:52vh;overflow:auto}
 #ui h1{font-size:13px;margin:0 0 4px;color:#d9b6ff;letter-spacing:.11em;text-shadow:0 0 10px #a0f8}
 #ui .m{color:#e2e6ff;margin:0 0 5px}
 #ui .s{color:#ffd07a;margin:0 0 3px}
@@ -15,6 +16,7 @@ a{color:#d9b6ff}
 button{background:#1a1030;color:#d9b6ff;border:1px solid #5b3a9a;border-radius:5px;font:11px monospace;padding:3px 7px;cursor:pointer;margin:5px 3px 0 0}
 button:hover{background:#2a1a4a}
 button.on{background:#3d2470;color:#fff}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>

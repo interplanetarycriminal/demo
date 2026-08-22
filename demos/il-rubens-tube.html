@@ -1,10 +1,11 @@
 <title>Rubens Tube</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 html,body{margin:0;padding:0;background:#06040a;overflow:hidden;height:100%}
-canvas{display:block;position:fixed;inset:0}
+canvas{display:block;position:fixed;inset:0;touch-action:none}
 #ui{position:fixed;top:0;left:0;padding:10px 12px;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;
  color:#ffd9bd;background:rgba(10,5,14,.66);border-right:1px solid #4a2412;border-bottom:1px solid #4a2412;
- max-width:360px;backdrop-filter:blur(6px);z-index:5}
+ max-width:360px;backdrop-filter:blur(6px);z-index:5;max-height:52vh;overflow:auto}
 #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.17em;color:#ffb46b;text-shadow:0 0 12px #f83a}
 #ui .m{color:#c9a68f}#ui .s{color:#ffe08a}#ui .l{color:#8a6f5e;font-style:italic}
 #ui .w{color:#7fd6ff}#ui a{color:#ffb46b}#ui b{color:#fff}
@@ -17,6 +18,7 @@ button.on{background:#6a3418;color:#fff}
 table{border-collapse:collapse;margin-top:4px;font:10px ui-monospace,monospace}
 td{padding:1px 6px 1px 0;color:#c9a68f}td b{color:#fff}
 hr{border:0;border-top:1px solid #4a2412;margin:6px 0}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>

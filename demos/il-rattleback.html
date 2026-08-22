@@ -1,10 +1,11 @@
 <title>Rattleback</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 html,body{margin:0;padding:0;background:#05070c;overflow:hidden;height:100%}
-canvas{display:block;position:fixed;inset:0}
+canvas{display:block;position:fixed;inset:0;touch-action:none}
 #ui{position:fixed;top:0;left:0;padding:10px 12px;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;
   color:#bfe8ff;background:rgba(4,8,16,.62);border-right:1px solid #12304a;border-bottom:1px solid #12304a;
-  max-width:340px;backdrop-filter:blur(6px);z-index:5;text-shadow:0 0 8px #0af6}
+  max-width:340px;backdrop-filter:blur(6px);z-index:5;text-shadow:0 0 8px #0af6;max-height:52vh;overflow:auto}
 #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.18em;color:#7ff3ff;text-shadow:0 0 12px #0ff8}
 #ui .m{color:#8fb6cc}#ui .s{color:#ffb46b}#ui .l{color:#6f8fa6;font-style:italic}
 #ui a{color:#7ff3ff}#ui b{color:#fff}
@@ -14,6 +15,7 @@ button{background:#0a1b2b;color:#7ff3ff;border:1px solid #1d4f6e;padding:3px 7px
 button:hover{background:#123a55;box-shadow:0 0 10px #0ff5}
 #rd{margin-top:5px;color:#9ff0c0}
 hr{border:0;border-top:1px solid #14344d;margin:6px 0}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>

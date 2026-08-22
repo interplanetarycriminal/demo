@@ -1,8 +1,9 @@
 <title>Poisson Spot</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 html,body{margin:0;height:100%;background:#04060a;overflow:hidden}
-canvas{display:block;position:fixed;inset:0}
-#ui{position:fixed;top:10px;left:10px;z-index:10;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#9fe;background:rgba(4,10,18,.68);border:1px solid rgba(90,220,255,.28);border-radius:8px;padding:10px 12px;max-width:330px;backdrop-filter:blur(6px);box-shadow:0 0 26px rgba(60,200,255,.14)}
+canvas{display:block;position:fixed;inset:0;touch-action:none}
+#ui{position:fixed;top:10px;left:10px;z-index:10;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#9fe;background:rgba(4,10,18,.68);border:1px solid rgba(90,220,255,.28);border-radius:8px;padding:10px 12px;max-width:330px;backdrop-filter:blur(6px);box-shadow:0 0 26px rgba(60,200,255,.14);max-height:52vh;overflow:auto}
 #ui h1{font-size:13px;margin:0 0 4px;color:#7ff;letter-spacing:.12em;text-shadow:0 0 10px #0ff8}
 #ui .m{color:#cfe9ff;margin:0 0 5px}
 #ui .s{color:#ffcf6a;margin:0 0 3px}
@@ -16,6 +17,7 @@ a{color:#7ff}
 button{background:#0b2030;color:#9fe;border:1px solid #2a6a88;border-radius:5px;font:11px monospace;padding:3px 8px;cursor:pointer;margin-top:6px}
 button:hover{background:#12374d}
 #cap{position:fixed;bottom:8%;left:50%;transform:translateX(-50%);z-index:10;font:15px/1.6 ui-monospace,monospace;color:#dff;text-align:center;max-width:70%;text-shadow:0 0 14px #08f;opacity:0;transition:opacity .5s;pointer-events:none}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>

@@ -3,11 +3,11 @@
 <title>Vortex Ring Leapfrog</title>
 <style>
 html,body{margin:0;height:100%;background:#03050a;overflow:hidden}
-canvas{display:block;position:fixed;inset:0}
-#ov{position:fixed;top:12px;left:12px;width:304px;padding:9px 11px;z-index:20;
+canvas{display:block;position:fixed;inset:0;touch-action:none}
+#ov{position:fixed;top:12px;left:12px;width:min(304px,calc(100vw - 20px));padding:9px 11px;z-index:20;
  background:rgba(3,7,14,.6);border:1px solid rgba(255,150,80,.28);border-radius:8px;
  backdrop-filter:blur(3px);font:10.5px/1.4 ui-monospace,Menlo,Consolas,monospace;color:#ffdcc0;
- box-shadow:0 0 24px rgba(255,130,40,.12)}
+ box-shadow:0 0 24px rgba(255,130,40,.12);max-height:52vh;overflow:auto}
 #ov h1{margin:0 0 4px;font-size:13px;letter-spacing:.13em;color:#ffb46b;text-shadow:0 0 12px #ff7a1a}
 #ov .m{margin:0 0 4px;color:#c5a894}
 #ov .s{margin:0 0 1px;color:#8fe6ff}
@@ -19,6 +19,7 @@ canvas{display:block;position:fixed;inset:0}
 #ov td:last-child{text-align:right;color:#fff4e8;font-variant-numeric:tabular-nums}
 #ov a{display:inline-block;margin-top:5px;color:#ffb46b;text-decoration:none}
 #ov a:hover{text-shadow:0 0 9px #ff7a1a}
+@media (max-width:640px){#ov{font-size:11px;max-height:40vh}}
 </style></head><body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
 <canvas id="c"></canvas>

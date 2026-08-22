@@ -1,8 +1,9 @@
 <title>Sonoluminescence</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
   html,body{margin:0;height:100%;background:#03050c;overflow:hidden}
-  canvas{display:block;position:fixed;inset:0}
-  #ui{position:fixed;left:14px;top:12px;width:344px;max-height:94vh;overflow:auto;
+  canvas{display:block;position:fixed;inset:0;touch-action:none}
+  #ui{position:fixed;left:14px;top:12px;width:min(344px,calc(100vw - 20px));max-height:94vh;overflow:auto;
       background:rgba(6,10,22,.66);border:1px solid rgba(130,190,255,.26);border-radius:8px;
       padding:10px 12px;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#c6e6ff;
       backdrop-filter:blur(3px);text-shadow:0 0 8px rgba(80,160,255,.32);z-index:10}
@@ -14,6 +15,7 @@
   a{color:#7fd0ff}
   .btn{display:inline-block;border:1px solid rgba(130,190,255,.35);border-radius:4px;padding:1px 6px;margin:2px 3px 0 0;cursor:pointer;color:#cfe9ff}
   .btn:hover{background:rgba(120,190,255,.16)}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
 <canvas id="c"></canvas>

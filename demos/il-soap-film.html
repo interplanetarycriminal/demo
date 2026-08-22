@@ -1,11 +1,12 @@
 <title>Soap Film Iridescence</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 html,body{margin:0;padding:0;height:100%;background:#04060a;overflow:hidden}
-canvas{display:block;position:fixed;inset:0}
+canvas{display:block;position:fixed;inset:0;touch-action:none}
 #ui{position:fixed;top:0;left:0;margin:10px;padding:10px 12px;max-width:340px;
   background:rgba(6,10,18,.72);border:1px solid rgba(120,200,255,.28);border-radius:8px;
   color:#bfe6ff;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;z-index:10;
-  box-shadow:0 0 24px rgba(60,160,255,.18),inset 0 0 20px rgba(40,120,220,.06);backdrop-filter:blur(3px)}
+  box-shadow:0 0 24px rgba(60,160,255,.18),inset 0 0 20px rgba(40,120,220,.06);backdrop-filter:blur(3px);max-height:52vh;overflow:auto}
 #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.09em;color:#8ff0ff;text-shadow:0 0 10px #23d5ff}
 .m{color:#9fd0e8}.s{color:#ffd28a}.l{color:#7fa8c0;font-style:italic}
 .row{margin:5px 0;display:flex;align-items:center;gap:6px}
@@ -15,6 +16,7 @@ input[type=range]::-moz-range-thumb{width:11px;height:11px;border:0;border-radiu
 #rd{margin-top:6px;color:#7dffcf;text-shadow:0 0 8px rgba(60,255,190,.35)}
 a{color:#6ad6ff;text-decoration:none}a:hover{text-shadow:0 0 8px #6ad6ff}
 #spec{display:block;margin-top:6px;border:1px solid rgba(120,200,255,.2);border-radius:4px;background:#02040a}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <body>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>

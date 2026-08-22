@@ -1,10 +1,11 @@
 <title>Floating Water Bridge</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
 html,body{margin:0;height:100%;background:#03060b;overflow:hidden}
-canvas{display:block}
-#ui{position:fixed;top:0;left:0;width:292px;padding:12px 14px;background:rgba(3,7,14,.74);
+canvas{display:block;touch-action:none}
+#ui{position:fixed;top:0;left:0;width:min(292px,calc(100vw - 20px));padding:12px 14px;background:rgba(3,7,14,.74);
  color:#d3ecff;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;z-index:9;
- border-right:1px solid #163a55;border-bottom:1px solid #163a55;backdrop-filter:blur(3px)}
+ border-right:1px solid #163a55;border-bottom:1px solid #163a55;backdrop-filter:blur(3px);max-height:52vh;overflow:auto}
 #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.09em;color:#8ff0ff;text-shadow:0 0 10px #29d8ff}
 #ui .m{color:#9fc4e0;margin:0 0 6px}
 #ui .lin{color:#6f90ad;margin:0 0 8px;font-size:10px}
@@ -16,6 +17,7 @@ canvas{display:block}
 #ui .warn{color:#ff9b6a}
 #ui a{color:#29d8ff;text-decoration:none;border-bottom:1px dotted #29d8ff}
 #ui .cap{color:#8ad9a0;font-style:italic;margin-top:7px;font-size:10px}
+@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
 </style>
 <script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
 <canvas id="c"></canvas>
