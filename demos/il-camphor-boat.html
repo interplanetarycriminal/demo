@@ -1,0 +1,259 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Camphor Boat</title>
+<style>
+ html,body{margin:0;height:100%;overflow:hidden;background:#04070d}
+ canvas{display:block;position:fixed;inset:0;touch-action:none}
+ #ui{position:fixed;top:10px;left:10px;z-index:10;
+   font:12px/1.55 ui-monospace,Menlo,monospace;color:#cfe6f5;
+   background:rgba(4,12,24,.62);padding:10px 13px;border:1px solid rgba(110,220,220,.28);
+   border-radius:10px;backdrop-filter:blur(6px);
+   width:min(340px,calc(100vw - 20px));max-height:45vh;overflow:auto}
+ @media (max-width:640px){#ui{font-size:11px;max-height:38vh} #ui .detail{display:none}}
+ #ui a{color:#7ff0dd;text-decoration:none}
+ #ui b{color:#7ff0dd;letter-spacing:.09em}
+ #ui .k{color:#7ff0dd}
+ #ui .m{color:#8fa6b8}
+ input[type=range]{width:100%;accent-color:#7ff0dd;margin:1px 0 3px}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div id="ui">
+<b>CAMPHOR BOAT</b><br>
+Camphor dissolving off the stern <i>lowers</i> surface tension behind the boat; the intact high-&sigma; water ahead out-pulls it — a surface-tension outboard motor with no moving parts.<br>
+<span class="m">Lord Rayleigh, Proc. Roy. Soc. 47, 364 (1890)</span><br>
+<span class="detail m">Lineage: "camphor dances" reported 1686 (Vogel/Römer) &rarr; Rayleigh 1890 measures the film &amp; kills it with a trace of oil &rarr; today's self-propelled droplets &amp; Marangoni surfers.</span><br>
+<span class="k">camphor release</span> <span id="rRel">1.0&times;</span>
+<input type="range" id="sRel" min="0" max="200" step="2" value="100">
+<span class="k">surface contamination (soap)</span> <span id="rCon">4%</span>
+<input type="range" id="sCon" min="0" max="100" step="1" value="4">
+<span class="k">tap the water</span> <span class="m">= drop a soap dot (it shoves the boat away)</span><br>
+thrust <span id="rF">—</span> &nbsp; speed <span id="rV">—</span><br>
+&sigma; ahead <span id="rSa">—</span> &nbsp; &sigma; behind <span id="rSb">—</span><br>
+<a href="index.html">&larr; gallery</a>
+</div>
+<canvas id="c"></canvas>
+<script>
+/*PHYS-START*/
+var SIG_W=72.0, SIG_C=48.0;                 // mN/m: clean water vs camphor-saturated film
+// Local surface tension from camphor coverage (0..1) plus a uniform contamination floor.
+function sigmaOf(cam,contam){ var cov=Math.min(1,Math.max(0,cam)+Math.max(0,Math.min(1,contam))*(1-Math.min(1,Math.max(0,cam))));
+  return SIG_W-(SIG_W-SIG_C)*cov; }
+// Net Marangoni thrust on a hull of waterline length L (mm) from the sigma
+// difference across it. Only a forward imbalance pushes; units ~ micronewtons.
+function thrust(sAhead,sBehind,L){ return Math.max(0,(sAhead-sBehind))*L; }
+// Newtonian update along the heading: thrust minus linear+quadratic drag.
+function accel(F,v,m,k1,k2){ return F/m - k1*v - k2*v*Math.abs(v); }
+var PHYS={SIG_W:SIG_W,SIG_C:SIG_C,sigmaOf:sigmaOf,thrust:thrust,accel:accel};
+/*PHYS-END*/
+
+var cv=document.getElementById('c'),ctx=cv.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;
+  cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);ctx.setTransform(DPR,0,0,DPR,0,0);}
+addEventListener('resize',resize);resize();
+
+// ---- camphor field on a coarse grid, rendered as a soft colour map
+var NX=112,NY=76, cam=new Float32Array(NX*NY), tmp=new Float32Array(NX*NY);
+var fc=document.createElement('canvas');fc.width=NX;fc.height=NY;
+var fctx=fc.getContext('2d'), img=fctx.createImageData(NX,NY);
+function idx(i,j){return j*NX+i;}
+function sampleCam(u,v){ // u,v in 0..1 tank coords
+  var x=u*(NX-1), y=v*(NY-1);
+  var i=Math.max(0,Math.min(NX-1,Math.round(x))), j=Math.max(0,Math.min(NY-1,Math.round(y)));
+  return cam[idx(i,j)]; }
+function deposit(u,v,amt,rad){
+  var ci=u*(NX-1), cj=v*(NY-1), r=rad*NX, i,j;
+  for(j=Math.max(0,Math.floor(cj-r));j<=Math.min(NY-1,Math.ceil(cj+r));j++)
+    for(i=Math.max(0,Math.floor(ci-r));i<=Math.min(NX-1,Math.ceil(ci+r));i++){
+      var d2=(i-ci)*(i-ci)+(j-cj)*(j-cj); if(d2>r*r)continue;
+      var w=1-Math.sqrt(d2)/r; var k=idx(i,j);
+      cam[k]=Math.min(1,cam[k]+amt*w*w);
+    }
+}
+function diffuse(dt){
+  var D=5.5, a=D*dt, i,j,k;
+  if(a>0.22)a=0.22;
+  for(j=0;j<NY;j++)for(i=0;i<NX;i++){ k=idx(i,j);
+    var l=cam[i>0?k-1:k], r=cam[i<NX-1?k+1:k], u=cam[j>0?k-NX:k], d=cam[j<NY-1?k+NX:k];
+    tmp[k]=cam[k]+a*(l+r+u+d-4*cam[k]);
+  }
+  var decay=Math.pow(0.55,dt);           // evaporation / dissolution away from the surface
+  for(k=0;k<NX*NY;k++)cam[k]=tmp[k]*decay;
+}
+function renderField(contam){
+  var d=img.data,k,c,sig,t;
+  for(k=0;k<NX*NY;k++){
+    c=cam[k]; sig=sigmaOf(c,contam); t=(SIG_W-sig)/(SIG_W-SIG_C);   // 0 clean .. 1 saturated
+    d[k*4  ]= 10+ 190*Math.pow(t,1.4);
+    d[k*4+1]= 26+  78*Math.pow(Math.max(0,1-t),1.4)+24*t;
+    d[k*4+2]= 52+  92*Math.pow(Math.max(0,1-t),1.1)+60*t;
+    d[k*4+3]=255;
+  }
+  fctx.putImageData(img,0,0);
+  ctx.save();ctx.imageSmoothingEnabled=true;ctx.globalAlpha=0.95;
+  ctx.drawImage(fc,TX,TY,TW,TH);ctx.restore();
+}
+
+// ---- tank layout
+var TX=0,TY=0,TW=0,TH=0;
+function layout(){ var pad=Math.max(16,Math.min(34,W*0.03));
+  TX=pad;TY=pad;TW=W-2*pad;TH=H-2*pad; }
+
+// ---- boat
+var B={u:0.5,v:0.52,th:0.4,v_:0.0,w:0,trail:[]};
+var S={rel:1.0,contam:0.04,soaps:[],F:0,sa:72,sb:72,t:0};
+var sRel=document.getElementById('sRel'),sCon=document.getElementById('sCon');
+sRel.oninput=function(){S.rel=sRel.value/100;document.getElementById('rRel').textContent=S.rel.toFixed(2)+'×';};
+sCon.oninput=function(){S.contam=sCon.value/100;document.getElementById('rCon').textContent=sCon.value+'%';};
+
+var GS=64,gs=document.createElement('canvas');gs.width=gs.height=GS;
+(function(){var g=gs.getContext('2d'),r=g.createRadialGradient(GS/2,GS/2,0,GS/2,GS/2,GS/2);
+ r.addColorStop(0,'rgba(180,255,240,1)');r.addColorStop(.32,'rgba(90,220,220,.45)');
+ r.addColorStop(.7,'rgba(40,120,160,.12)');r.addColorStop(1,'rgba(0,0,0,0)');
+ g.fillStyle=r;g.fillRect(0,0,GS,GS);})();
+function glow(x,y,s,a){if(!isFinite(x)||!isFinite(y)||!(s>0))return;
+  ctx.globalAlpha=a;ctx.drawImage(gs,x-s/2,y-s/2,s,s);ctx.globalAlpha=1;}
+function sx(u){return TX+u*TW;} function sy(v){return TY+v*TH;}
+
+var LEN=0.052;   // hull length in tank units
+function step(dt){
+  S.t+=dt;
+  // camphor leaves the stern
+  var cs=Math.cos(B.th),sn=Math.sin(B.th);
+  var su=B.u-cs*LEN*0.62, sv=B.v-sn*LEN*0.62;
+  deposit(su,sv, 0.95*S.rel*dt*8, 0.030);
+  // soap dots keep leaking
+  for(var i=S.soaps.length-1;i>=0;i--){ var s=S.soaps[i]; s.life-=dt;
+    deposit(s.u,s.v, 1.5*dt*8, 0.052); if(s.life<=0)S.soaps.splice(i,1); }
+  diffuse(dt);
+  // sigma sampled just ahead of the bow and just behind the stern
+  var au=B.u+cs*LEN*0.95, av=B.v+sn*LEN*0.95;
+  var bu=B.u-cs*LEN*0.95, bv=B.v-sn*LEN*0.95;
+  var sa=sigmaOf(sampleCam(au,av),S.contam), sb=sigmaOf(sampleCam(bu,bv),S.contam);
+  S.sa=sa;S.sb=sb;
+  var F=thrust(sa,sb,3.0);                    // µN
+  S.F=F;
+  // lateral imbalance -> the lively curved swoops
+  var lu=B.u-sn*LEN*0.9, lv=B.v+cs*LEN*0.9, ru=B.u+sn*LEN*0.9, rv=B.v-cs*LEN*0.9;
+  var sl=sigmaOf(sampleCam(lu,lv),S.contam), sr=sigmaOf(sampleCam(ru,rv),S.contam);
+  B.w += (sl-sr)*0.30*dt + (Math.sin(S.t*0.83)+0.6*Math.sin(S.t*1.97+1.1))*0.55*dt;
+  B.w *= Math.pow(0.22,dt);
+  B.th += B.w*dt;
+  B.v_ = Math.max(0, B.v_ + accel(F, B.v_, 220, 1.5, 0.9)*dt);
+  B.u += Math.cos(B.th)*B.v_*dt; B.v += Math.sin(B.th)*B.v_*dt;
+  // wall bounces
+  var m=LEN*0.9;
+  if(B.u<m){B.u=m;B.th=Math.PI-B.th;B.v_*=0.55;} if(B.u>1-m){B.u=1-m;B.th=Math.PI-B.th;B.v_*=0.55;}
+  if(B.v<m*TW/TH){B.v=m*TW/TH;B.th=-B.th;B.v_*=0.55;} if(B.v>1-m*TW/TH){B.v=1-m*TW/TH;B.th=-B.th;B.v_*=0.55;}
+  B.trail.push([B.u,B.v,0]);
+  while(B.trail.length>150)B.trail.shift();
+  for(i=0;i<B.trail.length;i++)B.trail[i][2]+=dt;
+}
+function drawBoat(){
+  var x=sx(B.u),y=sy(B.v), L=LEN*TW, cs=Math.cos(B.th),sn=Math.sin(B.th);
+  ctx.save();ctx.translate(x,y);ctx.rotate(B.th);
+  // hull shadow / wake dimple
+  ctx.globalCompositeOperation='lighter';
+  glow(-L*0.7,0,L*2.6,0.30); ctx.globalCompositeOperation='source-over';
+  ctx.beginPath();ctx.moveTo(L*1.05,0);ctx.lineTo(-L*0.62,L*0.52);ctx.lineTo(-L*0.42,0);
+  ctx.lineTo(-L*0.62,-L*0.52);ctx.closePath();
+  var g=ctx.createLinearGradient(-L*0.6,0,L*1.05,0);
+  g.addColorStop(0,'#c9d9e6');g.addColorStop(.55,'#fdfefe');g.addColorStop(1,'#e8f6ff');
+  ctx.fillStyle=g;ctx.fill();
+  ctx.strokeStyle='rgba(20,40,60,.65)';ctx.lineWidth=1.2;ctx.stroke();
+  ctx.strokeStyle='rgba(120,180,210,.8)';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(L*1.0,0);ctx.lineTo(-L*0.5,0);ctx.stroke();
+  // camphor pellet at the stern
+  ctx.fillStyle='rgba(255,240,180,.95)';ctx.beginPath();ctx.arc(-L*0.55,0,Math.max(2,L*0.14),0,7);ctx.fill();
+  ctx.restore();
+  ctx.globalCompositeOperation='lighter';
+  glow(x-cs*L*0.6,y-sn*L*0.6,L*1.5,0.35);
+  ctx.globalCompositeOperation='source-over';
+}
+function drawTrail(){
+  ctx.globalCompositeOperation='lighter';
+  for(var i=0;i<B.trail.length;i++){var t=B.trail[i],a=Math.max(0,1-t[2]/2.4);
+    if(a<=0)continue; glow(sx(t[0]),sy(t[1]),6+16*a,0.055*a);}
+  ctx.globalCompositeOperation='source-over';
+}
+function chip(x,y,w,h,a){ctx.fillStyle='rgba(3,9,18,'+(a||.8)+')';ctx.strokeStyle='rgba(110,220,220,.24)';
+  ctx.lineWidth=1;ctx.beginPath();ctx.rect(x,y,w,h);ctx.fill();ctx.stroke();}
+function txt(s,x,y,col,f,al){ctx.fillStyle=col;ctx.font=f||'12px ui-monospace,Menlo,monospace';
+  ctx.textAlign=al||'left';ctx.fillText(s,x,y);ctx.textAlign='left';}
+
+function drawGauge(x,y,w,h){
+  chip(x,y,w,h,.84);
+  txt('σ ACROSS THE HULL',x+9,y+15,'#7ff0dd','10px ui-monospace,monospace');
+  var bx=x+9,bw=w-18, by=y+24, bh=10;
+  function bar(v,yy,col,lab){
+    var f=Math.max(0,Math.min(1,(v-SIG_C)/(SIG_W-SIG_C)));
+    ctx.fillStyle='rgba(120,150,180,.16)';ctx.fillRect(bx,yy,bw,bh);
+    ctx.fillStyle=col;ctx.fillRect(bx,yy,bw*f,bh);
+    txt(lab+' '+v.toFixed(1),bx+2,yy+bh+12,'#bfe0ee','10px ui-monospace,monospace');
+  }
+  bar(S.sa,by,'rgba(120,240,220,.92)','σ ahead');
+  bar(S.sb,by+30,'rgba(240,120,180,.92)','σ behind');
+  var dsg=S.sa-S.sb;
+  txt('Δσ '+dsg.toFixed(2)+' mN/m  →  thrust '+S.F.toFixed(1)+' µN',x+9,y+h-8,
+      dsg>0.15?'#c8ffe8':'#ff9c9c','10px ui-monospace,monospace');
+}
+
+// tap = soap dot
+cv.addEventListener('pointerdown',function(e){cv.setPointerCapture(e.pointerId);drop(e);});
+cv.addEventListener('pointermove',function(e){if(e.buttons)drop(e);});
+function drop(e){var r=cv.getBoundingClientRect();
+  var u=(e.clientX-r.left-TX)/TW, v=(e.clientY-r.top-TY)/TH;
+  if(u<0||u>1||v<0||v>1)return;
+  S.soaps.push({u:u,v:v,life:2.6}); deposit(u,v,0.9,0.055); }
+
+// warm start so t≈4 s catches a mid-swoop with a live wake
+(function(){ layout(); B.v_=0.19; B.th=-0.55;
+  for(var k=0;k<70;k++){ step(1/60); } })();
+
+var SUB=1/60,acc=0,last=performance.now()/1000;
+function frame(now){
+  requestAnimationFrame(frame);
+  var t=now/1000, real=Math.min(0.45,t-last); last=t;
+  acc+=real; var n=Math.max(0,Math.round(acc/SUB)); acc-=n*SUB; if(n>40)n=40;
+  layout();
+  for(var i=0;i<n;i++)step(SUB);
+  ctx.fillStyle='#04070d';ctx.fillRect(0,0,W,H);
+  renderField(S.contam);
+  // tank rim
+  ctx.strokeStyle='rgba(140,220,235,.35)';ctx.lineWidth=2;ctx.strokeRect(TX,TY,TW,TH);
+  drawTrail();
+  // soap dots
+  ctx.globalCompositeOperation='lighter';
+  for(i=0;i<S.soaps.length;i++){var s=S.soaps[i];
+    ctx.globalAlpha=Math.min(1,s.life/2.6);
+    ctx.drawImage(gs,sx(s.u)-30,sy(s.v)-30,60,60);ctx.globalAlpha=1;}
+  ctx.globalCompositeOperation='source-over';
+  drawBoat();
+  // ---- HUD, explicit bounds, >=8px from edges
+  var pad=Math.max(14,TX), narrow=W<640;
+  var gw=narrow?Math.min(W-2*pad,300):228, gh=88;
+  var gx=W-pad-gw, gy=narrow?H-pad-gh:pad;
+  drawGauge(gx,gy,gw,gh);
+  var honest=[
+    ['Rayleigh 1890: one touch of oil and the boat dies — the whole surface','#cfe6f5'],
+    ['drops to low σ, so there is no contrast left to pull against.','#8fa6b8'],
+    ['That is why the camphor trick never works in dirty water.','#8fa6b8']
+  ];
+  var cw=Math.min(narrow?W-2*pad:W-2*pad-gw-14,440), ch=honest.length*15+12;
+  var hx=pad, hy=H-pad-ch;
+  if(cw>200){ chip(hx,hy,cw,ch,.78);
+    for(i=0;i<honest.length;i++)txt(honest[i][0],hx+9,hy+15+i*15,honest[i][1],'11px ui-monospace,monospace'); }
+  // dead-surface warning, docked under the gauge (never over the stage centre)
+  if(S.contam>0.72||S.F<0.12){
+    chip(gx,gy+gh+8,gw,24,.86);
+    txt(S.contam>0.72?'surface saturated → thrust ≈ 0'
+                     :'no σ contrast → motor idle',gx+9,gy+gh+24,'#ffb0b0','11px ui-monospace,monospace');
+  }
+  document.getElementById('rF').textContent=S.F.toFixed(2)+' µN';
+  document.getElementById('rV').textContent=(B.v_*30).toFixed(1)+' cm/s';
+  document.getElementById('rSa').textContent=S.sa.toFixed(2);
+  document.getElementById('rSb').textContent=S.sb.toFixed(2);
+}
+requestAnimationFrame(frame);
+</script>
+</body>

@@ -1,0 +1,299 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Euler's Disk</title>
+<style>
+ html,body{margin:0;height:100%;overflow:hidden;background:#07070e}
+ canvas{display:block;position:fixed;inset:0;touch-action:none}
+ #ui{position:fixed;top:10px;left:10px;z-index:10;
+   font:12px/1.55 ui-monospace,Menlo,monospace;color:#e7dcc4;
+   background:rgba(10,9,20,.58);padding:10px 13px;border:1px solid rgba(233,196,106,.28);
+   border-radius:10px;backdrop-filter:blur(6px);
+   width:min(340px,calc(100vw - 20px));max-height:45vh;overflow:auto}
+ @media (max-width:640px){#ui{font-size:11px;max-height:38vh} #ui .detail{display:none}}
+ #ui a{color:#7fd4ff;text-decoration:none}
+ #ui b{color:#e9c46a;letter-spacing:.09em}
+ #ui .k{color:#7fd4ff}
+ #ui .m{color:#9aa6c8}
+ .seg{display:inline-flex;gap:0;margin:3px 0 1px;border:1px solid rgba(233,196,106,.35);border-radius:6px;overflow:hidden}
+ .seg button{font:11px/1.3 ui-monospace,monospace;background:transparent;color:#cbbf9e;border:0;padding:4px 7px;cursor:pointer}
+ .seg button.on{background:rgba(233,196,106,.24);color:#ffe9b0}
+ input[type=range]{width:100%;accent-color:#e9c46a;margin:2px 0 0}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div id="ui">
+<b>EULER'S DISK</b><br>
+A spun disk rolls on its rim: as the tilt &alpha; collapses the contact point's precession &Omega; &prop; 1/&radic;sin&alpha; <i>diverges</i> — the whirr speeds up as the energy runs out, ending in a finite-time singularity.<br>
+<span class="m">H. K. Moffatt, <i>Nature</i> 404, 833 (2000)</span><br>
+<span class="detail m">Lineage: Bendik's "Euler's Disk" toy patent 1987 &rarr; Moffatt's air-layer theory 2000 &rarr; replies (van den Engh, Bildsten, Kessler) putting rolling friction &amp; vibration back in.</span><br>
+<span class="k">dissipation model</span>
+<span class="seg"><button id="bM" class="on">Moffatt air-layer</button><button id="bR">rolling friction</button></span><br>
+<span class="k">initial tilt &alpha;&#8320;</span> <span id="rA0">40&deg;</span>
+<input type="range" id="sA0" min="12" max="55" step="1" value="40">
+<span class="detail k">air-gap viscosity &times;</span><input class="detail" type="range" id="sMu" min="40" max="200" step="5" value="100"><br>
+<span class="k">tap / drag the disk</span> <span class="m">= re-spin it</span><br>
+&alpha; <span id="rA">—</span> &nbsp; &Omega; <span id="rW">—</span> &nbsp; <span id="rRev">—</span><br>
+t<sub>f</sub>&minus;t <span id="rT">—</span> &nbsp; whirr <span id="rF">—</span><br>
+log-log slope <span id="rS">—</span> <span class="m">(theory <span id="rP">1/3</span>)</span><br>
+<a href="index.html">&larr; gallery</a>
+</div>
+<canvas id="c"></canvas>
+<script>
+/*PHYS-START*/
+// Reduced Euler-disk model. alpha = tilt of the disk plane from horizontal (rad).
+// Energy of the rolling disk ~ M g a sin(alpha); different dissipation laws give
+// different finite-time collapse exponents p in  alpha ~ (t_f - t)^p.
+var MODELS={
+  moffatt:{p:1/3,name:'Moffatt air-layer',note:'viscous drainage of the thin air film under the rim'},
+  rolling:{p:1/2,name:'rolling friction',note:'contact-patch / rolling-resistance dissipation'}
+};
+function alphaAt(t,tf,a0,p){ if(t>=tf) return 0; return a0*Math.pow((tf-t)/tf,p); }
+// Rolling-without-slipping kinematics: the contact point races round at
+// Omega = sqrt(g/(a sin alpha))  ->  diverges as alpha -> 0.
+function precess(alpha,a,g){ var s=Math.max(Math.sin(alpha),1e-7); return Math.sqrt(g/(a*s)); }
+// Least-squares slope of log(alpha) vs log(t_f - t): should return p.
+function logSlope(pts){ var n=pts.length; if(n<3) return NaN;
+  var sx=0,sy=0,sxx=0,sxy=0,i,x,y;
+  for(i=0;i<n;i++){ x=Math.log(pts[i][0]); y=Math.log(pts[i][1]); sx+=x;sy+=y;sxx+=x*x;sxy+=x*y; }
+  var d=n*sxx-sx*sx; if(Math.abs(d)<1e-12) return NaN; return (n*sxy-sx*sy)/d; }
+var PHYS={MODELS:MODELS,alphaAt:alphaAt,precess:precess,logSlope:logSlope};
+/*PHYS-END*/
+
+var cv=document.getElementById('c'),ctx=cv.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;
+  cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);ctx.setTransform(DPR,0,0,DPR,0,0);}
+addEventListener('resize',resize);resize();
+
+// pre-rendered glow sprite (never per-particle shadowBlur)
+var GS=64,gs=document.createElement('canvas');gs.width=gs.height=GS;
+(function(){var g=gs.getContext('2d'),r=g.createRadialGradient(GS/2,GS/2,0,GS/2,GS/2,GS/2);
+ r.addColorStop(0,'rgba(255,238,190,1)');r.addColorStop(.28,'rgba(255,196,90,.55)');
+ r.addColorStop(.65,'rgba(190,110,40,.15)');r.addColorStop(1,'rgba(0,0,0,0)');
+ g.fillStyle=r;g.fillRect(0,0,GS,GS);})();
+function glow(x,y,s,a){ if(!isFinite(x)||!isFinite(y)||!(s>0))return;
+  ctx.globalAlpha=a;ctx.drawImage(gs,x-s/2,y-s/2,s,s);ctx.globalAlpha=1;}
+
+var A=0.038, G=9.81;                    // disk radius (m), gravity
+var S={model:'moffatt',a0:40*Math.PI/180,mu:1,t:0,tf:16,phi:0,psi:0,trail:[],pts:[],flash:0,wall:0};
+function tfOf(){ return 16*Math.pow(S.a0/(40*Math.PI/180),0.9)/S.mu; }
+function respin(a0){ S.a0=Math.max(0.12,Math.min(1.0,a0)); S.tf=tfOf(); S.t=0; S.trail.length=0; S.pts.length=0; S.flash=0; }
+function seed(){ S.tf=tfOf(); S.t=0.34*S.tf; }
+seed();
+
+// ---- controls
+function setModel(m){S.model=m;
+  document.getElementById('bM').className=(m==='moffatt')?'on':'';
+  document.getElementById('bR').className=(m==='rolling')?'on':'';
+  document.getElementById('rP').textContent=(m==='moffatt')?'1/3':'1/2';
+  S.pts.length=0;}
+document.getElementById('bM').onclick=function(){setModel('moffatt');};
+document.getElementById('bR').onclick=function(){setModel('rolling');};
+var sA0=document.getElementById('sA0');
+sA0.oninput=function(){document.getElementById('rA0').textContent=sA0.value+'°';respin(sA0.value*Math.PI/180);};
+var sMu=document.getElementById('sMu');
+sMu.oninput=function(){S.mu=sMu.value/100;S.tf=tfOf();S.t=Math.min(S.t,S.tf*0.9);S.pts.length=0;};
+
+// ---- 3/4 projection
+var KY=0.44,KZ=0.94,PX=0,PY=0,SC=1;
+function layout(){ var R=Math.max(46,Math.min(112,Math.min(W*0.30,H*0.26))); // disk radius in px
+  SC=R/A;                                                                    // px per metre
+  PX=W<600?W*0.5:Math.min(W*0.545,W-R*1.9); PY=H*0.55; }
+function px(X,Y,Z){ return [PX+SC*X, PY+SC*(Y*KY-Z*KZ)]; }
+function pxm(X,Y,Z){ return [PX+SC*X, PY+SC*(Y*KY+Z*KZ)]; }
+
+function diskPts(alpha,phi,rad,zoff){
+  var ca=Math.cos(alpha),sa=Math.sin(alpha),cp=Math.cos(phi),sp=Math.sin(phi);
+  var Cx=0,Cy=0,Cz=A*sa+zoff;
+  var ux=-sp,uy=cp,uz=0, vx=-ca*cp,vy=-ca*sp,vz=sa;
+  var o=[],i,th;
+  for(i=0;i<=60;i++){ th=i/60*Math.PI*2;
+    var ct=Math.cos(th),st=Math.sin(th);
+    o.push(px(Cx+rad*(ct*ux+st*vx),Cy+rad*(ct*uy+st*vy),Cz+rad*(ct*uz+st*vz)));
+  }
+  o.C=px(Cx,Cy,Cz); o.u=[ux,uy,uz]; o.v=[vx,vy,vz]; o.Cw=[Cx,Cy,Cz];
+  return o;
+}
+function poly(p,close){ ctx.beginPath();ctx.moveTo(p[0][0],p[0][1]);
+  for(var i=1;i<p.length;i++)ctx.lineTo(p[i][0],p[i][1]); if(close!==false)ctx.closePath(); }
+
+function drawBase(){
+  var rb=A*1.75*SC, c=px(0,0,0);
+  var g=ctx.createRadialGradient(c[0],c[1],2,c[0],c[1],rb);
+  g.addColorStop(0,'rgba(60,52,40,.95)');g.addColorStop(.55,'rgba(28,26,34,.9)');g.addColorStop(1,'rgba(10,10,18,.0)');
+  ctx.save();ctx.translate(c[0],c[1]);ctx.scale(1,KY);
+  ctx.fillStyle=g;ctx.beginPath();ctx.arc(0,0,rb,0,7);ctx.fill();
+  ctx.strokeStyle='rgba(233,196,106,.30)';ctx.lineWidth=1.4;ctx.beginPath();ctx.arc(0,0,rb*.99,0,7);ctx.stroke();
+  ctx.restore();
+}
+function drawDisk(alpha,phi,psi){
+  var p=diskPts(alpha,phi,A,0),i;
+  // mirrored reflection in the polished base
+  var m=diskPtsOff(alpha,phi,A,0,0,0,true);
+  ctx.save();ctx.globalAlpha=.16;poly(m);ctx.fillStyle='rgba(255,205,130,.5)';ctx.fill();ctx.restore();
+  // thickness: offset copy along the disk normal
+  var ca=Math.cos(alpha),sa=Math.sin(alpha),cp=Math.cos(phi),sp=Math.sin(phi);
+  var nx=sa*cp,ny=sa*sp,nz=ca,th=A*0.10;
+  var pb=diskPtsOff(alpha,phi,A,nx*th,ny*th,nz*th);
+  poly(pb);ctx.fillStyle='rgba(96,80,52,.95)';ctx.fill();
+  ctx.strokeStyle='rgba(233,196,106,.35)';ctx.lineWidth=1;ctx.stroke();
+  // front face gloss
+  var g1=px(p.Cw[0]+A*p.u[0],p.Cw[1]+A*p.u[1],p.Cw[2]+A*p.u[2]);
+  var g2=px(p.Cw[0]-A*p.u[0],p.Cw[1]-A*p.u[1],p.Cw[2]-A*p.u[2]);
+  poly(p);
+  if(isFinite(g1[0])&&isFinite(g2[0])){
+    var lg=ctx.createLinearGradient(g1[0],g1[1],g2[0],g2[1]);
+    lg.addColorStop(0,'#2b2a33');lg.addColorStop(.34,'#e6d9b6');lg.addColorStop(.46,'#fff6d8');
+    lg.addColorStop(.62,'#b9a878');lg.addColorStop(1,'#3a3630');
+    ctx.fillStyle=lg;
+  } else ctx.fillStyle='#b9a878';
+  ctx.fill();
+  // spin mark (motion-blurred ghosts)
+  for(var k=0;k<4;k++){
+    var a2=psi-k*0.22, ct=Math.cos(a2),st=Math.sin(a2);
+    var q1=px(p.Cw[0]+A*.72*(ct*p.u[0]+st*p.v[0]),p.Cw[1]+A*.72*(ct*p.u[1]+st*p.v[1]),p.Cw[2]+A*.72*(ct*p.u[2]+st*p.v[2]));
+    var q2=px(p.Cw[0]-A*.72*(ct*p.u[0]+st*p.v[0]),p.Cw[1]-A*.72*(ct*p.u[1]+st*p.v[1]),p.Cw[2]-A*.72*(ct*p.u[2]+st*p.v[2]));
+    ctx.strokeStyle='rgba(120,95,55,'+(0.30-k*0.06)+')';ctx.lineWidth=2.2;
+    ctx.beginPath();ctx.moveTo(q1[0],q1[1]);ctx.lineTo(q2[0],q2[1]);ctx.stroke();
+  }
+  // rim: halo + core
+  poly(p);ctx.strokeStyle='rgba(255,196,90,.22)';ctx.lineWidth=7;ctx.stroke();
+  poly(p);ctx.strokeStyle='rgba(255,240,205,.95)';ctx.lineWidth=1.6;ctx.stroke();
+  return p;
+}
+function diskPtsOff(alpha,phi,rad,ox,oy,oz,mir){
+  var ca=Math.cos(alpha),sa=Math.sin(alpha),cp=Math.cos(phi),sp=Math.sin(phi);
+  var Cx=ox,Cy=oy,Cz=A*sa+oz, P=mir?pxm:px;
+  var ux=-sp,uy=cp,uz=0, vx=-ca*cp,vy=-ca*sp,vz=sa,o=[],i,th;
+  for(i=0;i<=60;i++){th=i/60*Math.PI*2;var ct=Math.cos(th),st=Math.sin(th);
+    o.push(P(Cx+rad*(ct*ux+st*vx),Cy+rad*(ct*uy+st*vy),Cz+rad*(ct*uz+st*vz)));}
+  return o;
+}
+function chip(x,y,w,h,a){ctx.fillStyle='rgba(8,8,16,'+(a||.78)+')';ctx.strokeStyle='rgba(233,196,106,.22)';
+  ctx.lineWidth=1;ctx.beginPath();ctx.rect(x,y,w,h);ctx.fill();ctx.stroke();}
+function txt(s,x,y,col,f,al){ctx.fillStyle=col;ctx.font=f||'12px ui-monospace,Menlo,monospace';
+  ctx.textAlign=al||'left';ctx.textBaseline='alphabetic';ctx.fillText(s,x,y);ctx.textAlign='left';}
+
+function drawInset(x,y,w,h,p,slope){
+  chip(x,y,w,h,.84);
+  var px0=x+38,py0=y+h-24,pw=w-50,ph=h-44;
+  txt('log₁₀ α  vs  log₁₀ (t_f − t)',x+8,y+15,'#e9c46a','11px ui-monospace,monospace');
+  ctx.strokeStyle='rgba(160,170,210,.30)';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(px0,y+22);ctx.lineTo(px0,py0);ctx.lineTo(px0+pw,py0);ctx.stroke();
+  var LX0=Math.log(0.05)/Math.LN10, LX1=Math.log(20)/Math.LN10;
+  var LY0=Math.log(0.4)/Math.LN10, LY1=Math.log(60)/Math.LN10;
+  function mx(v){return px0+(v-LX0)/(LX1-LX0)*pw;} function my(v){return py0-(v-LY0)/(LY1-LY0)*ph;}
+  txt('−1',px0-4,py0+13,'#8b93b0','9px ui-monospace,monospace','center');
+  txt('+1',mx(1),py0+13,'#8b93b0','9px ui-monospace,monospace','center');
+  txt('60°',x+34,my(LY1)+4,'#8b93b0','9px ui-monospace,monospace','right');
+  txt('0.4°',x+34,py0+3,'#8b93b0','9px ui-monospace,monospace','right');
+  // theory line for the selected model
+  var a0d=S.a0*180/Math.PI, tf=S.tf, i;
+  ctx.strokeStyle='rgba(127,212,255,.55)';ctx.setLineDash([4,3]);ctx.lineWidth=1.3;ctx.beginPath();
+  for(i=0;i<=40;i++){ var tau=Math.pow(10,LX0+(LX1-LX0)*i/40); var al=a0d*Math.pow(Math.min(tau,tf)/tf,p);
+    var X=mx(Math.log(tau)/Math.LN10),Y=my(Math.log(Math.max(al,1e-3))/Math.LN10);
+    if(i===0)ctx.moveTo(X,Y);else ctx.lineTo(X,Y);} ctx.stroke();ctx.setLineDash([]);
+  // live data
+  ctx.strokeStyle='rgba(255,208,120,.95)';ctx.lineWidth=2;ctx.beginPath();var st=true;
+  for(i=0;i<S.pts.length;i++){var d=S.pts[i]; if(d[0]<0.05||d[1]<0.4)continue;
+    var X=mx(Math.log(d[0])/Math.LN10),Y=my(Math.log(d[1])/Math.LN10);
+    if(st){ctx.moveTo(X,Y);st=false;}else ctx.lineTo(X,Y);} ctx.stroke();
+  var sl=isFinite(slope)?slope.toFixed(3):'—';
+  txt('measured slope '+sl+'   theory '+p.toFixed(3),x+8,y+h-7,'#ffe9b0','11px ui-monospace,monospace');
+}
+function drawPitch(x,y,w,h,f,fmax){
+  chip(x,y,w,h,.8);
+  txt('WHIRR PITCH',x+8,y+14,'#e9c46a','10px ui-monospace,monospace');
+  var bx=x+8,by=y+19,bw=w-16,bh=h-28, n=26,i;
+  for(i=0;i<n;i++){
+    var frac=i/(n-1), on=frac<=Math.min(1,f/fmax);
+    ctx.fillStyle=on?('rgba('+(120+135*frac)+','+(230-120*frac)+',120,.95)'):'rgba(120,130,160,.16)';
+    ctx.fillRect(bx+i*(bw/n),by+bh*(1-0.35-0.65*frac),bw/n-2,bh*(0.35+0.65*frac));
+  }
+  txt(f.toFixed(1)+' Hz',x+w-8,y+h-4,'#cfe6ff','11px ui-monospace,monospace','right');
+}
+
+// ---- pointer
+var down=false;
+cv.addEventListener('pointerdown',function(e){down=true;cv.setPointerCapture(e.pointerId);grab(e);});
+cv.addEventListener('pointermove',function(e){if(down)grab(e);});
+cv.addEventListener('pointerup',function(e){down=false;});
+cv.addEventListener('pointercancel',function(){down=false;});
+function grab(e){ var r=cv.getBoundingClientRect(), x=e.clientX-r.left, y=e.clientY-r.top;
+  var d=Math.hypot(x-PX,(y-PY)/KY)/ (A*SC);
+  var a0=(0.16+0.9*Math.min(1.15,d))*0.75; respin(a0);
+  sA0.value=Math.round(S.a0*180/Math.PI); document.getElementById('rA0').textContent=sA0.value+'°'; }
+
+// ---- loop
+var SUB=1/60, acc=0, last=performance.now()/1000, rec=0;
+function step(dt){
+  var p=MODELS[S.model].p;
+  S.t+=dt;
+  if(S.t>=S.tf-0.02){ S.flash=1; S.wall+=dt; if(S.wall>1.15){ S.wall=0; respin(S.a0); } }
+  else S.wall=0;
+  var al=alphaAt(Math.min(S.t,S.tf),S.tf,S.a0,p);
+  var alc=Math.max(al,0.006);
+  var Om=precess(alc,A,G);
+  var micro=4,k;
+  for(k=0;k<micro;k++){ S.phi+=Om*dt/micro; S.psi+=Om*Math.cos(alc)*dt/micro*0.85;
+    var c=[A*Math.cos(alc)*Math.cos(S.phi),A*Math.cos(alc)*Math.sin(S.phi)];
+    S.trail.push([c[0],c[1],0]); }
+  while(S.trail.length>150)S.trail.shift();
+  for(k=0;k<S.trail.length;k++)S.trail[k][2]+=dt;
+  S.flash*=Math.pow(0.06,dt);
+  rec+=dt; if(rec>0.07 && S.t<S.tf-0.03){ rec=0; S.pts.push([S.tf-S.t,al*180/Math.PI]); if(S.pts.length>400)S.pts.shift(); }
+  return {al:al,Om:Om};
+}
+function frame(now){
+  requestAnimationFrame(frame);
+  var t=now/1000, real=Math.min(0.45,t-last); last=t;
+  acc+=real; var n=Math.max(0,Math.round(acc/SUB)); acc-=n*SUB; if(n>40)n=40;
+  var st={al:S.a0,Om:1};
+  for(var i=0;i<n;i++)st=step(SUB);
+  layout();
+  // background
+  ctx.fillStyle='#07070e';ctx.fillRect(0,0,W,H);
+  var vg=ctx.createRadialGradient(PX,PY-H*0.1,10,PX,PY,Math.max(W,H)*0.75);
+  vg.addColorStop(0,'rgba(60,45,20,.20)');vg.addColorStop(1,'rgba(6,6,12,0)');
+  ctx.fillStyle=vg;ctx.fillRect(0,0,W,H);
+  drawBase();
+  // contact trail
+  ctx.globalCompositeOperation='lighter';
+  for(i=0;i<S.trail.length;i+=1){ var tr=S.trail[i], a=Math.max(0,1-tr[2]/0.55);
+    if(a<=0)continue; var q=px(tr[0],tr[1],0); glow(q[0],q[1],10+26*a,0.10*a); }
+  ctx.globalCompositeOperation='source-over';
+  var alc=Math.max(st.al,0.006);
+  drawDisk(alc,S.phi,S.psi);
+  // contact spark
+  ctx.globalCompositeOperation='lighter';
+  var cp=px(A*Math.cos(alc)*Math.cos(S.phi),A*Math.cos(alc)*Math.sin(S.phi),0);
+  glow(cp[0],cp[1],46+50*S.flash,0.55);
+  if(S.flash>0.02){ glow(PX,PY,Math.max(W,H)*0.5*S.flash,0.20*S.flash); }
+  ctx.globalCompositeOperation='source-over';
+  // ---- HUD (explicit non-overlapping bounds, >=8px from edges)
+  var narrow=W<620, pad=14;
+  var iw=narrow?Math.min(W-2*pad,330):268, ih=narrow?128:180;
+  var ix=narrow?pad:W-pad-iw, iy=narrow?H-pad-ih-46:pad;
+  var slope=logSlope(S.pts.filter(function(d){return d[0]>0.06&&d[0]<S.tf*0.9;}));
+  drawInset(ix,iy,iw,ih,MODELS[S.model].p,slope);
+  var f=st.Om/(2*Math.PI);
+  var bw=narrow?Math.min(180,W-2*pad):236,bh=40;
+  var bx=pad, by=H-pad-bh;
+  drawPitch(bx,by,bw,bh,f,14);
+  if(!narrow){
+    var cx0=bx+bw+10, cw=W-pad-cx0;
+    if(cw>250){ chip(cx0,by,cw,bh,.72);
+      txt('WHY IT ENDS WITH A SHUDDER: Ω → ∞ in finite time, so the',cx0+9,by+16,'#dfe6ff','11px ui-monospace,monospace');
+      txt('last rev takes ~0 s — rim slams into contact. '+MODELS[S.model].note,cx0+9,by+31,'#9aa6c8','11px ui-monospace,monospace');
+    }
+  }
+  // readouts
+  document.getElementById('rA').textContent=(st.al*180/Math.PI).toFixed(2)+'°';
+  document.getElementById('rW').textContent=st.Om.toFixed(1)+' rad/s';
+  document.getElementById('rRev').textContent=f.toFixed(2)+' rev/s';
+  document.getElementById('rT').textContent=Math.max(0,S.tf-S.t).toFixed(2)+' s';
+  document.getElementById('rF').textContent=f.toFixed(1)+' Hz';
+  document.getElementById('rS').textContent=isFinite(slope)?slope.toFixed(3):'—';
+}
+requestAnimationFrame(frame);
+</script>
+</body>

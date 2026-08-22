@@ -35,6 +35,7 @@ Every demo is ONE self-contained .html: inline CSS/JS, no CDN (except `three-*`)
    background:rgba(8,10,25,.55);padding:10px 13px;border:1px solid rgba(140,170,255,.25);
    border-radius:10px;backdrop-filter:blur(6px);
    width:min(340px,calc(100vw - 20px));max-height:45vh;overflow:auto} <!-- ③ phone-safe panel -->
+   <!-- ③b panel CONTENT ORDER: title → 1-line mechanism → LIVE READOUTS → controls → lineage last in class="detail" — the 45vh clamp must only ever hide lineage, never readouts (learned: Euler-disk wave hid α/Ω below the fold in short windows) -->
  @media (max-width:640px){#ui{font-size:11px;max-height:38vh}
    #ui .detail{display:none}}                                        <!-- ④ collapse detail rows -->
  #ui a{color:#8cf;text-decoration:none}

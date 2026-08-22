@@ -1,0 +1,282 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tears of Wine</title>
+<style>
+ html,body{margin:0;height:100%;overflow:hidden;background:#0b0709}
+ canvas{display:block;position:fixed;inset:0;touch-action:none}
+ #ui{position:fixed;top:10px;left:10px;z-index:10;
+   font:12px/1.55 ui-monospace,Menlo,monospace;color:#f0dcd0;
+   background:rgba(22,8,12,.60);padding:10px 13px;border:1px solid rgba(255,170,120,.28);
+   border-radius:10px;backdrop-filter:blur(6px);
+   width:min(340px,calc(100vw - 20px));max-height:45vh;overflow:auto}
+ @media (max-width:640px){#ui{font-size:11px;max-height:38vh} #ui .detail{display:none}}
+ #ui a{color:#ffc98a;text-decoration:none}
+ #ui b{color:#ff9e6e;letter-spacing:.09em}
+ #ui .k{color:#ffc98a}
+ #ui .m{color:#c2a397}
+ input[type=range]{width:100%;accent-color:#ff9e6e;margin:1px 0 3px}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div id="ui">
+<b>TEARS OF WINE</b><br>
+Alcohol evaporates fastest from the ultrathin meniscus film, so surface tension &sigma; rises there; the high-&sigma; ring <i>pulls</i> liquid up the glass until the ridge overloads and beads streak back down as tears.<br>
+<span class="m">James Thomson, 1855 — a decade before Marangoni</span><br>
+<span class="detail m">Lineage: Thomson 1855 (evaporation-driven flow) &rarr; Marangoni 1865 (the name) &rarr; Gibbs (thermodynamic footing) &rarr; today: coffee-ring &amp; thin-film Marangoni theory.</span><br>
+<span class="k">ABV</span> <span id="rAbv">13%</span>
+<input type="range" id="sAbv" min="0" max="40" step="1" value="13">
+<span class="k">air dryness (evaporation)</span> <span id="rHum">dry</span>
+<input type="range" id="sHum" min="0" max="100" step="1" value="72">
+<span class="detail m">0% ABV = dead calm. Strength is non-monotonic: it peaks near ~20% then falls — the film runs out of &sigma; contrast.</span><br>
+&Delta;&sigma; film <span id="rDs">—</span> &nbsp; climb <span id="rV">—</span><br>
+tear period <span id="rT">—</span> &nbsp; tears in flight <span id="rN">—</span><br>
+<a href="index.html">&larr; gallery</a>
+</div>
+<canvas id="c"></canvas>
+<script>
+/*PHYS-START*/
+// Surface tension of a water/ethanol mixture, mN/m. x = ethanol volume fraction.
+function sigmaMix(x){ x=Math.min(1,Math.max(0,x)); return 72-50*Math.pow(x,0.28); }
+// Preferential evaporation strips ethanol from the thin film: fraction removed
+// grows with air dryness (hum = dryness 0..1).
+function filmFraction(x,dry){ return x*Math.max(0,1-0.55*(0.15+0.85*dry)); }
+// Surface-tension contrast that drives the Marangoni climb (mN/m).
+function deltaSigma(abv,dry){ var x=abv/100; return sigmaMix(filmFraction(x,dry))-sigmaMix(x); }
+// Climb flux (mm/s-ish): needs contrast AND enough alcohol to mobilise the film;
+// damped at high ABV -> non-monotonic, peak near 20% ABV. Exactly 0 at 0% ABV.
+function climbFlux(abv,dry){ var x=abv/100, d=deltaSigma(abv,dry);
+  var mobil=x/(x+0.05), damp=1/(1+Math.pow(abv/34,3));
+  return Math.max(0,d)*mobil*damp*1.2; }
+var TEAR_THRESHOLD=1.6;                     // flux below this -> no beads form
+function tearsForm(f){ return f>TEAR_THRESHOLD; }
+function tearPeriod(f){ return f<=TEAR_THRESHOLD?Infinity:Math.max(0.45,4.2/(f-TEAR_THRESHOLD+0.55)); }
+var PHYS={sigmaMix:sigmaMix,deltaSigma:deltaSigma,climbFlux:climbFlux,tearPeriod:tearPeriod,
+          tearsForm:tearsForm,TEAR_THRESHOLD:TEAR_THRESHOLD};
+/*PHYS-END*/
+
+var cv=document.getElementById('c'),ctx=cv.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;
+  cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);ctx.setTransform(DPR,0,0,DPR,0,0);}
+addEventListener('resize',resize);resize();
+
+var GS=64,gs=document.createElement('canvas');gs.width=gs.height=GS;
+(function(){var g=gs.getContext('2d'),r=g.createRadialGradient(GS/2,GS/2,0,GS/2,GS/2,GS/2);
+ r.addColorStop(0,'rgba(255,240,220,1)');r.addColorStop(.3,'rgba(255,170,120,.5)');
+ r.addColorStop(.7,'rgba(160,60,60,.12)');r.addColorStop(1,'rgba(0,0,0,0)');
+ g.fillStyle=r;g.fillRect(0,0,GS,GS);})();
+function glow(x,y,s,a){if(!isFinite(x)||!isFinite(y)||!(s>0))return;
+  ctx.globalAlpha=a;ctx.drawImage(gs,x-s/2,y-s/2,s,s);ctx.globalAlpha=1;}
+
+var S={abv:13,dry:0.72,tears:[],trails:[],ridge:0,spawn:0,t:0};
+var sAbv=document.getElementById('sAbv'),sHum=document.getElementById('sHum');
+sAbv.oninput=function(){S.abv=+sAbv.value;document.getElementById('rAbv').textContent=sAbv.value+'%';};
+sHum.oninput=function(){S.dry=sHum.value/100;
+  document.getElementById('rHum').textContent=S.dry>.7?'very dry':S.dry>.4?'dry':S.dry>.15?'humid':'saturated';};
+
+// ---- glass geometry (side view). Returns inner half-width at canvas y.
+var GX=0,GTOP=0,GBOT=0,GR=0,GLEV=0;
+function layout(){ var hAv=Math.min(H*0.80,560); GR=Math.min(W*0.20,hAv*0.30,155);
+  GX=W<620?W*0.5:Math.min(W*0.58,W-GR-150); GTOP=Math.max(52,H*0.5-hAv*0.44); GBOT=GTOP+hAv*0.56;
+  GLEV=GBOT-(GBOT-GTOP)*0.42; }
+function halfW(y){ var u=(GBOT-y)/(GBOT-GTOP); u=Math.max(0,Math.min(1.25,u));
+  return GR*(0.16+0.84*Math.pow(Math.min(u,1),0.52)); }
+
+function drawGlass(flux){
+  // warm backlight
+  var bg=ctx.createRadialGradient(GX+GR*0.2,GLEV,10,GX,GLEV,Math.max(W,H)*0.62);
+  bg.addColorStop(0,'rgba(120,45,30,.34)');bg.addColorStop(.4,'rgba(60,20,25,.16)');bg.addColorStop(1,'rgba(8,5,8,0)');
+  ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
+  // stem + foot
+  ctx.strokeStyle='rgba(210,190,200,.30)';ctx.lineWidth=5;
+  ctx.beginPath();ctx.moveTo(GX,GBOT-2);ctx.lineTo(GX,GBOT+GR*0.95);ctx.stroke();
+  ctx.lineWidth=4;ctx.beginPath();ctx.ellipse(GX,GBOT+GR*0.98,GR*0.62,GR*0.11,0,0,7);ctx.stroke();
+  // bowl outline
+  function side(sgn){ ctx.beginPath(); var y;
+    for(y=GTOP;y<=GBOT;y+=3){ var x=GX+sgn*halfW(y); if(y===GTOP)ctx.moveTo(x,y); else ctx.lineTo(x,y); }
+    ctx.lineTo(GX,GBOT+1); }
+  // wine body
+  ctx.save();ctx.beginPath();
+  for(var y=GLEV;y<=GBOT;y+=3)ctx.lineTo(GX-halfW(y),y);
+  ctx.lineTo(GX,GBOT+2);
+  for(y=GBOT;y>=GLEV;y-=3)ctx.lineTo(GX+halfW(y),y);
+  ctx.closePath();
+  var wg=ctx.createLinearGradient(GX-GR,GLEV,GX+GR,GBOT);
+  wg.addColorStop(0,'#4a0716');wg.addColorStop(.45,'#a01530');wg.addColorStop(.7,'#d63a3a');wg.addColorStop(1,'#5a0a18');
+  ctx.fillStyle=wg;ctx.fill();ctx.restore();
+  // meniscus
+  ctx.strokeStyle='rgba(255,180,150,.55)';ctx.lineWidth=2;
+  ctx.beginPath();ctx.ellipse(GX,GLEV,halfW(GLEV),GR*0.13,0,0,Math.PI,true);ctx.stroke();
+  ctx.strokeStyle='rgba(255,120,110,.30)';ctx.lineWidth=1.2;
+  ctx.beginPath();ctx.ellipse(GX,GLEV,halfW(GLEV),GR*0.13,0,0,Math.PI);ctx.stroke();
+  // glass walls (2-pass glow)
+  ctx.strokeStyle='rgba(190,215,255,.10)';ctx.lineWidth=8;side(-1);ctx.stroke();side(1);ctx.stroke();
+  ctx.strokeStyle='rgba(226,238,255,.62)';ctx.lineWidth=1.7;side(-1);ctx.stroke();side(1);ctx.stroke();
+  ctx.strokeStyle='rgba(255,255,255,.22)';ctx.lineWidth=3;
+  ctx.beginPath();ctx.moveTo(GX-halfW(GTOP+18)+3,GTOP+18);ctx.lineTo(GX-halfW(GBOT-40)+3,GBOT-40);ctx.stroke();
+}
+
+function climbHeight(flux){ return flux<=0?0:Math.min((GLEV-GTOP)*0.92, 14+flux*30); }
+
+function drawFilm(flux,now){
+  var hgt=climbHeight(flux); if(hgt<1.5)return;
+  var yTopF=GLEV-hgt;
+  ctx.globalCompositeOperation='lighter';
+  for(var s=-1;s<=1;s+=2){
+    // climbing sheet
+    ctx.beginPath();
+    for(var y=GLEV;y>=yTopF;y-=2){ var x=GX+s*halfW(y); if(y===GLEV)ctx.moveTo(x,y); else ctx.lineTo(x,y); }
+    var g=ctx.createLinearGradient(0,GLEV,0,yTopF);
+    g.addColorStop(0,'rgba(255,150,110,.05)');g.addColorStop(.65,'rgba(255,190,140,.30)');g.addColorStop(1,'rgba(255,235,200,.62)');
+    ctx.strokeStyle=g;ctx.lineWidth=Math.min(9,3+flux*1.5);ctx.stroke();
+    // upward streaks (Marangoni pull) — visible motion
+    for(var k=0;k<7;k++){
+      var ph=((now*(0.16+flux*0.07)+k*0.143+ (s>0?0.07:0))%1);
+      var yy=GLEV-hgt*ph, xx=GX+s*halfW(yy);
+      glow(xx,yy,10+7*flux,0.16*(1-Math.abs(ph-0.5)*1.2));
+    }
+    // the ridge that collects the beads
+    var yr=yTopF, xr=GX+s*halfW(yr);
+    glow(xr,yr,20+9*flux,0.35);
+  }
+  ctx.globalCompositeOperation='source-over';
+  // ridge line label chip
+  ctx.strokeStyle='rgba(255,225,190,.42)';ctx.setLineDash([3,4]);ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(GX-halfW(yTopF)-14,yTopF);ctx.lineTo(GX+halfW(yTopF)+14,yTopF);ctx.stroke();ctx.setLineDash([]);
+}
+
+function spawnTear(){ var s=Math.random()<0.5?-1:1;
+  var hgt=climbHeight(S.flux), y=GLEV-hgt+ (Math.random()*6-3);
+  S.tears.push({s:s,y:y,y0:y,v:0,r:2.2+Math.random()*1.6,age:0,hold:0.25+Math.random()*0.5}); }
+
+function stepTears(dt,flux){
+  var i,t;
+  var period=tearPeriod(flux);
+  if(isFinite(period)){ S.spawn+=dt; if(S.spawn>period/2.2){ S.spawn=0; spawnTear(); } } else S.spawn=0;
+  for(i=S.tears.length-1;i>=0;i--){ t=S.tears[i]; t.age+=dt;
+    if(t.hold>0){ t.hold-=dt; t.r+=dt*2.4; continue; }
+    // gravity vs Marangoni hold-back, plus viscous drag on the wall film
+    var a=980*0.16 - flux*11;
+    t.v=Math.max(0,t.v+a*dt); t.v*=Math.pow(0.86,dt*6);
+    t.y+=t.v*dt;
+    if(t.y>=GLEV-2){ S.trails.push({s:t.s,y0:t.y0,y1:GLEV,a:0.5});
+      S.splash=[{x:GX+t.s*halfW(GLEV),y:GLEV,a:1}].concat(S.splash||[]).slice(0,6);
+      S.tears.splice(i,1); }
+  }
+  for(i=S.trails.length-1;i>=0;i--){ S.trails[i].a-=dt*0.30; if(S.trails[i].a<=0)S.trails.splice(i,1); }
+  if(S.splash)for(i=S.splash.length-1;i>=0;i--){ S.splash[i].a-=dt*1.6; if(S.splash[i].a<=0)S.splash.splice(i,1); }
+  while(S.tears.length>26)S.tears.shift();
+  while(S.trails.length>40)S.trails.shift();
+}
+function drawTears(){
+  var i,t;
+  ctx.globalCompositeOperation='lighter';
+  for(i=0;i<S.trails.length;i++){ t=S.trails[i]; var x=GX+t.s*halfW((t.y0+t.y1)/2);
+    var g=ctx.createLinearGradient(0,t.y0,0,t.y1);
+    g.addColorStop(0,'rgba(255,200,160,0)');g.addColorStop(1,'rgba(255,190,150,'+(0.35*t.a)+')');
+    ctx.strokeStyle=g;ctx.lineWidth=2.6;
+    ctx.beginPath();for(var y=t.y0;y<=t.y1;y+=4)ctx.lineTo(GX+t.s*halfW(y),y);ctx.stroke(); }
+  for(i=0;i<S.tears.length;i++){ t=S.tears[i];
+    var xx=GX+t.s*halfW(t.y);
+    // wet trail behind the falling bead
+    var g2=ctx.createLinearGradient(0,t.y0,0,t.y);
+    g2.addColorStop(0,'rgba(255,190,150,0)');g2.addColorStop(1,'rgba(255,205,165,.42)');
+    ctx.strokeStyle=g2;ctx.lineWidth=2.2;
+    ctx.beginPath();for(var y2=t.y0;y2<=t.y;y2+=4)ctx.lineTo(GX+t.s*halfW(y2),y2);ctx.stroke();
+    glow(xx,t.y,t.r*7,0.42);
+    ctx.globalCompositeOperation='source-over';
+    var rg=ctx.createRadialGradient(xx-t.r*0.4,t.y-t.r*0.5,0.5,xx,t.y,t.r*1.5);
+    rg.addColorStop(0,'rgba(255,246,232,.95)');rg.addColorStop(.5,'rgba(255,168,132,.85)');rg.addColorStop(1,'rgba(150,30,40,.5)');
+    ctx.fillStyle=rg;ctx.beginPath();ctx.ellipse(xx,t.y,t.r*1.15,t.r*1.45,0,0,7);ctx.fill();
+    ctx.globalCompositeOperation='lighter';
+  }
+  if(S.splash)for(i=0;i<S.splash.length;i++){var sp=S.splash[i];
+    ctx.strokeStyle='rgba(255,200,170,'+(0.5*sp.a)+')';ctx.lineWidth=1.4;
+    ctx.beginPath();ctx.ellipse(sp.x,sp.y,(1-sp.a)*16+3,(1-sp.a)*5+1.5,0,0,7);ctx.stroke();}
+  ctx.globalCompositeOperation='source-over';
+}
+
+function chip(x,y,w,h,a){ctx.fillStyle='rgba(14,6,10,'+(a||.8)+')';ctx.strokeStyle='rgba(255,170,120,.22)';
+  ctx.lineWidth=1;ctx.beginPath();ctx.rect(x,y,w,h);ctx.fill();ctx.stroke();}
+function txt(s,x,y,col,f,al){ctx.fillStyle=col;ctx.font=f||'12px ui-monospace,Menlo,monospace';
+  ctx.textAlign=al||'left';ctx.fillText(s,x,y);ctx.textAlign='left';}
+
+function drawInset(x,y,w,h,ds,flux){
+  chip(x,y,w,h,.86);
+  txt('σ along the wall film',x+8,y+15,'#ffc98a','11px ui-monospace,monospace');
+  var px0=x+34,py0=y+h-26,pw=w-46,ph=h-46;
+  ctx.strokeStyle='rgba(220,190,190,.30)';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(px0,y+22);ctx.lineTo(px0,py0);ctx.lineTo(px0+pw,py0);ctx.stroke();
+  txt('h',px0-9,y+28,'#c2a397','10px ui-monospace,monospace','right');
+  txt('σ →',px0+pw,py0+14,'#c2a397','10px ui-monospace,monospace','right');
+  // sigma rises with height above the bulk meniscus
+  var s0=sigmaMix(S.abv/100), s1=s0+Math.max(0,ds), i;
+  ctx.strokeStyle='rgba(255,190,140,.95)';ctx.lineWidth=2;ctx.beginPath();
+  for(i=0;i<=30;i++){ var u=i/30, sig=s0+(s1-s0)*Math.pow(u,0.62);
+    var X=px0+ (sig-s0)/Math.max(0.6,(s1-s0)*1.28)*pw, Y=py0-u*ph;
+    if(i===0)ctx.moveTo(X,Y);else ctx.lineTo(X,Y);} ctx.stroke();
+  // arrow: flow toward high sigma
+  var ax=px0+pw*0.30, ay=py0-ph*0.42;
+  ctx.strokeStyle='rgba(140,230,255,.95)';ctx.lineWidth=1.6;
+  ctx.beginPath();ctx.moveTo(ax,ay+ph*0.30);ctx.lineTo(ax+pw*0.30,ay-ph*0.06);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(ax+pw*0.30,ay-ph*0.06);ctx.lineTo(ax+pw*0.20,ay+ph*0.01);
+  ctx.lineTo(ax+pw*0.24,ay+ph*0.10);ctx.closePath();ctx.fillStyle='rgba(140,230,255,.95)';ctx.fill();
+  txt('flow → high σ',x+w-8,y+h-8,'#8fe3ff','10px ui-monospace,monospace','right');
+  txt('Δσ '+ds.toFixed(2)+' mN/m',x+8,y+h-8,'#ffe6cf','10px ui-monospace,monospace');
+}
+
+// pointer: swirl the glass -> a burst of film
+cv.addEventListener('pointerdown',function(e){cv.setPointerCapture(e.pointerId);S.swirl=1.0;});
+cv.addEventListener('pointermove',function(e){if(S.swirl>0)S.swirl=Math.min(1.4,S.swirl+0.03);});
+cv.addEventListener('pointerup',function(){});
+
+// seed tears so t≈4 s already shows several mid-fall
+(function(){ layout(); S.flux=climbFlux(S.abv,S.dry); S.splash=[];
+  var hgt=climbHeight(S.flux);
+  for(var i=0;i<5;i++){ var s=i%2?1:-1, y0=GLEV-hgt+2;
+    S.tears.push({s:s,y:y0+(0.10+i*0.17)*hgt,y0:y0,v:40+i*18,r:2.4+Math.random()*1.4,age:1,hold:0}); }
+  for(i=0;i<4;i++)S.trails.push({s:i%2?1:-1,y0:GLEV-hgt,y1:GLEV,a:0.28+0.06*i});
+})();
+
+var SUB=1/60,acc=0,last=performance.now()/1000;
+function frame(now){
+  requestAnimationFrame(frame);
+  var t=now/1000, real=Math.min(0.45,t-last); last=t;
+  acc+=real; var n=Math.max(0,Math.round(acc/SUB)); acc-=n*SUB; if(n>40)n=40;
+  layout();
+  var ds=deltaSigma(S.abv,S.dry), base=climbFlux(S.abv,S.dry);
+  for(var i=0;i<n;i++){ S.t+=SUB; if(S.swirl>0)S.swirl=Math.max(0,S.swirl-SUB*0.55);
+    S.flux=base*(1+0.55*(S.swirl||0)); stepTears(SUB,S.flux); }
+  var flux=S.flux||base;
+  ctx.fillStyle='#0b0709';ctx.fillRect(0,0,W,H);
+  drawGlass(flux);
+  drawFilm(flux,S.t);
+  drawTears();
+  // ---- HUD
+  var pad=14, narrow=W<640;
+  var iw=narrow?Math.min(W-2*pad,320):238, ih=narrow?120:158;
+  var ix=narrow?pad:W-pad-iw, iy=narrow?H-pad-ih:pad;
+  drawInset(ix,iy,iw,ih,ds,flux);
+  var lines=[
+    ['legs / tears / church windows — the ridge is the "leg", the bead is the "tear"','#f3ded2'],
+    ['honesty: tear SIZE is set by gravity vs Marangoni pull; big legs ≠ good wine','#c2a397'],
+    ['(legs mostly report alcohol + glycerol, not quality — Thomson knew that in 1855)','#c2a397']
+  ];
+  var cw=Math.min(narrow?W-2*pad:W-2*pad-iw-12, 470), ch=lines.length*15+12;
+  var cx0=pad, cy0=narrow?H-pad-ih-ch-8:H-pad-ch;
+  if(cw>210&&cy0>GTOP-40){ chip(cx0,cy0,cw,ch,.74);
+    for(i=0;i<lines.length;i++)txt(lines[i][0],cx0+9,cy0+15+i*15,lines[i][1],'11px ui-monospace,monospace'); }
+  // state chip near the glass
+  var st = S.abv<0.5?'0% ABV → dead calm: no σ contrast, no climb'
+         : tearsForm(flux)?'tears forming — ridge overloaded'
+         : 'below threshold: film creeps, no beads';
+  chip(GX-halfW(GTOP)-6, GTOP-30, Math.min(320, 2*halfW(GTOP)+80), 22, .8);
+  txt(st, GX-halfW(GTOP)+3, GTOP-14, '#ffd9b8','11px ui-monospace,monospace');
+  document.getElementById('rDs').textContent=ds.toFixed(2)+' mN/m';
+  document.getElementById('rV').textContent=(flux*0.9).toFixed(2)+' mm/s';
+  var per=tearPeriod(flux);
+  document.getElementById('rT').textContent=isFinite(per)?per.toFixed(2)+' s':'—  (none)';
+  document.getElementById('rN').textContent=S.tears.length;
+}
+requestAnimationFrame(frame);
+</script>
+</body>
