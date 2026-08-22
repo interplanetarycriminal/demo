@@ -179,16 +179,16 @@ function draw(){
  var availW=Math.max(120,VW-leftW-panW-70);
  var sc=Math.min((VH*0.86)/S.H,availW/S.W);
  var jw=S.W*sc,jh=S.H*sc;
- var ox=leftW+30+Math.max(0,(availW-jw)/2),oy=(VH-jh)/2;
+ var ox=leftW+30+Math.max(0,(availW-jw)/2),oy0=(VH-jh)/2;
+ var shk=(S.shake||0)*sc, oy=oy0+shk;          // the jar itself is what shakes
  var X=function(x){return ox+x*sc;},Y=function(y){return oy+y*sc;};
- var fy=S.amp*Math.sin(2*Math.PI*S.freq*S.t)*sc;
 
  // jar
  cx.save();
  cx.shadowBlur=26;cx.shadowColor='rgba(90,190,255,.35)';
  cx.strokeStyle='rgba(140,215,255,.75)';cx.lineWidth=2.5;
- cx.beginPath();cx.moveTo(X(0)-3,Y(0)-14);cx.lineTo(X(0)-3,Y(S.H)+fy);
- cx.lineTo(X(S.W)+3,Y(S.H)+fy);cx.lineTo(X(S.W)+3,Y(0)-14);cx.stroke();
+ cx.beginPath();cx.moveTo(X(0)-3,Y(0)-14);cx.lineTo(X(0)-3,Y(S.H-1));
+ cx.lineTo(X(S.W)+3,Y(S.H-1));cx.lineTo(X(S.W)+3,Y(0)-14);cx.stroke();
  cx.restore();
  cx.save();cx.beginPath();cx.rect(X(0)-2,Y(0)-30,jw+4,jh+60);cx.clip();
  cx.fillStyle='rgba(120,200,255,.04)';cx.fillRect(X(0),Y(0)-30,jw,jh+60);
@@ -237,9 +237,9 @@ function draw(){
  // labels around jar
  cx.font='11px ui-monospace,monospace';cx.fillStyle='rgba(150,200,235,.65)';
  cx.textAlign='center';
- cx.fillText('shaken jar  90 × 170 mm   ·   '+(S.p.length-1)+' grains ⌀5 mm',ox+jw/2,oy+jh+34);
+ cx.fillText('shaken jar  90 × 170 mm   ·   '+(S.p.length-1)+' grains ⌀ ~5 mm',ox+jw/2,oy0+jh+34);
  cx.fillStyle=S.dense?'rgba(120,180,255,.9)':'rgba(255,120,200,.9)';
- cx.fillText(S.dense?'DENSE intruder ρ=4.5 → sinks (reverse BNE)':'LIGHT intruder ρ=0.35 ⌀14 mm → rises',ox+jw/2,oy-24);
+ cx.fillText(S.dense?'DENSE intruder ρ=4.5 → sinks (reverse BNE)':'LIGHT intruder ρ=0.35 ⌀14 mm → rises',ox+jw/2,oy0-24);
  cx.textAlign='left';
 
  // right panels
