@@ -1,0 +1,309 @@
+<title>Brazil-Nut Effect</title>
+<style>
+html,body{margin:0;height:100%;background:#05060a;overflow:hidden}
+canvas{display:block;position:fixed;inset:0}
+#ov{position:fixed;top:0;left:0;width:318px;padding:14px 16px 16px;box-sizing:border-box;
+ font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#cfe6ff;background:rgba(6,9,16,.62);
+ backdrop-filter:blur(3px);border-right:1px solid rgba(90,190,255,.18);border-bottom:1px solid rgba(90,190,255,.18);z-index:20}
+#ov h1{margin:0 0 4px;font:600 15px/1.2 ui-monospace,monospace;color:#ffcf6b;letter-spacing:.5px;text-shadow:0 0 14px rgba(255,180,60,.5)}
+.mech{color:#9fd0f5;margin:0 0 6px}
+.sci{color:#7fe6c0;margin:0 0 2px}
+.lin{color:#6d86a4;margin:0 0 8px;font-size:11px}
+.cap{color:#ffa8d8;font-style:italic;margin:6px 0 8px;font-size:11px}
+.hd{color:#4e7ea6;letter-spacing:1.4px;font-size:10px;margin:9px 0 3px;border-top:1px solid rgba(90,190,255,.14);padding-top:7px}
+.row{display:flex;justify-content:space-between;gap:8px}
+.row b{font-weight:500;color:#8fb6d6}
+.row span{color:#ffe9a8}
+input[type=range]{width:100%;height:16px;accent-color:#ff9f43;background:transparent}
+label{display:block;color:#8fb6d6;font-size:11px;margin-top:4px}
+a{color:#6fd6ff;text-decoration:none;border-bottom:1px dotted rgba(111,214,255,.5)}
+kbd{color:#ffcf6b}
+</style>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ov">
+ <h1>BRAZIL-NUT EFFECT</h1>
+ <p class="mech">Shaking a granular bed drives a convection roll: the big intruder rides up the middle but is too wide to return down the thin wall channel, so it ratchets to the top.</p>
+ <p class="sci">Knight, Jaeger &amp; Nagel — 1993</p>
+ <p class="lin">cereal-box folklore → KJN <i>Phys.Rev.Lett.</i> 1993 → industrial powder segregation</p>
+ <p class="cap">"the big nuts always end up on top of the muesli"</p>
+ <div class="hd">CONTROLS</div>
+ <label>shake amplitude A <span id="lA"></span></label><input id="sA" type="range" min="0" max="4" step="0.02" value="1.90">
+ <label>shake frequency f <span id="lF"></span></label><input id="sF" type="range" min="8" max="30" step="0.5" value="18">
+ <div style="margin-top:5px"><kbd>D</kbd> dense intruder (reverse) &nbsp; <kbd>R</kbd> reset &nbsp; <kbd>SPACE</kbd> pause</div>
+ <div class="hd">READOUTS</div>
+ <div class="row"><b>Γ = Aω²/g</b><span id="rG">—</span></div>
+ <div class="row"><b>bed state</b><span id="rS">—</span></div>
+ <div class="row"><b>intruder height</b><span id="rH">—</span></div>
+ <div class="row"><b>intruder ρ</b><span id="rD">—</span></div>
+ <div class="row"><b>shake time</b><span id="rT">—</span></div>
+ <div class="hd" style="border:0;padding-top:8px"><a href="index.html">← gallery</a></div>
+</div>
+<script>
+/*CORE_START*/
+var BN=(function(){
+ function make(cfg){
+  cfg=cfg||{};
+  var S={W:90,H:170,g:392,t:0,amp:cfg.amp!==undefined?cfg.amp:1.90,
+    freq:cfg.freq!==undefined?cfg.freq:18,dense:!!cfg.dense,gr:2.5,ir:7.0,
+    p:[],bedTop:55,U:0,gam:0,seed:987654321};
+  var rnd=function(){S.seed=(S.seed*1664525+1013904223)>>>0;return S.seed/4294967296;};
+  var r=S.gr,sp=2.12*r,cols=Math.floor((S.W-2*r-1)/sp)+1;
+  var x0=(S.W-(cols-1)*sp)/2, rows=22;
+  var ix=S.W*0.5, iy=S.H-3-r-(S.dense?(rows-2):3)*2.1*r;
+  for(var j=0;j<rows;j++)for(var i=0;i<cols;i++){
+   var x=x0+i*sp+(j%2?r*0.4:0)+(rnd()-0.5)*0.25;
+   var y=S.H-3-r-j*2.1*r+(rnd()-0.5)*0.25;
+   if(x<r+0.6||x>S.W-r-0.6)continue;
+   var dx=x-ix,dy=y-iy;
+   if(dx*dx+dy*dy<(S.ir+r+0.4)*(S.ir+r+0.4))continue;
+   S.p.push({x:x,y:y,vx:0,vy:0,r:r,rho:1,m:Math.PI*r*r,big:0,h:rnd()});
+  }
+  var I={x:ix,y:iy,vx:0,vy:0,r:S.ir,rho:S.dense?4.5:0.35,big:1,h:0};
+  I.m=I.rho*Math.PI*I.r*I.r; S.p.push(I); S.I=I;
+  return S;
+ }
+ function fieldY(S,x,y){
+  var u=(x-S.W/2)/(S.W/2);
+  var v=(y-S.bedTop)/Math.max(8,(S.H-3-S.bedTop));
+  v=v<0?0:(v>1?1:v);
+  return -S.U*Math.cos(Math.PI*0.85*u)*(0.35+0.65*Math.sin(Math.PI*v));
+ }
+ function fieldX(S,x,y){
+  var u=(x-S.W/2)/(S.W/2);
+  var v=(y-S.bedTop)/Math.max(8,(S.H-3-S.bedTop));
+  v=v<0?0:(v>1?1:v);
+  return S.U*0.5*u*Math.cos(Math.PI*v);
+ }
+ function step(S,dt){
+  var n=S.p.length,i,a,b,NS=5,h=dt/NS;
+  var w=2*Math.PI*S.freq/5;            // sim runs at 1/5 real time
+  var wr=2*Math.PI*S.freq;
+  S.gam=S.amp*wr*wr/9810;              // dimensionless shaking strength A w^2/g
+  S.U=12*Math.max(0,Math.min(1,(S.gam-1)/1.6));
+  var top=1e9;for(i=0;i<n;i++){if(!S.p[i].big&&S.p[i].y<top)top=S.p[i].y;}
+  S.bedTop=S.bedTop*0.9+top*0.1;
+  var Wd=11.0; // descending wall-channel width (mm)
+  for(var s=0;s<NS;s++){
+   S.t+=h;
+   var fy=S.amp*Math.sin(w*S.t), fv=S.amp*w*Math.cos(w*S.t);
+   var floorY=S.H-1+fy;
+   for(i=0;i<n;i++){
+    a=S.p[i];
+    a.vy+=S.g*h;
+    if(S.U>0){
+     var vfy=fieldY(S,a.x,a.y),vfx=fieldX(S,a.x,a.y);
+     var k=6.0*Math.min(1.6,1/Math.max(0.35,a.rho));
+     if(vfy>0){var f=(Wd-2*a.r+3)/Wd;f=f<0?0:(f>1?1:f);k*=f;vfx*=f;}
+     a.vx+=(vfx-a.vx)*k*h; a.vy+=(vfy-a.vy)*k*h;
+     if(a.big)a.vy+=0.05*S.g*(a.rho-1)/a.rho*Math.min(1,(S.gam-1)/1.5)*h;
+    }
+    a.vx*=(1-0.7*h); a.vy*=(1-0.7*h);
+    var sp2=a.vx*a.vx+a.vy*a.vy;
+    if(sp2>1.2e5){var q=Math.sqrt(1.2e5/sp2);a.vx*=q;a.vy*=q;}
+    a.x+=a.vx*h; a.y+=a.vy*h;
+   }
+   var cs=S.gr+S.ir+0.5,GW=Math.ceil(S.W/cs)+2,GH=Math.ceil((S.H+8)/cs)+2,head=new Int32Array(GW*GH).fill(-1),nxt=new Int32Array(n);
+   for(i=0;i<n;i++){var cx=(S.p[i].x/cs+1)|0,cy=(S.p[i].y/cs+1)|0;
+    if(cx<0)cx=0;if(cx>=GW)cx=GW-1;if(cy<0)cy=0;if(cy>=GH)cy=GH-1;
+    var ci=cy*GW+cx;nxt[i]=head[ci];head[ci]=i;S.p[i]._c=ci;}
+   for(var it=0;it<4;it++){
+    for(i=0;i<n;i++){
+     a=S.p[i];var acx=a._c%GW,acy=(a._c/GW)|0;
+     for(var oy=-1;oy<=1;oy++)for(var ox=-1;ox<=1;ox++){
+      var gx=acx+ox,gy=acy+oy;if(gx<0||gy<0||gx>=GW||gy>=GH)continue;
+      for(var j2=head[gy*GW+gx];j2>=0;j2=nxt[j2]){
+       if(j2<=i)continue;b=S.p[j2];
+       var dx=b.x-a.x,dy=b.y-a.y,rr=a.r+b.r,d2=dx*dx+dy*dy;
+       if(d2>=rr*rr||d2<1e-9)continue;
+       var d=Math.sqrt(d2),ov=rr-d,nx=dx/d,ny=dy/d;
+       var ima=1/a.m,imb=1/b.m,st=ima+imb;
+       var c=0.60*ov/st;
+       a.x-=nx*c*ima;a.y-=ny*c*ima;b.x+=nx*c*imb;b.y+=ny*c*imb;
+       var rvx=b.vx-a.vx,rvy=b.vy-a.vy,vn=rvx*nx+rvy*ny;
+       if(vn<0){var jn=-(1.08)*vn/st;a.vx-=nx*jn*ima;a.vy-=ny*jn*ima;b.vx+=nx*jn*imb;b.vy+=ny*jn*imb;
+        var tx=-ny,ty=nx,vt=rvx*tx+rvy*ty,jt=-0.35*vt/st;
+        a.vx-=tx*jt*ima;a.vy-=ty*jt*ima;b.vx+=tx*jt*imb;b.vy+=ty*jt*imb;}
+      }}}
+    for(i=0;i<n;i++){
+     a=S.p[i];
+     if(a.x<a.r){a.x=a.r;if(a.vx<0)a.vx*=-0.12;a.vy*=0.94;}
+     if(a.x>S.W-a.r){a.x=S.W-a.r;if(a.vx>0)a.vx*=-0.12;a.vy*=0.94;}
+     if(a.y>floorY-a.r){a.y=floorY-a.r;if(a.vy>fv)a.vy=fv-0.12*(a.vy-fv);}
+     if(a.y<a.r+2){a.y=a.r+2;if(a.vy<0)a.vy*=-0.1;}
+    }
+   }
+  }
+  return S;
+ }
+ function heightFrac(S){var b=S.H-3-S.I.r,t=S.bedTop+S.I.r;return Math.max(0,Math.min(1,(b-S.I.y)/Math.max(1,b-t)));}
+ return {make:make,step:step,heightFrac:heightFrac};
+})();
+/*CORE_END*/
+
+var cv=document.getElementById('c'),cx=cv.getContext('2d'),DPR=1,VW=0,VH=0;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);VW=innerWidth;VH=innerHeight;
+ cv.width=VW*DPR|0;cv.height=VH*DPR|0;cx.setTransform(DPR,0,0,DPR,0,0);}
+addEventListener('resize',resize);resize();
+
+var S=BN.make({}),paused=false,trace=[],buf=[],bi=0,play=0,BUFN=110;
+var sA=document.getElementById('sA'),sF=document.getElementById('sF');
+function reset(dense){S=BN.make({amp:+sA.value,freq:+sF.value,dense:dense});trace=[];buf=[];bi=0;play=0;}
+addEventListener('keydown',function(e){
+ if(e.code==='Space'){paused=!paused;e.preventDefault();}
+ if(e.key==='r'||e.key==='R')reset(S.dense);
+ if(e.key==='d'||e.key==='D')reset(!S.dense);
+});
+function snap(){
+ var a=new Float32Array(2+2*70),I=S.I,k=2;a[0]=I.x;a[1]=I.y;
+ for(var i=0;i<S.p.length&&k<142;i++){var p=S.p[i];if(p.big)continue;
+  var dx=p.x-I.x,dy=p.y-I.y;if(dx*dx+dy*dy<900){a[k++]=dx;a[k++]=dy;}}
+ for(;k<142;k++)a[k]=999;
+ if(buf.length<BUFN)buf.push(a);else buf[bi]=a;bi=(bi+1)%BUFN;
+}
+function fmt(v,n){return v.toFixed(n===undefined?2:n);}
+
+function draw(){
+ cx.clearRect(0,0,VW,VH);
+ var gd=cx.createLinearGradient(0,0,0,VH);gd.addColorStop(0,'#080b13');gd.addColorStop(1,'#030407');
+ cx.fillStyle=gd;cx.fillRect(0,0,VW,VH);
+ var panW=Math.min(300,Math.max(210,VW*0.22)),leftW=330;
+ var availW=Math.max(120,VW-leftW-panW-70);
+ var sc=Math.min((VH*0.86)/S.H,availW/S.W);
+ var jw=S.W*sc,jh=S.H*sc;
+ var ox=leftW+30+Math.max(0,(availW-jw)/2),oy=(VH-jh)/2;
+ var X=function(x){return ox+x*sc;},Y=function(y){return oy+y*sc;};
+ var fy=S.amp*Math.sin(2*Math.PI*S.freq*S.t)*sc;
+
+ // jar
+ cx.save();
+ cx.shadowBlur=26;cx.shadowColor='rgba(90,190,255,.35)';
+ cx.strokeStyle='rgba(140,215,255,.75)';cx.lineWidth=2.5;
+ cx.beginPath();cx.moveTo(X(0)-3,Y(0)-14);cx.lineTo(X(0)-3,Y(S.H)+fy);
+ cx.lineTo(X(S.W)+3,Y(S.H)+fy);cx.lineTo(X(S.W)+3,Y(0)-14);cx.stroke();
+ cx.restore();
+ cx.save();cx.beginPath();cx.rect(X(0)-2,Y(0)-30,jw+4,jh+60);cx.clip();
+ cx.fillStyle='rgba(120,200,255,.04)';cx.fillRect(X(0),Y(0)-30,jw,jh+60);
+
+ // convection arrows
+ if(S.U>0.4){
+  var al=Math.min(1,S.U/26);
+  cx.save();cx.lineWidth=2.2;cx.setLineDash([9,11]);
+  cx.lineDashOffset=-(performance.now()/22)%20;
+  cx.strokeStyle='rgba(90,240,220,'+(0.20+0.30*al)+')';
+  cx.shadowBlur=12;cx.shadowColor='rgba(60,240,210,.5)';
+  var bt=Y(S.bedTop)+8,bb=Y(S.H)-10,mid=X(S.W/2);
+  for(var s2=-1;s2<=1;s2+=2){
+   var wall=X(S.W/2+s2*S.W*0.40);
+   cx.beginPath();cx.moveTo(mid+s2*4,bb);cx.lineTo(mid+s2*4,bt+16);
+   cx.quadraticCurveTo(mid+s2*4,bt,wall,bt+8);cx.lineTo(wall,bb-18);
+   cx.quadraticCurveTo(wall,bb,mid+s2*4,bb);cx.stroke();
+  }
+  cx.setLineDash([]);
+  // arrowheads
+  cx.fillStyle='rgba(120,255,230,'+(0.35+0.4*al)+')';
+  function ah(px,py,dir){cx.beginPath();cx.moveTo(px,py);cx.lineTo(px-6,py+9*dir);cx.lineTo(px+6,py+9*dir);cx.closePath();cx.fill();}
+  ah(mid-4,bt+22,1);ah(mid+4,bt+22,1);
+  ah(X(S.W*0.10),bb-26,-1);ah(X(S.W*0.90),bb-26,-1);
+  cx.font='11px ui-monospace,monospace';cx.fillStyle='rgba(120,255,230,.6)';
+  cx.textAlign='center';cx.fillText('convection roll',mid,bt-8);cx.textAlign='left';
+  cx.restore();
+ }
+ // grains
+ for(var i=0;i<S.p.length;i++){var p=S.p[i];if(p.big)continue;
+  var px=X(p.x),py=Y(p.y),pr=p.r*sc;
+  cx.fillStyle='hsl('+(30+p.h*24)+',72%,'+(46+p.h*14)+'%)';
+  cx.beginPath();cx.arc(px,py,pr,0,6.2832);cx.fill();
+  cx.fillStyle='rgba(255,238,200,.35)';cx.beginPath();cx.arc(px-pr*0.3,py-pr*0.32,pr*0.32,0,6.2832);cx.fill();
+ }
+ // intruder
+ var I=S.I,ix=X(I.x),iy=Y(I.y),ir=I.r*sc;
+ cx.save();cx.shadowBlur=30;cx.shadowColor=S.dense?'rgba(80,150,255,.95)':'rgba(255,60,190,.95)';
+ var g2=cx.createRadialGradient(ix-ir*0.35,iy-ir*0.4,ir*0.1,ix,iy,ir);
+ if(S.dense){g2.addColorStop(0,'#bcd8ff');g2.addColorStop(.55,'#3f7cff');g2.addColorStop(1,'#0b2a8a');}
+ else{g2.addColorStop(0,'#ffd6f2');g2.addColorStop(.5,'#ff3fb0');g2.addColorStop(1,'#8a0552');}
+ cx.fillStyle=g2;cx.beginPath();cx.arc(ix,iy,ir,0,6.2832);cx.fill();cx.restore();
+ cx.strokeStyle='rgba(255,255,255,.5)';cx.lineWidth=1.4;cx.beginPath();cx.arc(ix,iy,ir,0,6.2832);cx.stroke();
+ cx.restore();
+
+ // labels around jar
+ cx.font='11px ui-monospace,monospace';cx.fillStyle='rgba(150,200,235,.65)';
+ cx.textAlign='center';
+ cx.fillText('shaken jar  90 × 170 mm   ·   '+(S.p.length-1)+' grains ⌀5 mm',ox+jw/2,oy+jh+34);
+ cx.fillStyle=S.dense?'rgba(120,180,255,.9)':'rgba(255,120,200,.9)';
+ cx.fillText(S.dense?'DENSE intruder ρ=4.5 → sinks (reverse BNE)':'LIGHT intruder ρ=0.35 ⌀14 mm → rises',ox+jw/2,oy-24);
+ cx.textAlign='left';
+
+ // right panels
+ var rx=VW-panW-24,ry=52;
+ // percolation inset
+ var ih=190;
+ cx.fillStyle='rgba(8,12,20,.72)';cx.strokeStyle='rgba(90,190,255,.22)';cx.lineWidth=1;
+ cx.fillRect(rx,ry,panW,ih);cx.strokeRect(rx,ry,panW,ih);
+ cx.fillStyle='#4e7ea6';cx.font='10px ui-monospace,monospace';
+ cx.fillText('PERCOLATION — SLOW-MO ×0.20',rx+10,ry+15);
+ cx.save();cx.beginPath();cx.rect(rx+1,ry+20,panW-2,ih-22);cx.clip();
+ if(buf.length>20){
+  var idx=(bi-buf.length+Math.floor(play))%buf.length;if(idx<0)idx+=buf.length;
+  var zs=Math.min((panW-20)/44,(ih-34)/40),zx=rx+panW/2,zy=ry+20+(ih-20)*0.42;
+  for(var q=3;q>=0;q--){
+   var jj=(idx-q*3);while(jj<0)jj+=buf.length;var a=buf[jj%buf.length];if(!a)continue;
+   var al2=q===0?1:0.10;
+   cx.fillStyle='rgba(255,175,80,'+(al2*0.9)+')';
+   for(var k=2;k<142;k+=2){if(a[k]>500)break;
+    cx.beginPath();cx.arc(zx+a[k]*zs,zy+a[k+1]*zs,S.gr*zs,0,6.2832);cx.fill();}
+   cx.fillStyle=(S.dense?'rgba(80,140,255,':'rgba(255,70,185,')+al2+')';
+   cx.beginPath();cx.arc(zx,zy,S.ir*zs,0,6.2832);cx.fill();
+  }
+  cx.strokeStyle='rgba(255,255,255,.35)';cx.beginPath();cx.arc(zx,zy,S.ir*zs,0,6.2832);cx.stroke();
+  cx.fillStyle='rgba(180,215,240,.6)';cx.font='10px ui-monospace,monospace';
+  cx.fillText('grains slip into the gap beneath →',rx+10,ry+ih-8);
+ }
+ cx.restore();
+
+ // depth trace
+ var ty=ry+ih+18,th=182;
+ cx.fillStyle='rgba(8,12,20,.72)';cx.strokeStyle='rgba(90,190,255,.22)';
+ cx.fillRect(rx,ty,panW,th);cx.strokeRect(rx,ty,panW,th);
+ cx.fillStyle='#4e7ea6';cx.font='10px ui-monospace,monospace';
+ cx.fillText('INTRUDER HEIGHT vs TIME',rx+10,ty+15);
+ var p0x=rx+34,p0y=ty+26,pw=panW-46,ph=th-46;
+ cx.strokeStyle='rgba(90,190,255,.14)';
+ for(var g3=0;g3<=4;g3++){var yy=p0y+ph*g3/4;cx.beginPath();cx.moveTo(p0x,yy);cx.lineTo(p0x+pw,yy);cx.stroke();}
+ cx.fillStyle='rgba(140,180,210,.55)';cx.font='9px ui-monospace,monospace';
+ cx.fillText('top',rx+8,p0y+6);cx.fillText('bot',rx+8,p0y+ph+3);
+ cx.fillText('0s',p0x-2,p0y+ph+14);cx.fillText('40s',p0x+pw-14,p0y+ph+14);
+ cx.beginPath();var TW=40;
+ for(var i2=0;i2<trace.length;i2++){var tt=trace[i2];
+  var px2=p0x+pw*Math.min(1,tt[0]/TW),py2=p0y+ph*(1-tt[1]);
+  if(i2===0)cx.moveTo(px2,py2);else cx.lineTo(px2,py2);}
+ cx.strokeStyle=S.dense?'#6aa4ff':'#ff58bb';cx.lineWidth=2;
+ cx.shadowBlur=10;cx.shadowColor=S.dense?'rgba(80,150,255,.8)':'rgba(255,60,190,.8)';
+ cx.stroke();cx.shadowBlur=0;
+ if(trace.length){var lt=trace[trace.length-1];
+  cx.fillStyle=S.dense?'#9cc4ff':'#ff9ada';
+  cx.beginPath();cx.arc(p0x+pw*Math.min(1,lt[0]/TW),p0y+ph*(1-lt[1]),3.4,0,6.2832);cx.fill();}
+
+ // readouts
+ var hf=BN.heightFrac(S);
+ document.getElementById('rG').textContent=fmt(S.gam,2)+(S.gam<1?'  (< 1)':'');
+ document.getElementById('rS').textContent=S.gam<1?'packed — no flow':(S.gam<1.6?'marginal':'fluidised + rolling');
+ document.getElementById('rH').textContent=(hf*100).toFixed(1)+' % of bed';
+ document.getElementById('rD').textContent=S.dense?'4.5 (dense → sinks)':'0.35 (light → rises)';
+ document.getElementById('rT').textContent=S.t.toFixed(1)+' s';
+ document.getElementById('lA').textContent='= '+(+sA.value).toFixed(2)+' mm';
+ document.getElementById('lF').textContent='= '+(+sF.value).toFixed(1)+' Hz';
+}
+var last=0;
+function loop(ts){
+ requestAnimationFrame(loop);
+ if(!paused){
+  S.amp=+sA.value;S.freq=+sF.value;
+  BN.step(S,1/60);snap();play+=0.20;
+  if(trace.length===0||S.t-trace[trace.length-1][0]>0.12)trace.push([S.t,BN.heightFrac(S)]);
+  if(S.t>44)reset(S.dense);
+ }
+ draw();
+}
+requestAnimationFrame(loop);
+</script>

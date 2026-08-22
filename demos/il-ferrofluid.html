@@ -1,0 +1,274 @@
+<title>Rosensweig Spikes</title>
+<style>
+html,body{margin:0;height:100%;background:#03040a;overflow:hidden}
+canvas{display:block;position:fixed;inset:0;cursor:crosshair}
+#ov{position:fixed;top:0;left:0;width:326px;padding:14px 16px 16px;box-sizing:border-box;
+ font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#cfe6ff;background:rgba(5,7,14,.66);
+ backdrop-filter:blur(3px);border-right:1px solid rgba(120,160,255,.18);border-bottom:1px solid rgba(120,160,255,.18);z-index:20}
+#ov h1{margin:0 0 4px;font:600 15px/1.2 ui-monospace,monospace;color:#9bb4ff;letter-spacing:.5px;text-shadow:0 0 14px rgba(120,150,255,.6)}
+.mech{color:#9fd0f5;margin:0 0 6px}
+.sci{color:#ffcf6b;margin:0 0 2px}
+.lin{color:#6d86a4;margin:0 0 6px;font-size:11px}
+.cap{color:#7fe6c0;font-style:italic;margin:6px 0 4px;font-size:11px}
+.hd{color:#5470a6;letter-spacing:1.4px;font-size:10px;margin:9px 0 3px;border-top:1px solid rgba(120,160,255,.14);padding-top:7px}
+.row{display:flex;justify-content:space-between;gap:8px}
+.row b{font-weight:500;color:#8fb6d6}
+.row span{color:#ffe9a8}
+input[type=range]{width:100%;height:16px;accent-color:#8fa8ff;background:transparent}
+label{display:block;color:#8fb6d6;font-size:11px;margin-top:4px}
+a{color:#6fd6ff;text-decoration:none;border-bottom:1px dotted rgba(111,214,255,.5)}
+kbd{color:#ffcf6b}
+</style>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ov">
+ <h1>ROSENSWEIG SPIKES</h1>
+ <p class="mech">Above a critical field the magnetic energy gained by peaking the surface beats gravity plus surface tension, so the flat mirror buckles into a hexagonal lattice of spikes at the capillary wavelength.</p>
+ <p class="sci">S. Papell 1963 (invention) · Cowley &amp; Rosensweig 1967 (instability)</p>
+ <p class="lin">NASA rocket-fuel pumping → C–R <i>J.Fluid Mech.</i> 1967 → ferrofluid sculpture</p>
+ <p class="cap">invented to move rocket fuel in zero-g with a magnet</p>
+ <div class="hd">CONTROLS</div>
+ <label>applied field B <span id="lB"></span></label><input id="sB" type="range" min="0" max="18" step="0.05" value="0">
+ <label>surface tension σ <span id="lS"></span></label><input id="sS" type="range" min="10" max="70" step="1" value="30">
+ <div style="margin-top:5px">drag = move <b style="color:#ff7a7a">bar magnet</b> under dish &nbsp; <kbd>A</kbd> auto: <span id="lA">on</span> &nbsp; <kbd>SPACE</kbd> pause</div>
+ <div class="hd">READOUTS</div>
+ <div class="row"><b>B</b><span id="rB">—</span></div>
+ <div class="row"><b>B<sub>c</sub> up / down</b><span id="rC">—</span></div>
+ <div class="row"><b>spike height</b><span id="rA">—</span></div>
+ <div class="row"><b>spacing λ<sub>c</sub></b><span id="rL">—</span></div>
+ <div class="row"><b>λ vs B</b><span id="rK">—</span></div>
+ <div class="row"><b>branch</b><span id="rR">—</span></div>
+ <div class="hd" style="border:0;padding-top:8px"><a href="index.html">← gallery</a></div>
+</div>
+<script>
+/*CORE_START*/
+var FF=(function(){
+ var MU0=4*Math.PI*1e-7, RHO=1400, G=9.81, CHI=3.0;
+ // capillary wavelength: lambda_c = 2*pi*sqrt(sigma/(rho g)) -- set by fluid, NOT by B
+ function lambda(sigma){return 2*Math.PI*Math.sqrt(sigma/(RHO*G));}      // m
+ function Bcrit(sigma){                                                   // tesla
+  return Math.sqrt(2*MU0*(1+1/CHI)*Math.sqrt(RHO*G*sigma));
+ }
+ function params(sigmaMN){
+  var sig=sigmaMN*1e-3;
+  var Bu=Bcrit(sig), Bd=0.88*Bu;
+  return {sigma:sig,lam:lambda(sig)*1000,Bu:Bu*1000,Bd:Bd*1000,a0:5.5};
+ }
+ // subcritical pitchfork with hysteresis: amp is 0 below threshold, sqrt-growth above
+ function amp(P,B,on){
+  var th=on?P.Bd:P.Bu;
+  if(B<=th)return 0;
+  return P.a0*Math.sqrt(Math.max(0,(B*B-P.Bd*P.Bd)/(P.Bd*P.Bd)));
+ }
+ function peak(P,B,on){return 3*amp(P,B,on);}
+ function branch(P,B,on){ if(!on&&B>P.Bu)return true; if(on&&B<P.Bd)return false; return on; }
+ // hexagonal mode superposition, sharpened into spikes
+ function height(P,A,x,y,ph){
+  if(A<=0)return 0;
+  var k=2*Math.PI/P.lam,s=0;
+  for(var j=0;j<3;j++){var a=j*Math.PI/3;s+=Math.cos(k*(x*Math.cos(a)+y*Math.sin(a))+ph[j]);}
+  var u=(s+1.5)/4.5; if(u<0)u=0;
+  return 3*A*Math.pow(u,2.6);
+ }
+ return {lambda:lambda,Bcrit:Bcrit,params:params,amp:amp,peak:peak,branch:branch,height:height};
+})();
+/*CORE_END*/
+
+var cv=document.getElementById('c'),cx=cv.getContext('2d'),DPR=1,VW=0,VH=0;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);VW=innerWidth;VH=innerHeight;
+ cv.width=VW*DPR|0;cv.height=VH*DPR|0;cx.setTransform(DPR,0,0,DPR,0,0);}
+addEventListener('resize',resize);resize();
+
+var sB=document.getElementById('sB'),sS=document.getElementById('sS');
+var P=FF.params(+sS.value),on=false,B=0,T=0,auto=true,paused=false,ph=[0,0,0];
+var RD=60, mag={x:-42,y:0,on:1,drag:false}, rising=true, prevB=0;
+sB.addEventListener('input',function(){auto=false;document.getElementById('lA').textContent='off (manual)';});
+addEventListener('keydown',function(e){
+ if(e.code==='Space'){paused=!paused;e.preventDefault();}
+ if(e.key==='a'||e.key==='A'){auto=!auto;document.getElementById('lA').textContent=auto?'on':'off';}
+});
+var view={cx:0,cy:0,s:4,fy:0.42};
+function toDish(mx,my){return {x:(mx-view.cx)/view.s, y:(my-view.cy)/(view.s*view.fy)};}
+cv.addEventListener('pointerdown',function(e){mag.drag=true;auto=false;
+ document.getElementById('lA').textContent='off (manual)';var p=toDish(e.clientX,e.clientY);mag.x=p.x;mag.y=p.y;});
+addEventListener('pointermove',function(e){if(mag.drag){var p=toDish(e.clientX,e.clientY);mag.x=p.x;mag.y=p.y;}});
+addEventListener('pointerup',function(){mag.drag=false;});
+
+function autoField(t){
+ var c=t%27;
+ if(c<3.5)return 1.55*P.Bu*(c/3.5);
+ if(c<15)return 1.55*P.Bu;
+ if(c<21)return P.Bu*(1.55-0.72*(c-15)/6);
+ return 0.0;
+}
+function step(dt){
+ T+=dt;
+ if(auto){B=autoField(T);sB.value=B.toFixed(2);}else B=+sB.value;
+ P=FF.params(+sS.value);
+ on=FF.branch(P,B,on);
+ rising=(B>prevB+1e-6)?true:(B<prevB-1e-6?false:rising);prevB=B;
+ ph[0]+=dt*0.10;ph[1]-=dt*0.07;ph[2]+=dt*0.045;
+ if(auto&&!mag.drag){
+  var c=T%27;
+  if(c>4&&c<15){mag.x=46*Math.sin((c-4)*0.62);mag.y=16*Math.sin((c-4)*0.31);}
+ }
+ var d=Math.sqrt(mag.x*mag.x+mag.y*mag.y);
+ if(d>RD-6){mag.x*=(RD-6)/d;mag.y*=(RD-6)/d;}
+}
+function Bloc(x,y){
+ var dx=x-mag.x,dy=y-mag.y,w=17;
+ return B+0.62*P.Bu*Math.exp(-(dx*dx+dy*dy)/(w*w));
+}
+
+function draw(){
+ cx.clearRect(0,0,VW,VH);
+ var bg=cx.createRadialGradient(VW*0.56,VH*0.52,20,VW*0.56,VH*0.52,VH);
+ bg.addColorStop(0,'#0b0f1c');bg.addColorStop(1,'#020308');
+ cx.fillStyle=bg;cx.fillRect(0,0,VW,VH);
+ var leftW=340,panW=Math.min(288,Math.max(212,VW*0.2));
+ var availW=Math.max(180,VW-leftW-panW-70);
+ var s=Math.min(availW/(2.25*RD),(VH*0.80)/(2*RD*0.42+80));
+ view.s=s;view.cx=leftW+26+availW/2;view.cy=VH*0.60;
+ var CXp=view.cx,CYp=view.cy,fy=view.fy;
+
+ // dish basin
+ cx.save();
+ cx.beginPath();cx.ellipse(CXp,CYp+6,RD*s+16,RD*s*fy+12,0,0,6.2832);
+ cx.fillStyle='rgba(16,24,44,.55)';cx.fill();
+ cx.lineWidth=2.5;cx.strokeStyle='rgba(130,160,255,.45)';
+ cx.shadowBlur=26;cx.shadowColor='rgba(110,140,255,.45)';cx.stroke();cx.restore();
+
+ // electromagnet glow + bar magnet under the dish
+ var eg=cx.createRadialGradient(CXp,CYp,4,CXp,CYp,RD*s*1.1);
+ var gi=Math.min(1,B/(1.6*P.Bu));
+ eg.addColorStop(0,'rgba(90,120,255,'+(0.30*gi)+')');eg.addColorStop(1,'rgba(90,120,255,0)');
+ cx.fillStyle=eg;cx.beginPath();cx.ellipse(CXp,CYp,RD*s*1.15,RD*s*fy*1.5,0,0,6.2832);cx.fill();
+ var mxp=CXp+mag.x*s,myp=CYp+mag.y*s*fy;
+ var mg=cx.createRadialGradient(mxp,myp,2,mxp,myp,26*s);
+ mg.addColorStop(0,'rgba(255,90,90,.55)');mg.addColorStop(1,'rgba(255,90,90,0)');
+ cx.fillStyle=mg;cx.beginPath();cx.ellipse(mxp,myp,26*s,26*s*fy*1.6,0,0,6.2832);cx.fill();
+ cx.save();cx.globalAlpha=.85;cx.fillStyle='#ff5a5a';cx.fillRect(mxp-13*s,myp-2.6*s*fy,13*s,5.2*s*fy);
+ cx.fillStyle='#5a9bff';cx.fillRect(mxp,myp-2.6*s*fy,13*s,5.2*s*fy);
+ cx.strokeStyle='rgba(255,255,255,.4)';cx.lineWidth=1;cx.strokeRect(mxp-13*s,myp-2.6*s*fy,26*s,5.2*s*fy);
+ cx.restore();
+
+ // fluid surface: back-to-front scanlines
+ var A0=FF.amp(P,B,on), NR=104, hs=s*0.92, peakMax=0;
+ for(var ri=0;ri<NR;ri++){
+  var y=-RD+2*RD*(ri+0.5)/NR;
+  var hw=Math.sqrt(Math.max(0,RD*RD-y*y));
+  if(hw<1)continue;
+  var np=Math.max(8,Math.round(hw*2/1.05));
+  var base=CYp+y*s*fy;
+  var rowMax=0;
+  cx.beginPath();cx.moveTo(CXp-hw*s,base);
+  for(var i=0;i<=np;i++){
+   var x=-hw+2*hw*i/np;
+   var A=FF.amp(P,Bloc(x,y),on);
+   var h=FF.height(P,A,x,y,ph);
+   var edge=Math.min(1,(hw-Math.abs(x))/6);if(edge<0)edge=0;
+   h*=edge*edge;
+   if(h>rowMax)rowMax=h;
+   cx.lineTo(CXp+x*s,base-h*hs);
+  }
+  cx.lineTo(CXp+hw*s,base);
+  cx.lineTo(CXp+hw*s,base+9*s*fy);cx.lineTo(CXp-hw*s,base+9*s*fy);cx.closePath();
+  if(rowMax>peakMax)peakMax=rowMax;
+  var g=cx.createLinearGradient(0,base-Math.max(4,rowMax*hs),0,base+9*s*fy);
+  var lit=Math.min(1,rowMax/16);
+  g.addColorStop(0,'rgba('+(70+130*lit)+','+(95+120*lit)+','+(160+80*lit)+',1)');
+  g.addColorStop(0.30,'rgba(28,36,66,1)');
+  g.addColorStop(1,'rgba(5,7,14,1)');
+  cx.fillStyle=g;cx.fill();
+  cx.lineWidth=1.15;
+  cx.strokeStyle='rgba('+(140+90*lit)+','+(180+60*lit)+',255,'+(0.30+0.55*lit)+')';
+  cx.stroke();
+ }
+ // mirror sheen when flat
+ if(A0<=0){
+  cx.save();cx.globalCompositeOperation='lighter';
+  var sh=cx.createLinearGradient(CXp-RD*s,CYp-RD*s*fy,CXp+RD*s,CYp+RD*s*fy);
+  sh.addColorStop(0,'rgba(120,160,255,0)');sh.addColorStop(.45,'rgba(150,190,255,.20)');
+  sh.addColorStop(.55,'rgba(200,225,255,.28)');sh.addColorStop(1,'rgba(120,160,255,0)');
+  cx.beginPath();cx.ellipse(CXp,CYp,RD*s,RD*s*fy,0,0,6.2832);cx.fillStyle=sh;cx.fill();cx.restore();
+ }
+ // rim
+ cx.beginPath();cx.ellipse(CXp,CYp,RD*s,RD*s*fy,0,0,6.2832);
+ cx.strokeStyle='rgba(130,170,255,.28)';cx.lineWidth=1.5;cx.stroke();
+
+ // spacing caliper
+ if(A0>0){
+  var yy=CYp+RD*s*fy+26,x1=CXp-P.lam*s/2,x2=CXp+P.lam*s/2;
+  cx.strokeStyle='rgba(255,190,80,.85)';cx.lineWidth=1.6;
+  cx.beginPath();cx.moveTo(x1,yy-6);cx.lineTo(x1,yy+6);cx.moveTo(x2,yy-6);cx.lineTo(x2,yy+6);
+  cx.moveTo(x1,yy);cx.lineTo(x2,yy);cx.stroke();
+  cx.font='11px ui-monospace,monospace';cx.fillStyle='rgba(255,200,110,.95)';cx.textAlign='center';
+  cx.fillText('λc = '+P.lam.toFixed(2)+' mm  (fixed by σ, ρ, g — not by B)',CXp,yy+20);cx.textAlign='left';
+ }
+ cx.font='11px ui-monospace,monospace';cx.fillStyle='rgba(150,180,235,.6)';cx.textAlign='center';
+ cx.fillText('ferrofluid dish ⌀120 mm over an electromagnet',CXp,CYp-RD*s*fy-Math.max(30,peakMax*hs+22));
+ cx.textAlign='left';
+
+ // right panels
+ var rx=VW-panW-22,ry=54;
+ function panel(y,h,t){cx.fillStyle='rgba(8,11,22,.74)';cx.strokeStyle='rgba(120,160,255,.22)';cx.lineWidth=1;
+  cx.fillRect(rx,y,panW,h);cx.strokeRect(rx,y,panW,h);
+  cx.fillStyle='#5470a6';cx.font='10px ui-monospace,monospace';cx.fillText(t,rx+10,y+15);}
+ var phh=250;panel(ry,phh,'PITCHFORK — AMPLITUDE vs FIELD');
+ var p0x=rx+38,p0y=ry+28,pw=panW-52,pph=phh-58;
+ var BM=2.0*P.Bu, HM=3*P.a0*Math.sqrt((BM*BM-P.Bd*P.Bd)/(P.Bd*P.Bd))*1.05;
+ var PX=function(b){return p0x+pw*Math.min(1,b/BM);},PY=function(h){return p0y+pph*(1-Math.min(1,h/HM));};
+ cx.strokeStyle='rgba(120,160,255,.14)';
+ cx.beginPath();cx.moveTo(p0x,p0y);cx.lineTo(p0x,p0y+pph);cx.lineTo(p0x+pw,p0y+pph);cx.stroke();
+ // lambda flat line (the tell)
+ cx.save();cx.setLineDash([5,5]);cx.strokeStyle='rgba(255,190,80,.75)';cx.lineWidth=1.6;
+ var ly=p0y+pph*0.30;cx.beginPath();cx.moveTo(p0x,ly);cx.lineTo(p0x+pw,ly);cx.stroke();cx.restore();
+ cx.font='9px ui-monospace,monospace';cx.fillStyle='rgba(255,200,110,.9)';
+ cx.fillText('λ  (flat: spacing never moves)',p0x+4,ly-4);
+ // zero branch + up branch
+ cx.strokeStyle='rgba(140,175,255,.5)';cx.lineWidth=2;
+ cx.beginPath();cx.moveTo(PX(0),PY(0));cx.lineTo(PX(P.Bu),PY(0));cx.stroke();
+ cx.beginPath();
+ for(var b=P.Bd;b<=BM;b+=BM/120){var hh2=3*P.a0*Math.sqrt((b*b-P.Bd*P.Bd)/(P.Bd*P.Bd));
+  if(b===P.Bd)cx.moveTo(PX(b),PY(hh2));else cx.lineTo(PX(b),PY(hh2));}
+ cx.strokeStyle='#8fa8ff';cx.lineWidth=2.2;cx.shadowBlur=10;cx.shadowColor='rgba(120,150,255,.8)';
+ cx.stroke();cx.shadowBlur=0;
+ cx.save();cx.setLineDash([3,4]);cx.strokeStyle='rgba(255,120,120,.55)';
+ cx.beginPath();cx.moveTo(PX(P.Bu),PY(0));cx.lineTo(PX(P.Bu),p0y);cx.stroke();
+ cx.strokeStyle='rgba(120,255,200,.5)';
+ cx.beginPath();cx.moveTo(PX(P.Bd),PY(0));cx.lineTo(PX(P.Bd),p0y);cx.stroke();cx.restore();
+ cx.font='9px ui-monospace,monospace';cx.fillStyle='rgba(255,140,140,.9)';cx.fillText('Bc↑',PX(P.Bu)+3,p0y+10);
+ cx.fillStyle='rgba(120,255,200,.9)';cx.fillText('Bc↓',PX(P.Bd)-24,p0y+10);
+ cx.fillStyle='rgba(150,180,215,.6)';cx.fillText('hysteresis',PX(P.Bd)-6,p0y+pph+13);
+ cx.fillText('B →',p0x+pw-20,p0y+pph+13);
+ var cxp2=PX(B),cyp2=PY(3*A0);
+ cx.fillStyle=on?'#ffd166':'#7fe6c0';cx.shadowBlur=14;cx.shadowColor=on?'rgba(255,200,80,.9)':'rgba(120,240,190,.9)';
+ cx.beginPath();cx.arc(cxp2,cyp2,4.6,0,6.2832);cx.fill();cx.shadowBlur=0;
+
+ var gy=ry+phh+16;panel(gy,116,'STATE');
+ cx.font='600 15px ui-monospace,monospace';cx.fillStyle=on?'#ffd166':'#7fe6c0';
+ cx.fillText(on?'SPIKED  (lattice up)':'FLAT  (mirror)',rx+12,gy+38);
+ cx.font='10px ui-monospace,monospace';cx.fillStyle='#8fb6d6';
+ cx.fillText('B / Bc  = '+(B/P.Bu).toFixed(2),rx+12,gy+58);
+ cx.fillText('peak-to-trough = '+(3*A0).toFixed(2)+' mm',rx+12,gy+74);
+ cx.fillText('spikes across dish ≈ '+(2*RD/P.lam).toFixed(1),rx+12,gy+90);
+ cx.fillText(rising?'field rising →':'field falling ←',rx+12,gy+106);
+
+ document.getElementById('rB').textContent=B.toFixed(2)+' mT';
+ document.getElementById('rC').textContent=P.Bu.toFixed(2)+' / '+P.Bd.toFixed(2)+' mT';
+ document.getElementById('rA').textContent=(3*A0).toFixed(2)+' mm';
+ document.getElementById('rL').textContent=P.lam.toFixed(2)+' mm';
+ document.getElementById('rK').textContent='constant (∂λ/∂B = 0)';
+ document.getElementById('rR').textContent=on?(rising?'upper (rising)':'upper (falling, held)'):'zero';
+ document.getElementById('lB').textContent='= '+B.toFixed(2)+' mT';
+ document.getElementById('lS').textContent='= '+(+sS.value)+' mN/m';
+}
+var last=0;
+function loop(ts){
+ requestAnimationFrame(loop);
+ var dt=Math.min(0.05,(ts-last)/1000||0.016);last=ts;
+ if(!paused)step(dt);
+ draw();
+}
+requestAnimationFrame(loop);
+</script>

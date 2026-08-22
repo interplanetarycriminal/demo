@@ -1,0 +1,253 @@
+<title>Sonoluminescence</title>
+<style>
+  html,body{margin:0;height:100%;background:#03050c;overflow:hidden}
+  canvas{display:block;position:fixed;inset:0}
+  #ui{position:fixed;left:14px;top:12px;width:344px;max-height:94vh;overflow:auto;
+      background:rgba(6,10,22,.66);border:1px solid rgba(130,190,255,.26);border-radius:8px;
+      padding:10px 12px;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#c6e6ff;
+      backdrop-filter:blur(3px);text-shadow:0 0 8px rgba(80,160,255,.32);z-index:10}
+  #ui h1{font:600 15px/1.3 ui-monospace,monospace;margin:0 0 4px;color:#eaf7ff;letter-spacing:.4px}
+  .dim{color:#7fa6c8}
+  .row{display:flex;justify-content:space-between;gap:8px}.k{color:#7fa6c8}.v{color:#eaf7ff}
+  hr{border:0;border-top:1px solid rgba(130,190,255,.18);margin:7px 0}
+  input[type=range]{width:100%;accent-color:#7fd0ff;height:14px}
+  a{color:#7fd0ff}
+  .btn{display:inline-block;border:1px solid rgba(130,190,255,.35);border-radius:4px;padding:1px 6px;margin:2px 3px 0 0;cursor:pointer;color:#cfe9ff}
+  .btn:hover{background:rgba(120,190,255,.16)}
+</style>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>SONOLUMINESCENCE</h1>
+  <div class="dim">A standing ultrasound wave traps one bubble that swells slowly, then collapses supersonically — adiabatic compression heats its gas past 10⁴ K and it emits a picosecond blue-white flash, once per acoustic cycle.</div>
+  <div class="dim">H. Frenzel &amp; H. Schultes, <b>1934</b>; single trapped bubble, D. F. Gaitan, <b>1989</b>.</div>
+  <div class="dim">Lineage: 1934 multibubble sonoluminescence → Gaitan 1989 single-bubble trap → "a star in a jar".</div>
+  <hr>
+  <div><span class="k">drive amplitude P<sub>a</sub>/P₀</span> <span class="v" id="rPa"></span>
+    <input type="range" id="pa" min="40" max="200" value="130"></div>
+  <div class="dim">↔ arrows or drag · <span class="btn" id="bT">threshold</span><span class="btn" id="bI">island</span><span class="btn" id="bB">break-up</span></div>
+  <hr>
+  <div class="row"><span class="k">regime</span><span class="v" id="rReg">—</span></div>
+  <div class="row"><span class="k">R(t) now</span><span class="v" id="rR">—</span></div>
+  <div class="row"><span class="k">R<sub>max</sub> / R₀</span><span class="v" id="rRmax">—</span></div>
+  <div class="row"><span class="k">R<sub>min</sub> / R₀</span><span class="v" id="rRmin">—</span></div>
+  <div class="row"><span class="k">compression</span><span class="v" id="rComp">—</span></div>
+  <div class="row"><span class="k">peak T (adiabatic)</span><span class="v" id="rT">—</span></div>
+  <div class="row"><span class="k">drive cycles</span><span class="v" id="rCyc">0</span></div>
+  <div class="row"><span class="k">flashes</span><span class="v" id="rFl">0</span></div>
+  <div class="row"><span class="k">flashes / cycle</span><span class="v" id="rFC">—</span></div>
+  <hr><a href="index.html">← gallery</a>
+</div>
+<script>
+(function(){
+var cv=document.getElementById('c'),ctx=cv.getContext('2d'),W=0,H=0,DPR=1;
+// --- scaled Rayleigh-Plesset (dimensionless: R0=1, P0=1, rho=1) ---
+var P0=1,SIG=0.05,MU=0.12,KAP=1.4,WD=0.25,AH=0.12,A3=AH*AH*AH,PG0=P0+2*SIG;
+var Pa=1.30, R=1, Rd=0, tau=0;
+var cycMax=1,cycMin=1,lastMax=1,lastMin=1,cyc=0,lastCycFlash=-1,flashes=0,cycles=0;
+var flash=0,ring=[],trace=[],sampT=0,regime='—',Tpeak=0;
+var FLASH_RATIO=8.0, PA_TH=1.18, PA_BREAK=1.55;
+function accel(R_,Rd_,t_){
+  var pB=PG0*Math.pow((1-A3)/Math.max(1e-9,R_*R_*R_-A3),KAP);
+  return (pB-P0-Pa*Math.sin(WD*t_)-2*SIG/R_-4*MU*Rd_/R_)/R_-1.5*Rd_*Rd_/R_;
+}
+function integrate(dtau){
+  var left=dtau,guard=0,RMIN=AH*1.005;
+  while(left>1e-9&&guard++<40000){
+    var a1=accel(R,Rd,tau);
+    var h=Math.min(1.5e-3,0.02*R/(1+Math.abs(Rd)),Math.sqrt(0.02*R/(1+Math.abs(a1))),left);
+    var Rm=Math.max(RMIN,R+0.5*h*Rd), Rdm=Rd+0.5*h*a1;
+    var a2=accel(Rm,Rdm,tau+0.5*h);
+    var prevRd=Rd;
+    R=Math.max(RMIN,R+h*Rdm); Rd+=h*a2; tau+=h; left-=h;
+    if(R>cycMax)cycMax=R;
+    if(R<cycMin)cycMin=R;
+    // local minimum -> candidate flash (one per acoustic cycle)
+    if(prevRd<0&&Rd>=0){
+      var ratio=cycMax/R;
+      if(ratio>=FLASH_RATIO&&Pa<=PA_BREAK&&cyc!==lastCycFlash){
+        lastCycFlash=cyc; flashes++; flash=1;
+        lastMax=cycMax; lastMin=R;
+        Tpeak=300*Math.pow(ratio,3*(KAP-1));
+        ring.push({r:0,l:1});
+      }
+    }
+    var nc=Math.floor(WD*tau/(2*Math.PI));
+    if(nc!==cyc){ cyc=nc; cycles++; lastMax=cycMax; lastMin=cycMin; cycMax=R; cycMin=R; }
+    sampT+=h;
+    if(sampT>0.03){sampT=0;trace.push([tau,R]);if(trace.length>5200)trace.shift();}
+  }
+  regime = Pa>PA_BREAK?'BREAK-UP — bubble shatters':(Pa<PA_TH?'below threshold — dark':'STABLE ISLAND — strobing star');
+}
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;
+  cv.width=W*DPR;cv.height=H*DPR;cv.style.width=W+'px';cv.style.height=H+'px';ctx.setTransform(DPR,0,0,DPR,0,0);}
+addEventListener('resize',resize);resize();
+
+function flask(cx,cy,rad){
+  var neck=rad*0.42;
+  ctx.save();
+  ctx.beginPath();ctx.arc(cx,cy,rad,-Math.PI*0.72,Math.PI*1.72,false);
+  ctx.lineTo(cx-neck*0.45,cy-rad*1.62);ctx.lineTo(cx+neck*0.45,cy-rad*1.62);
+  ctx.closePath();
+  ctx.save();ctx.clip();
+  var g=ctx.createRadialGradient(cx-rad*0.3,cy-rad*0.3,rad*0.1,cx,cy,rad*1.3);
+  g.addColorStop(0,'rgba(20,60,120,.75)');g.addColorStop(1,'rgba(6,18,44,.9)');
+  ctx.fillStyle=g;ctx.fillRect(cx-rad*1.4,cy-rad*1.8,rad*2.8,rad*3.4);
+  // standing pressure field
+  var ph=Math.sin(WD*tau);
+  for(var i=-14;i<=14;i++){
+    var y=cy+i*rad/7.2, amp=Math.cos(i/7.2*Math.PI*1.05)*ph;
+    ctx.fillStyle=(amp>0?'rgba(255,90,60,':'rgba(70,150,255,')+(Math.abs(amp)*0.30)+')';
+    ctx.fillRect(cx-rad*1.4,y-rad/16,rad*2.8,rad/8);
+  }
+  ctx.restore();
+  ctx.strokeStyle='rgba(180,225,255,.55)';ctx.lineWidth=2.4;ctx.shadowBlur=16;ctx.shadowColor='rgba(90,180,255,.6)';
+  ctx.stroke();ctx.restore();
+  // transducers
+  for(var s=-1;s<=1;s+=2){
+    var tx=cx+s*rad*1.02,ty=cy;
+    ctx.save();ctx.fillStyle='rgba(150,180,210,.85)';
+    ctx.fillRect(tx-(s<0?14:0),ty-rad*0.3,14,rad*0.6);
+    ctx.globalCompositeOperation='lighter';
+    var pp=0.5+0.5*Math.sin(WD*tau);
+    ctx.strokeStyle='rgba(120,200,255,'+(0.15+0.5*pp)+')';ctx.lineWidth=2;
+    for(var q=1;q<=3;q++){ctx.beginPath();
+      ctx.arc(tx,ty,q*rad*0.16+pp*rad*0.1,s<0?-1.0:Math.PI-1.0,s<0?1.0:Math.PI+1.0);ctx.stroke();}
+    ctx.restore();
+  }
+  ctx.font='11px ui-monospace,monospace';ctx.fillStyle='rgba(150,200,240,.75)';
+  ctx.textAlign='center';ctx.fillText('piezo transducer · standing ultrasound',cx,cy+rad*1.34);
+  ctx.fillText('degassed water',cx,cy+rad*1.5);ctx.textAlign='left';
+}
+function gauge(){
+  var w=26,x=W-46,y=H*0.10,h=H*0.42;
+  ctx.fillStyle='rgba(8,14,26,.55)';ctx.fillRect(x-166,y-26,192,h+50);
+  ctx.strokeStyle='rgba(130,190,255,.2)';ctx.strokeRect(x-166,y-26,192,h+50);
+  var f=function(v){return y+h*(1-(v-0.4)/1.6);};
+  ctx.fillStyle='rgba(40,50,70,.8)';ctx.fillRect(x,y,w,h);
+  ctx.fillStyle='rgba(30,45,70,.9)';ctx.fillRect(x,f(PA_TH),w,f(0.4)-f(PA_TH));
+  ctx.fillStyle='rgba(60,200,255,.35)';ctx.fillRect(x,f(PA_BREAK),w,f(PA_TH)-f(PA_BREAK));
+  ctx.fillStyle='rgba(255,90,70,.32)';ctx.fillRect(x,f(2.0),w,f(PA_BREAK)-f(2.0));
+  ctx.font='10px ui-monospace,monospace';
+  ctx.textAlign='right';
+  ctx.fillStyle='rgba(150,190,225,.85)';ctx.fillText('dark  Pa<'+PA_TH,x-8,f(0.75));
+  ctx.fillStyle='#7fd0ff';ctx.fillText('stability island',x-8,f(1.40));
+  ctx.fillText('one flash / cycle',x-8,f(1.28));
+  ctx.fillStyle='#ff9070';ctx.fillText('break-up  Pa>'+PA_BREAK,x-8,f(1.80));
+  ctx.textAlign='left';
+  var yy=f(Pa);
+  ctx.save();ctx.globalCompositeOperation='lighter';ctx.strokeStyle='#eaf7ff';ctx.lineWidth=2.5;
+  ctx.shadowBlur=14;ctx.shadowColor='#9fd8ff';
+  ctx.beginPath();ctx.moveTo(x-6,yy);ctx.lineTo(x+w+4,yy);ctx.stroke();ctx.restore();
+  ctx.fillStyle='#eaf7ff';ctx.font='11px ui-monospace,monospace';ctx.textAlign='right';
+  ctx.fillText('drive  Pa = '+Pa.toFixed(2),x+w,y-10);ctx.textAlign='left';
+}
+function plotRt(){
+  var x0=W*0.065,x1=W*0.955,y0=H*0.635,y1=H*0.935,pw=x1-x0,ph=y1-y0;
+  ctx.fillStyle='rgba(8,14,26,.55)';ctx.fillRect(x0-12,y0-26,pw+24,ph+48);
+  ctx.strokeStyle='rgba(130,190,255,.2)';ctx.lineWidth=1;ctx.strokeRect(x0-12,y0-26,pw+24,ph+48);
+  var span=2.6*2*Math.PI/WD, t1=tau, t0=tau-span;
+  var rmaxv=1.5;for(var i=0;i<trace.length;i++)if(trace[i][0]>t0&&trace[i][1]>rmaxv)rmaxv=trace[i][1];
+  rmaxv=Math.max(2,rmaxv*1.12);
+  var XX=function(t){return x0+pw*(t-t0)/span;},YY=function(r){return y1-ph*r/rmaxv;};
+  for(var k=0;k<=4;k++){var rv=rmaxv*k/4,y=YY(rv);
+    ctx.strokeStyle='rgba(130,190,255,.12)';ctx.beginPath();ctx.moveTo(x0,y);ctx.lineTo(x1,y);ctx.stroke();
+    ctx.fillStyle='rgba(140,185,220,.75)';ctx.font='11px ui-monospace,monospace';ctx.fillText(rv.toFixed(1),x0-40,y+4);}
+  ctx.strokeStyle='rgba(255,220,120,.4)';ctx.setLineDash([5,5]);
+  ctx.beginPath();ctx.moveTo(x0,YY(1));ctx.lineTo(x1,YY(1));ctx.stroke();ctx.setLineDash([]);
+  ctx.fillStyle='rgba(255,225,150,.85)';ctx.fillText('R₀ equilibrium',x1-108,YY(1)-6);
+  ctx.fillStyle='rgba(140,185,220,.85)';ctx.fillText('R(t) / R₀   — slow growth · violent collapse · afterbounces',x0+4,y0-8);
+  ctx.fillStyle='rgba(140,185,220,.75)';ctx.fillText('acoustic time →',x0+4,y1+16);
+  ctx.save();ctx.globalCompositeOperation='lighter';
+  ctx.strokeStyle='rgba(140,220,255,.95)';ctx.lineWidth=2.2;ctx.shadowBlur=12;ctx.shadowColor='#5fc8ff';
+  ctx.beginPath();var st=false;
+  for(var i2=0;i2<trace.length;i2++){var p=trace[i2];if(p[0]<t0)continue;
+    var x=XX(p[0]),y=YY(p[1]);st?ctx.lineTo(x,y):ctx.moveTo(x,y);st=true;}
+  if(st)ctx.stroke();
+  // flash ticks at collapse minima
+  for(var i3=1;i3<trace.length-1;i3++){var a=trace[i3-1],b=trace[i3],c2=trace[i3+1];
+    if(b[0]<t0)continue;
+    if(b[1]<a[1]&&b[1]<=c2[1]&&b[1]<AH*1.6&&regime.charAt(0)==='S'){
+      ctx.strokeStyle='rgba(190,230,255,.85)';ctx.lineWidth=1.4;
+      ctx.beginPath();ctx.moveTo(XX(b[0]),YY(b[1]));ctx.lineTo(XX(b[0]),y0-4);ctx.stroke();
+      ctx.fillStyle='rgba(220,245,255,.95)';ctx.beginPath();ctx.arc(XX(b[0]),y0-8,3,0,6.283);ctx.fill();}}
+  ctx.restore();
+}
+var lt=performance.now();
+function frame(now){
+  var dt=Math.min(0.05,(now-lt)/1000);lt=now;
+  integrate(dt*1.55*(2*Math.PI/WD));
+  if(flash>0)flash=Math.max(0,flash-dt/0.45);
+  ctx.fillStyle='#03050c';ctx.fillRect(0,0,W,H);
+  var bg=ctx.createRadialGradient(W*0.62,H*0.33,10,W*0.62,H*0.33,Math.max(W,H)*0.7);
+  bg.addColorStop(0,'rgba(16,42,86,.55)');bg.addColorStop(1,'rgba(3,5,12,0)');
+  ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
+  for(var gx=0;gx<W;gx+=44){ctx.strokeStyle='rgba(90,160,230,.05)';ctx.beginPath();ctx.moveTo(gx,0);ctx.lineTo(gx,H);ctx.stroke();}
+  var cx=W*0.63,cy=H*0.315,rad=Math.min(W*0.155,H*0.235);
+  flask(cx,cy,rad);
+  // bubble
+  var scale=rad*0.16;
+  var br=Math.max(1.2,R*scale);
+  ctx.save();ctx.globalCompositeOperation='lighter';
+  if(regime.charAt(0)==='B'){ // break-up: fragment cloud
+    for(var f2=0;f2<16;f2++){var an=f2*0.4+tau*0.02,dr=rad*0.16*(0.4+((f2*37)%50)/50);
+      ctx.fillStyle='rgba(150,210,255,.5)';ctx.beginPath();
+      ctx.arc(cx+Math.cos(an)*dr*2.4,cy+Math.sin(an)*dr*2.4,br*0.35+2,0,6.283);ctx.fill();}
+  }
+  var bg2=ctx.createRadialGradient(cx,cy,0,cx,cy,Math.max(6,br*2.2));
+  bg2.addColorStop(0,'rgba(210,240,255,.95)');bg2.addColorStop(.45,'rgba(110,190,255,.45)');bg2.addColorStop(1,'rgba(40,110,220,0)');
+  ctx.fillStyle=bg2;ctx.beginPath();ctx.arc(cx,cy,Math.max(6,br*2.2),0,6.283);ctx.fill();
+  ctx.strokeStyle='rgba(230,250,255,.9)';ctx.lineWidth=1.6;
+  ctx.beginPath();ctx.arc(cx,cy,br,0,6.283);ctx.stroke();
+  // FLASH
+  if(flash>0){
+    var fr=flash;
+    var fg=ctx.createRadialGradient(cx,cy,0,cx,cy,rad*1.5*(0.35+0.65*fr));
+    fg.addColorStop(0,'rgba(255,255,255,'+(0.95*fr)+')');
+    fg.addColorStop(.15,'rgba(200,235,255,'+(0.8*fr)+')');
+    fg.addColorStop(.45,'rgba(110,175,255,'+(0.35*fr)+')');
+    fg.addColorStop(1,'rgba(40,90,220,0)');
+    ctx.fillStyle=fg;ctx.beginPath();ctx.arc(cx,cy,rad*1.5*(0.35+0.65*fr),0,6.283);ctx.fill();
+    ctx.strokeStyle='rgba(235,250,255,'+(0.85*fr)+')';ctx.lineWidth=2;
+    for(var sp=0;sp<8;sp++){var an2=sp*0.785+0.2;
+      ctx.beginPath();ctx.moveTo(cx+Math.cos(an2)*br*1.5,cy+Math.sin(an2)*br*1.5);
+      ctx.lineTo(cx+Math.cos(an2)*rad*(0.5+0.7*fr),cy+Math.sin(an2)*rad*(0.5+0.7*fr));ctx.stroke();}
+  }
+  for(var i4=ring.length-1;i4>=0;i4--){var Rg=ring[i4];Rg.r+=dt*rad*2.6;Rg.l-=dt*1.6;
+    if(Rg.l<=0){ring.splice(i4,1);continue;}
+    ctx.strokeStyle='rgba(180,230,255,'+(Rg.l*0.55)+')';ctx.lineWidth=2*Rg.l+0.6;
+    ctx.beginPath();ctx.arc(cx,cy,Rg.r,0,6.283);ctx.stroke();}
+  ctx.restore();
+  ctx.font='11px ui-monospace,monospace';ctx.textAlign='center';
+  ctx.fillStyle='rgba(200,235,255,.9)';
+  ctx.fillText('trapped bubble  R = '+R.toFixed(2)+' R₀',cx,cy-rad*0.62);
+  if(flash>0.35){ctx.font='600 13px ui-monospace,monospace';ctx.fillStyle='#eaf7ff';
+    ctx.fillText('FLASH · '+(Tpeak/1000).toFixed(1)+'×10³ K — hotter than the sun’s surface, in a flask',cx,cy+rad*0.72);}
+  ctx.textAlign='left';
+  gauge();
+  plotRt();
+  set('rPa',Pa.toFixed(2));
+  set('rReg',regime);
+  set('rR',R.toFixed(3)+' R₀');
+  set('rRmax',lastMax.toFixed(2));
+  set('rRmin',lastMin.toFixed(3));
+  set('rComp',(lastMax/Math.max(AH,lastMin)).toFixed(1)+'× radius, '+Math.pow(lastMax/Math.max(AH,lastMin),3).toFixed(0)+'× volume');
+  set('rT',Tpeak>0?(Tpeak/1000).toFixed(1)+'×10³ K':'—');
+  set('rCyc',cycles+'');
+  set('rFl',flashes+'');
+  set('rFC',cycles>0?(flashes/cycles).toFixed(2):'—');
+  requestAnimationFrame(frame);
+}
+function set(id,v){var e=document.getElementById(id);if(e&&e.textContent!==v)e.textContent=v;}
+var sl=document.getElementById('pa');
+function setPa(v){Pa=v;sl.value=Math.round(v*100);flashes=0;cycles=0;lastCycFlash=-1;}
+sl.addEventListener('input',function(e){setPa(e.target.value/100)});
+document.getElementById('bT').onclick=function(){setPa(0.85)};
+document.getElementById('bI').onclick=function(){setPa(1.30)};
+document.getElementById('bB').onclick=function(){setPa(1.80)};
+addEventListener('keydown',function(e){
+  if(e.key==='ArrowRight')setPa(Math.min(2,Pa+0.05));
+  if(e.key==='ArrowLeft')setPa(Math.max(0.4,Pa-0.05));});
+requestAnimationFrame(frame);
+})();
+</script>

@@ -1,0 +1,183 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Vortex Ring Leapfrog</title>
+<style>
+html,body{margin:0;height:100%;background:#03050a;overflow:hidden}
+canvas{display:block;position:fixed;inset:0}
+#ov{position:fixed;top:14px;left:14px;width:322px;padding:12px 13px;z-index:20;
+ background:rgba(3,7,14,.62);border:1px solid rgba(255,150,80,.28);border-radius:9px;
+ backdrop-filter:blur(3px);font:11.5px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#ffdcc0;
+ box-shadow:0 0 26px rgba(255,130,40,.12)}
+#ov h1{margin:0 0 5px;font-size:14px;letter-spacing:.15em;color:#ffb46b;text-shadow:0 0 12px #ff7a1a}
+#ov .m{margin:0 0 6px;color:#c5a894}
+#ov .s{margin:0 0 2px;color:#8fe6ff}
+#ov .l{margin:0 0 8px;color:#96826f;font-size:10.5px}
+#ov .k{margin:0 0 8px;color:#ffcda0;font-size:10.5px}
+#ov .k b{color:#fff;background:rgba(255,170,90,.16);padding:0 4px;border-radius:3px;font-weight:600}
+#ov table{border-collapse:collapse;width:100%;font-size:11px}
+#ov td{padding:1px 0}#ov td:first-child{color:#96826f}
+#ov td:last-child{text-align:right;color:#fff4e8;font-variant-numeric:tabular-nums}
+#ov a{display:inline-block;margin-top:8px;color:#ffb46b;text-decoration:none;font-size:10.5px}
+#ov a:hover{text-shadow:0 0 9px #ff7a1a}
+</style></head><body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ov">
+<h1>VORTEX RINGS &amp; LEAPFROG</h1>
+<p class="m">Each ring is a vortex pair in cross-section; every core is swept by the flow the others induce, so a trailing ring is pulled narrow, speeds up, threads through the leader, then widens and waits its turn.</p>
+<p class="s">Hermann von Helmholtz &middot; 1858</p>
+<p class="l">Helmholtz 1858 &rarr; Tait's Victorian smoke boxes &rarr; dolphin bubble rings</p>
+<p class="k"><b>F</b> single &nbsp;<b>D</b> double-fire &nbsp;<b>&uarr;&darr;</b> radius &nbsp;<b>&larr;&rarr;</b> spacing &nbsp;<b>W</b> wall &nbsp;<b>space</b> pause</p>
+<table id="rd"></table>
+<a href="index.html">&larr; gallery</a>
+</div>
+<script>
+var cv=document.getElementById('c'),ctx=cv.getContext('2d'),rd=document.getElementById('rd');
+var W=0,H=0,t=0,paused=false,wallOn=true,AX=0,CX=0,WX=0;
+/*PHYS-START*/
+var GAM=57805;                        // circulation magnitude (px^2/s)
+function ringSpeed(g,a){ return g/(4*Math.PI*a); }          // self-induced propulsion
+function vortStep(V,dt,core){         // mutual induction, Biot-Savart for 2-D point vortices
+ var n=V.length,vx=[],vy=[],i,j;
+ for(i=0;i<n;i++){vx[i]=0;vy[i]=0;}
+ for(i=0;i<n;i++)for(j=0;j<n;j++){ if(i===j)continue;
+  var dx=V[i].x-V[j].x,dy=V[i].y-V[j].y,r2=dx*dx+dy*dy+core*core,f=V[j].g/(2*Math.PI*r2);
+  vx[i]+=-f*dy; vy[i]+=f*dx; }
+ for(i=0;i<n;i++){V[i].x+=vx[i]*dt;V[i].y+=vy[i]*dt;}
+}
+function leapCount(dOverA,T){          // dimensionless a=1, gamma=1: threadings in time T
+ var V=[{x:0,y:1,g:1},{x:0,y:-1,g:-1},{x:-dOverA,y:1,g:1},{x:-dOverA,y:-1,g:-1}];
+ var dt=0.004,n=Math.round(T/dt),prev=-1,th=0;
+ for(var s=0;s<n;s++){ vortStep(V,dt,0.12);
+  var c1=(V[0].x+V[1].x)/2,c2=(V[2].x+V[3].x)/2,sg=c2>c1?1:(c2<c1?-1:0);
+  if(sg!==0&&sg!==prev){th++;prev=sg;} }
+ return th;
+}
+/*PHYS-END*/
+var A0=46,dRatio=2.4,V=[],S=[],rings=0,thread=0,prevSg=-1,lastFire=-99,pend=null;
+function vel(x,y,skip){var vx=0,vy=0;
+ for(var j=0;j<V.length;j++){ if(j===skip)continue;var v=V[j];
+  var dx=x-v.x,dy=y-v.y,cr=v.a*0.16,r2=dx*dx+dy*dy+cr*cr,f=v.g/(2*Math.PI*r2);
+  vx+=-f*dy;vy+=f*dx;
+  if(wallOn){var mx=2*WX-v.x,ddx=x-mx,r2b=ddx*ddx+dy*dy+cr*cr,fb=-v.g/(2*Math.PI*r2b);
+   vx+=-fb*dy;vy+=fb*ddx;}}
+ var m=Math.hypot(vx,vy);if(m>950){vx*=950/m;vy*=950/m;}
+ return [vx,vy];
+}
+function fire(id){var a=A0;
+ V.push({x:CX+24,y:AX-a,g: GAM,a:a,id:id},{x:CX+24,y:AX+a,g:-GAM,a:a,id:id});
+ for(var i=0;i<230;i++){var s=Math.random()<0.5?-1:1,ang=Math.random()*6.2832,rr=Math.sqrt(Math.random())*a*0.42;
+  S.push({x:CX+24+Math.cos(ang)*rr,y:AX+s*a+Math.sin(ang)*rr,id:id,age:0,life:11+Math.random()*4});}
+ rings++;
+}
+function fireDouble(){reset();fire(0);pend=t+(dRatio*A0)/ringSpeed(GAM,A0);}
+function reset(){V=[];S=[];rings=0;thread=0;prevSg=-1;lastFire=t;pend=null;}
+function layout(){AX=H*0.60;CX=Math.max(150,W*0.10);WX=W*0.90;}
+function resize(){var d=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;
+ cv.width=Math.round(W*d);cv.height=Math.round(H*d);cv.style.width=W+'px';cv.style.height=H+'px';
+ ctx.setTransform(d,0,0,d,0,0);layout();}
+addEventListener('resize',resize);
+addEventListener('keydown',function(e){var k=e.key.toLowerCase();
+ if(k==='f'){reset();fire(0);}
+ else if(k==='d')fireDouble();
+ else if(e.key==='ArrowUp'){A0=Math.min(84,A0+4);fireDouble();e.preventDefault();}
+ else if(e.key==='ArrowDown'){A0=Math.max(24,A0-4);fireDouble();e.preventDefault();}
+ else if(e.key==='ArrowRight'){dRatio=Math.min(9,dRatio+0.4);fireDouble();e.preventDefault();}
+ else if(e.key==='ArrowLeft'){dRatio=Math.max(1.2,dRatio-0.4);fireDouble();e.preventDefault();}
+ else if(k==='w')wallOn=!wallOn;
+ else if(e.code==='Space'){paused=!paused;e.preventDefault();}});
+function centro(id){var sx=0,n=0;for(var i=0;i<V.length;i++)if(V[i].id===id){sx+=V[i].x;n++;}return n?sx/n:null;}
+function radOf(id){var ys=[];for(var i=0;i<V.length;i++)if(V[i].id===id)ys.push(V[i].y);
+ return ys.length===2?Math.abs(ys[0]-ys[1])/2:0;}
+function glow(c,b){ctx.shadowColor=c;ctx.shadowBlur=b;}
+function bar(v,lo,hi){var n=Math.round(10*(v-lo)/(hi-lo));var s='';for(var i=0;i<10;i++)s+=i<n?'█':'·';return s;}
+function step(dt){
+ var h=dt/6;
+ for(var s=0;s<6;s++){
+  var VV=V.slice();
+  if(wallOn)for(var i=0;i<V.length;i++)VV.push({x:2*WX-V[i].x,y:V[i].y,g:-V[i].g});
+  var n=V.length,ux=[],uy=[];
+  for(var i=0;i<n;i++){ux[i]=0;uy[i]=0;}
+  for(var i=0;i<n;i++)for(var j=0;j<VV.length;j++){ if(j===i)continue;
+   var dx=V[i].x-VV[j].x,dy=V[i].y-VV[j].y,cr=V[i].a*0.16,r2=dx*dx+dy*dy+cr*cr,f=VV[j].g/(2*Math.PI*r2);
+   ux[i]+=-f*dy;uy[i]+=f*dx;}
+  for(var i=0;i<n;i++){V[i].x+=ux[i]*h;V[i].y+=uy[i]*h;
+   V[i].y=Math.max(18,Math.min(H-18,V[i].y));}
+ }
+ for(var i=0;i<S.length;i++){var p=S[i],v=vel(p.x,p.y,-1);
+  p.x+=v[0]*dt;p.y+=v[1]*dt;p.age+=dt;}
+ S=S.filter(function(p){return p.age<p.life&&p.x>-60&&p.x<W+60;});
+ V=V.filter(function(v){return v.x<W+80;});
+}
+function draw(){
+ ctx.clearRect(0,0,W,H);
+ var bg=ctx.createLinearGradient(0,0,0,H);bg.addColorStop(0,'#05080f');bg.addColorStop(1,'#02040a');
+ ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
+ ctx.setLineDash([2,9]);ctx.strokeStyle='rgba(120,170,220,.18)';ctx.lineWidth=1;
+ ctx.beginPath();ctx.moveTo(0,AX);ctx.lineTo(W,AX);ctx.stroke();ctx.setLineDash([]);
+ // smoke (additive glow)
+ ctx.globalCompositeOperation='lighter';
+ for(var i=0;i<S.length;i++){var p=S[i],f=1-p.age/p.life,al=0.30*f*f;
+  ctx.fillStyle=p.id===0?'rgba(255,150,60,'+al+')':'rgba(90,200,255,'+al+')';
+  ctx.beginPath();ctx.arc(p.x,p.y,2.6+2.4*(1-f),0,6.2832);ctx.fill();}
+ ctx.globalCompositeOperation='source-over';
+ // cores
+ for(var i=0;i<V.length;i++){var v=V[i],col=v.id===0?'#ff9a3c':'#5fc8ff';
+  glow(col,20);ctx.strokeStyle=col;ctx.lineWidth=2;
+  ctx.beginPath();ctx.arc(v.x,v.y,7,0,6.2832);ctx.stroke();
+  var sp=t*(v.g>0?-4:4);
+  for(var k=0;k<3;k++){var a=sp+k*2.094;
+   ctx.beginPath();ctx.arc(v.x,v.y,12,a,a+0.8);ctx.stroke();}
+  ctx.shadowBlur=0;
+  ctx.fillStyle=col;ctx.font='9px ui-monospace,monospace';ctx.textAlign='center';
+  ctx.fillText(v.g>0?'+Γ':'−Γ',v.x,v.y-16);}
+ // ring annotations
+ for(var id=0;id<2;id++){var cx=centro(id);if(cx===null)continue;
+  var a=radOf(id),col=id===0?'rgba(255,154,60,.9)':'rgba(95,200,255,.9)';
+  ctx.strokeStyle=col;ctx.lineWidth=1;ctx.setLineDash([3,4]);
+  ctx.beginPath();ctx.moveTo(cx,AX-a);ctx.lineTo(cx,AX+a);ctx.stroke();ctx.setLineDash([]);
+  ctx.fillStyle=col;ctx.font='10px ui-monospace,monospace';ctx.textAlign='center';
+  ctx.fillText('ring '+(id+1)+'  a='+a.toFixed(0)+'  U='+ringSpeed(GAM,Math.max(6,a)).toFixed(0),cx,AX+a+18);}
+ // cannon
+ glow('#ffb46b',16);ctx.fillStyle='#16202e';ctx.strokeStyle='#ffb46b';ctx.lineWidth=2;
+ ctx.beginPath();ctx.roundRect(CX-58,AX-A0-22,58,2*A0+44,8);ctx.fill();ctx.stroke();
+ ctx.beginPath();ctx.ellipse(CX,AX,10,A0+8,0,0,6.2832);ctx.stroke();ctx.shadowBlur=0;
+ var fl=Math.max(0,1-(t-lastFire)*2.2);
+ if(fl>0){ctx.globalCompositeOperation='lighter';ctx.fillStyle='rgba(255,220,150,'+(0.5*fl)+')';
+  ctx.beginPath();ctx.ellipse(CX+12,AX,26*fl,(A0+10)*fl,0,0,6.2832);ctx.fill();ctx.globalCompositeOperation='source-over';}
+ ctx.fillStyle='rgba(255,180,107,.8)';ctx.font='10px ui-monospace,monospace';ctx.textAlign='center';
+ ctx.fillText('AIR CANNON',CX-29,AX-A0-30);
+ // wall
+ if(wallOn){glow('#7ff0ff',14);ctx.strokeStyle='#7ff0ff';ctx.lineWidth=3;
+  ctx.beginPath();ctx.moveTo(WX,0);ctx.lineTo(WX,H);ctx.stroke();ctx.shadowBlur=0;
+  ctx.strokeStyle='rgba(127,240,255,.28)';ctx.lineWidth=1;
+  for(var y=0;y<H;y+=16){ctx.beginPath();ctx.moveTo(WX,y);ctx.lineTo(WX+13,y+13);ctx.stroke();}
+  ctx.save();ctx.translate(WX+26,AX);ctx.rotate(Math.PI/2);
+  ctx.fillStyle='rgba(127,240,255,.8)';ctx.font='10px ui-monospace,monospace';ctx.textAlign='center';
+  ctx.fillText('WALL · image vortices widen & slow the ring',0,0);ctx.restore();}
+}
+function readouts(){
+ var c0=centro(0),c1=centro(1),lead=(c0!==null&&c1!==null)?(c1>c0?'ring 2':'ring 1'):'—';
+ rd.innerHTML=
+ '<tr><td>circulation Γ</td><td>'+(GAM/1000).toFixed(1)+'k px²/s</td></tr>'+
+ '<tr><td>radius a</td><td>'+bar(A0,24,84)+' '+A0.toFixed(0)+' px</td></tr>'+
+ '<tr><td>U = Γ/4πa</td><td>'+ringSpeed(GAM,A0).toFixed(0)+' px/s</td></tr>'+
+ '<tr><td>spacing d/a</td><td>'+bar(dRatio,1.2,9)+' '+dRatio.toFixed(1)+'</td></tr>'+
+ '<tr><td>threadings</td><td>'+thread+'</td></tr>'+
+ '<tr><td>in front</td><td>'+lead+'</td></tr>'+
+ '<tr><td>wall</td><td>'+(wallOn?'on':'off')+'</td></tr>';
+}
+var last=0;
+function frame(ts){
+ var dt=Math.min(0.030,(ts-last)/1000||0.016);last=ts;
+ if(!paused){t+=dt;
+  if(pend!==null&&t>=pend){fire(1);pend=null;lastFire=t;}
+  step(dt);
+  var c0=centro(0),c1=centro(1);
+  if(c0!==null&&c1!==null){var sg=c1>c0?1:-1;if(sg!==prevSg){thread++;prevSg=sg;}}
+  if(t-lastFire>15.5&&pend===null)fireDouble();
+ }
+ draw();readouts();requestAnimationFrame(frame);
+}
+resize();fireDouble();requestAnimationFrame(frame);
+</script></body></html>

@@ -1,0 +1,275 @@
+<title>Floating Water Bridge</title>
+<style>
+html,body{margin:0;height:100%;background:#03060b;overflow:hidden}
+canvas{display:block}
+#ui{position:fixed;top:0;left:0;width:292px;padding:12px 14px;background:rgba(3,7,14,.74);
+ color:#d3ecff;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;z-index:9;
+ border-right:1px solid #163a55;border-bottom:1px solid #163a55;backdrop-filter:blur(3px)}
+#ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.09em;color:#8ff0ff;text-shadow:0 0 10px #29d8ff}
+#ui .m{color:#9fc4e0;margin:0 0 6px}
+#ui .lin{color:#6f90ad;margin:0 0 8px;font-size:10px}
+#ui .sec{color:#4d6f8c;letter-spacing:.14em;font-size:9px;margin:9px 0 3px;border-top:1px solid #143049;padding-top:6px}
+#ui label{display:flex;justify-content:space-between;align-items:center;gap:6px;margin:3px 0}
+#ui input[type=range]{width:112px;accent-color:#29d8ff;height:12px}
+#ui .r{display:flex;justify-content:space-between}
+#ui .v{color:#ffe27a}
+#ui .warn{color:#ff9b6a}
+#ui a{color:#29d8ff;text-decoration:none;border-bottom:1px dotted #29d8ff}
+#ui .cap{color:#8ad9a0;font-style:italic;margin-top:7px;font-size:10px}
+</style>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>FLOATING WATER BRIDGE</h1>
+<p class="m">A high-voltage field polarises and aligns water molecules into a self-supporting dielectric thread that spans the gap between two beakers, held up by Maxwell stress against gravity.</p>
+<p class="lin">W. G. Armstrong, 1893 &middot; rediscovered by Elmar Fuchs, 2007 &middot; lineage: Armstrong's "rope of water" &rarr; Fuchs 2007 high-speed imaging &rarr; modern electrohydrodynamics</p>
+<div class="sec">CONTROLS</div>
+<label>voltage <input id="kv" type="range" min="0" max="30" value="19"><span class="v" id="kvV"></span></label>
+<label>separation <input id="gap" type="range" min="2" max="30" value="13"><span class="v" id="gapV"></span></label>
+<label>impurity <input id="imp" type="range" min="0" max="100" value="4"><span class="v" id="impV"></span></label>
+<div style="color:#5b7f9c;font-size:10px">drag a beaker to pull the bridge</div>
+<div class="sec">READOUTS</div>
+<div class="r"><span>field</span><span class="v" id="ef"></span></div>
+<div class="r"><span>separation</span><span class="v" id="sep"></span></div>
+<div class="r"><span>sag</span><span class="v" id="sag"></span></div>
+<div class="r"><span>thread &oslash;</span><span class="v" id="dia"></span></div>
+<div class="r"><span>conductivity</span><span class="v" id="cond"></span></div>
+<div class="r"><span>Joule heat</span><span class="v" id="jh"></span></div>
+<div class="r"><span>state</span><span class="v" id="st"></span></div>
+<p class="cap">Honesty note: the bridge is real and reproducible, but its internal structure — layered microspheres, aligned dipole chains, or a plain surface-tension cylinder — is <b>still under active research</b>.</p>
+<p style="margin:6px 0 0"><a href="index.html">&larr; gallery</a></p>
+</div>
+<script>
+var c=document.getElementById('c'),g=c.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;
+ c.width=W*DPR|0;c.height=H*DPR|0;c.style.width=W+'px';c.style.height=H+'px';g.setTransform(DPR,0,0,DPR,0,0);layout();}
+addEventListener('resize',resize);
+
+var L={};
+function layout(){
+  L.x0=316; L.x1=W-40; L.cx=(L.x0+L.x1)/2;
+  L.lipY=Math.max(180,H*0.44); L.bw=Math.min(150,(L.x1-L.x0)*0.17); L.bh=Math.max(120,H*0.26);
+  L.pxPerMm=Math.min(26,(L.x1-L.x0-2*L.bw-40)/30);
+}
+var P={kv:19,gap:13,imp:4};
+var S={t:0,sepMm:13,strength:0.6,broken:false,drops:[],steam:[],heat:0,seg:[],flash:0,reformT:0,snapT:-9};
+
+// --- physics: stability boundary. Bridge survives while E-field stress beats gravity+ohmic heating
+function fieldKVcm(kv,mm){ return kv/Math.max(0.2,mm/10); }         // kV per cm
+function required(mm){ return 8.2 + 0.055*mm; }   // threshold field (kV/cm) + weight penalty for a longer span
+function margin(kv,mm,imp){
+  var heatPenalty = 1 + imp*0.020*(kv/12);   // impurity → current → boiling → thinning
+  return fieldKVcm(kv,mm)/ (required(mm)*heatPenalty);
+}
+function ohmic(kv,imp){ return kv*kv*imp*3.5e-5; }
+
+function newDrop(x,y,vx,vy){S.drops.push({x:x,y:y,vx:vx,vy:vy,r:1.6+Math.random()*2.6,life:1});}
+function step(dt){
+  S.t+=dt;
+  S.sepMm += (P.gap - S.sepMm)*Math.min(1,dt*4);
+  var m=margin(P.kv,S.sepMm,P.imp);
+  var target = Math.max(0, Math.min(1,(m-1)*1.8));
+  if(target<=0.001){
+    if(!S.broken && S.strength>0.05){ S.snapT=S.t; // snap: rain of droplets
+      for(var i=0;i<70;i++){var t=Math.random(); var pt=bridgePoint(t);
+        newDrop(pt.x,pt.y,(Math.random()-.5)*40,(Math.random()-.2)*30);} }
+    S.broken=true;
+  }
+  if(m>1.10 && S.broken && S.strength<0.02){ S.broken=false; S.reformT=S.t; }
+  var tgt = S.broken?0:target;
+  S.strength += (tgt-S.strength)*Math.min(1,dt*(S.broken?7:2.4));
+
+  // Joule heating / steam when impure
+  S.heat += (ohmic(P.kv,P.imp)*(S.strength>0.05?1:0.15) - S.heat)*Math.min(1,dt*1.6);
+  if(S.heat>0.35 && Math.random()<dt*S.heat*26 && !S.broken){
+    var t=Math.random(),pt=bridgePoint(t);
+    S.steam.push({x:pt.x,y:pt.y,vx:(Math.random()-.5)*16,vy:-22-Math.random()*26,r:3+Math.random()*5,life:1});
+  }
+  for(var i=S.drops.length-1;i>=0;i--){var d=S.drops[i];d.vy+=520*dt;d.x+=d.vx*dt;d.y+=d.vy*dt;
+    if(d.y>L.lipY+L.bh*0.55){d.life-=dt*3.4;} if(d.life<=0||d.y>H+20)S.drops.splice(i,1);}
+  for(var i=S.steam.length-1;i>=0;i--){var s=S.steam[i];s.x+=s.vx*dt;s.y+=s.vy*dt;s.vy*=0.98;s.r+=dt*12;
+    s.life-=dt*0.75; if(s.life<=0)S.steam.splice(i,1);}
+  // continuous drip when broken and voltage still on
+  if(S.broken && P.kv>3 && Math.random()<dt*22){
+    var lx=L.cx-sepPx()/2, rx=L.cx+sepPx()/2;
+    newDrop(Math.random()<.5?lx+4:rx-4, L.lipY-4, (Math.random()-.5)*18, 8);
+  }
+}
+function sepPx(){return S.sepMm*L.pxPerMm;}
+function sagPx(){
+  var m=margin(P.kv,S.sepMm,P.imp);
+  var base=sepPx()*0.16;
+  return base*(1.55-Math.min(1.2,S.strength*1.05))*(1+ (S.heat*0.6));
+}
+function bridgePoint(t){
+  var x0=L.cx-sepPx()/2, x1=L.cx+sepPx()/2, x=x0+(x1-x0)*t;
+  var s=sagPx(), y=L.lipY-6 + s*(1-Math.pow(2*t-1,2)) *1.0;
+  y += Math.sin(t*12+S.t*4.5)*1.3*S.strength + Math.sin(t*29-S.t*7)*0.8*S.heat;
+  return {x:x,y:y};
+}
+function radiusAt(t){
+  var base=(3.2+7.5*S.strength)*(1-0.30*Math.abs(2*t-1)*(1-S.strength));
+  return Math.max(0.6, base*(1-S.heat*0.45));
+}
+
+// ---- render ----
+function beaker(x,flip){
+  var w=L.bw,h=L.bh,y=L.lipY;
+  g.save();
+  g.strokeStyle='rgba(150,205,235,.55)'; g.lineWidth=2;
+  g.beginPath(); g.moveTo(x-w/2,y); g.lineTo(x-w/2,y+h); g.lineTo(x+w/2,y+h); g.lineTo(x+w/2,y); g.stroke();
+  var gr=g.createLinearGradient(0,y+6,0,y+h);
+  gr.addColorStop(0,'rgba(70,190,255,.30)'); gr.addColorStop(1,'rgba(20,90,160,.42)');
+  g.fillStyle=gr; g.fillRect(x-w/2+2,y+6,w-4,h-8);
+  g.strokeStyle='rgba(190,240,255,.75)'; g.lineWidth=1.4; g.beginPath();
+  for(var i=0;i<=24;i++){var xx=x-w/2+2+(w-4)*i/24; g.lineTo(xx,y+7+Math.sin(S.t*2.2+i*0.5+(flip?1.7:0))*1.5);}
+  g.stroke();
+  // meniscus climbing toward the electrode side
+  var mx=flip? x-w/2+6 : x+w/2-6;
+  g.fillStyle='rgba(140,225,255,.35)'; g.beginPath();
+  g.moveTo(mx,y+8); g.quadraticCurveTo(mx+(flip?18:-18),y+6,mx+(flip?26:-26),y+16); g.lineTo(mx,y+16); g.fill();
+  // electrode
+  var ex=flip? x-w/2+16 : x+w/2-16;
+  g.strokeStyle=flip?'#ff7ac6':'#5fd8ff'; g.lineWidth=3; g.shadowColor=g.strokeStyle; g.shadowBlur=12;
+  g.beginPath(); g.moveTo(ex,y-46); g.lineTo(ex,y+h*0.55); g.stroke(); g.shadowBlur=0;
+  g.fillStyle=g.strokeStyle; g.font='bold 13px ui-monospace,monospace'; g.textAlign='center';
+  g.fillText(flip?'−':'+', ex, y-54);
+  g.fillStyle='#6d90ab'; g.font='10px ui-monospace,monospace';
+  g.fillText(flip?'beaker A (cathode)':'beaker B (anode)', x, y+h+16);
+  g.restore();
+}
+
+function fieldLines(){
+  if(S.strength<0.04)return;
+  var n=9;
+  for(var i=0;i<n;i++){
+    var off=(i/(n-1)-0.5);
+    g.strokeStyle='rgba(140,215,255,'+(0.05+0.20*S.strength)+')'; g.lineWidth=1;
+    g.beginPath();
+    for(var k=0;k<=30;k++){
+      var t=k/30,p=bridgePoint(t), r=radiusAt(t);
+      var y=p.y+off*(r*2.6+16*Math.sin(t*3.14159));
+      if(k===0)g.moveTo(p.x,y);else g.lineTo(p.x,y);
+    }
+    g.stroke();
+  }
+  // travelling charge packets along the thread
+  for(var i=0;i<10;i++){
+    var t=((S.t*0.28+i/10)%1);
+    var p=bridgePoint(t);
+    g.fillStyle='rgba(255,240,180,'+(0.55*S.strength)+')';
+    g.beginPath();g.arc(p.x,p.y+Math.sin(i*2.1)*radiusAt(t)*0.5,1.7,0,6.2832);g.fill();
+  }
+}
+
+function thread(){
+  if(S.strength<0.02)return;
+  var N=64, pts=[],i;
+  for(i=0;i<=N;i++){var t=i/N,p=bridgePoint(t);p.r=radiusAt(t);pts.push(p);}
+  // glow halo
+  for(var pass=0;pass<3;pass++){
+    var wmul=[3.4,1.9,1.0][pass], al=[0.10,0.22,0.95][pass]*Math.min(1,S.strength*1.35);
+    g.beginPath();
+    for(i=0;i<=N;i++){var p=pts[i]; if(i===0)g.moveTo(p.x,p.y-p.r*wmul);else g.lineTo(p.x,p.y-p.r*wmul);}
+    for(i=N;i>=0;i--){var p=pts[i]; g.lineTo(p.x,p.y+p.r*wmul);}
+    g.closePath();
+    var gr=g.createLinearGradient(0,L.lipY-40,0,L.lipY+60);
+    if(pass<2){gr.addColorStop(0,'rgba(90,220,255,'+al+')');gr.addColorStop(1,'rgba(40,120,220,'+al*0.6+')');}
+    else {gr.addColorStop(0,'rgba(200,245,255,'+al+')');gr.addColorStop(0.5,'rgba(120,215,255,'+al+')');
+          gr.addColorStop(1,'rgba(70,160,240,'+al+')');}
+    g.fillStyle=gr; g.fill();
+  }
+  // specular highlight
+  g.strokeStyle='rgba(255,255,255,'+(0.55*S.strength)+')'; g.lineWidth=1.2;
+  g.beginPath(); for(i=0;i<=N;i++){var p=pts[i]; if(i===0)g.moveTo(p.x,p.y-p.r*0.45);else g.lineTo(p.x,p.y-p.r*0.45);} g.stroke();
+  // sag annotation
+  var mid=pts[N>>1];
+  g.strokeStyle='rgba(255,226,122,.45)'; g.setLineDash([3,3]); g.lineWidth=1;
+  g.beginPath();g.moveTo(mid.x,L.lipY-6);g.lineTo(mid.x,mid.y);g.stroke(); g.setLineDash([]);
+  g.fillStyle='#ffe27a'; g.font='10px ui-monospace,monospace'; g.textAlign='left';
+  g.fillText('sag '+(sagPx()/L.pxPerMm).toFixed(1)+' mm', mid.x+7, (L.lipY-6+mid.y)/2);
+}
+
+function draw(){
+  g.fillStyle='#03060b'; g.fillRect(0,0,W,H);
+  var gr=g.createRadialGradient(L.cx,L.lipY-10,20,L.cx,L.lipY-10,Math.max(W,H)*0.75);
+  gr.addColorStop(0,'rgba(18,58,95,.35)');gr.addColorStop(1,'rgba(0,0,0,0)');
+  g.fillStyle=gr;g.fillRect(0,0,W,H);
+
+  var lx=L.cx-sepPx()/2-L.bw/2, rx=L.cx+sepPx()/2+L.bw/2;
+  beaker(lx,true); beaker(rx,false);
+  fieldLines(); thread();
+
+  // droplets
+  for(var i=0;i<S.drops.length;i++){var d=S.drops[i];
+    g.fillStyle='rgba(150,225,255,'+(0.85*d.life)+')';
+    g.beginPath();g.ellipse(d.x,d.y,d.r*0.8,d.r,0,0,6.2832);g.fill();}
+  // steam
+  for(var i=0;i<S.steam.length;i++){var s=S.steam[i];
+    var sg=g.createRadialGradient(s.x,s.y,0,s.x,s.y,s.r*3);
+    sg.addColorStop(0,'rgba(255,235,210,'+(0.30*s.life)+')');sg.addColorStop(1,'rgba(0,0,0,0)');
+    g.fillStyle=sg;g.beginPath();g.arc(s.x,s.y,s.r*3,0,6.2832);g.fill();}
+
+  // separation ruler
+  g.strokeStyle='rgba(120,170,205,.4)'; g.lineWidth=1;
+  var ry=L.lipY+L.bh+34, a=L.cx-sepPx()/2,b=L.cx+sepPx()/2;
+  g.beginPath();g.moveTo(a,ry-5);g.lineTo(a,ry+5);g.moveTo(b,ry-5);g.lineTo(b,ry+5);
+  g.moveTo(a,ry);g.lineTo(b,ry);g.stroke();
+  g.fillStyle='#8fb6d4'; g.font='10px ui-monospace,monospace'; g.textAlign='center';
+  g.fillText(S.sepMm.toFixed(1)+' mm gap  —  unsupported span', L.cx, ry-10);
+
+  // state banner
+  var m=margin(P.kv,S.sepMm,P.imp), msg, col;
+  if(S.heat>0.5){msg='IMPURITY → CURRENT → JOULE BOILING → COLLAPSE'; col='#ff9b6a';}
+  else if(S.broken){msg='FIELD TOO WEAK FOR THIS SPAN → SNAPPED TO DROPLET RAIN'; col='#ff7a7a';}
+  else if(S.strength>0.55){msg='BRIDGE STABLE — WATER HANGING IN AIR'; col='#8ff0ff';}
+  else {msg='THINNING — NEAR STABILITY BOUNDARY'; col='#ffe27a';}
+  g.fillStyle=col; g.font='bold 12px ui-monospace,monospace'; g.textAlign='center';
+  g.shadowColor=col;g.shadowBlur=10;
+  g.fillText(msg, L.cx, Math.max(46,L.lipY-L.bh*0.55));
+  g.shadowBlur=0;
+  g.fillStyle='#5b7f9c';g.font='10px ui-monospace,monospace';
+  g.fillText('stability margin  E/E_min = '+m.toFixed(2)+'   (bridge holds while > 1.00)', L.cx, Math.max(62,L.lipY-L.bh*0.55+17));
+
+  if(S.t-S.snapT<1.2){
+    g.fillStyle='rgba(255,140,140,'+(1-(S.t-S.snapT)/1.2)*0.8+')';
+    g.font='11px ui-monospace,monospace';
+    g.fillText('surface tension lost the argument with gravity', L.cx, L.lipY+40);
+  }
+}
+
+var el=function(i){return document.getElementById(i)};
+function sync(){P.kv=+el('kv').value;P.gap=+el('gap').value;P.imp=+el('imp').value;
+  el('kvV').textContent=P.kv+' kV'; el('gapV').textContent=P.gap+' mm'; el('impV').textContent=P.imp+' ppm';}
+el('kv').oninput=el('gap').oninput=el('imp').oninput=sync; sync();
+
+// drag a beaker to change separation
+var drag=false;
+c.addEventListener('pointerdown',function(e){drag=true;c.setPointerCapture(e.pointerId);pmove(e);});
+c.addEventListener('pointerup',function(){drag=false;});
+c.addEventListener('pointermove',function(e){if(drag)pmove(e);});
+function pmove(e){
+  var mm=Math.abs(e.clientX-L.cx)*2/L.pxPerMm;
+  mm=Math.max(2,Math.min(30,mm)); el('gap').value=Math.round(mm); sync();
+}
+
+var last=performance.now(),acc=0;
+function frame(now){
+  var dt=Math.min(0.05,(now-last)/1000);last=now;acc+=dt;
+  var sub=1/120; while(acc>sub){step(sub);acc-=sub;}
+  draw();
+  el('ef').textContent=fieldKVcm(P.kv,S.sepMm).toFixed(2)+' kV/cm';
+  el('sep').textContent=S.sepMm.toFixed(1)+' mm';
+  el('sag').textContent=S.strength>0.02?(sagPx()/L.pxPerMm).toFixed(2)+' mm':'— (no bridge)';
+  el('dia').textContent=S.strength>0.02?(2*radiusAt(0.5)/L.pxPerMm).toFixed(2)+' mm':'0.00 mm';
+  el('cond').textContent=(P.imp*1.9+0.055).toFixed(2)+' µS/cm';
+  el('jh').textContent=(ohmic(P.kv,P.imp)*1000).toFixed(0)+' mW';
+  var stEl=el('st');
+  stEl.textContent=S.heat>0.5?'BOILING':(S.broken?'SNAPPED':(S.strength>0.55?'STABLE':'THINNING'));
+  stEl.className=(S.broken||S.heat>0.5)?'warn':'v';
+  requestAnimationFrame(frame);
+}
+resize();
+(function(){for(var i=0;i<120*4;i++)step(1/120);})();  // bridge already formed at load
+requestAnimationFrame(frame);
+</script>

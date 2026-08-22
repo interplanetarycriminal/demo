@@ -1,0 +1,322 @@
+<title>Kelvin Water Dropper</title>
+<style>
+html,body{margin:0;height:100%;background:#04060a;overflow:hidden}
+canvas{display:block}
+#ui{position:fixed;top:0;left:0;width:288px;padding:12px 14px;background:rgba(4,8,14,.72);
+ color:#cfe9ff;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;z-index:9;
+ border-right:1px solid #1a3550;border-bottom:1px solid #1a3550;backdrop-filter:blur(3px)}
+#ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.09em;color:#7ffcff;text-shadow:0 0 10px #29e5ff}
+#ui .m{color:#9fc4e0;margin:0 0 6px}
+#ui .lin{color:#6f90ad;margin:0 0 8px;font-size:10px}
+#ui .sec{color:#4d6f8c;letter-spacing:.14em;font-size:9px;margin:9px 0 3px;border-top:1px solid #16304a;padding-top:6px}
+#ui label{display:flex;justify-content:space-between;align-items:center;gap:6px;margin:3px 0}
+#ui input[type=range]{width:118px;accent-color:#29e5ff;height:12px}
+#ui .r{display:flex;justify-content:space-between}
+#ui .v{color:#ffe27a}
+#ui b{color:#ff8fd0;font-weight:600}
+#ui a{color:#29e5ff;text-decoration:none;border-bottom:1px dotted #29e5ff}
+#ui .cap{color:#8ad9a0;font-style:italic;margin-top:7px;font-size:10px}
+button{background:#12283c;color:#7ffcff;border:1px solid #2a5a80;
+ font:10px ui-monospace,monospace;padding:3px 7px;cursor:pointer;border-radius:2px}
+button.off{color:#ff7a7a;border-color:#7a2a2a}
+</style>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>KELVIN WATER DROPPER</h1>
+<p class="m">Falling drops pass through a ring wired to the <i>opposite</i> can, so each can's charge induces more of its own sign onto the next drop — runaway positive feedback until air breaks down.</p>
+<p class="lin">Lord Kelvin, 1867 &middot; lineage: Kelvin's "water-dropping condenser" &rarr; Wimshurst influence machines &rarr; charge separation in thunderclouds</p>
+<div class="sec">CONTROLS</div>
+<label>drip rate <input id="rate" type="range" min="4" max="34" value="16"><span class="v" id="rateV"></span></label>
+<label>humidity <input id="hum" type="range" min="0" max="100" value="18"><span class="v" id="humV"></span></label>
+<label>cross-wiring <button id="xw">CROSSED</button></label>
+<div class="sec">READOUTS</div>
+<div class="r"><span>can A (left)</span><span class="v" id="vA"></span></div>
+<div class="r"><span>can B (right)</span><span class="v" id="vB"></span></div>
+<div class="r"><span>doubling time</span><span class="v" id="td"></span></div>
+<div class="r"><span>spark period</span><span class="v" id="sp"></span></div>
+<div class="r"><span>sparks fired</span><span class="v" id="nsp"></span></div>
+<div class="r"><span>leak &tau;</span><span class="v" id="lk"></span></div>
+<p class="cap">Gravity is the power source — drops climb no hill, they fall <i>against</i> the field they built.</p>
+<p style="margin:6px 0 0"><a href="index.html">&larr; gallery</a></p>
+</div>
+<script>
+var c=document.getElementById('c'),g=c.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;
+ c.width=W*DPR|0;c.height=H*DPR|0;c.style.width=W+'px';c.style.height=H+'px';g.setTransform(DPR,0,0,DPR,0,0);layout();}
+addEventListener('resize',resize);
+
+// ---- geometry (stage fills canvas, kept right of the 300px overlay) ----
+var L={};
+function layout(){
+  var x0=310, x1=W-30, cx=(x0+x1)/2, w=Math.min(x1-x0, 980);
+  cx=Math.max(x0+w/2, Math.min(x1-w/2, cx));
+  L.cx=cx; L.sep=w*0.30;
+  L.ax=cx-L.sep; L.bx=cx+L.sep;
+  L.top=Math.max(70,H*0.10); L.ringY=L.top+H*0.20; L.canY=L.top+H*0.50;
+  L.canW=Math.min(150,w*0.19); L.canH=Math.max(90,H*0.22);
+  L.plotX=cx-w*0.5+8; L.plotW=w-16; L.plotY=L.canY+L.canH+34; L.plotH=Math.max(90,H-L.plotY-46);
+}
+
+// ---- physics state ----
+var S={qA:6e-4,qB:-6e-4,drops:[],t:0,sparks:0,lastSpark:0,period:0,crossed:true,
+       flash:0,sparkAt:0,hist:[],dripT:0,seedNoise:1};
+var C=2.2e-11;            // can capacitance (F, arbitrary lecture-scale)
+var VBREAK=1.65e4;        // breakdown potential difference (V)
+var params={rate:16,hum:18};
+
+function volts(q){return q/ C * 1e-9; } // scaled units -> volts
+function VA(){return S.qA/C*1e-9;} function VB(){return S.qB/C*1e-9;}
+
+function reset(hard){ S.qA=6e-4*(hard?1:1); S.qB=-6e-4; S.drops.length=0; S.hist.length=0; }
+
+function spark(){
+  S.flash=1; S.sparkAt=S.t;
+  if(S.lastSpark>0)S.period=S.t-S.lastSpark;
+  S.lastSpark=S.t; S.sparks++;
+  var m=(S.qA+S.qB)/2; S.qA=m+ (S.qA-m)*0.04; S.qB=m+(S.qB-m)*0.04;
+  // keep a tiny seed asymmetry so it re-grows
+  if(Math.abs(S.qA-S.qB)<4e-5){S.qA+= 3e-5;S.qB-=3e-5;}
+}
+
+function step(dt){
+  S.t+=dt;
+  var leakTau = 400/Math.pow(10, params.hum/28); // humidity -> leak time constant (s)
+  var k=Math.exp(-dt/leakTau); S.qA*=k; S.qB*=k;
+  // thermal / cosmic noise seed
+  S.qA+=(Math.random()-0.5)*4e-7; S.qB+=(Math.random()-0.5)*4e-7;
+
+  // dripping
+  S.dripT+=dt;
+  var per=1/params.rate;
+  while(S.dripT>per){
+    S.dripT-=per;
+    for(var side=0;side<2;side++){
+      // CROSSED: ring above left nozzle is connected to RIGHT can (qB); induces opposite (-qB sign)
+      var inducer = S.crossed ? (side===0? S.qB : S.qA) : (side===0? S.qA : S.qB);
+      var q = -inducer*0.055 + (Math.random()-0.5)*6e-7;
+      S.drops.push({s:side,x:(side?L.bx:L.ax)+(Math.random()-.5)*2,y:L.top+6,v:0,q:q,r:3.2+Math.random()*1.1});
+    }
+  }
+  // fall + deposit
+  var gA=0,gB=0;
+  for(var i=S.drops.length-1;i>=0;i--){
+    var d=S.drops[i];
+    d.v+= 900*dt; d.y+= d.v*dt;
+    // retarding: drop falls against the field of the can it is heading into (energy source = gravity)
+    // retarding: drop falls INTO the field of the can it feeds — gravity pays the bill.
+    // capped at a fraction of g so it slows visibly but always lands.
+    var tgt = d.s? S.qB : S.qA;
+    var opposing = (d.q*tgt>0)? 1 : -1;
+    d.v -= opposing*900*0.25*Math.min(1,Math.abs(tgt/C*1e-9)/VBREAK)*dt;
+    if(d.y> L.canY+18){ if(d.s)gB+=d.q; else gA+=d.q; S.drops.splice(i,1); }
+  }
+  S.qA+=gA; S.qB+=gB;
+
+  if(Math.abs(VA()-VB())>VBREAK) spark();
+  S.flash*=Math.pow(0.008,dt);
+
+  var dv=Math.abs(VA()-VB())+1e-9;
+  S.hist.push({t:S.t,v:dv});
+  if(S.hist.length>2600)S.hist.shift();
+}
+
+// ---- doubling time from recent log slope ----
+function doubling(){
+  var h=S.hist, n=h.length; if(n<40)return NaN;
+  var a=Math.max(0,n-140), pts=[],i;
+  for(i=a;i<n;i++){ if(h[i].t> S.lastSpark+0.15 && h[i].v>1e-3) pts.push(h[i]); }
+  if(pts.length<25)return NaN;
+  var sx=0,sy=0,sxx=0,sxy=0,m=pts.length;
+  for(i=0;i<m;i++){var x=pts[i].t,y=Math.log(pts[i].v);sx+=x;sy+=y;sxx+=x*x;sxy+=x*y;}
+  var sl=(m*sxy-sx*sy)/(m*sxx-sx*sx+1e-12);
+  return sl>1e-4? Math.LN2/sl : NaN;
+}
+
+// ---- rendering ----
+function glowCirc(x,y,r,col,a){
+  var gr=g.createRadialGradient(x,y,0,x,y,r);
+  gr.addColorStop(0,col); gr.addColorStop(1,'rgba(0,0,0,0)');
+  g.globalAlpha=a==null?1:a; g.fillStyle=gr; g.beginPath();g.arc(x,y,r,0,6.2832);g.fill(); g.globalAlpha=1;
+}
+function pos(q){return q>0;}
+function colFor(q){return q>0? '#ff7ac6':'#5fd8ff';}
+
+function drawCan(x,q,label){
+  var v=q/C*1e-9, mag=Math.min(1,Math.abs(v)/VBREAK), col=colFor(q);
+  var w=L.canW,h=L.canH,y=L.canY;
+  // halo
+  var gr=g.createRadialGradient(x,y+h*.45,4,x,y+h*.45,w*1.7);
+  gr.addColorStop(0,(q>0?'rgba(255,122,198,':'rgba(95,216,255,')+(0.30*mag+0.05)+')');
+  gr.addColorStop(1,'rgba(0,0,0,0)'); g.fillStyle=gr;
+  g.fillRect(x-w*1.8,y-w*0.6,w*3.6,h+w*1.4);
+  // can body
+  g.strokeStyle=col; g.lineWidth=2; g.shadowColor=col; g.shadowBlur=14+26*mag;
+  g.beginPath(); g.rect(x-w/2,y,w,h); g.stroke(); g.shadowBlur=0;
+  g.fillStyle=(q>0?'rgba(255,122,198,':'rgba(95,216,255,')+(0.05+0.13*mag)+')';
+  g.fillRect(x-w/2,y,w,h);
+  // water level shimmer
+  g.strokeStyle=(q>0?'rgba(255,150,210,':'rgba(150,230,255,')+'.5)';
+  g.lineWidth=1; g.beginPath();
+  for(var i=0;i<=20;i++){var xx=x-w/2+w*i/20; g.lineTo(xx, y+h*0.62+Math.sin(S.t*3+i*.7)*1.6);} g.stroke();
+  // sign glyphs on can
+  g.fillStyle=col; g.font='bold 22px ui-monospace,monospace'; g.textAlign='center';
+  g.fillText(q>0?'+':'−', x, y+h*0.42);
+  g.font='10px ui-monospace,monospace'; g.fillStyle='#8fb6d4';
+  g.fillText(label, x, y+h+16);
+  g.fillStyle=col; g.font='bold 12px ui-monospace,monospace';
+  g.fillText((v/1000).toFixed(2)+' kV', x, y+h+30);
+}
+
+function drawRing(x,q){
+  // inductor ring; q = charge of the can it is wired to
+  var col=colFor(q), mag=Math.min(1,Math.abs(q/C*1e-9)/VBREAK);
+  g.save(); g.translate(x,L.ringY);
+  g.strokeStyle=col; g.lineWidth=2.4; g.shadowColor=col; g.shadowBlur=10+22*mag;
+  g.beginPath(); g.ellipse(0,0,26,8,0,0,6.2832); g.stroke();
+  g.shadowBlur=0; g.restore();
+  g.fillStyle=col; g.font='13px ui-monospace,monospace'; g.textAlign='center';
+  g.fillText(q>0?'+':'−', x-40, L.ringY+5);
+}
+
+function drawWires(){
+  var y=L.ringY, dip=L.canY-26;
+  function wire(rx,cx,q){
+    var col=colFor(q);
+    g.strokeStyle=col; g.globalAlpha=.55; g.lineWidth=1.6;
+    g.shadowColor=col; g.shadowBlur=6;
+    g.beginPath(); g.moveTo(rx,y-9);
+    g.bezierCurveTo(rx,y-58, cx, y-58, cx, dip-L.canH*0+0);
+    g.lineTo(cx, L.canY);
+    g.stroke(); g.shadowBlur=0; g.globalAlpha=1;
+  }
+  if(S.crossed){ wire(L.ax,L.bx,S.qB); wire(L.bx,L.ax,S.qA); }
+  else { wire(L.ax,L.ax,S.qA); wire(L.bx,L.bx,S.qB); }
+}
+
+function drawNozzles(){
+  g.strokeStyle='#7f9ab0'; g.lineWidth=2;
+  g.beginPath(); g.moveTo(L.ax-70,L.top-16);g.lineTo(L.bx+70,L.top-16); g.stroke();
+  [L.ax,L.bx].forEach(function(x){
+    g.strokeStyle='#9ab8cc'; g.beginPath(); g.moveTo(x,L.top-16); g.lineTo(x,L.top+4); g.stroke();
+    glowCirc(x,L.top+5,7,'rgba(180,230,255,.5)');
+  });
+  g.fillStyle='#5e7f97'; g.font='10px ui-monospace,monospace'; g.textAlign='center';
+  g.fillText('reservoir  ↓ gravity feeds everything', L.cx, L.top-24);
+}
+
+function drawDrops(){
+  for(var i=0;i<S.drops.length;i++){
+    var d=S.drops[i], col=colFor(d.q), mag=Math.min(1,Math.abs(d.q)/2.2e-4);
+    glowCirc(d.x,d.y,d.r*4.5,(d.q>0?'rgba(255,122,198,':'rgba(95,216,255,')+(0.10+0.5*mag)+')');
+    g.fillStyle=col; g.beginPath(); g.ellipse(d.x,d.y,d.r*0.85,d.r*1.15,0,0,6.2832); g.fill();
+    if(mag>0.09){ g.fillStyle=d.q>0?'#ffd7ee':'#d7f4ff'; g.font='bold 10px ui-monospace,monospace';
+      g.textAlign='center'; g.fillText(d.q>0?'+':'−', d.x+8, d.y+3); }
+  }
+}
+
+function drawSpark(){
+  if(S.flash<0.02)return;
+  var a=S.flash, y0=L.canY+L.canH*0.30;
+  g.save(); g.globalAlpha=Math.min(1,a);
+  g.strokeStyle='#fffbe0'; g.lineWidth=2.2+3*a; g.shadowColor='#ffe27a'; g.shadowBlur=26;
+  for(var k=0;k<3;k++){
+    g.beginPath(); g.moveTo(L.ax+L.canW/2,y0);
+    var n=13;
+    for(var i=1;i<n;i++){var t=i/n;
+      g.lineTo(L.ax+L.canW/2+(L.bx-L.ax-L.canW)*t, y0+Math.sin(t*9+k*2+S.sparkAt*40)*22*(1-Math.abs(t-.5)*1.4)+(Math.random()-.5)*9);}
+    g.lineTo(L.bx-L.canW/2,y0); g.stroke();
+  }
+  g.shadowBlur=0;
+  g.globalAlpha=a*0.9; g.fillStyle='#ffe27a'; g.font='bold 14px ui-monospace,monospace'; g.textAlign='center';
+  g.fillText('CRACK  —  breakdown, charge neutralised', L.cx, y0-42);
+  g.restore();
+  // screen flash
+  g.fillStyle='rgba(255,250,220,'+(a*0.10)+')'; g.fillRect(0,0,W,H);
+}
+
+function drawPlot(){
+  var x=L.plotX,y=L.plotY,w=L.plotW,h=L.plotH;
+  g.fillStyle='rgba(6,14,24,.72)'; g.fillRect(x,y,w,h);
+  g.strokeStyle='#16344e'; g.lineWidth=1; g.strokeRect(x,y,w,h);
+  // decades
+  var lo=-3, hi=5; // log10 volts
+  g.font='9px ui-monospace,monospace'; g.textAlign='left';
+  for(var d=lo;d<=hi;d++){
+    var yy=y+h-(d-lo)/(hi-lo)*h;
+    g.strokeStyle='rgba(40,90,130,.35)'; g.beginPath();g.moveTo(x,yy);g.lineTo(x+w,yy);g.stroke();
+    g.fillStyle='#4b6c88'; g.fillText('1e'+d+' V',x+4,yy-3);
+  }
+  var span=14; // seconds visible
+  var t1=S.t, t0=t1-span;
+  g.strokeStyle='#ffe27a'; g.lineWidth=1.8; g.shadowColor='#ffb84d'; g.shadowBlur=8;
+  g.beginPath(); var started=false;
+  for(var i=0;i<S.hist.length;i++){
+    var p=S.hist[i]; if(p.t<t0)continue;
+    var px=x+(p.t-t0)/span*w, lv=Math.log(Math.max(p.v,1e-4))/Math.LN10;
+    var py=y+h-(Math.max(lo,Math.min(hi,lv))-lo)/(hi-lo)*h;
+    if(!started){g.moveTo(px,py);started=true;}else g.lineTo(px,py);
+  }
+  g.stroke(); g.shadowBlur=0;
+  // spark markers
+  g.strokeStyle='rgba(255,255,220,.35)';
+  for(var i=0;i<S.hist.length-1;i++){
+    if(S.hist[i+1].v<S.hist[i].v*0.2 && S.hist[i].t>=t0){
+      var px=x+(S.hist[i].t-t0)/span*w;
+      g.beginPath();g.moveTo(px,y);g.lineTo(px,y+h);g.stroke();
+    }
+  }
+  g.fillStyle='#7ffcff'; g.font='10px ui-monospace,monospace'; g.textAlign='left';
+  g.fillText('LOG |V_A − V_B|  —  a straight line means EXPONENTIAL growth', x+8, y+h-8);
+  g.textAlign='right'; g.fillStyle='#5b7f9c';
+  g.fillText(S.crossed?'crossed → runaway':'UNCROSSED → no feedback, flat', x+w-8, y+h-8);
+}
+
+function draw(){
+  g.fillStyle='#04060a'; g.fillRect(0,0,W,H);
+  // vignette bg
+  var gr=g.createRadialGradient(L.cx,H*0.42,40,L.cx,H*0.42,Math.max(W,H)*0.8);
+  gr.addColorStop(0,'rgba(20,50,80,.30)'); gr.addColorStop(1,'rgba(0,0,0,0)');
+  g.fillStyle=gr; g.fillRect(0,0,W,H);
+  drawNozzles();
+  drawWires();
+  drawRing(L.ax, S.crossed? S.qB:S.qA);
+  drawRing(L.bx, S.crossed? S.qA:S.qB);
+  g.fillStyle='#54748f'; g.font='9px ui-monospace,monospace'; g.textAlign='center';
+  g.fillText('inductor ring (wired to '+(S.crossed?'FAR':'near')+' can)', L.ax, L.ringY+24);
+  g.fillText('inductor ring (wired to '+(S.crossed?'FAR':'near')+' can)', L.bx, L.ringY+24);
+  drawDrops();
+  drawCan(L.ax,S.qA,'can A'); drawCan(L.bx,S.qB,'can B');
+  drawSpark();
+  drawPlot();
+}
+
+// ---- ui ----
+var el=function(i){return document.getElementById(i)};
+function sync(){
+  params.rate=+el('rate').value; params.hum=+el('hum').value;
+  el('rateV').textContent=params.rate+'/s'; el('humV').textContent=params.hum+'%';
+}
+el('rate').oninput=el('hum').oninput=sync;
+el('xw').onclick=function(){S.crossed=!S.crossed; this.textContent=S.crossed?'CROSSED':'UNCROSSED';
+  this.className=S.crossed?'':'off'; if(!S.crossed){S.qA*=0.02;S.qB*=0.02;} };
+sync();
+
+var last=performance.now(), acc=0;
+function frame(now){
+  var dt=Math.min(0.05,(now-last)/1000); last=now; acc+=dt;
+  var sub=1/240; while(acc>sub){step(sub);acc-=sub;}
+  draw();
+  el('vA').textContent=(VA()/1000).toFixed(2)+' kV';
+  el('vB').textContent=(VB()/1000).toFixed(2)+' kV';
+  var td=doubling(); el('td').textContent=isFinite(td)?td.toFixed(2)+' s':'—';
+  el('sp').textContent=S.period>0?S.period.toFixed(2)+' s':'building…';
+  el('nsp').textContent=S.sparks;
+  el('lk').textContent=(400/Math.pow(10,params.hum/28)).toFixed(1)+' s';
+  requestAnimationFrame(frame);
+}
+resize();
+// warm start so a cold screenshot lands mid-phenomenon
+(function(){ for(var i=0;i<240*46;i++) step(1/240); })();
+requestAnimationFrame(frame);
+</script>
