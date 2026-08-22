@@ -150,23 +150,29 @@ function bird(cx,cy,sc){
   ctx.fillStyle='#ffd27f';ctx.beginPath();ctx.arc(0,0,6,0,7);ctx.fill();
   ctx.restore();
 }
+function fit(txt,maxw,px){ctx.font=px+'px ui-monospace,monospace';
+  while(px>7&&ctx.measureText(txt).width>maxw){px-=0.5;ctx.font=px+'px ui-monospace,monospace';}return px;}
 function inset(x,y,w,h,t){
   ctx.save();ctx.translate(x,y);
-  ctx.fillStyle='rgba(5,9,16,.72)';ctx.strokeStyle='rgba(120,220,255,.22)';ctx.lineWidth=1;
+  ctx.fillStyle='rgba(5,9,16,.86)';ctx.strokeStyle='rgba(120,220,255,.3)';ctx.lineWidth=1;
   ctx.beginPath();ctx.rect(0,0,w,h);ctx.fill();ctx.stroke();
-  ctx.font='11px ui-monospace,monospace';ctx.fillStyle='#7ff0ff';ctx.fillText('ENERGY FLOW — where the work comes from',12,18);
-  var names=['ROOM AIR','EVAPORATION','Δp LIFTS','WORK: TILT'],cols=['#ffd27f','#7ff0ff','#ff8fd0','#7fe0b0'];
-  var bw=(w-40)/4;
+  fit('ENERGY FLOW — where the work comes from',w-24,11);
+  ctx.fillStyle='#7ff0ff';ctx.fillText('ENERGY FLOW — where the work comes from',12,19);
+  var names=['ROOM AIR','EVAPORATE','Δp LIFTS','WORK: TILT'],cols=['#ffd27f','#7ff0ff','#ff8fd0','#7fe0b0'];
+  var gap=9,bw=(w-24-gap*3)/4;
   for(var i=0;i<4;i++){
-    var bx=12+i*(bw+5.3);
-    ctx.strokeStyle=cols[i]+'99';ctx.fillStyle=cols[i]+'18';ctx.beginPath();ctx.rect(bx,30,bw,26);ctx.fill();ctx.stroke();
-    ctx.fillStyle=cols[i];ctx.font='9.5px ui-monospace,monospace';ctx.fillText(names[i],bx+5,46);
-    if(i<3){for(var d=0;d<3;d++){var f=((t*0.42*Math.max(.05,S.drive)+d/3)%1);
-      ctx.globalAlpha=0.9;ctx.drawImage(SP_DOT,bx+bw+f*5.3-4,43-4,8,8);ctx.globalAlpha=1;}}
+    var bx=12+i*(bw+gap);
+    ctx.strokeStyle=cols[i]+'aa';ctx.fillStyle=cols[i]+'22';ctx.beginPath();ctx.rect(bx,30,bw,28);ctx.fill();ctx.stroke();
+    var px=fit(names[i],bw-8,10.5);ctx.fillStyle=cols[i];
+    ctx.textAlign='center';ctx.fillText(names[i],bx+bw/2,48);ctx.textAlign='left';
+    if(i<3){for(var d=0;d<3;d++){var fq=((t*0.42*Math.max(.05,S.drive)+d/3)%1);
+      ctx.globalAlpha=0.9;ctx.drawImage(SP_DOT,bx+bw+fq*gap-4,44-4,8,8);ctx.globalAlpha=1;}}
   }
-  ctx.fillStyle='#8aa4bd';ctx.font='10px ui-monospace,monospace';
-  ctx.fillText('heat is free — the price is paid in DRY AIR (entropy).',12,74);
-  ctx.fillText('Saturate the room and the engine stops. Not perpetual.',12,88);
+  var c1='heat is free — the price is paid in DRY AIR (entropy).',
+      c2='saturate the room and the engine stops. Not perpetual.';
+  var fp=Math.min(fit(c1,w-24,10.5),fit(c2,w-24,10.5));
+  ctx.font=fp+'px ui-monospace,monospace';ctx.fillStyle='#8aa4bd';
+  ctx.fillText(c1,12,h-27);ctx.fillText(c2,12,h-11);
   ctx.restore();
 }
 var last=performance.now(),acc=0,shown=0;
@@ -184,18 +190,21 @@ function frame(now){
   if(lampOn){var lg=ctx.createRadialGradient(W*0.80,H*0.14,10,W*0.80,H*0.14,Math.min(W,H)*0.85);
     lg.addColorStop(0,'rgba(255,190,90,.28)');lg.addColorStop(1,'rgba(255,150,40,0)');ctx.fillStyle=lg;ctx.fillRect(0,0,W,H);
     ctx.fillStyle='#ffcf7f';ctx.font='11px ui-monospace,monospace';ctx.fillText('☀ HEAT LAMP',W*0.80-34,H*0.14+4);}
-  var sc=Math.max(0.55,Math.min(W/1180,H/620));
-  bird(W*0.585,H*0.455,sc);
-  inset(14,H-126,Math.min(416,W*0.32),112,S.t);
-  // banner
+  var stageH=H-152,sc=Math.max(0.55,Math.min(W/1050,(H/2-78)/200));
+  bird(W*0.585,stageH*0.5-12*sc,sc);
+  var iw=Math.min(452,Math.max(300,W*0.36)),ix=W-14-iw;
+  inset(ix,H-134,iw,120,S.t);
+  // caption strip (left of the diagram card, below the stage)
+  var by=H-96;
   ctx.font='600 13px ui-monospace,monospace';
-  var bx=Math.max(W*0.585,W*0.32+40+300),by=H-64;
-  if(S.dead){ctx.fillStyle='#ff5f7a';ctx.textAlign='center';
-    ctx.fillText('DEAD AT '+Math.round(RH*100)+'% RH — no evaporation, no engine.',bx,by);
-    ctx.fillStyle='#ffd27f';ctx.font='11px ui-monospace,monospace';
-    ctx.fillText('it was never perpetual: it drinks DRYNESS — press L for the heat lamp',bx,by+18);ctx.textAlign='left';}
-  else{ctx.fillStyle='#7fe0b0';ctx.textAlign='center';
-    ctx.fillText('phase: '+S.mode.toUpperCase()+'  ·  a heat engine running on room-air dryness',bx,by);ctx.textAlign='left';}
+  if(S.dead){ctx.fillStyle='#ff5f7a';
+    ctx.fillText('DEAD AT '+Math.round(RH*100)+'% RH — no evaporation, no engine.',24,by);
+    ctx.fillStyle='#ffd27f';ctx.font='11.5px ui-monospace,monospace';
+    ctx.fillText('never perpetual: it drinks DRYNESS — press L for the heat lamp',24,by+20);}
+  else{ctx.fillStyle='#7fe0b0';
+    ctx.fillText('phase: '+S.mode.toUpperCase()+'  ·  a heat engine running on room-air dryness',24,by);
+    ctx.fillStyle='#8aa4bd';ctx.font='11.5px ui-monospace,monospace';
+    ctx.fillText('drag HUMIDITY to 100% and watch the engine die mid-cycle',24,by+20);}
   if(now-shown>90){shown=now;
     els.r1.textContent=S.dT.toFixed(3)+' K';els.r2.textContent=S.dp.toFixed(2)+' kPa';
     els.r3.textContent=S.h.toFixed(2)+' cm / 12';els.r4.textContent=S.cyc;

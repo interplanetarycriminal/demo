@@ -149,10 +149,20 @@ function ledger(x,y,w,h){
   ctx.fillStyle=L.net>0?'#7fe0b0':'#ff5f7a';ctx.fillRect(mid,yy-6,Math.max(-bw/2,Math.min(bw/2,L.net*S*10)),12);
   ctx.fillStyle='#fff';ctx.textAlign='right';ctx.fillText(L.net.toFixed(2),w-10,yy+4);ctx.textAlign='left';
   ctx.fillStyle='#8aa4bd';ctx.font='10px ui-monospace,monospace';
-  if(mode==='forward')ctx.fillText('Blowing: the outgoing jet\'s reaction is unopposed → strong forward spin.',12,h-14);
-  else{ctx.fillText('Sucking: intake is a SINK — it pulls from every direction, so the inflow',12,h-28);
-       ctx.fillText('momentum is cancelled by bend pressure. Residue = vortex loss → slight REVERSE.',12,h-14);}
+  var foot=(mode==='forward')
+    ?'Blowing: the outgoing jet\'s reaction is unopposed → strong forward spin.'
+    :'Sucking: the intake is a SINK — it pulls from every direction, so inflow momentum is cancelled by bend pressure. The residue is vortex loss → slight REVERSE.';
+  var fl=wrap(foot,w-24,10).slice(-3);
+  for(var i=0;i<fl.length;i++)ctx.fillText(fl[i],12,h-10-(fl.length-1-i)*13);
   ctx.restore();
+}
+// wrap to a pixel width at the given font size (font must be re-set by the caller afterwards)
+function wrap(txt,maxw,px){
+  ctx.font=px+'px ui-monospace,monospace';
+  var words=txt.split(' '),lines=[],line='';
+  for(var j=0;j<words.length;j++){var t2=line?line+' '+words[j]:words[j];
+    if(ctx.measureText(t2).width>maxw&&line){lines.push(line);line=words[j];}else line=t2;}
+  if(line)lines.push(line);return lines;
 }
 var caps=[['1883','Ernst Mach asks it in Die Mechanik: reverse the flow — which way does it turn?'],
           ['~1940','Feynman rigs one inside a Princeton cyclotron-lab carboy; the pressure bursts the glass and floods the lab.'],
@@ -162,14 +172,18 @@ function caption(x,y,w,h){
   ctx.fillStyle='rgba(4,8,15,.8)';ctx.strokeStyle='rgba(255,210,127,.24)';ctx.lineWidth=1;
   ctx.beginPath();ctx.rect(0,0,w,h);ctx.fill();ctx.stroke();
   ctx.font='11px ui-monospace,monospace';ctx.fillStyle='#ffd27f';ctx.fillText('THE STORY',12,18);
+  // measure first, then lay each entry out in its own block
+  var body=[],tot=0,LH=13;
+  for(var i=0;i<3;i++){body.push(wrap(caps[i][1],w-78,10));tot+=body[i].length*LH+9;}
+  var avail=h-34,yy=30;
+  if(tot>avail){LH=12;tot=0;for(var i=0;i<3;i++)tot+=body[i].length*LH+6;}
   for(var i=0;i<3;i++){
-    var on=(Math.floor(T/4.5)%3)===i,yy=40+i*34;
-    ctx.fillStyle=on?'#ffd27f':'#6f8598';ctx.font='11px ui-monospace,monospace';ctx.fillText(caps[i][0],12,yy);
-    ctx.fillStyle=on?'#e8f6ff':'#5d7183';ctx.font='10.5px ui-monospace,monospace';
-    var words=caps[i][1].split(' '),line='',ln=0;
-    for(var j=0;j<words.length;j++){var t2=line+words[j]+' ';
-      if(ctx.measureText(t2).width>w-84){ctx.fillText(line,70,yy+ln*13);line=words[j]+' ';ln++;}else line=t2;}
-    ctx.fillText(line,70,yy+ln*13);
+    var on=(Math.floor(T/4.5)%3)===i;
+    ctx.fillStyle=on?'#ffd27f':'#6f8598';ctx.font='11px ui-monospace,monospace';ctx.fillText(caps[i][0],12,yy+10);
+    ctx.fillStyle=on?'#e8f6ff':'#5d7183';ctx.font='10px ui-monospace,monospace';
+    for(var j=0;j<body[i].length;j++)ctx.fillText(body[i][j],64,yy+10+j*LH);
+    if(on){ctx.fillStyle='#ffd27f';ctx.fillRect(4,yy+1,2.5,body[i].length*LH+2);}
+    yy+=body[i].length*LH+(tot>avail?6:9);
   }
   ctx.restore();
 }
