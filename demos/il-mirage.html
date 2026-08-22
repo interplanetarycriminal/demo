@@ -74,16 +74,15 @@ function scaleH(){ return 1.0; }   // e-folding height in metres
 function gradStrength(){ // 0..1 from ground temperature slider
   return +sT.value/100;
 }
+function dnTotal(K){ return N0base*(0.02+12*K); }
 function nProfile(y,K){
-  // K = gradient strength; larger K = more of the index deficit crammed near ground
+  // K = gradient strength; larger K = deeper index deficit at the hot ground
   var h0=scaleH();
-  var dn=N0base*(1+18*K);
-  return 1 + dn*(1-Math.exp(-Math.max(0,y)/h0));
+  return 1 + dnTotal(K)*(1-Math.exp(-Math.max(0,y)/h0));
 }
 function dndy(y,K){
   var h0=scaleH();
-  var dn=N0base*(1+18*K);
-  return dn/h0*Math.exp(-Math.max(0,y)/h0);
+  return dnTotal(K)/h0*Math.exp(-Math.max(0,y)/h0);
 }
 // integrate a ray leaving the eye at (0, ye) with initial slope th (rad, + = up),
 // marching in x. Returns array of {x,y} in world metres, and a flag if it hit ground.
@@ -102,12 +101,15 @@ function traceRay(ye,th,K,maxX,dx){
   if(!hit)pts.push({x:x,y:y});
   return {pts:pts,hit:hit,endY:y,endT:t,x:x};
 }
-// critical (grazing) launch angle: the most-downward ray that still escapes.
-// From the ray invariant n(y)cos(theta) = const: a ray launched down at ye with
-// angle t escapes if n(ye)cos(t) < n(inf).
+// Critical (grazing) launch angle. Ray invariant: n(y)·cos(theta) = const.
+// A ray launched DOWN at angle t from the eye turns around before the ground
+// when its turning point n_turn = n(ye)·cos(t) is still above n(0).
+// So it turns iff  cos(t) > n(0)/n(ye)  ->  |t| < acos( n(0)/n(ye) ) = theta_c.
+// Directions shallower than theta_c below the horizon therefore show SKY
+// (the "water"); steeper ones hit real sand.
 function criticalAngle(ye,K){
-  var nE=nProfile(ye,K), nInf=nProfile(1e4,K);
-  var r=nInf/nE;
+  var nE=nProfile(ye,K), nG=nProfile(0,K);
+  var r=nG/nE;
   if(r>=1)return 0;
   return Math.acos(Math.min(1,r)); // radians, magnitude
 }
@@ -182,84 +184,93 @@ function draw(){
     var o=objs[i];
     var ox=o.u*W;
     // apparent base angle: objects at the horizon appear at angle ~ -tc*0.15 (slightly lowered)
-    var baseT=-tc*0.55;
+    var baseT=-tc*0.06;
     var by=angToScreen(baseT), ty=angToScreen(baseT+o.hi);
     drawObject(g,ox,by,ty,o,1,0);
   }
 
-  // ------- ground / mirage sheet -------
-  // Everything below mirageY is filled by rays that turned around in the hot
-  // layer: they carry SKY radiance (and inverted images of the objects).
-  var groundTop=mirageY;
-  // hot sand below
-  var dgr=g.createLinearGradient(0,hy-4,0,H);
+  // ------- ground + mirage sheet -------
+  // Directions between the horizon and theta_c BELOW it are filled by rays that
+  // turned around inside the hot layer: they carry SKY radiance. Steeper than
+  // theta_c you see real, near sand. So the "puddle" is a BAND hugging the horizon.
+  var sheetBot=Math.min(H,mirageY);
+
+  // real sand: everything steeper than the critical angle
+  var dgr=g.createLinearGradient(0,sheetBot,0,H);
   dgr.addColorStop(0,'#c69a5e');dgr.addColorStop(.28,'#b07f43');
   dgr.addColorStop(.7,'#7d5527');dgr.addColorStop(1,'#4a3117');
-  g.fillStyle=dgr;g.fillRect(0,hy-2,W,H-hy+2);
-
-  // dunes silhouettes just above the horizon
-  g.save();
-  g.beginPath();g.moveTo(0,hy);
-  for(var x=0;x<=W;x+=6){
-    var yy=hy - 3 - 7*Math.sin(x*0.004+1.3) - 4*Math.sin(x*0.011+2.7);
-    g.lineTo(x,yy);
+  g.fillStyle=dgr;g.fillRect(0,sheetBot-1,W,H-sheetBot+2);
+  g.save();g.globalAlpha=.16;
+  for(var tx=0;tx<70;tx++){
+    var ty=sheetBot+Math.pow(tx/70,1.8)*(H-sheetBot);
+    g.fillStyle=(tx&1)?'#e2b877':'#6d4a22';
+    g.fillRect((tx*137)%W-40,ty,120+tx*6,1.4+tx*0.06);
   }
-  g.lineTo(W,hy+40);g.lineTo(0,hy+40);g.closePath();
-  g.fillStyle='#8a6335';g.fill();
   g.restore();
 
-  // MIRAGE SHEET (the "water"): sky colour, sampled from the ray that turned around.
-  if(mirageY<H){
-    var sheetH=H-mirageY;
-    var rows=Math.min(190,Math.max(40,Math.floor(sheetH/2)));
+  // MIRAGE SHEET (the "water") — sky radiance arriving from BELOW the horizon
+  if(sheetBot>hy+0.5){
+    var sheetH=sheetBot-hy;
+    var rows=Math.min(200,Math.max(24,Math.floor(sheetH/2)));
     for(var r=0;r<rows;r++){
       var f=r/rows;
-      var yScreen=mirageY+f*sheetH;
-      // screen angle for this row
-      var tRow=(hy-yScreen)/(FOCAL*H*4.2);      // negative (below horizon)
-      // the ray that appears here launched downward at |tRow| and turned around
-      // at some height, arriving from the sky at elevation ~ sqrt(tRow^2 - tc^2)
-      var d=tRow*tRow - tc*tc;
-      var skyT = d>0 ? Math.sqrt(d)*1.0 : 0;    // reflected sky elevation
-      var col=skyColor(skyT*1.25);
-      var a=Math.max(0,Math.min(1,1.0-f*0.15));
-      g.fillStyle='rgba('+col[0]+','+col[1]+','+col[2]+','+(a*0.93)+')';
-      g.fillRect(0,yScreen,W,sheetH/rows+1.2);
+      var yScreen=hy+f*sheetH;
+      var tRow=(hy-yScreen)/(FOCAL*H*4.2);       // negative: below horizon
+      // this direction's ray turned at n = n(ye)cos(tRow) and escaped upward;
+      // it samples the sky at elevation sqrt(theta_c^2 - tRow^2)
+      var d=tc*tc - tRow*tRow;
+      var skyT=d>0?Math.sqrt(d):0;
+      var col=skyColor(skyT*0.9);
+      g.fillStyle='rgba('+col[0]+','+col[1]+','+col[2]+','+(0.90-0.10*f).toFixed(3)+')';
+      g.fillRect(0,yScreen,W,sheetH/rows+1.3);
     }
     // shimmer: horizontal displacement bands
     if(SH>0.01){
       g.save();g.globalCompositeOperation='lighter';
-      for(var b2=0;b2<26;b2++){
-        var yb=mirageY+ (b2/26)*sheetH;
-        var amp=SH*16*(0.3+b2/26);
+      for(var b2=0;b2<24;b2++){
+        var yb=hy+(b2/24)*sheetH;
+        var amp=SH*18*(0.25+b2/24);
         var ph=Math.sin(TT*2.1+b2*0.7)+0.6*Math.sin(TT*3.7+b2*1.9);
-        g.fillStyle='rgba(180,220,255,'+(0.03+0.05*SH)+')';
-        g.fillRect(ph*amp,yb,W,sheetH/26*0.7);
+        g.fillStyle='rgba(180,220,255,'+(0.03+0.05*SH).toFixed(3)+')';
+        g.fillRect(ph*amp,yb,W,sheetH/24*0.7);
       }
       g.restore();
     }
 
-    // INVERTED IMAGES of the distant objects, mirrored about mirageY
+    // INVERTED IMAGES mirrored about the horizon, squashed into the band
     for(var k=0;k<objs.length;k++){
       var ob=objs[k];
       var oxx=ob.u*W;
-      var bT=-tc*0.55;
+      var bT=-tc*0.06;
       var bY=angToScreen(bT), tY=angToScreen(bT+ob.hi);
-      // reflect about the mirage line
-      var ibY=mirageY+(mirageY-bY);
-      var itY=mirageY+(mirageY-tY);
-      if(ibY<H){
-        var wob=SH*(9*Math.sin(TT*3.1+ob.u*11)+5*Math.sin(TT*5.3+ob.u*23));
-        drawObject(g,oxx+wob,ibY,itY,ob,0.72,SH);
-      }
+      var objH=Math.max(1,bY-tY);
+      var squash=Math.min(1,sheetH/(objH*1.35));
+      var ibY=hy+(hy-bY)*squash;
+      var itY=hy+(hy-tY)*squash;
+      var wob=SH*(9*Math.sin(TT*3.1+ob.u*11)+5*Math.sin(TT*5.3+ob.u*23));
+      g.save();g.beginPath();g.rect(0,hy,W,sheetH);g.clip();
+      drawObject(g,oxx+wob,ibY,itY,ob,0.66,SH);
+      g.restore();
     }
-    // specular sheen line
+    // specular sheen at the top of the sheet
     g.save();g.globalCompositeOperation='lighter';
-    var sg2=g.createLinearGradient(0,mirageY,0,mirageY+18);
-    sg2.addColorStop(0,'rgba(200,235,255,.34)');sg2.addColorStop(1,'rgba(200,235,255,0)');
-    g.fillStyle=sg2;g.fillRect(0,mirageY,W,18);
+    var shn=Math.min(20,sheetH);
+    var sg2=g.createLinearGradient(0,hy,0,hy+shn);
+    sg2.addColorStop(0,'rgba(200,235,255,.30)');sg2.addColorStop(1,'rgba(200,235,255,0)');
+    g.fillStyle=sg2;g.fillRect(0,hy,W,shn);
     g.restore();
   }
+
+  // dune silhouettes sit right AT the horizon, above the puddle
+  g.save();
+  g.beginPath();g.moveTo(0,hy+1);
+  for(var x=0;x<=W;x+=6){
+    var yy=hy - 3 - 7*Math.sin(x*0.004+1.3) - 4*Math.sin(x*0.011+2.7);
+    g.lineTo(x,yy);
+  }
+  g.lineTo(W,hy+1);g.closePath();
+  g.fillStyle='#8a6335';g.fill();
+  g.restore();
 
   // ------- ray overlay -------
   if(showRays)drawRays(ye,K,tc);
@@ -285,8 +296,8 @@ function draw(){
   el('vT').textContent=sT.value;el('vS').textContent=sS.value;el('vE').textContent=sE.value;
   el('rdT').textContent=(K*58+2).toFixed(1)+' K';
   el('rdn').textContent=dndy(0,K).toExponential(2)+' /m';
-  el('rmh').textContent=(mirageY<H? (mirageY-hy).toFixed(0)+' px below':'off-screen');
-  el('rsr').textContent=(mirageY<H?'YES ← "water" = sky':'none');
+  el('rmh').textContent=(mirageY-hy).toFixed(0)+' px below horizon';
+  el('rsr').textContent=(mirageY-hy>2?'YES ← "water" = sky':'none');
   el('rca').textContent=(tc*1000).toFixed(2)+' mrad';
 
   requestAnimationFrame(draw);
@@ -330,7 +341,7 @@ function drawRays(ye,K,tc){
   g.font='10px ui-monospace,monospace';
   g.fillStyle='#7fc9ff';g.fillText('ray paths  (n low at ground → rays curve UP)',ix+8,iy+14);
 
-  var MAXX=700, MAXY=14;                  // metres
+  var MAXX=240, MAXY=7;                  // metres
   function px(x){return ix+8+(x/MAXX)*(IW-16)}
   function py(y){return iy+IH-14-(y/MAXY)*(IH-30)}
 
@@ -355,8 +366,8 @@ function drawRays(ye,K,tc){
   var N=13;
   for(var i=0;i<N;i++){
     var f=i/(N-1);
-    var th=(-tc*1.9) + f*(tc*1.9 + 0.0032);
-    var res=traceRay(ye,th,K,MAXX,1.2);
+    var th=(-tc*1.25) + f*(tc*1.25 + tc*0.35 + 0.002);
+    var res=traceRay(ye,th,K,MAXX,0.35);
     var turned = th<0 && !res.hit;   // launched down, escaped upward = mirage ray
     g.beginPath();
     for(var p=0;p<res.pts.length;p++){

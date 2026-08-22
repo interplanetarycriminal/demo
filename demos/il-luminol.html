@@ -190,7 +190,43 @@ function draw(lit){
   x.fillText('bleach patch → uniform flash (FALSE POSITIVE)',b.x+b.w*0.62,b.y+b.h*0.10);
 
   drawInset();
+  drawZones(b);
   drawCursor();
+}
+
+// live comparison of the three zones: iron pattern / bleach patch / control pad
+var zoneVals=[0,0,0];
+function measureZones(){
+  var sIron=0,nIron=0,sBl=0,nBl=0,sCtl=0,nCtl=0;
+  for(var i=0;i<glow.length;i++){
+    if(kind[i]===1){sIron+=glow[i];nIron++;}
+    else if(kind[i]===2){sBl+=glow[i];nBl++;}
+    else{sCtl+=glow[i];nCtl++;}
+  }
+  var t=[nIron?sIron/nIron:0, nBl?sBl/nBl:0, nCtl?sCtl/nCtl:0];
+  for(var k=0;k<3;k++)zoneVals[k]+=(t[k]-zoneVals[k])*0.15;
+}
+function drawZones(b){
+  var w=Math.min(280,W*0.24),h=118,ix=W-w-14,iy=H-h-14;
+  x.fillStyle='rgba(4,10,18,.78)';x.strokeStyle='rgba(90,170,255,.3)';
+  x.fillRect(ix,iy,w,h);x.strokeRect(ix+.5,iy+.5,w,h);
+  x.fillStyle='#9fd0ff';x.font='10px ui-monospace,monospace';
+  x.fillText('ZONE RESPONSE — the control matters',ix+8,iy+15);
+  var labels=['iron (blood)','bleach','no catalyst'];
+  var cols=['rgba(90,170,255,','rgba(190,255,230,','rgba(140,150,165,'];
+  var maxv=Math.max(0.02,zoneVals[0],zoneVals[1],zoneVals[2]);
+  for(var i=0;i<3;i++){
+    var by=iy+30+i*26;
+    x.fillStyle='#7fb6e8';x.font='9px ui-monospace,monospace';
+    x.fillText(labels[i],ix+8,by+8);
+    var bx=ix+82,bw=w-96;
+    x.strokeStyle='rgba(90,140,190,.35)';x.strokeRect(bx,by,bw,11);
+    var fr=Math.min(1,zoneVals[i]/maxv);
+    x.fillStyle=cols[i]+'0.75)';x.fillRect(bx+1,by+1,Math.max(0,fr*(bw-2)),9);
+    x.fillStyle='#5f8fbf';x.fillText(zoneVals[i].toFixed(3),bx+bw-40,by+9);
+  }
+  x.fillStyle='#5f8fbf';x.font='9px ui-monospace,monospace';
+  x.fillText('bleach & horseradish glow too — CSI honesty',ix+8,iy+h-8);
 }
 
 function drawInset(){
@@ -234,6 +270,7 @@ function loop(t){
   var dt=Math.min(0.05,(t-last)/1000);last=t;
   if(spraying)spray(dt);
   var lit=step(dt);
+  measureZones();
   draw(lit);
   var tot=photonsEmitted+heatDumped;
   document.getElementById('ro').textContent=

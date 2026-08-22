@@ -1,0 +1,422 @@
+<title>Invisible Ink</title>
+<style>
+html,body{margin:0;padding:0;background:#06060a;overflow:hidden;height:100%}
+canvas{display:block;cursor:crosshair}
+#hud{position:fixed;top:0;left:0;margin:10px;padding:10px 12px;max-width:350px;
+  background:rgba(8,8,14,.74);border:1px solid rgba(255,190,90,.32);border-radius:6px;
+  color:#d6cdbd;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;z-index:10;
+  box-shadow:0 0 24px rgba(255,170,60,.15);backdrop-filter:blur(3px)}
+#hud h1{margin:0 0 4px;font-size:13px;letter-spacing:.14em;color:#ffc46b;text-shadow:0 0 10px rgba(255,180,70,.7)}
+#hud .m{color:#a9a293}
+#hud .sci{color:#ffd9a0}
+#hud .lin{color:#8a8375;font-size:10px}
+#hud a{color:#6fe3ff;text-decoration:none}
+#hud a:hover{text-decoration:underline}
+.tag{display:inline-block;margin-top:6px;padding:1px 6px;border:1px solid rgba(120,255,200,.4);
+  border-radius:10px;color:#7effc9;font-size:9.5px;letter-spacing:.08em}
+.row{display:flex;align-items:center;gap:6px;margin-top:5px}
+.row label{width:88px;color:#9a927f}
+input[type=range]{flex:1;accent-color:#ffb457;background:transparent}
+button{background:#1a1409;color:#ffd9a0;border:1px solid #6a5024;border-radius:4px;
+  font:10px ui-monospace,monospace;padding:3px 7px;cursor:pointer;margin:4px 4px 0 0}
+button:hover{background:#2a2010;box-shadow:0 0 10px rgba(255,170,60,.35)}
+button.on{background:#3a2a0e;border-color:#ffb457;color:#fff}
+#rd{margin-top:7px;padding-top:6px;border-top:1px solid rgba(255,255,255,.12);color:#ffd9a0}
+#rd b{color:#fff}
+#hist{margin-top:6px;padding:5px 6px;border-left:2px solid #6a5024;color:#b8ad97;font-size:10px;min-height:30px}
+kbd{background:#241c10;border:1px solid #5a4726;border-radius:3px;padding:0 3px;color:#ffd9a0}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="hud">
+<h1>INVISIBLE INK</h1>
+<div class="m">Two channels: sugars and proteins in lemon or milk brown at a lower activation energy than the paper itself, so heat reveals the writing before it scorches the sheet — or phenolphthalein writing stays colourless until a basic mist swings it pink.</div>
+<div class="sci">Secret inks since Pliny the Elder (1st c.) · phenolphthalein, Adolf von Baeyer, 1871</div>
+<div class="lin">LINEAGE: Pliny's milk → Baeyer 1871 phenolphthalein → modern UV security inks (mention only)</div>
+<div>
+<button id="ma" class="on">A · heat</button>
+<button id="mb">B · pH spray</button>
+<button id="bc">new sheet</button>
+</div>
+<div class="row"><label id="l1">flame</label><input id="s1" type="range" min="0" max="1" step="0.005" value="0.30"></div>
+<div class="row"><label>ΔEa margin</label><input id="s2" type="range" min="0.05" max="0.45" step="0.005" value="0.22"></div>
+<div class="m" style="margin-top:5px">controls: <kbd>drag</kbd> quill to write · <kbd>drag</kbd> the source to develop · <kbd>H</kbd> history</div>
+<div id="rd"></div>
+<div id="hist"></div>
+<span class="tag">simulation — no recipe</span>
+<div style="margin-top:6px"><a href="index.html">← gallery</a></div>
+</div>
+<script>
+(function(){
+var c=document.getElementById('c'),g=c.getContext('2d');
+var W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
+ c.width=W*DPR|0;c.height=H*DPR|0;c.style.width=W+'px';c.style.height=H+'px';g.setTransform(DPR,0,0,DPR,0,0);layout()}
+window.addEventListener('resize',resize);
+
+var s1=document.getElementById('s1'),s2=document.getElementById('s2'),rd=document.getElementById('rd'),
+    hist=document.getElementById('hist'),l1=document.getElementById('l1');
+
+// ---- grid model ------------------------------------------------------
+var NX=64,NY=44,CW=0,CH=0,SX=0,SY=0;
+var ink,heat,brown,scorch,pH,pink;
+function alloc(){
+  var n=NX*NY;
+  ink=new Float32Array(n);heat=new Float32Array(n);brown=new Float32Array(n);
+  scorch=new Float32Array(n);pH=new Float32Array(n);pink=new Float32Array(n);
+  for(var i=0;i<n;i++){heat[i]=20;pH[i]=6.0}
+}
+alloc();
+function layout(){
+  var w=Math.min(W*0.60,760),h=w*0.68;
+  if(h>H*0.74){h=H*0.74;w=h/0.68}
+  SX=W*0.53-w/2;SY=H*0.52-h/2;CW=w/NX;CH=h/NY;
+}
+
+// ---- chemistry constants --------------------------------------------
+// Arrhenius-style browning: rate = exp(-Ea/(R*T)) normalized. Stroke organics
+// have LOWER Ea than cellulose, so they brown at lower temperature.
+var EA_PAPER=1.00;                       // normalized activation energy
+function eaStroke(){return EA_PAPER-parseFloat(s2.value)}
+var TREF=520;                            // K scale factor
+function rate(T,Ea){ return Math.exp(-Ea*TREF/Math.max(1,T)); }
+// onset temperature where rate crosses a threshold
+var RTHRESH=Math.exp(-EA_PAPER*TREF/460); // paper onset ~460K by construction
+function onsetT(Ea){ return Ea*TREF/(EA_PAPER*TREF/460); }
+
+// ---- sources ---------------------------------------------------------
+var mode='A';
+var src={x:0.5,y:0.85,drag:false};
+var quill={x:0.5,y:0.2,down:false};
+var writing=false;
+
+// ---- interaction -----------------------------------------------------
+function toGrid(px,py){return {gx:(px-SX)/CW,gy:(py-SY)/CH}}
+function inSheet(px,py){var q=toGrid(px,py);return q.gx>=0&&q.gx<NX&&q.gy>=0&&q.gy<NY}
+function srcPix(){return {x:SX+src.x*NX*CW, y:SY+src.y*NY*CH}}
+
+var lastP=null;
+c.addEventListener('pointerdown',function(e){
+  var sp=srcPix();
+  if(Math.hypot(e.clientX-sp.x,e.clientY-sp.y)<44){src.drag=true;return}
+  if(inSheet(e.clientX,e.clientY)){writing=true;lastP={x:e.clientX,y:e.clientY};paint(e.clientX,e.clientY)}
+});
+c.addEventListener('pointermove',function(e){
+  if(src.drag){src.x=(e.clientX-SX)/(NX*CW);src.y=(e.clientY-SY)/(NY*CH);
+    src.x=Math.max(-0.2,Math.min(1.2,src.x));src.y=Math.max(-0.3,Math.min(1.3,src.y));return}
+  quill.x=e.clientX;quill.y=e.clientY;
+  if(writing){
+    if(lastP){var d=Math.hypot(e.clientX-lastP.x,e.clientY-lastP.y),n=Math.max(1,d/3|0);
+      for(var i=1;i<=n;i++)paint(lastP.x+(e.clientX-lastP.x)*i/n, lastP.y+(e.clientY-lastP.y)*i/n);}
+    lastP={x:e.clientX,y:e.clientY};
+  }
+});
+window.addEventListener('pointerup',function(){src.drag=false;writing=false;lastP=null});
+function paint(px,py){
+  var q=toGrid(px,py),r=1.7;
+  for(var dy=-3;dy<=3;dy++)for(var dx=-3;dx<=3;dx++){
+    var gx=Math.round(q.gx)+dx, gy=Math.round(q.gy)+dy;
+    if(gx<0||gy<0||gx>=NX||gy>=NY)continue;
+    var d=Math.hypot(gx-q.gx,gy-q.gy);
+    if(d>r)continue;
+    var i=gy*NX+gx;
+    ink[i]=Math.min(1,ink[i]+ (1-d/r)*0.55);
+  }
+}
+document.getElementById('ma').onclick=function(){setMode('A')};
+document.getElementById('mb').onclick=function(){setMode('B')};
+document.getElementById('bc').onclick=function(){alloc();seed()};
+function setMode(m){mode=m;
+  document.getElementById('ma').className=m==='A'?'on':'';
+  document.getElementById('mb').className=m==='B'?'on':'';
+  l1.textContent=m==='A'?'flame':'mist pH';
+  if(m==='A'){s1.min=0;s1.max=1;s1.step=0.005;s1.value=0.30}
+  else{s1.min=8;s1.max=13;s1.step=0.05;s1.value=11.5}
+}
+
+// history panel
+var HIST=[
+ "PLINY THE ELDER, 1st c. — writes of milk-juice inks read out by sprinkling ash over the sheet; the letters take the dust the blank paper does not.",
+ "RENAISSANCE — alum dissolved in vinegar, written on the outside of a hard-boiled egg; the solution passes the shell and marks the white beneath.",
+ "LEMON JUICE — citric acid and sugars dehydrate and caramelize well below the char point of cellulose. The whole trick is one activation-energy gap.",
+ "BAEYER, 1871 — Adolf von Baeyer prepares phenolphthalein; colourless in acid, magenta above pH ≈ 9. A whole class of inks that develop on a breath of base.",
+ "WWII CENSORS — mail examiners ran counter-detection sweeps: iodine vapour darkened paper where fibres had been disturbed by any wet writing, ink or not. Caption-level history only.",
+ "MODERN LINE — UV-fluorescent security inks: invisible under daylight, bright under 365 nm. Mentioned, not simulated."
+];
+var hi=0;
+function showHist(){hist.textContent=HIST[hi%HIST.length];hi++}
+showHist();
+setInterval(showHist,9000);
+window.addEventListener('keydown',function(e){var k=e.key.toLowerCase();
+  if(k==='h')showHist();else if(k==='a')setMode('A');else if(k==='b')setMode('B')});
+
+function seed(){
+  // faint pre-written word so the sheet is alive immediately
+  var pts=[[8,14],[8,22],[8,30],[12,14],[12,30],[16,14],[16,22],[16,30],
+           [22,14],[22,30],[26,14],[26,22],[26,30],[30,30],
+           [36,14],[36,22],[36,30],[40,14],[44,14],[44,22],[44,30],
+           [50,14],[50,22],[50,30],[54,22],[58,14],[58,22],[58,30]];
+  for(var i=0;i<pts.length;i++){
+    var a=pts[i], b=pts[(i+1)%pts.length];
+  }
+  // strokes: draw "SECRET"-ish glyph bars
+  function bar(x0,y0,x1,y1){
+    var n=Math.max(Math.abs(x1-x0),Math.abs(y1-y0))*3|0;
+    for(var t=0;t<=n;t++){
+      var gx=Math.round(x0+(x1-x0)*t/n), gy=Math.round(y0+(y1-y0)*t/n);
+      for(var dy=-1;dy<=1;dy++)for(var dx=-1;dx<=1;dx++){
+        var X=gx+dx,Y=gy+dy;if(X<0||Y<0||X>=NX||Y>=NY)continue;
+        ink[Y*NX+X]=Math.min(1,ink[Y*NX+X]+0.5);
+      }
+    }
+  }
+  var y0=16,y1=28;
+  var xs=[7,15,23,31,39,47];
+  // crude letterforms
+  bar(xs[0],y0,xs[0]+5,y0);bar(xs[0],y0,xs[0],(y0+y1)/2);bar(xs[0],(y0+y1)/2,xs[0]+5,(y0+y1)/2);bar(xs[0]+5,(y0+y1)/2,xs[0]+5,y1);bar(xs[0],y1,xs[0]+5,y1); //S
+  bar(xs[1],y0,xs[1]+5,y0);bar(xs[1],y0,xs[1],y1);bar(xs[1],(y0+y1)/2,xs[1]+4,(y0+y1)/2);bar(xs[1],y1,xs[1]+5,y1); //E
+  bar(xs[2]+5,y0,xs[2],y0);bar(xs[2],y0,xs[2],y1);bar(xs[2],y1,xs[2]+5,y1); //C
+  bar(xs[3],y1,xs[3],y0);bar(xs[3],y0,xs[3]+5,y0);bar(xs[3]+5,y0,xs[3]+5,(y0+y1)/2);bar(xs[3],(y0+y1)/2,xs[3]+5,(y0+y1)/2);bar(xs[3]+2,(y0+y1)/2,xs[3]+5,y1); //R
+  bar(xs[4],y0,xs[4]+5,y0);bar(xs[4],y0,xs[4],y1);bar(xs[4],(y0+y1)/2,xs[4]+4,(y0+y1)/2);bar(xs[4],y1,xs[4]+5,y1); //E
+  bar(xs[5],y0,xs[5]+5,y0);bar(xs[5]+2.5,y0,xs[5]+2.5,y1); //T
+}
+seed();
+
+// ---- physics step ----------------------------------------------------
+var maxT=20,revealed=0,scorched=0,sweet=0;
+function step(dt){
+  var n=NX*NY;
+  var sxg=src.x*NX, syg=src.y*NY;
+  var power=parseFloat(s1.value);
+  var Es=eaStroke();
+  if(mode==='A'){
+    // heat injection from candle/iron + diffusion + loss
+    var Tsrc=300+power*420;
+    for(var y=0;y<NY;y++)for(var x=0;x<NX;x++){
+      var i=y*NX+x;
+      var d=Math.hypot(x-sxg,y-syg);
+      var inj=Math.exp(-(d*d)/(2*5.5*5.5))*(Tsrc-heat[i])*dt*2.2;
+      heat[i]+=inj;
+      heat[i]+= (20-heat[i])*dt*0.55;   // radiative/convective loss
+    }
+    // diffusion into the paper
+    var tmp=new Float32Array(n);
+    for(var y2=0;y2<NY;y2++)for(var x2=0;x2<NX;x2++){
+      var i2=y2*NX+x2,s=0,cnt=0;
+      for(var k=0;k<4;k++){
+        var xx=x2+[1,-1,0,0][k], yy=y2+[0,0,1,-1][k];
+        if(xx<0||yy<0||xx>=NX||yy>=NY)continue;
+        s+=heat[yy*NX+xx];cnt++;
+      }
+      tmp[i2]=heat[i2]+(s/cnt-heat[i2])*Math.min(0.5,dt*3.2);
+    }
+    heat.set(tmp);
+    maxT=0;revealed=0;scorched=0;
+    for(var i3=0;i3<n;i3++){
+      var T=heat[i3]+273;
+      if(heat[i3]>maxT)maxT=heat[i3];
+      if(ink[i3]>0.02){
+        var r=rate(T,Es);
+        if(r>RTHRESH)brown[i3]=Math.min(1,brown[i3]+ (r/RTHRESH-1)*dt*1.2*ink[i3]);
+      }
+      var rp=rate(T,EA_PAPER);
+      if(rp>RTHRESH)scorch[i3]=Math.min(1,scorch[i3]+(rp/RTHRESH-1)*dt*0.9);
+      if(brown[i3]>0.35)revealed++;
+      if(scorch[i3]>0.30)scorched++;
+    }
+    // char spreads once established (the classic fail)
+    if(scorched>4){
+      var sp=new Float32Array(n);
+      for(var y3=0;y3<NY;y3++)for(var x3=0;x3<NX;x3++){
+        var i4=y3*NX+x3,mx=scorch[i4];
+        for(var k2=0;k2<4;k2++){
+          var xa=x3+[1,-1,0,0][k2],ya=y3+[0,0,1,-1][k2];
+          if(xa<0||ya<0||xa>=NX||ya>=NY)continue;
+          if(scorch[ya*NX+xa]>0.6&&heat[i4]>120)mx=Math.max(mx,scorch[i4]+dt*0.6);
+        }
+        sp[i4]=Math.min(1,mx);
+      }
+      scorch.set(sp);
+    }
+    // sweet-spot: fraction of ink revealed minus paper damage
+    var inked=0;for(var i5=0;i5<n;i5++)if(ink[i5]>0.02)inked++;
+    sweet=Math.max(0,Math.min(1,(revealed/Math.max(1,inked)) - (scorched/Math.max(1,inked))*1.4));
+  }else{
+    // pH sweep from a mist source; then CO2 re-acidifies
+    var target=parseFloat(s1.value);
+    for(var y4=0;y4<NY;y4++)for(var x4=0;x4<NX;x4++){
+      var i6=y4*NX+x4;
+      var d2=Math.hypot(x4-sxg,y4-syg);
+      var w=Math.exp(-(d2*d2)/(2*7*7));
+      pH[i6]+= (target-pH[i6])*w*dt*2.6;
+      pH[i6]+= (6.0-pH[i6])*dt*0.16;              // CO2 re-acidification
+      var f=1/(1+Math.pow(10,9.3-pH[i6]));        // phenolphthalein H–H
+      pink[i6]=f*ink[i6];
+    }
+    revealed=0;for(var i7=0;i7<n;i7++)if(pink[i7]>0.3)revealed++;
+    var inked2=0;for(var i8=0;i8<n;i8++)if(ink[i8]>0.02)inked2++;
+    sweet=revealed/Math.max(1,inked2);
+  }
+}
+
+// ---- render ----------------------------------------------------------
+function draw(){
+  g.fillStyle='#06060a';g.fillRect(0,0,W,H);
+  // desk glow
+  var gr=g.createRadialGradient(W*0.53,H*0.52,10,W*0.53,H*0.52,Math.max(W,H)*0.6);
+  gr.addColorStop(0,'rgba(60,44,20,.35)');gr.addColorStop(1,'rgba(0,0,0,0)');
+  g.fillStyle=gr;g.fillRect(0,0,W,H);
+
+  var w=NX*CW,h=NY*CH;
+  // parchment
+  var pg=g.createLinearGradient(SX,SY,SX+w,SY+h);
+  pg.addColorStop(0,'#2b2418');pg.addColorStop(0.5,'#332a1c');pg.addColorStop(1,'#271f14');
+  g.fillStyle=pg;g.fillRect(SX,SY,w,h);
+  g.strokeStyle='rgba(255,210,140,.22)';g.lineWidth=1.5;g.strokeRect(SX,SY,w,h);
+
+  // cells
+  for(var y=0;y<NY;y++)for(var x=0;x<NX;x++){
+    var i=y*NX+x,px=SX+x*CW,py=SY+y*CH;
+    if(mode==='A'){
+      var hv=Math.max(0,Math.min(1,(heat[i]-40)/300));
+      if(hv>0.02){g.fillStyle='rgba(255,'+(90+120*(1-hv))+',40,'+(hv*0.16)+')';g.fillRect(px,py,CW+1,CH+1)}
+      var b=brown[i];
+      if(b>0.01){
+        var r=(90-40*b)|0,gg=(58-30*b)|0,bb=(24-14*b)|0;
+        g.fillStyle='rgba('+r+','+gg+','+bb+','+Math.min(1,b*1.1)+')';g.fillRect(px,py,CW+1,CH+1);
+      }
+      var sc=scorch[i];
+      if(sc>0.01){g.fillStyle='rgba(18,12,8,'+Math.min(1,sc)+')';g.fillRect(px,py,CW+1,CH+1);
+        if(sc>0.5&&sc<0.9){g.fillStyle='rgba(255,120,30,'+((0.9-sc)*0.5)+')';g.fillRect(px,py,CW+1,CH+1)}}
+    }else{
+      var pk=pink[i];
+      if(pk>0.01){
+        g.fillStyle='rgba(255,'+(40+30*(1-pk))+','+(140+40*(1-pk))+','+Math.min(1,pk*0.95)+')';
+        g.fillRect(px,py,CW+1,CH+1);
+      }
+      var basic=Math.max(0,Math.min(1,(pH[i]-7)/6));
+      if(basic>0.05&&pk<0.05){g.fillStyle='rgba(120,180,255,'+(basic*0.07)+')';g.fillRect(px,py,CW+1,CH+1)}
+    }
+  }
+  // pink glow bloom
+  if(mode==='B'){
+    g.save();g.globalCompositeOperation='lighter';
+    for(var y2=0;y2<NY;y2+=2)for(var x2=0;x2<NX;x2+=2){
+      var v=pink[y2*NX+x2];
+      if(v>0.35){g.fillStyle='rgba(255,60,150,'+(v*0.10)+')';
+        g.beginPath();g.arc(SX+x2*CW,SY+y2*CH,CW*3,0,6.283);g.fill()}
+    }
+    g.restore();
+  }
+
+  // source glyph
+  var sp=srcPix();
+  g.save();
+  if(mode==='A'){
+    var pw=parseFloat(s1.value);
+    var fg=g.createRadialGradient(sp.x,sp.y,2,sp.x,sp.y,60*(0.5+pw));
+    fg.addColorStop(0,'rgba(255,230,150,'+(0.55*(0.3+pw))+')');
+    fg.addColorStop(0.4,'rgba(255,140,40,'+(0.28*(0.3+pw))+')');
+    fg.addColorStop(1,'rgba(255,80,10,0)');
+    g.globalCompositeOperation='lighter';g.fillStyle=fg;
+    g.beginPath();g.arc(sp.x,sp.y,60*(0.5+pw),0,6.283);g.fill();
+    g.globalCompositeOperation='source-over';
+    g.fillStyle='#f3e0b0';g.fillRect(sp.x-4,sp.y+8,8,26);
+    g.fillStyle='rgba(255,200,90,.95)';
+    g.beginPath();g.ellipse(sp.x,sp.y,6,13*(0.5+pw),0,0,6.283);g.fill();
+  }else{
+    g.strokeStyle='rgba(150,220,255,.8)';g.lineWidth=2;
+    g.strokeRect(sp.x-9,sp.y-4,18,22);
+    g.fillStyle='rgba(150,220,255,.25)';g.fillRect(sp.x-9,sp.y-4,18,22);
+    for(var k=0;k<14;k++){
+      var a=-1.9+ (k/13)*1.0, L=16+((k*37)%22);
+      g.fillStyle='rgba(180,230,255,'+(0.35-k*0.015)+')';
+      g.beginPath();g.arc(sp.x+Math.cos(a)*L, sp.y-8+Math.sin(a)*L,1.6,0,6.283);g.fill();
+    }
+  }
+  g.fillStyle='rgba(255,235,190,.6)';g.font='10px ui-monospace,monospace';g.textAlign='center';
+  g.fillText(mode==='A'?'drag the flame':'drag the mist',sp.x,sp.y+50);
+  g.textAlign='left';
+  g.restore();
+
+  // quill cursor
+  if(!src.drag){
+    g.save();g.strokeStyle='rgba(255,225,170,.5)';g.lineWidth=1.5;
+    g.beginPath();g.moveTo(quill.x,quill.y);g.lineTo(quill.x+14,quill.y-26);g.stroke();
+    g.fillStyle='rgba(255,225,170,.35)';
+    g.beginPath();g.moveTo(quill.x+14,quill.y-26);g.lineTo(quill.x+22,quill.y-40);g.lineTo(quill.x+18,quill.y-22);g.closePath();g.fill();
+    g.restore();
+  }
+
+  // sweet-spot meter
+  var mx=W-56,my=H*0.30,mh=Math.min(H*0.34,240);
+  g.save();
+  g.fillStyle='rgba(8,8,14,.65)';g.fillRect(mx-6,my-6,26,mh+12);
+  var mg=g.createLinearGradient(0,my,0,my+mh);
+  mg.addColorStop(0,'#5effa0');mg.addColorStop(0.6,'#ffd257');mg.addColorStop(1,'#3a2a1a');
+  g.fillStyle=mg;g.fillRect(mx,my,14,mh);
+  g.strokeStyle='rgba(255,220,160,.35)';g.strokeRect(mx,my,14,mh);
+  var yy=my+mh-mh*sweet;
+  g.strokeStyle='#fff';g.lineWidth=2;g.shadowColor='#fff';g.shadowBlur=8;
+  g.beginPath();g.moveTo(mx-7,yy);g.lineTo(mx+21,yy);g.stroke();g.shadowBlur=0;
+  g.fillStyle='#ffd9a0';g.font='10px ui-monospace,monospace';g.textAlign='right';
+  g.fillText('REVEAL',mx-10,my-2);g.fillText((sweet*100).toFixed(0)+'%',mx-10,yy+4);
+  g.textAlign='left';g.restore();
+
+  // Arrhenius inset (mode A)
+  if(mode==='A'){
+    var w2=Math.min(W*0.28,320),h2=Math.min(H*0.22,160),x2=W-w2-34,y2=H*0.70;
+    g.save();
+    g.fillStyle='rgba(8,8,14,.66)';g.fillRect(x2,y2,w2,h2);
+    g.strokeStyle='rgba(255,200,120,.28)';g.strokeRect(x2,y2,w2,h2);
+    var T0=300,T1=760;
+    function X(T){return x2+w2*(T-T0)/(T1-T0)}
+    function Y(v){return y2+h2-h2*Math.max(0,Math.min(1,v))}
+    var Es=eaStroke();
+    [[Es,'#ffb457','stroke organics'],[EA_PAPER,'#8fa2b8','paper cellulose']].forEach(function(s,si){
+      g.strokeStyle=s[1];g.lineWidth=1.8;g.shadowColor=s[1];g.shadowBlur=6;g.beginPath();
+      for(var i=0;i<=120;i++){var T=T0+(T1-T0)*i/120, v=rate(T,s[0])/RTHRESH/3;
+        if(i===0)g.moveTo(X(T),Y(v));else g.lineTo(X(T),Y(v))}
+      g.stroke();g.shadowBlur=0;
+      g.fillStyle=s[1];g.font='9px ui-monospace,monospace';g.fillText(s[2],x2+6,y2+12+si*11);
+    });
+    // threshold + current temp
+    g.setLineDash([3,3]);g.strokeStyle='rgba(255,255,255,.3)';
+    g.beginPath();g.moveTo(x2,Y(1/3));g.lineTo(x2+w2,Y(1/3));g.stroke();g.setLineDash([]);
+    var Tc=maxT+273;
+    g.strokeStyle='#fff';g.lineWidth=1.5;g.beginPath();g.moveTo(X(Tc),y2);g.lineTo(X(Tc),y2+h2);g.stroke();
+    g.fillStyle='#fff';g.font='9px ui-monospace,monospace';g.fillText('T='+Tc.toFixed(0)+'K',Math.min(X(Tc)+4,x2+w2-46),y2+h2-6);
+    g.fillStyle='#a9a293';g.fillText('reveal window: stroke lit, paper not',x2+6,y2-6);
+    g.restore();
+  }
+
+  // status line
+  var msg = mode==='A'
+    ? (scorched>revealed*0.6&&scorched>6 ? 'OVERHEATED — the paper is charring with the message'
+      : (revealed>8?'REVEALED — strokes brown, paper still pale':'cold — bring the flame closer'))
+    : (revealed>8?'BLOOM — phenolphthalein pink above pH 9.3':'colourless — sweep the basic mist');
+  g.fillStyle=(mode==='A'&&scorched>revealed*0.6&&scorched>6)?'#ff7a5a':'#ffd9a0';
+  g.font='15px ui-monospace,monospace';g.textAlign='center';
+  g.fillText(msg,SX+w/2,SY+h+30);g.textAlign='left';
+}
+
+// ---- loop ------------------------------------------------------------
+var last=performance.now();
+function frame(now){
+  var dt=Math.min(0.04,(now-last)/1000);last=now;
+  step(dt);draw();
+  var Es=eaStroke();
+  rd.innerHTML = mode==='A'
+   ? 'MODE A · heat  peak T <b>'+(maxT+273).toFixed(0)+'K</b> ('+maxT.toFixed(0)+'°C)<br>'+
+     'Ea stroke <b>'+Es.toFixed(2)+'</b> &lt; Ea paper <b>'+EA_PAPER.toFixed(2)+'</b>  Δ=<b>'+(EA_PAPER-Es).toFixed(2)+'</b><br>'+
+     'onset  stroke <b>'+onsetT(Es).toFixed(0)+'K</b> · paper <b>'+onsetT(EA_PAPER).toFixed(0)+'K</b><br>'+
+     'revealed <b>'+revealed+'</b> cells  scorched <b>'+scorched+'</b>'
+   : 'MODE B · pH spray  mist pH <b>'+parseFloat(s1.value).toFixed(2)+'</b><br>'+
+     'phenolphthalein pKa <b>9.30</b> · CO₂ re-acidifies to 6.0<br>'+
+     'pink cells <b>'+revealed+'</b>  reveal <b>'+(sweet*100).toFixed(0)+'%</b>';
+  requestAnimationFrame(frame);
+}
+resize();requestAnimationFrame(frame);
+})();
+</script>

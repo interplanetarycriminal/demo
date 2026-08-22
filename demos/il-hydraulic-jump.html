@@ -54,19 +54,23 @@ var rR=document.getElementById('rR'),rF=document.getElementById('rF'),rh1=docume
 // Viscous boundary layer thins/slows the film: u(r) ~ u0*(r0/r)^a with a>0.
 // Fr(r) = u / sqrt(g*h).  Jump sits where Fr = 1.
 var G=9.81;
-var P={r0:0.006, u0:1.0, Q:1.0, nu:1.0};
+var P={r0:0.002, u0:1.2, Q:1.0, nu:1.0};
+// Watson-style thin film: inviscid spread near the jet + a viscous boundary
+// layer that thickens as nu*r^2/Q.  Continuity fixes u from h.
 function film(r,S){          // r in metres -> {h,u}
   var r0=P.r0; if(r<r0)r=r0;
-  var u0=1.45*Math.sqrt(S.Q);                 // jet impact speed scale
-  var a=0.32+0.30*S.nu;                        // viscous decay exponent
-  var u=u0*Math.pow(r0/r,a);
-  var Qv=2.2e-5*S.Q;                           // volumetric flow m^3/s
-  var h=Qv/(2*Math.PI*r*u);
+  var Qv=1.0e-5*S.Q;                           // volumetric flow  m^3/s
+  var u0=P.u0;                                 // jet impact speed
+  var hInv=Qv/(2*Math.PI*r*u0);                // free (inviscid) film
+  var hVis=1.65e-6*S.nu*r*r/Qv;                // viscous boundary layer
+  var h=hInv+hVis;
+  var u=Qv/(2*Math.PI*r*h);
   return {h:h,u:u};
 }
 function Fr(r,S){var f=film(r,S);return f.u/Math.sqrt(G*f.h);}
+// => r_jump ∝ Q^(5/8) nu^(-3/8), Watson's scaling
 function jumpRadius(S){       // bisection on Fr(r)=1
-  var lo=P.r0*1.02, hi=0.35;
+  var lo=P.r0*1.02, hi=0.5;
   if(Fr(lo,S)<1) return lo;
   if(Fr(hi,S)>1) return hi;
   for(var i=0;i<60;i++){var m=0.5*(lo+hi);if(Fr(m,S)>1)lo=m;else hi=m;}
@@ -84,8 +88,7 @@ readUI();
 var CX,CY,SCALE,SIDEY;
 function layout(){CX=W*0.5;CY=H*0.42;SCALE=Math.min(W,H*1.15)*0.98;SIDEY=H-Math.max(120,H*0.20);}
 // SCALE: pixels per metre for the top view
-function px(rm){return rm*SCALE*2.0;}
-function m2px(rm){return rm*SCALE*2.0;}
+function m2px(rm){return rm*SCALE*2.6;}
 
 // horseshoe: tilt shifts jump radius with azimuth
 function Rjump(th,Rj){return Rj*(1+S.tilt*0.55*Math.cos(th));}

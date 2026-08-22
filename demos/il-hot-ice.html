@@ -1,0 +1,328 @@
+<title>Hot Ice Flask</title>
+<style>
+html,body{margin:0;padding:0;background:#04060a;overflow:hidden;height:100%}
+canvas{display:block;position:fixed;top:0;left:0}
+#ui{position:fixed;top:0;left:0;z-index:10;margin:10px;padding:10px 12px;max-width:350px;
+  background:rgba(6,8,16,.64);border:1px solid rgba(255,170,90,.28);border-radius:6px;
+  color:#ffd8a8;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;text-shadow:0 0 8px rgba(255,150,60,.35)}
+#ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.09em;color:#ffe9cd}
+#ui .m{color:#e6bb8a}#ui .s{color:#b48d64}
+#ui .lin{color:#8d6f50;font-size:10px}
+#ui .r{color:#8fe8ff;margin-top:6px;white-space:pre}
+#ui a{color:#ffb46a}
+#ui label{display:block;margin-top:5px;color:#f0c79a}
+#ui input[type=range]{width:100%;accent-color:#ff9a3c}
+.tag{display:inline-block;margin-top:6px;padding:1px 6px;border:1px solid rgba(255,120,120,.4);
+  border-radius:9px;color:#ff9a9a;font-size:9.5px;letter-spacing:.06em}
+button{background:rgba(70,40,15,.6);color:#ffd9ac;border:1px solid rgba(255,170,90,.35);
+  border-radius:4px;font:10px ui-monospace,monospace;padding:3px 7px;margin:4px 4px 0 0;cursor:pointer}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>HOT ICE — SODIUM ACETATE</h1>
+<div class="m">A supersaturated acetate solution stays liquid below its freezing point until one seed kicks it over the barrier — crystallization races out and dumps latent heat: "ice" that burns warm.</div>
+<div class="s">19th-c. supersaturation classic · Ostwald metastability</div>
+<div class="lin">LINEAGE: Ostwald metastability → hand-warmer pouches → supercooled water (pure-water sibling next door)</div>
+<label>supersaturation S <span id="vs">1.60</span></label>
+<input id="S" type="range" min="100" max="220" value="160">
+<div><button id="remelt">REMELT (heat &amp; cool slowly)</button></div>
+<div class="m" style="margin-top:6px">CLICK the flask to seed. Too shallow a supersaturation and the seed fizzles.</div>
+<div class="r" id="ro">—</div>
+<a href="index.html">← gallery</a>
+<span class="tag">simulation — no recipe</span>
+</div>
+<script>
+(function(){
+var c=document.getElementById('c'),x=c.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,devicePixelRatio||1);W=innerWidth;H=innerHeight;
+ c.width=W*DPR;c.height=H*DPR;c.style.width=W+'px';c.style.height=H+'px';x.setTransform(DPR,0,0,DPR,0,0);buildGrid();}
+addEventListener('resize',resize);
+
+// physics constants (sodium acetate trihydrate, illustrative)
+var LATENT=264,     // J/g latent heat of fusion
+    CP=2.9,         // J/g/K solution heat capacity
+    TMELT=58.0,     // deg C
+    TAMB=21.0,
+    MASS=180;       // g in flask
+
+var S=1.60, Tsol=TAMB, seeded=false, remelting=0, tRemelt=0;
+var frac=0, heatReleased=0, tSeed=0, frontR=0, seedX=0,seedY=0, fizzle=0;
+var Ssl=document.getElementById('S');
+Ssl.oninput=function(){S=+this.value/100;document.getElementById('vs').textContent=S.toFixed(2);
+  if(!seeded){Tsol=supercooledT();}};
+document.getElementById('remelt').onclick=function(){remelting=1;tRemelt=0;};
+
+function supercooledT(){ // deeper supersaturation => further below melting point
+  return TAMB + (1.85-S)*4;
+}
+function frontSpeed(){ return Math.max(0,(S-1.06))*0.85; } // grid cells per second-ish scale
+function deltaT(){ // latent heat budget: all mass crystallizes -> capped at melting point
+  var dT=LATENT*1.0/CP; return Math.min(TMELT-Tsol, dT);
+}
+
+// ---- flask geometry & crystal grid ----
+var GS=6,gw=0,gh=0,sol=null,solid=null,age=null;
+function flask(){
+  var h=Math.min(H*0.66,520),w=h*0.62;
+  return {x:W*0.5,y:H*0.52,w:w,h:h,neck:w*0.24};
+}
+function insideFlask(px,py){
+  var f=flask();
+  var ly=py-(f.y-f.h/2);
+  if(ly<0||ly>f.h)return false;
+  var t=ly/f.h;
+  var hw;
+  if(t<0.30){hw=f.neck/2;}
+  else{var u=(t-0.30)/0.70;hw=f.neck/2+(f.w/2-f.neck/2)*Math.sin(u*Math.PI*0.5*1.0);
+       hw*= (t>0.93? 1-(t-0.93)/0.07*0.35 : 1);}
+  return Math.abs(px-f.x)<hw;
+}
+function buildGrid(){
+  var f=flask();
+  gw=Math.ceil(f.w/GS)+4;gh=Math.ceil(f.h/GS)+4;
+  var n=gw*gh;sol=new Uint8Array(n);solid=new Float32Array(n);age=new Float32Array(n);
+  for(var j=0;j<gh;j++)for(var i=0;i<gw;i++){
+    var px=f.x-f.w/2-2*GS+i*GS+GS/2, py=f.y-f.h/2-2*GS+j*GS+GS/2;
+    sol[j*gw+i]=insideFlask(px,py)?1:0;
+  }
+}
+function cellPos(id){var f=flask();var i=id%gw,j=(id/gw)|0;
+  return {x:f.x-f.w/2-2*GS+i*GS+GS/2,y:f.y-f.h/2-2*GS+j*GS+GS/2};}
+
+function liquidCells(){var n=0;for(var i=0;i<sol.length;i++)if(sol[i])n++;return n;}
+var totalCells=1;
+
+function seed(px,py){
+  if(seeded||remelting)return;
+  if(!insideFlask(px,py)){return;}
+  if(S<1.10){fizzle=1.4;return;}
+  seeded=true;tSeed=0;seedX=px;seedY=py;frontR=0;frac=0;heatReleased=0;
+  totalCells=liquidCells();
+}
+function pos(e){var t=e.touches?e.touches[0]:e;return{x:t.clientX,y:t.clientY};}
+c.addEventListener('mousedown',function(e){var p=pos(e);seed(p.x,p.y);});
+c.addEventListener('touchstart',function(e){var p=pos(e);seed(p.x,p.y);e.preventDefault();},{passive:false});
+
+var crackle=[];
+var last=performance.now();
+function step(dt){
+  fizzle=Math.max(0,fizzle-dt);
+  if(remelting){
+    tRemelt+=dt;
+    // heat past saturation then cool slowly back to metastable
+    var p=Math.min(1,tRemelt/3.2);
+    if(p<0.5){Tsol=TMELT+18*(p/0.5);for(var i=0;i<solid.length;i++)solid[i]*= (1-dt*1.6);}
+    else{
+      for(var i2=0;i2<solid.length;i2++)solid[i2]=0;
+      var q=(p-0.5)/0.5;Tsol=(TMELT+18)+(supercooledT()-(TMELT+18))*q;
+    }
+    if(p>=1){remelting=0;seeded=false;frac=0;heatReleased=0;frontR=0;Tsol=supercooledT();}
+    return;
+  }
+  if(seeded){
+    tSeed+=dt;
+    var v=frontSpeed()*160; // px/s
+    frontR+=v*dt;
+    var newly=0;
+    for(var i=0;i<sol.length;i++){
+      if(!sol[i]||solid[i]>=1)continue;
+      var p2=cellPos(i);
+      var d=Math.hypot(p2.x-seedX,p2.y-seedY);
+      // dendritic: angular modulation of the front radius
+      var a=Math.atan2(p2.y-seedY,p2.x-seedX);
+      var dend=1+0.16*Math.cos(a*6)+0.09*Math.cos(a*11+1.7);
+      if(d<frontR*dend){
+        var was=solid[i];solid[i]=Math.min(1,solid[i]+dt*7);age[i]+=dt;
+        newly+=solid[i]-was;
+        if(was===0&&Math.random()<0.05)crackle.push({x:p2.x,y:p2.y,l:1});
+      }
+    }
+    if(totalCells>0){
+      frac=0;for(var k=0;k<solid.length;k++)if(sol[k])frac+=solid[k];
+      frac/=totalCells;
+    }
+    // latent heat: dQ = L * dm ; dT = dQ/(m*cp), capped at melting point
+    var dm=(newly/Math.max(1,totalCells))*MASS;
+    var dQ=LATENT*dm;heatReleased+=dQ;
+    Tsol=Math.min(TMELT, Tsol + dQ/(MASS*CP));
+    if(frac>0.999){ // slow cooling afterwards
+      Tsol+= (TAMB-Tsol)*Math.min(1,dt*0.07);
+    }
+  }else if(!remelting){
+    Tsol += (supercooledT()-Tsol)*Math.min(1,dt*2);
+  }
+  for(var q2=crackle.length-1;q2>=0;q2--){crackle[q2].l-=dt*2.2;if(crackle[q2].l<=0)crackle.splice(q2,1);}
+}
+
+function draw(){
+  var f=flask();
+  x.fillStyle='#04060a';x.fillRect(0,0,W,H);
+  // warm ambient when hot
+  var warm=Math.max(0,(Tsol-TAMB)/(TMELT-TAMB));
+  if(warm>0.01){
+    var rg=x.createRadialGradient(f.x,f.y,0,f.x,f.y,f.h*1.2);
+    rg.addColorStop(0,'rgba(255,120,40,'+(warm*0.18)+')');rg.addColorStop(1,'rgba(0,0,0,0)');
+    x.fillStyle=rg;x.fillRect(0,0,W,H);
+  }
+  // liquid body
+  x.save();
+  x.beginPath();
+  for(var j=0;j<gh;j++){}
+  // draw flask silhouette by scanning
+  var pts=[],pts2=[];
+  for(var t=0;t<=60;t++){
+    var ly=f.y-f.h/2+f.h*t/60;
+    var tt=t/60,hw;
+    if(tt<0.30)hw=f.neck/2;
+    else{var u=(tt-0.30)/0.70;hw=f.neck/2+(f.w/2-f.neck/2)*Math.sin(u*Math.PI*0.5);
+      hw*=(tt>0.93?1-(tt-0.93)/0.07*0.35:1);}
+    pts.push([f.x-hw,ly]);pts2.push([f.x+hw,ly]);
+  }
+  x.beginPath();x.moveTo(pts[0][0],pts[0][1]);
+  for(var i=1;i<pts.length;i++)x.lineTo(pts[i][0],pts[i][1]);
+  for(var i2=pts2.length-1;i2>=0;i2--)x.lineTo(pts2[i2][0],pts2[i2][1]);
+  x.closePath();
+  var lg=x.createLinearGradient(0,f.y-f.h/2,0,f.y+f.h/2);
+  lg.addColorStop(0,'rgba(30,60,90,.35)');lg.addColorStop(1,'rgba(20,45,75,.6)');
+  x.fillStyle=lg;x.fill();
+  x.clip();
+  // crystal cells
+  for(var i3=0;i3<solid.length;i3++){
+    if(!sol[i3]||solid[i3]<=0.01)continue;
+    var p=cellPos(i3),s=solid[i3];
+    var heat=Math.min(1,s);
+    x.fillStyle='rgba('+(210+40*heat)+','+(225+20*heat)+',255,'+(0.16+s*0.55)+')';
+    x.fillRect(p.x-GS/2,p.y-GS/2,GS+0.6,GS+0.6);
+    if(s>0.5&&((i3*7)%5===0)){
+      x.fillStyle='rgba(255,255,255,'+(s*0.35)+')';x.fillRect(p.x-GS/2,p.y-GS/2,GS*0.5,GS*0.5);}
+  }
+  // advancing front highlight
+  if(seeded&&frac<0.999){
+    x.strokeStyle='rgba(180,235,255,.35)';x.lineWidth=2;
+    x.beginPath();
+    for(var a=0;a<=64;a++){var ang=a/64*6.283;
+      var dd=1+0.16*Math.cos(ang*6)+0.09*Math.cos(ang*11+1.7);
+      var X=seedX+Math.cos(ang)*frontR*dd,Y=seedY+Math.sin(ang)*frontR*dd;
+      a?x.lineTo(X,Y):x.moveTo(X,Y);}
+    x.closePath();x.stroke();x.lineWidth=1;
+  }
+  for(var q=0;q<crackle.length;q++){var k=crackle[q];
+    x.fillStyle='rgba(255,255,255,'+k.l*0.7+')';x.fillRect(k.x-1,k.y-1,2.5,2.5);}
+  x.restore();
+  // glass outline
+  x.strokeStyle='rgba(170,205,235,.5)';x.lineWidth=2;
+  x.beginPath();x.moveTo(pts[0][0],pts[0][1]);
+  for(var i4=1;i4<pts.length;i4++)x.lineTo(pts[i4][0],pts[i4][1]);
+  x.stroke();
+  x.beginPath();x.moveTo(pts2[0][0],pts2[0][1]);
+  for(var i5=1;i5<pts2.length;i5++)x.lineTo(pts2[i5][0],pts2[i5][1]);
+  x.stroke();x.lineWidth=1;
+
+  drawThermo(f);
+  drawThermalCam();
+  drawWell();
+
+  if(!seeded&&!remelting){
+    x.fillStyle='rgba(255,220,180,.85)';x.font='13px ui-monospace,monospace';x.textAlign='center';
+    x.fillText(S<1.10?'S too low — a seed will FIZZLE':'CLICK TO SEED',f.x,f.y+f.h/2+42);
+    x.textAlign='left';
+  }
+  if(fizzle>0){x.fillStyle='rgba(255,140,120,'+Math.min(1,fizzle)+')';x.font='14px ui-monospace,monospace';
+    x.textAlign='center';x.fillText('seed dissolved — barely supersaturated',f.x,f.y);x.textAlign='left';}
+  if(remelting){x.fillStyle='rgba(255,180,90,.9)';x.font='13px ui-monospace,monospace';x.textAlign='center';
+    x.fillText('REMELTING → cooling slowly back into the metastable well',f.x,f.y+f.h/2+42);x.textAlign='left';}
+}
+
+function drawThermo(f){
+  var tx=f.x+f.w/2+42,ty=f.y-f.h*0.36,th=f.h*0.72,tw=13;
+  x.strokeStyle='rgba(190,215,240,.55)';x.strokeRect(tx,ty,tw,th);
+  x.beginPath();x.arc(tx+tw/2,ty+th+11,11,0,6.283);x.stroke();
+  var lo=10,hi=70;
+  var fr=Math.max(0,Math.min(1,(Tsol-lo)/(hi-lo)));
+  var col=Tsol>45?'rgba(255,90,50,.95)':Tsol>28?'rgba(255,170,60,.9)':'rgba(120,190,255,.9)';
+  x.fillStyle=col;x.fillRect(tx+2,ty+th-fr*(th-4),tw-4,fr*(th-4));
+  x.beginPath();x.arc(tx+tw/2,ty+th+11,8,0,6.283);x.fill();
+  x.fillStyle='#ffd8a8';x.font='11px ui-monospace,monospace';
+  x.fillText(Tsol.toFixed(1)+' °C',tx+tw+8,ty+th-fr*(th-4)+4);
+  // melting-point tick
+  var mf=(TMELT-lo)/(hi-lo);
+  x.strokeStyle='rgba(255,120,80,.7)';x.setLineDash([3,3]);
+  x.beginPath();x.moveTo(tx-8,ty+th-mf*(th-4));x.lineTo(tx+tw+4,ty+th-mf*(th-4));x.stroke();x.setLineDash([]);
+  x.fillStyle='rgba(255,140,100,.8)';x.font='9px ui-monospace,monospace';
+  x.fillText('mp 58°C',tx+tw+8,ty+th-mf*(th-4)-6);
+}
+
+function drawThermalCam(){
+  var w=Math.min(180,W*0.16),h=w*0.85,ix=W-w-14,iy=14;
+  x.fillStyle='rgba(4,6,12,.85)';x.strokeStyle='rgba(255,170,90,.3)';
+  x.fillRect(ix,iy,w,h);x.strokeRect(ix+.5,iy+.5,w,h);
+  x.fillStyle='#e6bb8a';x.font='9px ui-monospace,monospace';x.fillText('THERMAL CAM',ix+6,iy+13);
+  var cx=ix+w/2,cy=iy+h*0.58,r=Math.min(w,h)*0.30;
+  var warm=Math.max(0,Math.min(1,(Tsol-TAMB)/(TMELT-TAMB)));
+  var rg=x.createRadialGradient(cx,cy,0,cx,cy,r*2.4);
+  rg.addColorStop(0,'rgba('+(60+195*warm)+','+(40+120*warm*(1-warm*0.5))+','+(160-140*warm)+',0.95)');
+  rg.addColorStop(0.55,'rgba('+(30+140*warm)+',20,'+(120-90*warm)+',0.6)');
+  rg.addColorStop(1,'rgba(6,4,26,0)');
+  x.fillStyle=rg;x.fillRect(ix+2,iy+18,w-4,h-20);
+  x.fillStyle='rgba(255,235,200,.9)';x.font='10px ui-monospace,monospace';
+  x.fillText(Tsol.toFixed(1)+'°C',ix+6,iy+h-6);
+}
+
+function drawWell(){
+  var w=Math.min(340,W*0.30),h=185,ix=12,iy=H-h-14;
+  x.fillStyle='rgba(8,6,14,.82)';x.strokeStyle='rgba(255,170,90,.3)';
+  x.fillRect(ix,iy,w,h);x.strokeRect(ix+.5,iy+.5,w,h);
+  x.fillStyle='#ffe9cd';x.font='10px ui-monospace,monospace';
+  x.fillText('METASTABILITY — energy vs state (Ostwald)',ix+8,iy+15);
+  var px=ix+18,py=iy+26,pw=w-36,ph=h-58;
+  // curve: shallow local well (liquid) -> barrier -> deep well (crystal)
+  var depth=(S-1.0)*0.55; // deeper supersaturation -> deeper crystal well, lower barrier
+  var barrier=Math.max(0.05,0.42-(S-1.0)*0.30);
+  function E(u){ // u 0..1
+    var liq=0.55-0.16*Math.exp(-Math.pow((u-0.16)/0.10,2));
+    var bar=barrier*Math.exp(-Math.pow((u-0.42)/0.10,2));
+    var cry=-(0.30+depth)*Math.exp(-Math.pow((u-0.82)/0.18,2));
+    return liq+bar+cry;
+  }
+  x.strokeStyle='rgba(255,190,120,.9)';x.lineWidth=2;x.beginPath();
+  for(var i=0;i<=140;i++){var u=i/140,e=E(u);
+    var X=px+u*pw,Y=py+ph-(e+0.4)/1.3*ph;
+    i?x.lineTo(X,Y):x.moveTo(X,Y);}
+  x.stroke();x.lineWidth=1;
+  // ball position
+  var bu=seeded? 0.16+0.72*Math.min(1,frac*1.15) : 0.16;
+  if(remelting)bu=0.16;
+  var be=E(bu);
+  var bX=px+bu*pw,bY=py+ph-(be+0.4)/1.3*ph-5;
+  x.fillStyle=seeded?'rgba(140,230,255,.95)':'rgba(255,230,150,.95)';
+  x.beginPath();x.arc(bX,bY,5,0,6.283);x.fill();
+  x.strokeStyle='rgba(255,255,255,.5)';x.stroke();
+  x.fillStyle='#b48d64';x.font='9px ui-monospace,monospace';
+  x.fillText('liquid (metastable)',px,py+ph+13);
+  x.fillText('barrier',px+pw*0.38,py+ph+13);
+  x.fillText('crystal',px+pw*0.80,py+ph+13);
+  x.fillStyle='#e6bb8a';
+  x.fillText('seed = kick over the barrier ΔG* = '+barrier.toFixed(2)+'  (S='+S.toFixed(2)+')',ix+8,iy+h-8);
+}
+
+function loop(t){
+  var dt=Math.min(0.05,(t-last)/1000);last=t;
+  step(dt);draw();
+  var mCryst=frac*MASS;
+  var predicted=LATENT*mCryst;
+  document.getElementById('ro').textContent=
+    'state       '+(remelting?'remelting':seeded?(frac<0.999?'crystallizing':'solid'):'metastable liquid')+
+    '\nT           '+Tsol.toFixed(2)+' °C   (mp '+TMELT+')'+
+    '\nfront speed '+(frontSpeed()*160).toFixed(0)+' px/s'+
+    '\ncrystallized '+(frac*100).toFixed(1)+'%  ('+mCryst.toFixed(1)+' g)'+
+    '\nlatent heat '+heatReleased.toFixed(0)+' J   (L·m = '+predicted.toFixed(0)+')'+
+    '\nΔT budget   '+deltaT().toFixed(1)+' K';
+  requestAnimationFrame(loop);
+}
+resize();Tsol=supercooledT();
+requestAnimationFrame(function(t){last=t;loop(t);});
+})();
+</script>
+</body>

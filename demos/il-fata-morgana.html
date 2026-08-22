@@ -62,71 +62,64 @@ addEventListener('keydown',function(e){
 });
 
 // ---------- layered refractivity profile ----------
-// Heights in metres above sea level, 0..160.
-// Base: normal atmosphere, dn/dz slightly negative (n falls with height).
-// Inversion layer: a band where n falls FAST -> rays crossing it bend strongly
-// downward, trapping (ducting) shallow rays inside.
+// Heights z in metres above the sea, 0..ZMAX. We work with the MODIFIED index
+//   m(z) = n(z) + z/R_earth
+// which folds the Earth's curvature into a flat-Earth ray equation. In the
+// standard atmosphere dm/dz = +1.3e-7 > 0, so rays curve gently UP in this
+// frame — that is what keeps a shallow ray from striking the sea.
+// A thermal INVERSION makes dn/dz strongly negative; where dm/dz flips sign the
+// layer becomes a lid that bends rays back down. Lid above + lift below = a DUCT.
+var ZMAX=300, NC=600;
+var REARTH=6.371e6;
+var BASE=-2.6e-8;                 // dn/dz of the standard atmosphere (per metre)
 var layers=[
-  {z:14, w:7,  s:0},
-  {z:42, w:11, s:0},
-  {z:84, w:9,  s:0}
+  {z:28, w:5},
+  {z:48, w:7},
+  {z:72, w:7}
 ];
-var ZMAX=160;
-var BASE=-2.6e-8;   // d n / d z of the standard atmosphere (per metre)
+var PLOTMAX=120;                  // metres shown in the insets
 
 function layerStrength(i){
   var v=[s1,s2,s3][i];
-  return (+v.value/100)*7.2e-6;   // extra |dn/dz| inside the layer
+  return (+v.value/100)*4.2e-6;   // extra |dn/dz| inside the inversion
 }
-function dndz(z){
-  var d=BASE;
+function dmdz(z){
+  var d=BASE + 1/REARTH;          // modified index gradient, standard air
   for(var i=0;i<3;i++){
-    var L=layers[i],S=layerStrength(i);
+    var S=layerStrength(i);
     if(S<=0)continue;
-    var u=(z-L.z)/L.w;
-    d += -S*Math.exp(-u*u);       // negative: n drops through the inversion
+    var L=layers[i], u=(z-L.z)/L.w;
+    d += -S*Math.exp(-u*u);       // n drops fast through the inversion
   }
   return d;
 }
-function nOf(z){
-  // integrate dn/dz from 0
-  var n=1.000293, step=ZMAX/240, acc=0;
-  var target=Math.max(0,Math.min(ZMAX,z));
-  for(var q=0;q<240;q++){
-    var zz=q*step;
-    if(zz>=target)break;
-    acc+=dndz(zz+step*0.5)*step;
-  }
-  return n+acc;
-}
-var nCache=null;
+var mCache=new Float64Array(NC+1);
 function rebuildCache(){
-  nCache=new Float64Array(241);
-  var n=1.000293,step=ZMAX/240;
-  nCache[0]=n;
-  for(var q=0;q<240;q++){n+=dndz(q*step+step*0.5)*step;nCache[q+1]=n;}
+  var m=1.000293, step=ZMAX/NC;
+  mCache[0]=m;
+  for(var q=0;q<NC;q++){ m+=dmdz(q*step+step*0.5)*step; mCache[q+1]=m; }
 }
-function nFast(z){
+function mFast(z){
   if(z<0)z=0; if(z>ZMAX)z=ZMAX;
-  var f=z/ZMAX*240, i=Math.floor(f), fr=f-i;
-  if(i>=240)return nCache[240];
-  return nCache[i]+(nCache[i+1]-nCache[i])*fr;
+  var f=z/ZMAX*NC, i=Math.floor(f), fr=f-i;
+  if(i>=NC)return mCache[NC];
+  return mCache[i]+(mCache[i+1]-mCache[i])*fr;
 }
-function dnFast(z){
-  var h=0.35;
-  return (nFast(z+h)-nFast(z-h))/(2*h);
+function dmFast(z){
+  var h=ZMAX/NC;
+  return (mFast(z+h)-mFast(z-h))/(2*h);
 }
 
 // ---------- ray tracing ----------
 // Trace from the OBSERVER at (0, zEye) outward with launch angle th.
-// Return the height at which it crosses x = D (ship distance), or null if it
-// hit the sea / flew away.
-var zEye=22;
+// Return the height at which it crosses x = D (the ship), or null if it struck
+// the sea or escaped the model ceiling.
+var zEye=10;
 function shoot(th,D){
   var z=zEye,t=th,x=0,dx=D/900;
   for(var i=0;i<900;i++){
-    var n=nFast(z);
-    t += (dnFast(z)/n)*dx;   // eikonal: curves toward increasing n
+    var m=mFast(z);
+    t += (dmFast(z)/m)*dx;   // eikonal: rays curve toward increasing m
     z += t*dx; x += dx;
     if(z<=0)return null;     // struck the sea
     if(z>=ZMAX)return null;  // escaped
@@ -134,25 +127,25 @@ function shoot(th,D){
   return z;
 }
 function shootPath(th,D,out){
-  var z=zEye,t=th,x=0,dx=D/420;
+  var z=zEye,t=th,x=0,dx=D/440;
   out.length=0;out.push(0,z);
-  for(var i=0;i<420;i++){
-    var n=nFast(z);
-    t += (dnFast(z)/n)*dx;
+  for(var i=0;i<440;i++){
+    var m=mFast(z);
+    t += (dmFast(z)/m)*dx;
     z += t*dx; x += dx;
     if(z<=0){out.push(x,0);return false;}
     if(z>=ZMAX){out.push(x,ZMAX);return false;}
-    if((i&1)===0)out.push(x,z);
+    out.push(x,z);
   }
-  out.push(x,z);return true;
+  return true;
 }
 
 // ---------- image mapping ----------
-// The observer scans launch angles; each angle maps to an arrival height z(θ)
-// at the ship's distance. Where z(θ) is monotonic we get one image; where the
-// duct folds it, z(θ) is non-monotonic -> multiple θ map to the SAME z ->
-// multiple copies, and the branches with dz/dθ < 0 are INVERTED.
-var NA=520, thMin=-0.0058, thMax=0.0058;
+// The observer scans launch angles; each maps to an arrival height z(theta) at
+// the ship. Where z(theta) is monotonic there is ONE image. A duct folds the
+// mapping, so several thetas land on the SAME z -> several copies; branches with
+// dz/dtheta < 0 arrive INVERTED.
+var NA=440, thMin=-0.0011, thMax=0.0011;
 var zArr=new Float64Array(NA), okArr=new Uint8Array(NA);
 var branches=[];
 
@@ -163,7 +156,6 @@ function buildMapping(D){
     if(r===null){okArr[i]=0;zArr[i]=0;}
     else{okArr[i]=1;zArr[i]=r;}
   }
-  // split into monotone branches over the valid runs
   branches.length=0;
   var i0=0;
   while(i0<NA){
@@ -171,7 +163,6 @@ function buildMapping(D){
     if(i0>=NA)break;
     var i1=i0; while(i1+1<NA&&okArr[i1+1])i1++;
     if(i1-i0>=4){
-      // subdivide by sign of dz/dth
       var st=i0, sign=Math.sign(zArr[i0+1]-zArr[i0])||1;
       for(var k=i0+1;k<i1;k++){
         var sg=Math.sign(zArr[k+1]-zArr[k])||sign;
@@ -184,11 +175,19 @@ function buildMapping(D){
     }
     i0=i1+1;
   }
+  // keep only branches that actually see part of the ship
+  var keep=[];
+  for(var q=0;q<branches.length;q++){
+    var B=branches[q];
+    var lo=Math.min(zArr[B.a],zArr[B.b]), hi=Math.max(zArr[B.a],zArr[B.b]);
+    if(hi>0.3&&lo<SHIP_H)keep.push(B);
+  }
+  branches=keep;
   return branches;
 }
 
 // ---------- ship sprite ----------
-var SHIP_H=26;  // metres tall
+var SHIP_H=24;  // metres tall
 var SHIP_W=0.0092; // angular half-width fraction of screen
 function shipColorAt(v){
   // v in 0..1 from waterline(0) to masthead(1)
@@ -209,8 +208,8 @@ function angY(th){return horizonY()-th*SCALE}
 function draw(){
   var now=performance.now(); if(!paused)TT=(now-t0)/1000;
   rebuildCache();
-  var D=200+ (+sD.value/100)*2600;   // ship distance in metres (10km-ish scale)
-  SCALE=H*4.0/0.0116;
+  var D=8000+ (+sD.value/100)*20000;  // ship distance: 10 km .. 28 km
+  SCALE=H*0.62/(thMax-thMin);
 
   var hy=horizonY();
   // sky
@@ -259,7 +258,7 @@ function draw(){
       var y1=angY(th),y2=angY(th2);
       var hgt=Math.abs(y2-y1)+1.2;
       // stretch factor: screen px per metre of ship, vs. the unducted case
-      var st=Math.abs((th2-th)/((z2-z)||1e-9))*SHIP_H*SCALE/ (H*0.06);
+      var st=Math.abs((th2-th)*SCALE/(((z2-z)||1e-9)*(H*0.62/SHIP_H)));
       if(isFinite(st))maxStretch=Math.max(maxStretch,Math.min(40,st));
       // width shrinks slightly with the vertical stretch (a real Fata Morgana
       // is stretched vertically only)
@@ -311,11 +310,11 @@ function drawProfile(D){
   g.fillStyle='rgba(3,6,16,.8)';g.strokeStyle='rgba(140,190,255,.28)';g.lineWidth=1;
   g.beginPath();g.rect(PX,PY,PW,PH);g.fill();g.stroke();
   g.font='10px ui-monospace,monospace';g.fillStyle='#8fd0ff';
-  g.fillText('n(z)  refractive profile',PX+7,PY+14);
+  g.fillText('m(z) = n + z/R   modified index',PX+7,PY+14);
 
-  var nA=nFast(0),nB=nFast(ZMAX);
+  var nA=mFast(0),nB=mFast(PLOTMAX);
   var lo=Math.min(nA,nB),hi=Math.max(nA,nB),rng=Math.max(1e-9,hi-lo);
-  function pz(z){return PY+PH-14-(z/ZMAX)*(PH-34)}
+  function pz(z){return PY+PH-14-(z/PLOTMAX)*(PH-34)}
   function pn(n){return PX+10+((n-lo)/rng)*(PW-26)}
 
   // inversion bands
@@ -335,7 +334,7 @@ function drawProfile(D){
   // curve
   g.strokeStyle='#9ad2ff';g.lineWidth=1.6;g.shadowColor='#6ab8ff';g.shadowBlur=7;
   g.beginPath();
-  for(var q=0;q<=120;q++){var z=q/120*ZMAX;var X=pn(nFast(z));
+  for(var q=0;q<=120;q++){var z=q/120*PLOTMAX;var X=pn(mFast(z));
     if(q===0)g.moveTo(X,pz(z));else g.lineTo(X,pz(z));}
   g.stroke();g.shadowBlur=0;
   // eye + ship markers
@@ -345,7 +344,7 @@ function drawProfile(D){
   g.beginPath();g.moveTo(PX+2,pz(SHIP_H));g.lineTo(PX+PW-2,pz(SHIP_H));g.stroke();g.setLineDash([]);
   g.fillStyle='rgba(255,200,120,.8)';g.fillText('mast '+SHIP_H+'m',PX+7,pz(SHIP_H)-3);
   g.fillStyle='#8fd0ff';g.fillText('0 m',PX+7,PY+PH-3);
-  g.fillText(ZMAX+' m',PX+7,PY+26);
+  g.fillText(PLOTMAX+' m',PX+7,PY+26);
   g.restore();
 }
 
@@ -358,7 +357,7 @@ function drawRayInset(D){
   g.font='10px ui-monospace,monospace';g.fillStyle='#8fd0ff';
   g.fillText('ducted ray paths — eye → ship ('+(D/1000).toFixed(2)+' km)',ix+8,iy+14);
   function px(x){return ix+10+(x/D)*(IW-20)}
-  function pz(z){return iy+IH-12-(z/ZMAX)*(IH-30)}
+  function pz(z){return iy+IH-12-(z/PLOTMAX)*(IH-30)}
   // layer bands
   for(var i=0;i<3;i++){
     var L=layers[i],S=[s1,s2,s3][i].value/100;
@@ -374,13 +373,13 @@ function drawRayInset(D){
   g.beginPath();g.moveTo(px(D),pz(0));g.lineTo(px(D),pz(SHIP_H));g.stroke();g.shadowBlur=0;
   // rays
   var pts=[];
-  var NR=17;
+  var NR=21;
   for(var r=0;r<NR;r++){
     var th=thMin+(thMax-thMin)*(r+0.5)/NR;
     var reached=shootPath(th,D,pts);
     g.beginPath();
     for(var p=0;p<pts.length;p+=2){
-      var X=px(pts[p]),Y=pz(Math.max(0,Math.min(ZMAX,pts[p+1])));
+      var X=px(pts[p]),Y=pz(Math.max(0,Math.min(PLOTMAX,pts[p+1])));
       if(p===0)g.moveTo(X,Y);else g.lineTo(X,Y);
     }
     if(reached&&pts[pts.length-1]<=SHIP_H){
@@ -400,10 +399,10 @@ function preset(a,b,cc,z1,z2,z3){
   s1.value=a;s2.value=b;s3.value=cc;
   layers[0].z=z1;layers[1].z=z2;layers[2].z=z3;
 }
-el('pA').onclick=function(){preset(85,0,0,16,42,84)};
-el('pB').onclick=function(){preset(62,58,0,12,34,84)};
-el('pC').onclick=function(){preset(78,66,54,10,30,58)};
-el('pD').onclick=function(){preset(0,0,0,14,42,84)};
+el('pA').onclick=function(){preset(85,0,0,28,48,72)};
+el('pB').onclick=function(){preset(62,58,0,26,44,72)};
+el('pC').onclick=function(){preset(78,66,54,24,40,58)};
+el('pD').onclick=function(){preset(0,0,0,28,48,72)};
 
 // drag a layer in the profile inset
 var dragL=-1;
@@ -412,7 +411,7 @@ c.addEventListener('pointerdown',function(e){
   if(e.clientX<PX||e.clientX>PX+PW||e.clientY<PY||e.clientY>PY+PH)return;
   var best=-1,bd=1e9;
   for(var i=0;i<3;i++){
-    var y=PY+PH-14-(layers[i].z/ZMAX)*(PH-34);
+    var y=PY+PH-14-(layers[i].z/PLOTMAX)*(PH-34);
     var d=Math.abs(e.clientY-y);
     if(d<bd){bd=d;best=i;}
   }
@@ -422,7 +421,7 @@ addEventListener('pointerup',function(){dragL=-1});
 addEventListener('pointermove',function(e){
   if(dragL<0)return;
   var f=(PY+PH-14-e.clientY)/(PH-34);
-  layers[dragL].z=Math.max(4,Math.min(ZMAX-8,f*ZMAX));
+  layers[dragL].z=Math.max(16,Math.min(PLOTMAX-6,f*PLOTMAX));
 });
 
 rebuildCache();

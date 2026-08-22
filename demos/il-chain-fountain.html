@@ -94,7 +94,7 @@ function reset(){
       y=beaker.y+beaker.h-6-row*3.0;
       if(y<beaker.y+8)y=beaker.y+8+Math.random()*4;
     }
-    pts.push({x:x,y:y,px:x,py:y,pile:i>=10});
+    pts.push({x:x,y:y,px:x,py:y,pile:i>=10,kicked:false});
   }
 }
 reset();
@@ -107,7 +107,7 @@ function pileTop(){
   return {y:best,idx:idx};
 }
 
-var kickVec={x:0,y:0,mag:0,px:0,py:0};
+var kickPt={x:0,y:0,mag:0};
 
 function step(dt){
   var mass=+sM.value, stiff=+sK.value;
@@ -138,10 +138,23 @@ function step(dt){
     for(var i=0;i<pts.length;i++){
       var p=pts[i]; if(p.pile)continue;
       if(p.y>dropTarget){p.y=dropTarget; p.x+=(p.x-p.px)*0.6; p.py=p.y;}
-      // beaker walls (outside only, keeps arch from cutting through glass)
-      if(p.y<beaker.y+beaker.h && p.y>beaker.y && p.x>beaker.x && p.x<rimX-2 && i<released){
-        p.x=rimX+2;
-      }
+    }
+  }
+
+  // --- THE KICK ------------------------------------------------------
+  // Biggins & Warner: the departing link levers on the pile, so the pile
+  // delivers an upward reaction. It shows up as the chain clears the rim.
+  for(var i=0;i<pts.length;i++){
+    var p=pts[i];
+    if(p.pile||p.kicked)continue;
+    if(p.x>rimX-1 && p.y<rimY+10){
+      p.kicked=true;
+      kickPt.x=p.x;kickPt.y=p.y;
+      if(KICK){
+        var kv=0.55*Math.sqrt(mass)*Math.max(40,vAvg);
+        p.py=p.y+kv*dt;                 // verlet: inject upward velocity
+        kickPt.mag=kv;
+      } else kickPt.mag=0;
     }
   }
 
@@ -165,17 +178,8 @@ function step(dt){
     p.y=pt.y;
     var dirx=rimX-p.x, diry=rimY-p.y, dl=Math.hypot(dirx,diry)||1; dirx/=dl;diry/=dl;
     var sp=Math.max(60,vAvg);
-    var vx=dirx*sp, vy=diry*sp;
-    if(KICK){
-      // Biggins–Warner: the link levers on the pile; the pile pushes back UP.
-      // Reaction impulse ~ rho * v^2 * (lever factor), directed upward.
-      var kick=0.42*Math.sqrt(mass)*sp;          // px/s of extra upward velocity
-      vy-=kick;
-      kickVec.x=p.x;kickVec.y=p.y;kickVec.mag=kick;kickVec.px=0;kickVec.py=-kick;
-    } else {
-      kickVec.mag=0;kickVec.x=p.x;kickVec.y=p.y;
-    }
-    p.px=p.x-vx*dt; p.py=p.y-vy*dt;
+    p.kicked=false;
+    p.px=p.x-dirx*sp*dt; p.py=p.y-diry*sp*dt;
     released++;
   }
 }
@@ -183,7 +187,7 @@ var releaseAcc=0;
 
 function measure(){
   var top=1e9;
-  for(var i=0;i<released;i++){ if(!pts[i].pile && pts[i].y<top) top=pts[i].y; }
+  for(var i=0;i<pts.length;i++){ if(!pts[i].pile && pts[i].y<top) top=pts[i].y; }
   if(top>1e8) return 0;
   return Math.max(0,rimY-top);         // fountain height above the rim
 }
@@ -264,7 +268,7 @@ function draw(){
     if(KICK){
       arrow(cx-26,cy+22, 0,-52,'rgba(255,120,120,.95)','R  pile reaction (the KICK)');
       g.fillStyle='rgba(255,140,140,.9)';
-      g.fillText('R = '+kickVec.mag.toFixed(0),cx-70,cy+52);
+      g.fillText('R = '+kickPt.mag.toFixed(0)+' px/s',cx-72,cy+52);
     } else {
       g.fillStyle='rgba(255,120,120,.85)';
       g.fillText('R = 0  (ablated → no fountain)',ix+12,cy+56);

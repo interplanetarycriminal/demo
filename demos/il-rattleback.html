@@ -161,6 +161,71 @@ function plot(x,y,w,h,data,col,label,zero,scale){
   g.restore();
 }
 
+// phase portrait: the (n, A) orbit — the whole illusion in one picture
+function phasePortrait(x,y,w,h){
+  g.save();g.translate(x,y);
+  g.fillStyle='rgba(6,14,24,.55)';g.fillRect(0,0,w,h);
+  g.strokeStyle='#123c56';g.lineWidth=1;g.strokeRect(.5,.5,w-1,h-1);
+  var cx=w/2, sx=w/2/8, sy=h/2.4;
+  g.strokeStyle='#1d5372';g.setLineDash([3,4]);
+  g.beginPath();g.moveTo(cx,0);g.lineTo(cx,h);g.stroke();
+  g.beginPath();g.moveTo(0,h-6);g.lineTo(w,h-6);g.stroke();g.setLineDash([]);
+  // separatrix hint: growth region (n>0 with skew) shaded
+  if(skf()>1e-4){
+    g.fillStyle='rgba(255,138,61,.09)';g.fillRect(cx,0,w-cx,h);
+    g.fillStyle='rgba(125,255,176,.08)';g.fillRect(0,0,cx,h);
+    g.fillStyle='rgba(255,138,61,.6)';g.font='9px monospace';g.fillText('wobble GROWS →',cx+6,h-14);
+    g.fillStyle='rgba(125,255,176,.6)';g.fillText('← wobble DIES',6,h-14);
+  }
+  var N=Math.min(traceN.length,traceP.length);
+  if(N>1){
+    g.beginPath();
+    for(var i=0;i<N;i++){
+      var px=cx+traceN[i]*sx, py=h-6-traceP[i]*sy;
+      px=Math.max(1,Math.min(w-1,px));py=Math.max(1,Math.min(h-1,py));
+      i?g.lineTo(px,py):g.moveTo(px,py);
+    }
+    g.shadowColor='#7ff3ff';g.shadowBlur=8;g.strokeStyle='#7ff3ff';g.lineWidth=1.4;g.stroke();g.shadowBlur=0;
+    var lx=Math.max(1,Math.min(w-1,cx+S.n*sx)), ly=Math.max(1,Math.min(h-1,h-6-S.A*sy));
+    g.fillStyle='#fff';g.shadowColor='#fff';g.shadowBlur=10;
+    g.beginPath();g.arc(lx,ly,3.2,0,7);g.fill();g.shadowBlur=0;
+  }
+  g.fillStyle='#7ff3ff';g.font='10px monospace';g.fillText('PHASE PORTRAIT  A vs n',6,12);
+  g.restore();
+}
+// bias curve: reversal time as a function of skew (computed on the fly)
+var biasCache=null, biasKey='';
+function biasCurve(x,y,w,h){
+  var key=damp.toFixed(2);
+  if(biasKey!==key){
+    biasKey=key;biasCache=[];
+    for(var d=0;d<=30;d+=1){
+      var s=Math.sin(2*d*Math.PI/180)*KC, n=6.0, A=0.012, tt=0, hh=1/240, rv=null;
+      while(tt<90){
+        var pre=n;
+        var dn=-s*A*A-(0.02+0.12*damp)*n, dA=s*n*A-(0.10+0.30*damp)*A;
+        n+=dn*hh;A+=dA*hh;tt+=hh;
+        if(rv===null&&pre*n<0&&Math.abs(pre)>1e-3){rv=tt;break;}
+      }
+      biasCache.push({d:d,t:rv});
+    }
+  }
+  g.save();g.translate(x,y);
+  g.fillStyle='rgba(6,14,24,.55)';g.fillRect(0,0,w,h);
+  g.strokeStyle='#123c56';g.strokeRect(.5,.5,w-1,h-1);
+  g.beginPath();var started=false;
+  for(var i=0;i<biasCache.length;i++){
+    var b=biasCache[i];if(b.t===null)continue;
+    var px=b.d/30*(w-10)+5, py=h-6-(1-Math.min(1,b.t/30))*(h-22);
+    started?g.lineTo(px,py):(g.moveTo(px,py),started=true);
+  }
+  g.shadowColor='#ff8a3d';g.shadowBlur=7;g.strokeStyle='#ff8a3d';g.lineWidth=1.5;g.stroke();g.shadowBlur=0;
+  var mx=(skew*180/Math.PI)/30*(w-10)+5;
+  g.strokeStyle='#fff';g.setLineDash([2,3]);g.beginPath();g.moveTo(mx,4);g.lineTo(mx,h-4);g.stroke();g.setLineDash([]);
+  g.fillStyle='#ff8a3d';g.font='10px monospace';g.fillText('reversal speed vs skew δ (0→30°)',6,12);
+  g.restore();
+}
+
 var last=performance.now();
 function frame(now){
   var dt=Math.min(0.05,(now-last)/1000);last=now;
@@ -181,7 +246,10 @@ function frame(now){
   var pw=Math.min(560,W*0.44), ph=Math.min(96,H*0.14), px=W-pw-24, py=H-ph*3-40;
   plot(px,py,pw,ph,traceN,'#7dffb0','SPIN RATE n (zero-crossing = REVERSAL)',true,ph/2/7);
   plot(px,py+ph+8,pw,ph,traceP,'#ff8a3d','RATTLE ENVELOPE A (grows, then eats the spin)',false,ph*0.85/2.2);
-  plot(px,py+2*ph+16,pw,ph,traceE,'#c8a6ff','ENERGY (monotonically decaying)',false,ph*0.85/Math.max(1e-6,S.E0||1));
+  plot(px,py+2*ph+16,pw,ph,traceE,'#c8a6ff','ENERGY (monotonically decaying — nothing is free)',false,ph*0.85/Math.max(1e-6,S.E0||1));
+  var qw=Math.min(210,W*0.19), qh=Math.min(130,H*0.19);
+  phasePortrait(24,H-qh-24,qw,qh);
+  biasCurve(24+qw+12,H-qh-24,qw,qh*0.62);
 
   var rd=document.getElementById('rd');
   var pref = skew>1e-4 ? 'CW ↻ (spin ↺ and it must reverse)' : 'NONE — δ=0, both directions identical';

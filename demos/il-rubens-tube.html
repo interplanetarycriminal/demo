@@ -28,7 +28,7 @@ hr{border:0;border-top:1px solid #4a2412;margin:6px 0}
 <div class="l">Kundt's dust tube 1866 → Rubens 1905 flames → concert-circuit music tubes</div>
 <div class="w">SIMULATION ONLY — no gas recipe here; this is the physics, not the build.</div>
 <hr>
-<div class="row">freq <input id="fq" type="range" min="60" max="700" step="0.5" value="171.5"><span id="fqv">171.5 Hz</span></div>
+<div class="row">freq <input id="fq" type="range" min="60" max="1200" step="0.5" value="171.5"><span id="fqv">171.5 Hz</span></div>
 <div class="row">drive <input id="dv" type="range" min="10" max="100" step="1" value="70"><span id="dvv">0.70</span></div>
 <div class="row"><button id="bS">SWEEP MODES</button><button id="bA" class="on">TIME-AVG</button><button id="bM">♪ MUSIC (enable audio)</button></div>
 <div class="m">keys: ←/→ nudge freq · [1..6] jump to mode n · A toggle avg/instant</div>
@@ -53,12 +53,13 @@ function modeReal(){return 2*L/lam();}                 // n = 2L/λ
 function modeN(){return Math.max(1,Math.round(modeReal()));}
 function resonance(){var d=Math.abs(modeReal()-modeN());return Math.max(0,1-d*3.2);}
 
-// closed-closed tube: pressure antinodes at both ends, p(x) ∝ cos(n π x / L)
-function pEnv(x,n){return Math.cos(n*Math.PI*x/L);}
+// Vented tube (compliant speaker membrane + open gas feed): pressure NODES at both
+// ends, p(x) ∝ sin(nπx/L). Mode n then shows exactly n antinode humps, spaced λ/2.
+function pEnv(x,n){return Math.sin(n*Math.PI*x/L);}
 function fieldAmp(x){
   var Q=resonance(), n=modeN();
   var res=Q*Math.abs(pEnv(x,n));
-  var off=(1-Q)*0.34*Math.abs(Math.cos(2*Math.PI*x/lam()));  // weak, un-locked wave
+  var off=(1-Q)*0.34*Math.abs(Math.sin(2*Math.PI*x/lam()));  // weak, un-locked wave
   return drive*(res+off);
 }
 // music mode: superpose the tube's modes weighted by the source spectrum
@@ -123,7 +124,7 @@ function tick(dt){
 
 // ---------- UI ----------
 var fq=document.getElementById('fq'),fqv=document.getElementById('fqv');
-function setF(v){f=Math.max(60,Math.min(700,v));fq.value=f;fqv.textContent=f.toFixed(1)+' Hz';}
+function setF(v){f=Math.max(60,Math.min(1200,v));fq.value=f;fqv.textContent=f.toFixed(1)+' Hz';}
 fq.oninput=function(){setF(+fq.value)};
 var dv=document.getElementById('dv'),dvv=document.getElementById('dvv');
 dv.oninput=function(){drive=(+dv.value)/100;dvv.textContent=drive.toFixed(2);};
@@ -226,8 +227,8 @@ function drawEnvelope(x0,x1,ybase){
   // node markers
   if(!music){
     var n=modeN();
-    for(var k=0;k<n;k++){
-      var xn=(k+0.5)*L/n, sx=x0+xn/L*(x1-x0);
+    for(var k=0;k<=n;k++){
+      var xn=k*L/n, sx=x0+xn/L*(x1-x0);
       g.strokeStyle='rgba(120,160,220,.35)';g.setLineDash([2,6]);g.lineWidth=1;
       g.beginPath();g.moveTo(sx,ybase);g.lineTo(sx,ybase-maxH);g.stroke();g.setLineDash([]);
     }
@@ -254,7 +255,7 @@ function countHumps(){
 var last=performance.now();
 function frame(now){
   var dt=Math.min(0.05,(now-last)/1000);last=now;t+=dt;
-  if(sweep)setF(f+dt*26>700?60:f+dt*26);
+  if(sweep)setF(f+dt*46>1200?60:f+dt*46);
   tick(dt);
 
   g.fillStyle='#06040a';g.fillRect(0,0,W,H);

@@ -1,5 +1,9 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Chemical Chameleon</title>
-<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
 <style>
 html,body{margin:0;padding:0;height:100%;background:#06040c;overflow:hidden}
 canvas{display:block;position:fixed;inset:0}
@@ -15,7 +19,12 @@ input[type=range]{width:100%;height:14px;accent-color:#a86bff;background:transpa
 button{font:10px ui-monospace,monospace;background:#1b1030;color:#d3b6ff;border:1px solid #4d3480;border-radius:4px;padding:3px 8px;margin:4px 4px 0 0;cursor:pointer}
 button:hover{background:#2a1a4a}button.on{background:#5a2fa0;color:#f2e6ff}
 #tip{width:100%;padding:7px;font-size:12px;letter-spacing:.1em}
+#tip:active{background:#7a45d0;color:#fff}
+sup,sub{font-size:8px}
 </style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
 <canvas id="c"></canvas>
 <div id="ui">
 <h1>CHEMICAL CHAMELEON</h1>
@@ -53,7 +62,10 @@ function arr(T){return Math.exp((T-25)/15)}
 // strong base STABILIZES manganate: k2 shrinks as base grows -> green lingers.
 // weak base -> k2 huge -> green stage duration -> 0.
 function rates(p){var k=arr(p.T);
-  return [0.85*k, 0.35*k + 9.0*k*Math.pow(1-p.base,1.6), 0.42*k];
+  // k[1] is the manganate step. Strong base stabilizes MnO4(2-), so the green
+  // stage survives; as base weakens it disproportionates away almost instantly
+  // and the column skips straight from purple/blue to gold.
+  return [0.85*k, 0.30*k + 6.0*k*Math.pow(1-p.base,3.2), 0.42*k];
 }
 // n = fraction vector, conserved
 function step(n,p,dt){
@@ -179,6 +191,45 @@ function stageName(n){
   return ['purple','green','gold','colourless'][i];
 }
 
+// Top-right: the electron budget. Every rung down the ladder is electrons
+// leaving the sugar and landing on manganese; five colours, one element.
+function mechanism(p){
+  if(W<660) return;
+  var w=Math.min(320,W*0.27), h=158, x=W-w-24, y=26;
+  g.fillStyle='rgba(10,6,20,0.55)';g.fillRect(x,y,w,h);
+  g.strokeStyle='rgba(140,110,200,0.28)';g.lineWidth=1;g.strokeRect(x+.5,y+.5,w-1,h-1);
+  g.font='10px ui-monospace,monospace';g.fillStyle='#8a76ad';
+  g.fillText('electron budget — sugar pays, manganese wears the colour',x+10,y+16);
+  var K=rates(p), labs=['7+','6+','4+','2+'], ne=['1e⁻','2e⁻','2e⁻'];
+  var bx=x+22, by=y+62, sp=(w-70)/3;
+  for(var i=0;i<4;i++){
+    var cx=bx+i*sp;
+    g.beginPath();g.arc(cx,by,13,0,6.2832);
+    g.fillStyle='rgba('+COL[i][0]+','+COL[i][1]+','+COL[i][2]+','+(0.18+0.8*S.n[i])+')';
+    g.shadowColor='rgb('+COL[i][0]+','+COL[i][1]+','+COL[i][2]+')';
+    g.shadowBlur=3+24*S.n[i];g.fill();g.shadowBlur=0;
+    g.strokeStyle='rgba(210,190,250,0.35)';g.lineWidth=1;g.stroke();
+    g.textAlign='center';g.fillStyle='#e6dcff';
+    g.fillText('Mn'+labs[i],cx,by+30);
+    g.textAlign='left';
+  }
+  for(i=0;i<3;i++){
+    var ax=bx+i*sp+15, bx2=bx+(i+1)*sp-15;
+    var rate=Math.min(1,K[i]/4);
+    g.beginPath();g.moveTo(ax,by);g.lineTo(bx2-5,by);
+    g.strokeStyle='rgba(140,255,220,'+(0.20+0.7*rate)+')';g.lineWidth=1+2.5*rate;g.stroke();
+    g.beginPath();g.moveTo(bx2-6,by-4);g.lineTo(bx2-6,by+4);g.lineTo(bx2,by);g.closePath();
+    g.fillStyle='rgba(140,255,220,'+(0.20+0.7*rate)+')';g.fill();
+    g.textAlign='center';g.fillStyle='rgba(150,255,215,0.75)';
+    g.fillText(ne[i],(ax+bx2)/2,by-9);
+    g.fillStyle='#7a68a0';g.fillText('k='+K[i].toFixed(2),(ax+bx2)/2,by+48);
+    g.textAlign='left';
+  }
+  g.fillStyle=p.base>0.6?'rgba(140,255,190,0.8)':'rgba(255,180,120,0.85)';
+  g.fillText(p.base>0.6?'strong base → k₂ small → green lingers'
+                       :'weak base → k₂ large → green is skipped',x+12,y+h-12);
+}
+
 var last=performance.now();
 function frame(now){
   var dt=Math.min(0.05,(now-last)/1000);last=now;S.t+=dt;
@@ -215,6 +266,7 @@ function frame(now){
   drawColumn(p);
   ladder(S.n);
   stackedChart(S.n);
+  mechanism(p);
   // sequence strip
   var sx=W*0.60-Math.min(W*0.16,150)/2-10, sy=H*0.5+Math.min(H*0.70,H-140)/2+22;
   g.font='11px ui-monospace,monospace';g.fillStyle='#8a76ad';g.textAlign='center';
@@ -241,3 +293,5 @@ function frame(now){
 requestAnimationFrame(frame);
 })();
 </script>
+</body>
+</html>

@@ -110,7 +110,7 @@ function stepTop(T,dt,fric){
     drive/=Ipp;
   }
   T.thd += (grav+drive)*dt;
-  T.thd *= (1-1.6*mu*dt);                                  // dissipation on nutation
+  T.thd *= Math.exp(-40*mu*dt);        // contact friction damps nutation (mu=0 => wobbles forever)
   T.theta += T.thd*dt;
   if(T.theta>Math.PI){T.theta=Math.PI-(T.theta-Math.PI);T.thd=-T.thd*0.7;}
   if(T.theta<0){T.theta=-T.theta;T.thd=-T.thd*0.7;}

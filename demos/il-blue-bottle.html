@@ -1,5 +1,9 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Blue Bottle</title>
-<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
 <style>
 html,body{margin:0;padding:0;height:100%;background:#04060c;overflow:hidden}
 canvas{display:block;position:fixed;inset:0}
@@ -17,7 +21,12 @@ button{font:10px ui-monospace,monospace;background:#0d2438;color:#8fd8ff;border:
 button:hover{background:#153b58}
 button.on{background:#1d5a7a;color:#dff4ff}
 #shake{width:100%;padding:7px;font-size:12px;letter-spacing:.1em}
+#shake:active{background:#2a7aa8;color:#fff}
+sub{font-size:8px}
 </style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
 <canvas id="c"></canvas>
 <div id="ui">
 <h1>BLUE BOTTLE</h1>
@@ -57,19 +66,30 @@ function P(){return{sug:+el('sug').value,T:+el('tmp').value,fO2:+el('oxy').value
 function arr(T){return Math.exp((T-25)/14);}      // Arrhenius-ish, ~2x per 10 C
 function step(st,p,dt,shakeI){
   var k=arr(p.T);
-  var sat=p.fO2/0.209;                             // 1.0 at air
-  var kL=0.06+2.6*shakeI;                          // gas transfer coefficient
+  // headspace saturation: 1.0 for air, 0.0 for an N2-flushed flask
+  var sat=p.fO2/0.209;
+  // gas-transfer coefficient. A stoppered flask standing still exchanges almost
+  // nothing across its small quiescent surface; shaking sprays liquid through the
+  // headspace and the coefficient jumps three orders of magnitude.
+  var kL=0.0008+2.6*shakeI;
   st.o2+=(kL*(sat-st.o2))*dt;
   if(st.o2<0)st.o2=0;
-  var kox=9.0*k, kred=0.30*k*p.sug*st.sugar;
+  // dye redox: blue (ox) <-> colourless leuco (red)
+  var kox=9.0*k;                       // O2 re-oxidizes the leuco form, fast
+  var kred=0.30*k*p.sug*st.sugar;      // alkaline sugar reduces the dye, slow
   var up=kox*st.o2*(1-st.ox);
   var dn=kred*st.ox*st.dye;
   st.ox+=(up-dn)*dt;
-  if(st.ox>st.dye)st.ox=st.dye; if(st.ox<0)st.ox=0;
-  st.o2-=up*0.055*dt;  if(st.o2<0)st.o2=0;
+  if(st.ox>st.dye)st.ox=st.dye;
+  if(st.ox<0)st.ox=0;
+  // The dye is a CATALYST: the net reaction is sugar + O2 -> products, so
+  // dissolved O2 is consumed at a rate set by the reductant, not by the dye.
+  // This is what makes the fade time scale inversely with sugar.
+  st.o2-=(1.20*k*p.sug*st.sugar*st.o2 + up*0.05)*dt;
+  if(st.o2<0)st.o2=0;
   // slow exhaustion: each turnover costs a little sugar and a little dye
-  st.sugar-=dn*0.0016*dt*60/60; if(st.sugar<0)st.sugar=0;
-  st.dye  -=dn*0.00042*dt;      if(st.dye<0.02)st.dye=0.02;
+  st.sugar-=dn*0.0016*dt; if(st.sugar<0)st.sugar=0;
+  st.dye  -=dn*0.00042*dt; if(st.dye<0.02)st.dye=0.02;
   return st;
 }
 window.__bb={step:step,arr:arr};
@@ -161,6 +181,37 @@ function trace(){
 }
 var HN=260,hist=[],histO=[];
 
+// A small always-on schematic of the catalytic cycle, drawn top-right.
+// dye_red + O2 -> dye_ox (blue)   |   dye_ox + sugar -> dye_red (colourless)
+// The dye is the catalyst; the net reaction is sugar + O2 -> oxidized sugar.
+function mechanism(frac){
+  var x=W-Math.min(280,W*0.26)-24, y=26, w=Math.min(280,W*0.26), h=132;
+  if(W<620) return;
+  g.fillStyle='rgba(4,8,18,0.55)';g.fillRect(x,y,w,h);
+  g.strokeStyle='rgba(80,140,190,0.30)';g.lineWidth=1;g.strokeRect(x+.5,y+.5,w-1,h-1);
+  g.font='10px ui-monospace,monospace';g.fillStyle='#5d87a6';
+  g.fillText('catalytic cycle — the dye is not consumed',x+10,y+16);
+  var cx=x+w/2, cy=y+h*0.60, r=Math.min(38,w*0.15);
+  // the ring
+  g.beginPath();g.arc(cx,cy,r,0,6.2832);
+  g.strokeStyle='rgba(120,190,240,0.35)';g.lineWidth=1.5;g.stroke();
+  // travelling marker shows which half-cycle is currently winning
+  var ang=S.t*1.4;
+  var mx=cx+Math.cos(ang)*r, my=cy+Math.sin(ang)*r;
+  g.beginPath();g.arc(mx,my,3.4,0,6.2832);
+  g.fillStyle=frac>0.5?'#4fa8ff':'#d8e6f0';g.shadowColor=g.fillStyle;g.shadowBlur=12;g.fill();g.shadowBlur=0;
+  g.textAlign='center';
+  g.fillStyle='rgba(70,150,255,'+(0.35+0.65*frac)+')';
+  g.fillText('dye_ox (blue)',cx,cy-r-8);
+  g.fillStyle='rgba(220,230,215,'+(0.35+0.65*(1-frac))+')';
+  g.fillText('dye_red (colourless)',cx,cy+r+16);
+  g.fillStyle='rgba(140,255,205,0.8)';g.textAlign='right';
+  g.fillText('+O₂ →',cx-r-8,cy+4);
+  g.textAlign='left';g.fillStyle='rgba(255,205,120,0.8)';
+  g.fillText('← +sugar',cx+r+8,cy+4);
+  g.textAlign='left';
+}
+
 var last=performance.now();
 function frame(now){
   var dt=Math.min(0.05,(now-last)/1000);last=now;S.t+=dt;
@@ -201,6 +252,7 @@ function frame(now){
   gauge(gx+gw*4.8,gy,gw,gh,S.dye,'dye','rgba(190,140,255,0.8)');
   gauge(gx+gw*7.2,gy,gw,gh,S.sugar,'sugar','rgba(255,205,120,0.8)');
   trace();
+  mechanism(frac);
   if(p.fO2<0.005){
     g.fillStyle='rgba(255,150,150,0.85)';g.font='12px ui-monospace,monospace';g.textAlign='center';
     g.fillText('N₂-FLUSHED CONTROL — shaking does nothing. The dye had nothing to report.',W*0.6,H*0.94);
@@ -225,3 +277,5 @@ function frame(now){
 requestAnimationFrame(frame);
 })();
 </script>
+</body>
+</html>

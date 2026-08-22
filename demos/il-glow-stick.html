@@ -175,6 +175,40 @@ function draw(){
 
   drawChain(D);
   drawCurves(D,I);
+  drawArrhenius();
+}
+
+// ln k vs 1/T — the straight line behind the whole trade
+function drawArrhenius(){
+  var w=Math.min(210,W*0.18),h=140,ix=W-w-14,iy=14;
+  x.fillStyle='rgba(4,10,14,.8)';x.strokeStyle='rgba(90,255,190,.28)';
+  x.fillRect(ix,iy,w,h);x.strokeRect(ix+.5,iy+.5,w,h);
+  x.fillStyle='#a9ffdc';x.font='10px ui-monospace,monospace';
+  x.fillText('ARRHENIUS  ln k vs 1/T',ix+8,iy+14);
+  var px=ix+26,py=iy+24,pw=w-38,ph=h-50;
+  x.strokeStyle='rgba(120,200,180,.28)';x.strokeRect(px+.5,py+.5,pw,ph);
+  var Tlo=-15,Thi=95;
+  var invLo=1/(Thi+273.15),invHi=1/(Tlo+273.15);
+  var lnLo=Math.log(kOf(Tlo)),lnHi=Math.log(kOf(Thi));
+  function map(Tc){
+    var inv=1/(Tc+273.15),ln=Math.log(kOf(Tc));
+    return [px+(inv-invLo)/(invHi-invLo)*pw, py+ph-(ln-lnLo)/(lnHi-lnLo)*ph];
+  }
+  x.strokeStyle='rgba(120,255,200,.75)';x.lineWidth=1.5;x.beginPath();
+  for(var i=0;i<=40;i++){var Tc=Tlo+(Thi-Tlo)*i/40,p=map(Tc);i?x.lineTo(p[0],p[1]):x.moveTo(p[0],p[1]);}
+  x.stroke();x.lineWidth=1;
+  // marks for the presets
+  [[4,'fridge'],[95,'boil']].forEach(function(m){
+    var p=map(m[0]);x.fillStyle='rgba(160,220,255,.55)';
+    x.beginPath();x.arc(p[0],p[1],2.5,0,6.283);x.fill();
+    x.font='8px ui-monospace,monospace';x.fillText(m[1],p[0]-8,p[1]-6);
+  });
+  var cp=map(Math.max(Tlo,Math.min(Thi,T)));
+  x.fillStyle='#ffe28a';x.beginPath();x.arc(cp[0],cp[1],4,0,6.283);x.fill();
+  x.strokeStyle='rgba(255,255,255,.6)';x.stroke();
+  x.fillStyle='#5fae92';x.font='9px ui-monospace,monospace';
+  x.fillText('slope = -Ea/R  (one line sets both)',ix+8,iy+h-8);
+  x.fillText('cold',px-2,py+ph+11);x.fillText('hot',px+pw-18,py+ph+11);
 }
 function rr(px,py,w,h,r){x.beginPath();
  x.moveTo(px+r,py);x.arcTo(px+w,py,px+w,py+h,r);x.arcTo(px+w,py+h,px,py+h,r);

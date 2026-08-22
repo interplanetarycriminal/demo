@@ -184,6 +184,46 @@ function drawBeads(){
     g.strokeStyle='#f0d894';g.lineWidth=1;g.stroke();
     g.fillStyle='#ffb46b';g.font='10px monospace';g.fillText('coin: too heavy',sx+18,sy+3);}
 }
+// mm ruler down the left side of the chamber — the ladder is literally measurable
+function drawRuler(){
+  var rx=VX-172;
+  g.strokeStyle='#1d4f6e';g.lineWidth=1;
+  g.beginPath();g.moveTo(rx,VY0);g.lineTo(rx,VY1);g.stroke();
+  var stepmm = gap>40?5:gap>20?2:1;
+  for(var y=0;y<=gap+1e-6;y+=stepmm){
+    var sy=y2s(y), big=(Math.round(y)%10===0);
+    g.strokeStyle=big?'#3d84ab':'#1d4f6e';
+    g.beginPath();g.moveTo(rx,sy);g.lineTo(rx+(big?11:6),sy);g.stroke();
+    if(big){g.fillStyle='#6f9cb5';g.font='9px monospace';g.textAlign='right';
+      g.fillText(y.toFixed(0),rx-4,sy+3);g.textAlign='left';}
+  }
+  g.save();g.translate(rx-34,(VY0+VY1)/2);g.rotate(-Math.PI/2);
+  g.fillStyle='#5f8ba3';g.font='10px monospace';g.textAlign='center';
+  g.fillText('height above transducer  (mm)',0,0);g.textAlign='left';g.restore();
+  // ladder callout between the two lowest nodes
+  var yA=phase+lam()/4, yB=yA+nodeSpacing();
+  while(yA<0.2){yA+=nodeSpacing();yB=yA+nodeSpacing();}
+  if(yB<gap){
+    var sa=y2s(yA), sb=y2s(yB), bx=VX-128;
+    g.strokeStyle='#7dffb0';g.lineWidth=1.2;
+    g.beginPath();g.moveTo(bx,sa);g.lineTo(bx,sb);g.stroke();
+    g.beginPath();g.moveTo(bx-4,sa);g.lineTo(bx+4,sa);g.moveTo(bx-4,sb);g.lineTo(bx+4,sb);g.stroke();
+    g.fillStyle='#7dffb0';g.font='10px monospace';
+    g.fillText('λ/2 = '+nodeSpacing().toFixed(2)+' mm',bx+7,(sa+sb)/2+3);
+  }
+}
+// vertical force profile: where a bead is pushed, and how hard
+function drawForceProfile(){
+  var fx=VX-172, fw=64;
+  g.save();
+  g.beginPath();
+  var fm=0;for(var i=0;i<=160;i++)fm=Math.max(fm,Math.abs(force(i/160*gap)));
+  fm=Math.max(fm,1e-6);
+  for(var i=0;i<=160;i++){var y=i/160*gap;g.lineTo(fx-6-force(y)/fm*fw*0.42,y2s(y));}
+  g.strokeStyle='rgba(255,138,61,.55)';g.lineWidth=1.2;
+  g.shadowColor='#ff8a3d';g.shadowBlur=6;g.stroke();g.shadowBlur=0;
+  g.restore();
+}
 function meter(x,y,w,v,col,label){
   g.fillStyle='#0b1c2a';g.fillRect(x,y,w,8);g.strokeStyle='#1d4f6e';g.strokeRect(x+.5,y+.5,w-1,7);
   g.fillStyle=col;g.fillRect(x+1,y+1,Math.max(0,Math.min(1,v))*(w-2),6);
@@ -196,7 +236,12 @@ function frame(now){
   stepPhys(dt);
   g.fillStyle='#04060b';g.fillRect(0,0,W,H);
   VX=W*0.44;VY0=H*0.10;VY1=H*0.88;
-  drawField();drawHardware();drawBeads();drawWell();
+  drawField();drawForceProfile();drawRuler();drawHardware();drawBeads();drawWell();
+  // legend
+  g.font='10px monospace';
+  g.fillStyle='#8fe9ff';g.fillText('— instantaneous p(y,t)',VX+210,VY0-34);
+  g.fillStyle='#7dffb0';g.fillText('· · pressure nodes (traps)',VX+210,VY0-22);
+  g.fillStyle='#ff8a3d';g.fillText('— net force on a bead',VX+210,VY0-10);
 
   // meters
   var mx=VX+210, my=H*0.90;

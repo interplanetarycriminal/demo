@@ -1,5 +1,9 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Chemical Traffic Light</title>
-<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
 <style>
 html,body{margin:0;padding:0;height:100%;background:#05070a;overflow:hidden}
 canvas{display:block;position:fixed;inset:0}
@@ -15,7 +19,12 @@ input[type=range]{width:100%;height:14px;accent-color:#4ce08a;background:transpa
 button{font:10px ui-monospace,monospace;background:#0e2a1e;color:#9fe8c0;border:1px solid #2d6047;border-radius:4px;padding:3px 8px;margin:4px 4px 0 0;cursor:pointer}
 button:hover{background:#164536}button.on{background:#1f6a48;color:#e6fff2}
 #shake{width:100%;padding:7px;font-size:12px;letter-spacing:.1em}
+#shake:active{background:#2f8a5e;color:#fff}
+sub{font-size:8px}
 </style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
 <canvas id="c"></canvas>
 <div id="ui">
 <h1>CHEMICAL TRAFFIC LIGHT</h1>
@@ -50,11 +59,17 @@ function arr(T){return Math.exp((T-25)/14)}
 
 // A <-(k1ox O2 / k1red sugar)-> B <-(k2ox O2 / k2red sugar)-> C
 function step(st,p,dt,shakeI){
-  var k=arr(p.T),sat=p.fO2/0.209;
-  st.o2+=(0.05+3.0*shakeI)*(sat-st.o2)*dt; if(st.o2<0)st.o2=0;
-  var s=p.sug;
-  var k1o=5.0*k, k2o=9.0*k;      // C->B faster than B->A: needs sustained O2 to reach green
-  var k1r=0.55*k*s, k2r=0.34*k*s; // A->B, B->C
+  var k=arr(p.T),sat=p.fO2/0.209,s=p.sug;
+  // Gas transfer is strongly super-linear in shake vigour: a swirl barely wets the
+  // headspace, a hard shake atomizes the liquid. That non-linearity is exactly what
+  // lets one flask park at three different rungs of the ladder.
+  var kL=0.001+5.0*Math.pow(shakeI,2.5);
+  st.o2+=kL*(sat-st.o2)*dt;
+  if(st.o2<0)st.o2=0;
+  // ladder:  C (yellow, reduced) <-> B (red, semi) <-> A (green, oxidized)
+  // the last rung up is the reluctant one, so green demands sustained oxygen
+  var k1o=0.60*k, k2o=9.0*k;        // B->A (hard), C->B (easy)
+  var k1r=0.55*k*s, k2r=0.34*k*s;   // A->B, B->C (sugar pulling down-chain)
   var f_CB=k2o*st.o2*st.C;
   var f_BA=k1o*st.o2*st.B;
   var f_AB=k1r*st.A;
@@ -62,8 +77,11 @@ function step(st,p,dt,shakeI){
   var dA=f_BA-f_AB, dB=f_CB+f_AB-f_BA-f_BC, dC=f_BC-f_CB;
   st.A+=dA*dt; st.B+=dB*dt; st.C+=dC*dt;
   if(st.A<0)st.A=0; if(st.B<0)st.B=0; if(st.C<0)st.C=0;
-  var tot=st.A+st.B+st.C; if(tot>0){st.A/=tot;st.B/=tot;st.C/=tot}
-  st.o2-=(f_CB+f_BA)*0.035*dt; if(st.o2<0)st.o2=0;
+  var tot=st.A+st.B+st.C;
+  if(tot>0){st.A/=tot;st.B/=tot;st.C/=tot}
+  // dye is catalytic; the sugar is what actually eats the dissolved oxygen
+  st.o2-=(1.20*k*s*st.o2+(f_CB+f_BA)*0.03)*dt;
+  if(st.o2<0)st.o2=0;
   return st;
 }
 window.__tl={step:step};
@@ -151,6 +169,44 @@ function kinetics(x,y,w,h){
   g.fillStyle='#6d9282';g.font='10px ui-monospace,monospace';g.fillText('kinetics inset — ox ⇄ semi ⇄ red',x,y-6);
 }
 
+// Top-right schematic of the two sequential redox steps. O2 pushes up-chain,
+// sugar pulls down-chain; whichever wins at the current shake vigour decides
+// which rung the whole flask parks on.
+function mechanism(st,o2,sug){
+  if(W<640) return;
+  var w=Math.min(300,W*0.27), h=150, x=W-w-24, y=26;
+  g.fillStyle='rgba(5,12,10,0.55)';g.fillRect(x,y,w,h);
+  g.strokeStyle='rgba(90,170,140,0.30)';g.lineWidth=1;g.strokeRect(x+.5,y+.5,w-1,h-1);
+  g.font='10px ui-monospace,monospace';g.fillStyle='#6d9282';
+  g.fillText('two sequential one-electron steps',x+10,y+16);
+  var rungs=[['C  yellow',COL.C,st.C],['B  red',COL.B,st.B],['A  green',COL.A,st.A]];
+  var bx=x+18, by=y+h-26, gap=34;
+  for(var i=0;i<3;i++){
+    var R=rungs[i], yy=by-i*gap;
+    g.beginPath();g.moveTo(bx,yy);g.lineTo(bx+90,yy);
+    g.strokeStyle='rgba('+R[1][0]+','+R[1][1]+','+R[1][2]+','+(0.25+0.7*R[2])+')';
+    g.lineWidth=2+4*R[2];g.shadowColor='rgb('+R[1][0]+','+R[1][1]+','+R[1][2]+')';
+    g.shadowBlur=3+20*R[2];g.stroke();g.shadowBlur=0;
+    g.fillStyle='rgba(200,235,220,'+(0.35+0.6*R[2])+')';
+    g.fillText(R[0],bx+98,yy+4);
+  }
+  // arrows between rungs, thickness = instantaneous flux direction
+  for(i=0;i<2;i++){
+    var y0=by-i*gap, y1=by-(i+1)*gap, ax=bx+64;
+    var upF=Math.min(1,o2*(i?0.6:9.0)*1.2), dnF=Math.min(1,sug*(i?0.55:0.34)*2.4);
+    g.beginPath();g.moveTo(ax,y0-4);g.lineTo(ax,y1+4);
+    g.strokeStyle='rgba(140,255,205,'+(0.15+0.8*upF)+')';g.lineWidth=1+3*upF;g.stroke();
+    g.beginPath();g.moveTo(ax-4,y1+9);g.lineTo(ax+4,y1+9);g.lineTo(ax,y1+3);g.closePath();
+    g.fillStyle='rgba(140,255,205,'+(0.15+0.8*upF)+')';g.fill();
+    g.beginPath();g.moveTo(ax+16,y1+4);g.lineTo(ax+16,y0-4);
+    g.strokeStyle='rgba(255,205,120,'+(0.15+0.8*dnF)+')';g.lineWidth=1+3*dnF;g.stroke();
+    g.beginPath();g.moveTo(ax+12,y0-9);g.lineTo(ax+20,y0-9);g.lineTo(ax+16,y0-3);g.closePath();
+    g.fillStyle='rgba(255,205,120,'+(0.15+0.8*dnF)+')';g.fill();
+  }
+  g.fillStyle='rgba(140,255,205,0.85)';g.fillText('O₂ ↑',x+w-52,y+h-34);
+  g.fillStyle='rgba(255,205,120,0.85)';g.fillText('sugar ↓',x+w-52,y+h-18);
+}
+
 var last=performance.now();
 function frame(now){
   var dt=Math.min(0.05,(now-last)/1000);last=now;S.t+=dt;
@@ -179,6 +235,7 @@ function frame(now){
   drawLight(W*0.62+s*0.26,H*0.55-lh/2,lw,lh,S);
   stacked(W*0.055,H*0.30,Math.max(96,W*0.11),H*0.36,S);
   kinetics(W*0.055,H*0.76,Math.max(180,W*0.30),H*0.14);
+  mechanism(S,S.o2,p.sug);
   // ladder marker
   var ladder=S.A*1+S.B*0.5;
   g.fillStyle='#6d9282';g.font='11px ui-monospace,monospace';
@@ -205,3 +262,5 @@ function frame(now){
 requestAnimationFrame(frame);
 })();
 </script>
+</body>
+</html>
