@@ -1,0 +1,229 @@
+<title>Index-Matching Invisibility</title>
+<style>
+  html,body{margin:0;height:100%;background:#04060a;overflow:hidden}
+  canvas{display:block;width:100vw;height:100vh}
+  #ui{position:fixed;top:12px;left:12px;width:330px;padding:11px 13px;
+      background:rgba(6,12,20,.72);border:1px solid #1d4a5e;border-radius:7px;
+      color:#9fe8ff;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;
+      text-shadow:0 0 8px #0ff6;backdrop-filter:blur(3px);z-index:10}
+  #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.09em;color:#7ffcff;text-shadow:0 0 12px #0ff}
+  .m{color:#cfe9f5;opacity:.9;margin:0 0 6px}
+  .sci{color:#ffd48a;text-shadow:0 0 8px #f908}
+  .lin{color:#7d9fb3;font-size:10px;margin:4px 0 7px}
+  label{display:block;margin:7px 0 2px;color:#87d4ea}
+  input[type=range]{width:100%;accent-color:#3ff}
+  .read{margin-top:7px;padding-top:6px;border-top:1px solid #17384a;color:#b9f6ff}
+  .read b{color:#fff;font-weight:600}
+  .hit{color:#7cff9d;text-shadow:0 0 10px #0f8}
+  a{color:#6fd; text-decoration:none;border-bottom:1px dotted #6fd}
+  .hint{color:#5f8ea3;font-size:10px;margin-top:6px}
+</style>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>INDEX-MATCHING INVISIBILITY</h1>
+  <p class="m">With no refractive-index step at a surface, there is nothing left to reflect or refract — the glass rod optically ceases to exist.</p>
+  <p class="sci">Abbe &amp; Rayleigh · refractometry, 1870s–1890s</p>
+  <p class="lin">LINEAGE: Abbe refractometer → lecture glass-in-oil → metamaterial cloaks</p>
+  <label>BATH INDEX n_bath &nbsp;<span id="vn">1.000</span></label>
+  <input id="sn" type="range" min="1" max="1.75" step="0.001" value="1.000">
+  <label>BACKGROUND GRID PITCH</label>
+  <input id="sg" type="range" min="14" max="70" step="1" value="34">
+  <div class="read">
+    R(Pyrex 1.474) = <b id="r1">—</b> <span id="tag1"></span><br>
+    R(flint 1.620) = <b id="r2">—</b> <span id="tag2"></span><br>
+    Δn Pyrex = <b id="d1">—</b> &nbsp; Δn flint = <b id="d2">—</b><br>
+    contrast: <b id="cst">—</b>
+  </div>
+  <p class="hint">drag slider · click canvas to toggle auto-sweep · <a href="index.html">← gallery</a></p>
+</div>
+<script>
+(function(){
+const c=document.getElementById('c'),x=c.getContext('2d');
+let W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;
+  c.width=W*DPR;c.height=H*DPR;x.setTransform(DPR,0,0,DPR,0,0);}
+addEventListener('resize',resize);resize();
+
+const sn=document.getElementById('sn'),sg=document.getElementById('sg');
+let auto=true, t=0;
+c.addEventListener('click',()=>auto=!auto);
+sn.addEventListener('input',()=>auto=false);
+
+const N_PYREX=1.474, N_FLINT=1.620;
+function fresnelR(n1,n2){const d=(n1-n2)/(n1+n2);return d*d;}
+
+// ---- background pattern (checker + text-ish bars) drawn to offscreen
+const bg=document.createElement('canvas');const bx=bg.getContext('2d');
+function drawBG(w,h,pitch){
+  bg.width=w;bg.height=h;
+  bx.fillStyle='#07131c';bx.fillRect(0,0,w,h);
+  for(let i=0;i*pitch<w;i++)for(let j=0;j*pitch<h;j++){
+    if(((i+j)&1)===0){
+      const g=bx.createLinearGradient(i*pitch,j*pitch,(i+1)*pitch,(j+1)*pitch);
+      g.addColorStop(0,'#123b52');g.addColorStop(1,'#0c2536');
+      bx.fillStyle=g;bx.fillRect(i*pitch,j*pitch,pitch,pitch);
+    }
+  }
+  // neon rulings for refraction legibility
+  bx.strokeStyle='rgba(90,240,255,.30)';bx.lineWidth=1.5;
+  for(let j=0;j*pitch<h;j++){bx.beginPath();bx.moveTo(0,j*pitch+.5);bx.lineTo(w,j*pitch+.5);bx.stroke();}
+  bx.strokeStyle='rgba(255,120,200,.22)';
+  for(let i=0;i*pitch<w;i++){bx.beginPath();bx.moveTo(i*pitch+.5,0);bx.lineTo(i*pitch+.5,h);bx.stroke();}
+}
+
+function draw(){
+  t+=1/60;
+  if(auto){
+    // sweep n smoothly, lingering at the match
+    const s=(Math.sin(t*0.34)*0.5+0.5);
+    const n=1.00+s*0.75;
+    sn.value=n.toFixed(3);
+  }
+  const nB=parseFloat(sn.value);
+  const pitch=parseInt(sg.value,10);
+  drawBG(W,H,pitch);
+
+  x.clearRect(0,0,W,H);
+  x.drawImage(bg,0,0);
+
+  // ---------- beaker geometry ----------
+  const bw=Math.min(560,W*0.56), bh=Math.min(520,H*0.66);
+  const bx0=(W-bw)/2, by0=(H-bh)/2+20;
+  const liquidTop=by0+bh*0.30;   // the liquid line
+  const inAir = nB<1.0005;
+
+  // liquid body tint (subtle, index-dependent)
+  if(!inAir){
+    const tint=Math.min(0.30,(nB-1)*0.42);
+    x.save();x.beginPath();x.rect(bx0,liquidTop,bw,by0+bh-liquidTop);x.clip();
+    x.fillStyle='rgba(60,150,190,'+tint*0.55+')';x.fillRect(bx0,liquidTop,bw,bh);
+    x.restore();
+  }
+
+  // ---------- rods ----------
+  // rod 1: Pyrex, rod 2: flint. Each is a vertical cylinder crossing the liquid line.
+  const rods=[
+    {n:N_PYREX,cx:bx0+bw*0.34,r:34,label:'PYREX n=1.474',hue:'#8ff'},
+    {n:N_FLINT,cx:bx0+bw*0.68,r:28,label:'FLINT n=1.620',hue:'#fb8'}
+  ];
+  const rodTop=by0-40, rodBot=by0+bh-26;
+
+  for(const rod of rods){
+    // ABOVE the liquid: always in air -> always visible
+    drawRodSegment(rod, rodTop, liquidTop, 1.0, pitch);
+    // BELOW: immersed in bath
+    drawRodSegment(rod, liquidTop, rodBot, nB, pitch);
+  }
+
+  // ---------- beaker glass walls ----------
+  x.save();
+  x.strokeStyle='rgba(150,235,255,.55)';x.lineWidth=3;x.shadowColor='#3ef';x.shadowBlur=16;
+  x.beginPath();
+  x.moveTo(bx0,by0-14); x.lineTo(bx0,by0+bh); x.lineTo(bx0+bw,by0+bh); x.lineTo(bx0+bw,by0-14);
+  x.stroke();
+  if(!inAir){
+    x.shadowBlur=22;x.strokeStyle='rgba(120,255,240,.85)';x.lineWidth=2;
+    x.beginPath();
+    const amp=2.2;
+    for(let i=0;i<=bw;i+=6){
+      const yy=liquidTop+Math.sin((i*0.045)+t*1.6)*amp;
+      i?x.lineTo(bx0+i,yy):x.moveTo(bx0+i,yy);
+    }
+    x.stroke();
+    x.fillStyle='rgba(120,255,240,.7)';x.font='11px ui-monospace,monospace';
+    x.fillText('n_bath = '+nB.toFixed(3), bx0+bw+10, liquidTop+4);
+  }
+  x.restore();
+
+  // labels
+  x.font='11px ui-monospace,monospace';
+  for(const rod of rods){
+    const R=fresnelR(rod.n,nB);
+    x.fillStyle=R<0.0002?'rgba(124,255,157,.95)':'rgba(190,230,245,.8)';
+    x.save();x.shadowColor=rod.hue;x.shadowBlur=10;
+    x.textAlign='center';
+    x.fillText(rod.label, rod.cx, rodBot+22);
+    x.fillText('R='+R.toFixed(5)+(R<0.0002?'  ← VANISHED':''), rod.cx, rodBot+38);
+    x.restore();
+  }
+  x.textAlign='left';
+
+  // caption bottom-right
+  x.save();
+  x.fillStyle='rgba(140,190,210,.55)';x.font='11px ui-monospace,monospace';x.textAlign='right';
+  x.fillText('match is PER-MATERIAL: at n=1.474 the Pyrex disappears, the flint does not.', W-18, H-20);
+  x.restore();
+
+  // ---------- readouts ----------
+  const R1=fresnelR(N_PYREX,nB), R2=fresnelR(N_FLINT,nB);
+  document.getElementById('vn').textContent=nB.toFixed(3);
+  document.getElementById('r1').textContent=R1.toExponential(3);
+  document.getElementById('r2').textContent=R2.toExponential(3);
+  document.getElementById('d1').textContent=(N_PYREX-nB).toFixed(3);
+  document.getElementById('d2').textContent=(N_FLINT-nB).toFixed(3);
+  document.getElementById('tag1').className=R1<2e-4?'hit':'';
+  document.getElementById('tag1').textContent=R1<2e-4?'INVISIBLE':'';
+  document.getElementById('tag2').className=R2<2e-4?'hit':'';
+  document.getElementById('tag2').textContent=R2<2e-4?'INVISIBLE':'';
+  document.getElementById('cst').textContent = nB>N_PYREX? 'inverted (bath denser)' : (R1<2e-4?'zero':'normal');
+
+  requestAnimationFrame(draw);
+}
+
+// Draw one vertical segment of a rod immersed in medium of index nMed.
+function drawRodSegment(rod, y0, y1, nMed, pitch){
+  if(y1<=y0) return;
+  const r=rod.r, cx=rod.cx, n1=nMed, n2=rod.n;
+  const R=fresnelR(n1,n2);
+  const dn=Math.abs(n2-n1);
+  const vis=Math.min(1, dn/0.30);       // how strongly the rod betrays itself
+  if(vis<0.004) return;                  // truly matched: draw NOTHING. That's the point.
+
+  x.save();
+  x.beginPath();x.rect(cx-r,y0,2*r,y1-y0);x.clip();
+
+  // --- refraction: sample background columns, displaced like a cylindrical lens ---
+  const cols=Math.ceil(2*r);
+  const ratio=n2/n1;
+  for(let i=0;i<cols;i++){
+    const px=cx-r+i;
+    const u=(px-cx)/r;                   // -1..1 across rod
+    if(Math.abs(u)>1) continue;
+    // ray through cylinder: transverse displacement ~ (1 - n1/n2)*chord geometry
+    const bend=(1-1/ratio)*u*Math.sqrt(Math.max(0,1-u*u))*r*2.6;
+    const mag =1/ratio;                  // compression of the view
+    const srcX=cx + (px-cx)*mag*1.9 - bend;
+    const sx=Math.max(0,Math.min(bg.width-1, srcX));
+    try{ x.drawImage(bg, sx,y0,1,y1-y0, px,y0,1.02,y1-y0); }catch(e){}
+  }
+  // fade the refracted patch toward the un-refracted background as dn -> 0
+  x.globalAlpha=1-vis;
+  x.drawImage(bg, cx-r,y0,2*r,y1-y0, cx-r,y0,2*r,y1-y0);
+  x.globalAlpha=1;
+
+  // --- Fresnel specular highlight, strength scaled by real R ---
+  const shine=Math.min(1, R/0.005);
+  const g=x.createLinearGradient(cx-r,0,cx+r,0);
+  const inv = n1>n2;                      // bath denser -> contrast inverts
+  const a=0.55*shine;
+  g.addColorStop(0.00,'rgba(255,255,255,0)');
+  g.addColorStop(0.18,'rgba('+(inv?'120,190,255':'255,255,255')+','+a*0.55+')');
+  g.addColorStop(0.34,'rgba('+(inv?'70,130,200':'255,255,255')+','+a+')');
+  g.addColorStop(0.55,'rgba(255,255,255,0)');
+  g.addColorStop(0.86,'rgba('+(inv?'90,150,220':'200,240,255')+','+a*0.45+')');
+  g.addColorStop(1.00,'rgba(255,255,255,0)');
+  x.fillStyle=g;x.fillRect(cx-r,y0,2*r,y1-y0);
+
+  // rim (total-internal-reflection edge), also R-scaled
+  x.globalAlpha=Math.min(1,vis);
+  x.strokeStyle=inv?'rgba(160,200,255,.75)':'rgba(210,250,255,.8)';
+  x.lineWidth=1.6;x.shadowColor=inv?'#69f':'#9ff';x.shadowBlur=12*shine;
+  x.beginPath();x.moveTo(cx-r+.5,y0);x.lineTo(cx-r+.5,y1);
+  x.moveTo(cx+r-.5,y0);x.lineTo(cx+r-.5,y1);x.stroke();
+  x.globalAlpha=1;
+  x.restore();
+}
+draw();
+})();
+</script>

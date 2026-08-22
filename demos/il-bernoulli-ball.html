@@ -1,0 +1,273 @@
+<title>Bernoulli Ball</title>
+<style>
+html,body{margin:0;padding:0;height:100%;background:#04060c;overflow:hidden}
+canvas{display:block;position:fixed;inset:0}
+#ui{position:fixed;top:0;left:0;margin:10px;padding:10px 12px;max-width:330px;
+  background:rgba(6,10,20,.72);border:1px solid #1c3a5e;border-radius:8px;
+  color:#bfe6ff;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;
+  text-shadow:0 0 6px #0af6;z-index:10;backdrop-filter:blur(4px)}
+#ui h1{font-size:14px;margin:0 0 4px;color:#6ff;letter-spacing:.09em;text-shadow:0 0 12px #0ff8}
+#ui .m{color:#9fc8e6;margin:0 0 6px}
+#ui .sci{color:#ffd27f;text-shadow:0 0 8px #fa06}
+#ui .lin{color:#8aa4bd;font-size:10px;margin:4px 0}
+#ui .warn{color:#ff9aa2;font-size:10px}
+#ui a{color:#6ff;text-decoration:none;border-bottom:1px dotted #6ff6}
+#ui label{display:block;margin:5px 0 0;color:#9fc8e6}
+#ui input[type=range]{width:100%;height:14px;accent-color:#0ff;background:transparent}
+#ui .rd{color:#7dffc0;text-shadow:0 0 8px #0f86}
+#ui button{background:#0a2036;color:#6ff;border:1px solid #2b6a94;border-radius:4px;
+  font:11px ui-monospace,monospace;padding:3px 8px;cursor:pointer;margin:5px 4px 0 0}
+#ui button:hover{background:#12395c}
+#ui .st{font-weight:bold}
+</style>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>BERNOULLI BALL LEVITATION</h1>
+<p class="m">A ball rides a tilted air jet because the fast core is low-pressure: drift out and the pressure imbalance shoves you back in, while drag holds up the weight.</p>
+<p class="sci">Daniel Bernoulli, 1738 — <i>Hydrodynamica</i>. The hair-dryer-and-ping-pong-ball lecture staple.</p>
+<p class="lin">LINEAGE: Bernoulli 1738 → venturi/pitot cousins → the (oversimplified) "airplane wing" argument — flagged as such.</p>
+<label>tilt <span class="rd" id="vTilt"></span></label><input type="range" id="sTilt" min="0" max="30" step="1" value="16">
+<label>jet speed <span class="rd" id="vSpd"></span></label><input type="range" id="sSpd" min="20" max="200" step="1" value="105">
+<label>ball mass <span class="rd" id="vMass"></span></label><input type="range" id="sMass" min="0.4" max="4" step="0.05" value="1.4">
+<label>ball radius <span class="rd" id="vRad"></span></label><input type="range" id="sRad" min="8" max="30" step="1" value="16">
+<button id="bPert">PERTURB</button><button id="bView">VIEW: pressure</button><button id="bReset">RESET</button>
+<p class="m" style="margin-top:6px">drag the ball · click anywhere to fling it</p>
+<p class="rd">offset r = <span id="oOff">0</span> px &nbsp; restore F = <span id="oF">0</span><br>
+lift/weight = <span id="oLW">0</span> &nbsp; state: <span id="oSt" class="st">—</span></p>
+<p class="warn">Honesty: at high tilt, entrainment / Coandă does part of the holding — it is not pure Bernoulli.</p>
+<a href="index.html">← gallery</a>
+</div>
+<script>
+(function(){
+var c=document.getElementById('c'),x=c.getContext('2d');
+var W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
+ c.width=W*DPR;c.height=H*DPR;c.style.width=W+'px';c.style.height=H+'px';x.setTransform(DPR,0,0,DPR,0,0);}
+window.addEventListener('resize',resize);resize();
+
+var S={tilt:16,spd:105,mass:1.4,rad:16,view:1};
+function g(id){return document.getElementById(id);}
+function bind(sl,key,fmt,out){var e=g(sl),o=g(out);
+ function up(){S[key]=parseFloat(e.value);o.textContent=fmt(S[key]);}
+ e.addEventListener('input',up);up();}
+bind('sTilt','tilt',function(v){return v.toFixed(0)+'°';},'vTilt');
+bind('sSpd','spd',function(v){return v.toFixed(0)+' u/s';},'vSpd');
+bind('sMass','mass',function(v){return v.toFixed(2);},'vMass');
+bind('sRad','rad',function(v){return v.toFixed(0)+' px';},'vRad');
+
+// ---- jet geometry ----
+function nozzle(){return {x:W*0.34,y:H*0.90};}
+function axis(){var a=(-90+S.tilt)*Math.PI/180;return {ax:Math.cos(a),ay:Math.sin(a)};}
+// jet half-width grows with distance (spreading)
+function halfWidth(s){return 26+0.11*Math.max(0,s);}
+// gaussian core velocity profile
+function jetSpeed(s,r){
+  if(s<0)return 0;
+  var hw=halfWidth(s);
+  var decay=1/(1+s/(H*0.85));
+  return S.spd*decay*Math.exp(-(r*r)/(0.5*hw*hw));
+}
+// project world point onto jet coords (s along axis, r perpendicular signed)
+function jetCoords(px,py){
+  var n=nozzle(),A=axis();
+  var dx=px-n.x,dy=py-n.y;
+  var s=dx*A.ax+dy*A.ay;
+  var r=dx*(-A.ay)+dy*(A.ax);
+  return {s:s,r:r};
+}
+
+// ---- ball ----
+var ball;
+function reset(){var n=nozzle(),A=axis();
+  ball={x:n.x+A.ax*H*0.42,y:n.y+A.ay*H*0.42,vx:0,vy:0,esc:false,fx:0,fy:0};}
+reset();
+g('bReset').addEventListener('click',reset);
+g('bPert').addEventListener('click',function(){ball.vx+=(Math.random()<0.5?-1:1)*(140+Math.random()*90);ball.vy-=40;});
+g('bView').addEventListener('click',function(){S.view=(S.view+1)%3;
+ this.textContent='VIEW: '+['plain','pressure','streamlines'][S.view];});
+g('bView').textContent='VIEW: pressure';
+
+// ---- physics ----
+var G=520; // px/s^2
+function forces(px,py,vx,vy,rad,mass){
+  var jc=jetCoords(px,py), s=jc.s, r=jc.r, A=axis();
+  var hw=halfWidth(Math.max(0,s));
+  var u=jetSpeed(s,r);
+  // axial drag: jet pushes ball along axis; balances gravity component
+  var area=rad*rad*3.14159;
+  var CD=0.00055;
+  var rel=u; // jet moving, ball approx slow
+  var Fd=CD*area*rel*rel/ (rad/16); // scale-ish
+  var fax=A.ax*Fd, fay=A.ay*Fd;
+  // radial pressure-gradient force: p ~ -0.5*rho*u^2, force = -grad p * volume
+  // dp/dr = -rho*u*du/dr ; du/dr = u * (-2r/(0.5 hw^2))
+  var dudr=u*(-2*r/(0.5*hw*hw));
+  var dpdr=-1.0*u*dudr;               // rho=1
+  var vol=rad*rad*0.9;
+  var Fr=-dpdr*vol*0.00028;           // force along +r direction
+  // Coandă/entrainment assist grows with tilt: extra inward pull
+  var coanda=-Math.sign(r)*Math.abs(u)*0.0016*vol*Math.sin(S.tilt*Math.PI/180);
+  Fr+=coanda;
+  var frx=(-A.ay)*Fr, fry=(A.ax)*Fr;
+  // viscous damping
+  var dmp=-0.9*rad/16;
+  return {fx:fax+frx+dmp*vx, fy:fay+fry+dmp*vy+G*mass, r:r, s:s, u:u, Fr:Fr, Fd:Fd};
+}
+
+var drag=null;
+c.addEventListener('pointerdown',function(e){
+  var d=Math.hypot(e.clientX-ball.x,e.clientY-ball.y);
+  if(d<S.rad+22){drag={x:e.clientX,y:e.clientY};}
+  else{var k=1.6;ball.vx+=(ball.x-e.clientX)*-k*0.55;ball.vy+=(ball.y-e.clientY)*-k*0.55;}
+});
+c.addEventListener('pointermove',function(e){if(drag){drag.x=e.clientX;drag.y=e.clientY;}});
+window.addEventListener('pointerup',function(){drag=null;});
+
+// ---- particles ----
+var P=[];
+for(var i=0;i<520;i++)P.push({s:Math.random()*H,r:(Math.random()*2-1)*60,life:Math.random()});
+function stepParticles(dt){
+  for(var i=0;i<P.length;i++){var p=P[i];
+    var u=jetSpeed(p.s,p.r);
+    p.s+=u*dt;
+    p.r+=(Math.random()-0.5)*10*dt*60*0.06;
+    // deflect around ball
+    var A=axis(),n=nozzle();
+    var wx=n.x+A.ax*p.s+(-A.ay)*p.r, wy=n.y+A.ay*p.s+A.ax*p.r;
+    var dx=wx-ball.x,dy=wy-ball.y,dd=Math.hypot(dx,dy);
+    if(dd<S.rad+8&&dd>0.01){p.r+= (dx*(-A.ay)+dy*A.ax)>0?60*dt:-60*dt;}
+    p.life-=dt*0.28;
+    if(p.s>H*1.15||p.life<=0||Math.abs(p.r)>halfWidth(p.s)*2.3){
+      p.s=Math.random()*10;p.r=(Math.random()*2-1)*24;p.life=1;}
+  }
+}
+
+var last=performance.now(),tAcc=0,bob=0;
+function frame(now){
+  var dt=Math.min(0.033,(now-last)/1000);last=now;tAcc+=dt;
+  var A=axis(),n=nozzle();
+
+  // physics substeps
+  for(var k=0;k<3;k++){
+    var h=dt/3;
+    if(drag){ball.x+=(drag.x-ball.x)*0.4;ball.y+=(drag.y-ball.y)*0.4;ball.vx*=0.5;ball.vy*=0.5;}
+    else{
+      var F=forces(ball.x,ball.y,ball.vx,ball.vy,S.rad,S.mass);
+      ball.fx=F.fx;ball.fy=F.fy;ball.Fr=F.Fr;ball.rr=F.r;ball.uu=F.u;ball.Fd=F.Fd;
+      ball.vx+=(F.fx/S.mass)*h;ball.vy+=(F.fy/S.mass)*h;
+      ball.x+=ball.vx*h;ball.y+=ball.vy*h;
+      if(ball.y>H-S.rad-4){ball.y=H-S.rad-4;ball.vy*=-0.35;ball.vx*=0.85;}
+      if(ball.x<S.rad){ball.x=S.rad;ball.vx*=-0.4;}
+      if(ball.x>W-S.rad){ball.x=W-S.rad;ball.vx*=-0.4;}
+      if(ball.y<-200){reset();}
+    }
+  }
+  stepParticles(dt);
+
+  // ---- draw ----
+  x.fillStyle='#04060c';x.fillRect(0,0,W,H);
+  // vignette grid
+  x.strokeStyle='rgba(30,70,110,.16)';x.lineWidth=1;
+  for(var gx=0;gx<W;gx+=64){x.beginPath();x.moveTo(gx,0);x.lineTo(gx,H);x.stroke();}
+  for(var gy=0;gy<H;gy+=64){x.beginPath();x.moveTo(0,gy);x.lineTo(W,gy);x.stroke();}
+
+  // pressure field
+  if(S.view===1){
+    var step=16;
+    for(var sy=0;sy<H;sy+=step)for(var sx=0;sx<W;sx+=step){
+      var jc=jetCoords(sx+step/2,sy+step/2);
+      if(jc.s<-30)continue;
+      var u=jetSpeed(jc.s,jc.r);
+      if(u<1)continue;
+      var p=u*u/(S.spd*S.spd);
+      x.fillStyle='rgba('+Math.round(20+150*p)+',60,'+Math.round(200-90*p)+','+(0.30*p).toFixed(3)+')';
+      x.fillRect(sx,sy,step,step);
+    }
+  }
+  // streamlines
+  if(S.view===2){
+    x.lineWidth=1.1;
+    for(var q=-4;q<=4;q++){
+      var r0=q*16;
+      x.beginPath();x.strokeStyle='rgba(120,220,255,'+(0.45-Math.abs(q)*0.04)+')';
+      for(var ss=0;ss<H*1.2;ss+=8){
+        var rr=r0*(halfWidth(ss)/halfWidth(0));
+        var wx=n.x+A.ax*ss+(-A.ay)*rr, wy=n.y+A.ay*ss+A.ax*rr;
+        // bend around ball
+        var dx=wx-ball.x,dy=wy-ball.y,dd=Math.hypot(dx,dy);
+        if(dd<S.rad*2.6&&dd>0.001){var push=(S.rad*2.6-dd)*0.55;wx+=dx/dd*push;wy+=dy/dd*push;}
+        if(ss===0)x.moveTo(wx,wy);else x.lineTo(wx,wy);
+      }
+      x.stroke();
+    }
+  }
+
+  // jet particles
+  for(var i=0;i<P.length;i++){var p=P[i];
+    var wx=n.x+A.ax*p.s+(-A.ay)*p.r, wy=n.y+A.ay*p.s+A.ax*p.r;
+    var u=jetSpeed(p.s,p.r), f=Math.min(1,u/(S.spd+1));
+    var a=0.10+0.6*f*p.life;
+    x.strokeStyle='rgba('+Math.round(90+150*f)+','+Math.round(220)+',255,'+a.toFixed(3)+')';
+    x.lineWidth=1+1.4*f;
+    x.beginPath();x.moveTo(wx,wy);x.lineTo(wx-A.ax*u*0.028,wy-A.ay*u*0.028);x.stroke();
+  }
+
+  // nozzle
+  x.save();x.translate(n.x,n.y);x.rotate(Math.atan2(A.ay,A.ax)+Math.PI/2);
+  x.fillStyle='#123'; x.strokeStyle='#4fd6ff';x.lineWidth=2;x.shadowColor='#0ff';x.shadowBlur=14;
+  x.beginPath();x.moveTo(-34,60);x.lineTo(-20,0);x.lineTo(20,0);x.lineTo(34,60);x.closePath();
+  x.fill();x.stroke();x.restore();
+
+  // ball
+  var gr=x.createRadialGradient(ball.x-S.rad*0.35,ball.y-S.rad*0.4,2,ball.x,ball.y,S.rad);
+  gr.addColorStop(0,'#fff');gr.addColorStop(0.45,'#ffe9a8');gr.addColorStop(1,'#c98a2a');
+  x.shadowColor='#ffce6a';x.shadowBlur=26;
+  x.fillStyle=gr;x.beginPath();x.arc(ball.x,ball.y,S.rad,0,6.2832);x.fill();
+  x.shadowBlur=0;
+
+  // low-pressure hug asymmetry
+  if(S.view===1&&Math.abs(ball.rr||0)>1){
+    var side=(ball.rr>0)?-1:1;
+    var hx=ball.x+(-A.ay)*side*S.rad*1.15, hy=ball.y+A.ax*side*S.rad*1.15;
+    var hg=x.createRadialGradient(hx,hy,1,hx,hy,S.rad*1.5);
+    hg.addColorStop(0,'rgba(80,160,255,.55)');hg.addColorStop(1,'rgba(80,160,255,0)');
+    x.fillStyle=hg;x.beginPath();x.arc(hx,hy,S.rad*1.5,0,6.2832);x.fill();
+  }
+
+  // restoring force arrow
+  var Fr=ball.Fr||0;
+  if(Math.abs(Fr)>0.02){
+    var mag=Math.max(-70,Math.min(70,Fr*1.4));
+    var ex=ball.x+(-A.ay)*mag, ey=ball.y+A.ax*mag;
+    x.strokeStyle='#7dffc0';x.lineWidth=2.6;x.shadowColor='#0f8';x.shadowBlur=12;
+    x.beginPath();x.moveTo(ball.x,ball.y);x.lineTo(ex,ey);x.stroke();
+    var ang=Math.atan2(ey-ball.y,ex-ball.x);
+    x.beginPath();x.moveTo(ex,ey);
+    x.lineTo(ex-9*Math.cos(ang-0.4),ey-9*Math.sin(ang-0.4));
+    x.lineTo(ex-9*Math.cos(ang+0.4),ey-9*Math.sin(ang+0.4));
+    x.closePath();x.fillStyle='#7dffc0';x.fill();x.shadowBlur=0;
+    x.fillStyle='#7dffc0';x.font='10px ui-monospace,monospace';
+    x.fillText('restoring ∇p',ex+6,ey-6);
+  }
+  // jet axis line
+  x.strokeStyle='rgba(255,210,127,.35)';x.setLineDash([6,7]);x.lineWidth=1;
+  x.beginPath();x.moveTo(n.x,n.y);x.lineTo(n.x+A.ax*H*1.2,n.y+A.ay*H*1.2);x.stroke();x.setLineDash([]);
+
+  // readouts
+  var lw=(ball.Fd||0)/(G*S.mass);
+  g('oOff').textContent=(ball.rr||0).toFixed(1);
+  g('oF').textContent=(Fr).toFixed(2);
+  g('oLW').textContent=lw.toFixed(2);
+  var st,col;
+  if(ball.y>H-S.rad*2.2){st='DROPPED — flow too weak';col='#ff9aa2';}
+  else if(Math.abs(ball.rr||0)>halfWidth(Math.max(0,ball.s||0))*1.8){st='EJECTED';col='#ffd27f';}
+  else if(lw>1.9){st='BLOWN AWAY (too fast)';col='#ffd27f';}
+  else {st='LEVITATING · self-centring';col='#7dffc0';}
+  var o=g('oSt');o.textContent=st;o.style.color=col;
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+})();
+</script>

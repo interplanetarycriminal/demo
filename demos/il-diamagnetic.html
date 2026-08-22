@@ -1,0 +1,367 @@
+<title>Diamagnetic Graphite Float</title>
+<style>
+html,body{margin:0;padding:0;background:#05070c;overflow:hidden;height:100%}
+canvas{display:block}
+#ui{position:fixed;top:0;left:0;padding:10px 12px;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;
+ color:#bfe9ff;background:rgba(4,8,16,.62);border-right:1px solid #14324a;border-bottom:1px solid #14324a;
+ max-width:330px;text-shadow:0 0 8px rgba(80,200,255,.45);z-index:10;backdrop-filter:blur(3px)}
+#ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.14em;color:#7fe9ff;text-transform:uppercase}
+#ui .m{color:#8fb6cc;margin:0 0 5px}
+#ui .sci{color:#ffcf7a;margin:0 0 2px}
+#ui .lin{color:#7d92a8;margin:0 0 7px;font-size:10px}
+#ui .row{display:flex;align-items:center;gap:6px;margin:3px 0}
+#ui .row label{width:74px;color:#9fd8ee}
+#ui input[type=range]{flex:1;height:3px;-webkit-appearance:none;appearance:none;background:#1b4257;outline:none;border-radius:2px}
+#ui input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:11px;border-radius:50%;background:#66e0ff;box-shadow:0 0 8px #38c8ff;cursor:pointer}
+#ui .v{width:64px;text-align:right;color:#ffe7a8}
+#ui .out{margin-top:7px;border-top:1px solid #163a52;padding-top:6px;color:#9ae7c0}
+#ui .warn{color:#ff8f7a}
+#ui a{color:#68d0ff;text-decoration:none;display:inline-block;margin-top:7px}
+#ui button{background:#0d2637;color:#9fe7ff;border:1px solid #1d5674;font:10px ui-monospace,monospace;padding:3px 7px;cursor:pointer;border-radius:3px;margin-right:4px}
+#ui button:hover{background:#14405c}
+#ui button.on{background:#5a1520;border-color:#a4364a;color:#ffb3b3}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>Diamagnetic Levitation</h1>
+<p class="m">Pyrolytic graphite (χ&lt;0) is <b>expelled</b> from field, so U = −χ|B|²/2μ₀ + mgh has a true minimum above a 4-pole checkerboard — passive, room-temperature floating.</p>
+<p class="sci">Faraday, 1845 — diamagnetism</p>
+<p class="lin">LINEAGE: Faraday 1845 → Braunbeck stability criterion 1939 → Geim's floating frog 1997</p>
+<div class="row"><label>|χ| material</label><input id="sChi" type="range" min="0" max="100" value="100"><span class="v" id="vChi"></span></div>
+<div class="row"><label>B remanence</label><input id="sB" type="range" min="20" max="160" value="100"><span class="v" id="vB"></span></div>
+<div class="row"><label>flake mass</label><input id="sM" type="range" min="20" max="200" value="80"><span class="v" id="vM"></span></div>
+<div><button id="bSign">χ sign: NEGATIVE (diamagnet)</button><button id="bReset">reset</button></div>
+<div style="color:#7d92a8;margin-top:4px">drag the flake &amp; release · sliders live</div>
+<div class="out" id="out"></div>
+<div class="warn" id="warn"></div>
+<a href="index.html">← gallery</a>
+</div>
+<script>
+(function(){
+"use strict";
+var c=document.getElementById('c'),g=c.getContext('2d');
+var W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
+ c.width=Math.floor(W*DPR);c.height=Math.floor(H*DPR);c.style.width=W+'px';c.style.height=H+'px';g.setTransform(DPR,0,0,DPR,0,0);buildField();}
+window.addEventListener('resize',resize);
+
+// ---------- physics (SI-ish, mm scale) ----------
+var MU0=4*Math.PI*1e-7;
+var MAG={w:0.012,h:0.010};           // 12mm x 10mm magnets, 2x2 array cross-section
+var poles=[];                         // dipole line-sources: {x,y,m,sign}
+var P={chi:-450e-6, Br:1.30, mass:0.08e-3, sign:-1, chiMag:450e-6};
+// graphite chi ~ -450e-6 (perp), bismuth -166e-6, water -9.0e-6
+
+function buildPoles(){
+  poles=[];
+  var s=MAG.w, y0=0.0;
+  // 4 magnets alternating N/S, modelled as pole-pair line charges at top/bottom faces
+  for(var i=0;i<4;i++){
+    var cx=(i-1.5)*s;
+    var sgn=(i%2===0)?1:-1;
+    // top face pole and bottom face pole (opposite)
+    poles.push({x:cx,y:y0,q:sgn});
+    poles.push({x:cx,y:y0-MAG.h,q:-sgn});
+  }
+}
+buildPoles();
+
+// B from 2D line-pole model: B = (Br/2pi) * sum q * r/|r|^2 * k
+function fieldAt(x,y){
+  var bx=0,by=0,k=P.Br*MAG.w*0.5;
+  for(var i=0;i<poles.length;i++){
+    var p=poles[i],dx=x-p.x,dy=y-p.y,r2=dx*dx+dy*dy+1e-8;
+    var f=p.q*k/r2;
+    bx+=f*dx;by+=f*dy;
+  }
+  return [bx,by];
+}
+function B2(x,y){var b=fieldAt(x,y);return b[0]*b[0]+b[1]*b[1];}
+
+// potential energy per unit volume: u = -chi*B^2/(2 mu0) + rho*g*y
+var RHO=2200; // graphite kg/m^3
+var Gs=9.81;
+function energyDensity(x,y){
+  return -P.chi*B2(x,y)/(2*MU0) + RHO*Gs*y;
+}
+// force per unit volume = -grad u
+function forceDensity(x,y){
+  var h=2e-4;
+  var fx=-(energyDensity(x+h,y)-energyDensity(x-h,y))/(2*h);
+  var fy=-(energyDensity(x,y+h)-energyDensity(x,y-h))/(2*h);
+  return [fx,fy];
+}
+
+// ---------- flake state (y up = positive, world meters) ----------
+var flake={x:0,y:0.006,vx:0,vy:0,ang:0,va:0,gone:false};
+function reset(){flake.x=0;flake.y=0.006;flake.vx=0;flake.vy=0;flake.ang=0;flake.va=0;flake.gone=false;}
+reset();
+
+// ---------- view mapping ----------
+var VIEW={cx:0,cy:0,scale:1};
+function setView(){
+  VIEW.scale=Math.min(W,H)*0.9/0.075;      // ~75mm across
+  VIEW.cx=W*0.60; VIEW.cy=H*0.66;
+}
+function sx(x){return VIEW.cx + x*VIEW.scale;}
+function sy(y){return VIEW.cy - y*VIEW.scale;}
+function ux(px){return (px-VIEW.cx)/VIEW.scale;}
+function uy(py){return (VIEW.cy-py)/VIEW.scale;}
+
+// ---------- field bitmap ----------
+var fieldImg=null,fieldW=0,fieldH=0,STEP=4;
+function buildField(){
+  setView();
+  fieldW=Math.max(2,Math.ceil(W/STEP));fieldH=Math.max(2,Math.ceil(H/STEP));
+  fieldImg=g.createImageData(fieldW,fieldH);
+  paintField();
+}
+function paintField(){
+  if(!fieldImg)return;
+  var d=fieldImg.data,i=0;
+  for(var j=0;j<fieldH;j++){
+    var wy=uy(j*STEP);
+    for(var k2=0;k2<fieldW;k2++){
+      var wx=ux(k2*STEP);
+      var b=Math.sqrt(B2(wx,wy));
+      var t=Math.min(1,Math.pow(b/1.1,0.55));
+      // teal -> magenta neon ramp
+      d[i]  =Math.floor(255*Math.pow(t,2.1)*0.95);
+      d[i+1]=Math.floor(190*t*(1-0.55*t));
+      d[i+2]=Math.floor(120+135*t*(1-0.2*t));
+      d[i+3]=Math.floor(190*Math.pow(t,0.85));
+      i+=4;
+    }
+  }
+}
+var fieldCanvas=document.createElement('canvas');
+function blitField(){
+  if(fieldCanvas.width!==fieldW||fieldCanvas.height!==fieldH){fieldCanvas.width=fieldW;fieldCanvas.height=fieldH;}
+  fieldCanvas.getContext('2d').putImageData(fieldImg,0,0);
+  g.save();g.globalCompositeOperation='lighter';g.imageSmoothingEnabled=true;
+  g.drawImage(fieldCanvas,0,0,W,H);g.restore();
+}
+
+// ---------- field line tracing ----------
+function traceLine(x,y,dir,steps){
+  var pts=[],h=0.0006;
+  for(var i=0;i<steps;i++){
+    var b=fieldAt(x,y),m=Math.hypot(b[0],b[1]);
+    if(m<1e-6)break;
+    x+=dir*h*b[0]/m;y+=dir*h*b[1]/m;
+    if(Math.abs(x)>0.06||y>0.05||y<-0.03)break;
+    pts.push([x,y]);
+  }
+  return pts;
+}
+function drawFieldLines(){
+  g.save();g.globalCompositeOperation='lighter';
+  g.lineWidth=1;g.strokeStyle='rgba(120,225,255,.30)';
+  for(var i=0;i<4;i++){
+    var cx=(i-1.5)*MAG.w;
+    for(var s=-1;s<=1;s+=1){
+      if(s===0)continue;
+      for(var n=1;n<=4;n++){
+        var sx0=cx+s*MAG.w*0.42*(n/4);
+        var pts=traceLine(sx0,0.0006,1,700).concat([]);
+        var p2=traceLine(sx0,0.0006,-1,700);
+        g.beginPath();
+        for(var k=p2.length-1;k>=0;k--){var q=p2[k];if(k===p2.length-1)g.moveTo(sx(q[0]),sy(q[1]));else g.lineTo(sx(q[0]),sy(q[1]));}
+        for(var k2=0;k2<pts.length;k2++)g.lineTo(sx(pts[k2][0]),sy(pts[k2][1]));
+        g.stroke();
+      }
+    }
+  }
+  g.restore();
+}
+
+// ---------- energy landscape along x=flake.x ----------
+function energyProfile(xAt){
+  var pts=[],n=140,ymin=0.0007,ymax=0.030;
+  var lo=Infinity,hi=-Infinity;
+  for(var i=0;i<n;i++){
+    var y=ymin+(ymax-ymin)*i/(n-1);
+    var u=energyDensity(xAt,y);
+    pts.push([y,u]);
+    if(u<lo)lo=u; if(u>hi)hi=u;
+  }
+  return {pts:pts,lo:lo,hi:hi};
+}
+function findWell(xAt){
+  var pr=energyProfile(xAt),best=-1,bu=Infinity;
+  for(var i=1;i<pr.pts.length-1;i++){
+    var u=pr.pts[i][1];
+    if(u<pr.pts[i-1][1]&&u<pr.pts[i+1][1]&&u<bu){bu=u;best=i;}
+  }
+  return best>=0?pr.pts[best][0]:null;
+}
+function drawEnergy(){
+  var pr=energyProfile(flake.x);
+  var x0=40,x1=Math.min(W*0.30,300);
+  var yTop=H*0.20,yBot=H*0.90;
+  var rng=Math.max(1e-9,pr.hi-pr.lo);
+  g.save();
+  g.fillStyle='rgba(6,12,20,.55)';g.fillRect(x0-12,yTop-24,(x1-x0)+26,(yBot-yTop)+42);
+  g.strokeStyle='rgba(90,150,180,.45)';g.lineWidth=1;g.strokeRect(x0-12,yTop-24,(x1-x0)+26,(yBot-yTop)+42);
+  g.font='10px ui-monospace,monospace';g.fillStyle='#8fd8f0';
+  g.fillText('U(h)  energy landscape →',x0-6,yTop-10);
+  g.beginPath();
+  for(var i=0;i<pr.pts.length;i++){
+    var yy=pr.pts[i][0],u=pr.pts[i][1];
+    var py=yBot-(yy-0.0007)/(0.030-0.0007)*(yBot-yTop);
+    var px=x0+((u-pr.lo)/rng)*(x1-x0);
+    if(i===0)g.moveTo(px,py);else g.lineTo(px,py);
+  }
+  g.shadowBlur=12;g.shadowColor='#4de0b0';g.strokeStyle='#7dffd0';g.lineWidth=2;g.stroke();g.shadowBlur=0;
+  // marker at flake height
+  var wy=findWell(flake.x);
+  if(wy!==null){
+    var mpy=yBot-(wy-0.0007)/(0.030-0.0007)*(yBot-yTop);
+    var mu=energyDensity(flake.x,wy);
+    var mpx=x0+((mu-pr.lo)/rng)*(x1-x0);
+    g.fillStyle='#ffd27a';g.beginPath();g.arc(mpx,mpy,4,0,6.284);g.fill();
+    g.fillStyle='#ffd27a';g.fillText('well',mpx+7,mpy+3);
+  }
+  var fpy=yBot-(Math.max(0.0007,Math.min(0.030,flake.y))-0.0007)/(0.030-0.0007)*(yBot-yTop);
+  g.strokeStyle='rgba(255,120,200,.8)';g.setLineDash([4,4]);
+  g.beginPath();g.moveTo(x0-10,fpy);g.lineTo(x1+12,fpy);g.stroke();g.setLineDash([]);
+  g.fillStyle='#ff9ad0';g.fillText('flake',x1-16,fpy-4);
+  g.restore();
+}
+
+// ---------- draw magnets ----------
+function drawMagnets(){
+  for(var i=0;i<4;i++){
+    var cx=(i-1.5)*MAG.w, N=(i%2===0);
+    var px=sx(cx-MAG.w/2),py=sy(0),w=MAG.w*VIEW.scale,h=MAG.h*VIEW.scale;
+    var grd=g.createLinearGradient(px,py,px,py+h);
+    grd.addColorStop(0,N?'#e04a6a':'#3a72e8');grd.addColorStop(1,N?'#5a1226':'#10214a');
+    g.save();g.shadowBlur=18;g.shadowColor=N?'rgba(255,80,120,.6)':'rgba(80,150,255,.6)';
+    g.fillStyle=grd;g.fillRect(px,py,w,h);g.restore();
+    g.strokeStyle='rgba(220,240,255,.35)';g.strokeRect(px,py,w,h);
+    g.fillStyle='rgba(255,255,255,.85)';g.font='bold 12px ui-monospace,monospace';g.textAlign='center';
+    g.fillText(N?'N':'S',px+w/2,py+15);g.textAlign='left';
+  }
+  // base plate
+  g.fillStyle='rgba(30,45,60,.9)';g.fillRect(sx(-0.03),sy(-MAG.h),0.06*VIEW.scale,8);
+}
+
+// ---------- flake ----------
+function drawFlake(){
+  var px=sx(flake.x),py=sy(flake.y);
+  var fw=0.0085*VIEW.scale,fh=0.0016*VIEW.scale;
+  g.save();g.translate(px,py);g.rotate(flake.ang);
+  g.shadowBlur=22;g.shadowColor=P.sign<0?'rgba(160,255,230,.75)':'rgba(255,140,90,.8)';
+  var grd=g.createLinearGradient(0,-fh,0,fh);
+  grd.addColorStop(0,'#dfe9f2');grd.addColorStop(.45,'#7f8d99');grd.addColorStop(1,'#2b3540');
+  g.fillStyle=grd;
+  g.beginPath();g.moveTo(-fw,-fh);g.lineTo(fw,-fh);g.lineTo(fw*0.92,fh);g.lineTo(-fw*0.92,fh);g.closePath();g.fill();
+  g.strokeStyle='rgba(190,255,240,.8)';g.lineWidth=1;g.stroke();
+  g.restore();
+  // levitation gap line
+  if(!flake.gone&&flake.y>0.0009){
+    g.save();g.setLineDash([2,4]);g.strokeStyle='rgba(150,230,255,.45)';
+    g.beginPath();g.moveTo(px,py+fh);g.lineTo(px,sy(0));g.stroke();g.setLineDash([]);
+    g.fillStyle='#9fe7ff';g.font='10px ui-monospace,monospace';
+    g.fillText((flake.y*1000).toFixed(2)+' mm',px+6,(py+sy(0))/2);
+    g.restore();
+  }
+}
+
+// ---------- interaction ----------
+var drag=false;
+function pos(e){var r=c.getBoundingClientRect();var t=e.touches?e.touches[0]:e;return[t.clientX-r.left,t.clientY-r.top];}
+c.addEventListener('mousedown',down);c.addEventListener('touchstart',function(e){down(e);e.preventDefault();},{passive:false});
+window.addEventListener('mousemove',move);window.addEventListener('touchmove',function(e){move(e);},{passive:false});
+window.addEventListener('mouseup',up);window.addEventListener('touchend',up);
+function down(e){var p=pos(e);if(Math.hypot(p[0]-sx(flake.x),p[1]-sy(flake.y))<50){drag=true;flake.gone=false;}}
+function move(e){if(!drag)return;var p=pos(e);flake.x=Math.max(-0.03,Math.min(0.03,ux(p[0])));flake.y=Math.max(0.0009,Math.min(0.045,uy(p[1])));flake.vx=0;flake.vy=0;}
+function up(){drag=false;}
+
+// ---------- UI ----------
+var sChi=document.getElementById('sChi'),sB=document.getElementById('sB'),sM=document.getElementById('sM');
+var vChi=document.getElementById('vChi'),vB=document.getElementById('vB'),vM=document.getElementById('vM');
+var out=document.getElementById('out'),warn=document.getElementById('warn');
+var bSign=document.getElementById('bSign');
+function matName(chi){
+  var a=Math.abs(chi)*1e6;
+  if(a>300)return'pyrolytic graphite';
+  if(a>90)return'bismuth';
+  if(a>25)return'strong organic';
+  return'water (χ≈−9e−6)';
+}
+function syncParams(){
+  var t=sChi.value/100;
+  // log scale from 9e-6 (water) to 450e-6 (graphite)
+  P.chiMag=9e-6*Math.pow(450/9,t);
+  P.chi=P.sign*P.chiMag;
+  P.Br=sB.value/100*1.30;
+  P.mass=sM.value/1000*1e-3;
+  RHO=2200*(sM.value/80);
+  vChi.textContent=(P.chiMag*1e6).toFixed(1)+'e−6';
+  vB.textContent=P.Br.toFixed(2)+' T';
+  vM.textContent=(RHO).toFixed(0)+' kg/m³';
+  paintField();
+}
+sChi.oninput=sB.oninput=sM.oninput=syncParams;
+bSign.onclick=function(){
+  P.sign=-P.sign;P.chi=P.sign*P.chiMag;
+  bSign.textContent='χ sign: '+(P.sign<0?'NEGATIVE (diamagnet)':'POSITIVE (para/ferro)');
+  bSign.className=P.sign<0?'':'on';
+  flake.gone=false;reset();paintField();
+};
+document.getElementById('bReset').onclick=function(){reset();};
+
+// ---------- loop ----------
+var last=performance.now();
+function frame(now){
+  var dt=Math.min(0.033,(now-last)/1000);last=now;
+  if(!drag&&!flake.gone){
+    var sub=6,h=dt/sub;
+    for(var i=0;i<sub;i++){
+      var f=forceDensity(flake.x,flake.y);
+      var ax=f[0]/RHO, ay=f[1]/RHO;
+      flake.vx+=ax*h;flake.vy+=ay*h;
+      flake.vx*=Math.pow(0.22,h);flake.vy*=Math.pow(0.22,h); // eddy + air damping
+      flake.x+=flake.vx*h;flake.y+=flake.vy*h;
+      if(flake.y<0.0009){flake.y=0.0009;if(flake.vy<0)flake.vy*=-0.25;}
+      if(Math.abs(flake.x)>0.075||flake.y>0.09){flake.gone=true;break;}
+    }
+    flake.va+=(-flake.ang*30-flake.va*6)*dt;flake.ang+=flake.va*dt;
+  }
+  // render
+  g.fillStyle='#05070c';g.fillRect(0,0,W,H);
+  blitField();
+  drawFieldLines();
+  drawMagnets();
+  if(!flake.gone)drawFlake();
+  drawEnergy();
+
+  // caption
+  g.save();g.font='11px ui-monospace,monospace';g.textAlign='center';
+  g.fillStyle='rgba(150,200,225,.75)';
+  g.fillText('EARNSHAW 1842: no static arrangement of χ>0 material has a stable equilibrium — only χ<0 opens a minimum.',W/2,H-22);
+  g.fillStyle='rgba(255,190,120,.7)';
+  g.fillText('2×2 alternating NdFeB checkerboard · cross-section · |B|² heatmap + traced field lines',W/2,H-6);
+  g.restore();
+
+  var well=findWell(flake.x);
+  var b=Math.sqrt(B2(flake.x,flake.y));
+  out.innerHTML=
+   'material : '+matName(P.chi)+'<br>'+
+   'χ        : '+(P.sign<0?'−':'+')+(P.chiMag*1e6).toFixed(1)+'e−6<br>'+
+   '|B| here : '+b.toFixed(3)+' T<br>'+
+   'height   : '+(flake.y*1000).toFixed(2)+' mm<br>'+
+   'well at  : '+(well!==null?(well*1000).toFixed(2)+' mm':'— none —')+'<br>'+
+   'U(h)     : '+(energyDensity(flake.x,flake.y)/1000).toFixed(2)+' kJ/m³';
+  if(P.sign>0)warn.textContent='χ>0: U is monotonically DECREASING toward the poles — no minimum. Earnshaw enforced: the flake slams down / flies off.';
+  else if(well===null)warn.textContent='No bounded minimum at this χ — too weak to beat gravity (water fails at desk scale).';
+  else if(flake.gone)warn.textContent='Flake left the domain. Press reset.';
+  else warn.textContent='';
+  requestAnimationFrame(frame);
+}
+resize();syncParams();requestAnimationFrame(frame);
+})();
+</script>

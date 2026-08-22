@@ -1,0 +1,343 @@
+<title>Oobleck Jam</title>
+<style>
+html,body{margin:0;padding:0;height:100%;background:#05040a;overflow:hidden}
+canvas{display:block;width:100%;height:100%}
+#ui{position:fixed;top:0;left:0;padding:10px 12px;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;
+ color:#ffe3c2;background:rgba(10,6,14,.62);border-right:1px solid #321;border-bottom:1px solid #321;
+ max-width:340px;text-shadow:0 0 8px #f806;backdrop-filter:blur(3px)}
+#ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.14em;color:#ffb35c;text-transform:uppercase;text-shadow:0 0 12px #f90a}
+.m{color:#ffd9a8}.s{color:#9df}.l{color:#998}.k{color:#7fffcf}
+#ui a{color:#ffb35c;text-decoration:none;border-bottom:1px dotted #ffb35c88}
+label{display:block;margin-top:3px;color:#ba9}
+input[type=range]{width:150px;vertical-align:middle;accent-color:#f90}
+#rd{margin-top:6px;color:#fff3e4;white-space:pre;font-size:11px}
+button{background:#1a1008;color:#ffb35c;border:1px solid #6a4a2a;font:11px ui-monospace,monospace;padding:2px 6px;cursor:pointer;margin:4px 4px 0 0}
+button.on{background:#f902;color:#ffe}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>Oobleck · Shear Thickening</h1>
+<div class="m">A dense cornstarch suspension flows at low strain rate but JAMS solid under sudden shear, because crowded particles dilate and lock into force chains.</div>
+<div class="s">Osborne Reynolds' dilatancy, 1885 · "oobleck" from Dr. Seuss, 1949</div>
+<div class="l">LINEAGE: Reynolds 1885 dilatancy → Seuss's <i>Bartholomew and the Oobleck</i> → shear-thickening body armour</div>
+<div class="k">MOVE slowly = sink · CLICK = SLAM (jams) · R = toggle runner · S = stop runner mid-pool</div>
+<label>packing fraction φ <input id="phi" type="range" min="30" max="64" value="58"></label>
+<label>rod size <input id="rs" type="range" min="10" max="46" value="24"></label>
+<button id="rb" class="on">runner: ON</button><button id="fc" class="on">force chains</button>
+<div id="rd"></div>
+<a href="index.html">← gallery</a>
+</div>
+<script>
+(function(){
+var c=document.getElementById('c'),x=c.getContext('2d'),W=0,H=0,DPR=1;
+function rz(){DPR=Math.min(2,window.devicePixelRatio||1);W=c.clientWidth;H=c.clientHeight;
+ c.width=Math.round(W*DPR);c.height=Math.round(H*DPR);x.setTransform(DPR,0,0,DPR,0,0);build();}
+window.addEventListener('resize',rz);
+
+var phiS=document.getElementById('phi'),rsS=document.getElementById('rs'),
+    rbB=document.getElementById('rb'),fcB=document.getElementById('fc'),rd=document.getElementById('rd');
+var showChains=true,runnerOn=true;
+fcB.onclick=function(){showChains=!showChains;fcB.className=showChains?'on':''};
+rbB.onclick=function(){runnerOn=!runnerOn;rbB.className=runnerOn?'on':'';rbB.textContent='runner: '+(runnerOn?'ON':'OFF');
+ if(runnerOn){runner.x=60;runner.sunk=0;runner.stopped=false;}};
+
+// ---- rheology model ----
+// eta(gdot) = eta0 * (1 + (gdot/gc)^m)  on the thickening branch, capped
+var GC=6.0, MEXP=2.0, ETA0=1.2, ETAMAX=4000;
+function etaOf(g,phi){
+  var crowd=Math.max(0.0,(phi-0.44)/(0.64-0.44));      // 0 below ~0.44, 1 at max packing
+  var amp=Math.pow(crowd,2.2)*900;
+  var e=ETA0*(1+amp*Math.pow(Math.max(0,g)/GC,MEXP));
+  return Math.min(ETAMAX,e);
+}
+function jamThreshold(phi){                            // strain rate needed to jam
+  var crowd=(phi-0.44)/(0.64-0.44);
+  if(crowd<=0.02) return Infinity;
+  return GC/Math.pow(crowd,1.4);
+}
+function isJammed(g,phi){ return g>jamThreshold(phi); }
+// ketchup ghost: shear thinning
+function etaKetchup(g){ return 60/(1+Math.pow(Math.max(1e-3,g)/2.0,0.9))+0.5; }
+
+// ---- particles ----
+var P=[],poolY=0,poolH=0;
+function build(){
+  poolY=H*0.46;poolH=H-poolY;
+  P=[];
+  var n=Math.min(1100,Math.floor(W*poolH/1500));
+  for(var i=0;i<n;i++){
+    P.push({x:Math.random()*W,y:poolY+8+Math.random()*(poolH-16),
+      r:1.6+Math.random()*2.2,vx:0,vy:0,f:0,ox:0,oy:0});
+    P[i].ox=P[i].x;P[i].oy=P[i].y;
+  }
+}
+
+var mouse={x:-999,y:-999,px:-999,py:-999,v:0,down:false};
+c.addEventListener('mousemove',function(e){var r=c.getBoundingClientRect();mouse.x=e.clientX-r.left;mouse.y=e.clientY-r.top;});
+c.addEventListener('mousedown',function(){mouse.down=true;slam(mouse.x,mouse.y);});
+window.addEventListener('mouseup',function(){mouse.down=false});
+c.addEventListener('touchmove',function(e){var r=c.getBoundingClientRect();var t=e.touches[0];
+ mouse.x=t.clientX-r.left;mouse.y=t.clientY-r.top;e.preventDefault();},{passive:false});
+c.addEventListener('touchstart',function(e){var r=c.getBoundingClientRect();var t=e.touches[0];
+ mouse.x=t.clientX-r.left;mouse.y=t.clientY-r.top;slam(mouse.x,mouse.y);e.preventDefault();},{passive:false});
+window.addEventListener('keydown',function(e){
+  if(e.key==='r'||e.key==='R')rbB.onclick();
+  if(e.key==='s'||e.key==='S')runner.stopped=!runner.stopped;
+});
+
+var slams=[];
+function slam(sx,sy){ slams.push({x:sx,y:Math.max(sy,poolY+4),t:0,g:70}); }
+
+var runner={x:60,y:0,vx:190,phase:0,sunk:0,stopped:false,gdot:0};
+
+var opHist=[];
+function step(dt,T){
+  var phi=(+phiS.value)/100, R=(+rsS.value);
+  // rod strain rate from mouse motion
+  var dx=mouse.x-mouse.px, dy=mouse.y-mouse.py;
+  var speed=Math.hypot(dx,dy)/Math.max(dt,1e-3);
+  mouse.px+= dx*0.5; mouse.py+= dy*0.5;
+  if(mouse.px<-500){mouse.px=mouse.x;mouse.py=mouse.y;}
+  var rodG = speed/Math.max(8,R);          // strain rate ~ v/L
+  window.__rodG=rodG;
+  var rodJam=isJammed(rodG,phi);
+
+  // runner
+  runner.y=poolY+6;
+  if(runnerOn){
+    if(!runner.stopped){
+      runner.x+=runner.vx*dt;
+      if(runner.x>W-40){runner.x=W-40;runner.vx=-Math.abs(runner.vx);}
+      if(runner.x<40){runner.x=40;runner.vx=Math.abs(runner.vx);}
+      runner.phase+=dt*14;
+      runner.gdot=Math.abs(runner.vx)/14;     // footfall strain rate
+      var jam=isJammed(runner.gdot,phi);
+      if(jam){ runner.sunk=Math.max(0,runner.sunk-dt*70); }
+      else { runner.sunk=Math.min(58,runner.sunk+dt*26); }
+      if(runner.sunk>50){ /* bogged */ }
+    } else {
+      runner.gdot=0.15;
+      runner.sunk=Math.min(64,runner.sunk+dt*22);   // standing still → sinks
+    }
+    if(runner.gdot>0.5 && !runner.stopped && isJammed(runner.gdot,phi) && Math.sin(runner.phase)>0.9)
+      slams.push({x:runner.x,y:poolY+6,t:0,g:runner.gdot*1.4,small:true});
+  }
+
+  // slams decay
+  for(var i=slams.length-1;i>=0;i--){slams[i].t+=dt; if(slams[i].t>0.85)slams.splice(i,1);}
+
+  // particles: local strain rate field from rod + slams + runner
+  for(var i=0;i<P.length;i++){
+    var p=P[i];
+    var g=0.05, fx=0, fy=0;
+    // rod
+    var ddx=p.x-mouse.x, ddy=p.y-mouse.y, d=Math.hypot(ddx,ddy)+.001;
+    if(d<R+14 && mouse.y>poolY-30){
+      g=Math.max(g,rodG*(1-d/(R+14)));
+      var push=(R+10-d);
+      if(push>0){ fx+=ddx/d*push*(rodJam?26:9); fy+=ddy/d*push*(rodJam?26:9); }
+    }
+    // slams
+    for(var s=0;s<slams.length;s++){
+      var S=slams[s], sd=Math.hypot(p.x-S.x,p.y-S.y);
+      var front=S.t*260;
+      if(sd<front+40 && sd>front-40){
+        var w=1-Math.abs(sd-front)/40;
+        g=Math.max(g,S.g*w*(1-S.t/0.85));
+        var nx=(p.x-S.x)/(sd+.001), ny=(p.y-S.y)/(sd+.001);
+        fx+=nx*w*(S.small?40:150); fy+=ny*w*(S.small?40:150);
+      }
+    }
+    // runner footfall
+    if(runnerOn&&!runner.stopped){
+      var rdx=p.x-runner.x, rdy=p.y-runner.y, rdd=Math.hypot(rdx,rdy);
+      if(rdd<46) g=Math.max(g,runner.gdot*(1-rdd/46));
+    }
+    p.g=g;
+    var jam=isJammed(g,phi);
+    p.f = jam? Math.min(1,p.f+dt*14) : Math.max(0,p.f-dt*4.5);
+    var eta=etaOf(g,phi);
+    var damp = jam? 0.55 : (1-Math.min(0.9, eta/60));
+    p.vx=(p.vx+fx*dt)*(jam?0.42:0.90);
+    p.vy=(p.vy+fy*dt)*(jam?0.42:0.90);
+    // elastic return to rest lattice (jammed = stiff)
+    var k = jam? 26 : 3.2;
+    p.vx += (p.ox-p.x)*k*dt;
+    p.vy += (p.oy-p.y)*k*dt;
+    p.x+=p.vx*dt; p.y+=p.vy*dt;
+    if(p.y<poolY+3){p.y=poolY+3;p.vy*=-0.3}
+    if(p.y>H-3){p.y=H-3;p.vy*=-0.3}
+    if(p.x<2){p.x=2;p.vx*=-0.3}if(p.x>W-2){p.x=W-2;p.vx*=-0.3}
+  }
+  // operating point history
+  var gOp = Math.max(rodG, runnerOn?runner.gdot:0, slams.length?slams[0].g*(1-slams[0].t/0.85):0);
+  window.__gOp=gOp;
+  opHist.push({g:gOp,e:etaOf(gOp,phi)});if(opHist.length>90)opHist.shift();
+}
+
+function glow(col,b,fn){x.save();x.shadowColor=col;x.shadowBlur=b;fn();x.restore();}
+
+function draw(t){
+  var phi=(+phiS.value)/100;
+  x.fillStyle='#05040a';x.fillRect(0,0,W,H);
+  // background
+  var g=x.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#07060e');g.addColorStop(1,'#140c06');
+  x.fillStyle=g;x.fillRect(0,0,W,H);
+  // pool body
+  var pg=x.createLinearGradient(0,poolY,0,H);
+  pg.addColorStop(0,'rgba(120,80,40,.35)');pg.addColorStop(1,'rgba(40,24,10,.85)');
+  x.fillStyle=pg;x.fillRect(0,poolY,W,H-poolY);
+  x.strokeStyle='rgba(255,190,120,.35)';x.lineWidth=1;
+  x.beginPath();x.moveTo(0,poolY);x.lineTo(W,poolY);x.stroke();
+
+  // force chains: link neighbouring JAMMED particles → percolating network
+  if(showChains){
+    x.lineWidth=1.1;
+    for(var i=0;i<P.length;i++){
+      var a=P[i]; if(a.f<0.25)continue;
+      for(var j=i+1;j<i+9&&j<P.length;j++){
+        var b=P[j]; if(b.f<0.25)continue;
+        var d=Math.hypot(a.x-b.x,a.y-b.y);
+        if(d<22){
+          var s=Math.min(a.f,b.f);
+          x.strokeStyle='rgba(255,'+Math.round(170+70*s)+',80,'+(0.10+0.75*s)+')';
+          x.beginPath();x.moveTo(a.x,a.y);x.lineTo(b.x,b.y);x.stroke();
+        }
+      }
+    }
+    // extra glow pass on the strongest chains
+    glow('#ffb35c',14,function(){
+      x.strokeStyle='rgba(255,220,150,.5)';x.lineWidth=1.6;x.beginPath();
+      for(var i=0;i<P.length;i+=1){
+        var a=P[i]; if(a.f<0.7)continue;
+        for(var j=i+1;j<i+5&&j<P.length;j++){var b=P[j];if(b.f<0.7)continue;
+          if(Math.hypot(a.x-b.x,a.y-b.y)<20){x.moveTo(a.x,a.y);x.lineTo(b.x,b.y);}}
+      }
+      x.stroke();
+    });
+  }
+  // grains
+  for(var i=0;i<P.length;i++){
+    var p=P[i];
+    if(p.f>0.2){x.fillStyle='rgba(255,'+Math.round(190+60*p.f)+','+Math.round(110+80*p.f)+','+(0.6+0.4*p.f)+')';}
+    else {x.fillStyle='rgba(210,'+Math.round(160+30*p.g)+',110,.45)';}
+    x.beginPath();x.arc(p.x,p.y,p.r,0,6.283);x.fill();
+  }
+
+  // slam shock fronts
+  for(var s=0;s<slams.length;s++){
+    var S=slams[s],r=S.t*260,a=1-S.t/0.85;
+    glow('#ffd27f',18,function(){
+      x.strokeStyle='rgba(255,210,130,'+(a*0.8)+')';x.lineWidth=2+3*a;
+      x.beginPath();x.arc(S.x,S.y,r,0,6.283);x.stroke();});
+  }
+
+  // rod / finger
+  var R=(+rsS.value);
+  if(mouse.y>poolY-60&&mouse.x>0){
+    var rodG=window.__rodG||0, jam=isJammed(rodG,phi);
+    glow(jam?'#ffb35c':'#7fd8ff',20,function(){
+      x.strokeStyle=jam?'#ffd9a0':'#9fe8ff';x.lineWidth=2.4;
+      x.beginPath();x.arc(mouse.x,mouse.y,R,0,6.283);x.stroke();
+      x.beginPath();x.moveTo(mouse.x,mouse.y-R);x.lineTo(mouse.x,poolY-90);x.stroke();
+    });
+    x.fillStyle=jam?'#ffd9a0':'#9fe8ff';x.font='11px ui-monospace,monospace';
+    x.fillText(jam?'JAMMED — rod meets a solid':'flowing — cream parts',mouse.x+R+8,mouse.y-4);
+    x.fillStyle='#aa9';x.fillText('γ̇ = '+rodG.toFixed(1)+' s⁻¹',mouse.x+R+8,mouse.y+10);
+  }
+
+  // runner
+  if(runnerOn) drawRunner(t,phi);
+
+  drawCurve(phi);
+  hud(phi);
+}
+
+function drawRunner(t,phi){
+  var rx=runner.x, ry=poolY+6+runner.sunk;
+  var jam=!runner.stopped&&isJammed(runner.gdot,phi);
+  x.save();x.translate(rx,ry);
+  var s=1.0;
+  glow(jam?'#7fffcf':'#ff8fa0',14,function(){
+    x.strokeStyle=jam?'#aaffe0':'#ffb0bc';x.lineWidth=2;
+    x.beginPath();x.arc(0,-26*s,6*s,0,6.283);x.stroke();          // head
+    x.beginPath();x.moveTo(0,-20*s);x.lineTo(0,-6*s);x.stroke();  // body
+    var ph=runner.stopped?0:runner.phase;
+    x.beginPath();x.moveTo(0,-6*s);x.lineTo(7*Math.sin(ph)*s,4*s);
+    x.moveTo(0,-6*s);x.lineTo(-7*Math.sin(ph)*s,4*s);x.stroke();  // legs
+    x.beginPath();x.moveTo(0,-16*s);x.lineTo(8*Math.cos(ph)*s,-9*s);
+    x.moveTo(0,-16*s);x.lineTo(-8*Math.cos(ph)*s,-9*s);x.stroke();
+  });
+  x.restore();
+  x.fillStyle=jam?'#aaffe0':'#ffb0bc';x.font='11px ui-monospace,monospace';
+  var lbl = runner.stopped? 'STOPPED → sinking ('+runner.sunk.toFixed(0)+' px)' :
+            (jam? 'sprinting on a solid' : 'too slow → sinking');
+  x.fillText(lbl,rx+16,ry-34);
+}
+
+function drawCurve(phi){
+  var cw=Math.min(280,W*0.26), ch=140, cx0=W-cw-26, cy0=26;
+  if(W<760){cw=Math.min(240,W-40);cx0=W-cw-14;}
+  x.fillStyle='rgba(8,5,12,.72)';x.fillRect(cx0,cy0,cw,ch);
+  x.strokeStyle='rgba(255,190,120,.25)';x.strokeRect(cx0,cy0,cw,ch);
+  // log-log axes: gdot 0.05..200, eta 0.3..4000
+  function px(g){return cx0+ (Math.log10(Math.max(0.05,g))-Math.log10(0.05))/(Math.log10(200)-Math.log10(0.05))*cw;}
+  function py(e){return cy0+ch - (Math.log10(Math.max(0.3,e))-Math.log10(0.3))/(Math.log10(4000)-Math.log10(0.3))*ch;}
+  // ketchup ghost (thinning)
+  x.strokeStyle='rgba(255,90,110,.35)';x.lineWidth=1.4;x.setLineDash([4,3]);x.beginPath();
+  for(var g=0.05;g<=200;g*=1.15){var X=px(g),Y=py(etaKetchup(g));g===0.05?x.moveTo(X,Y):x.lineTo(X,Y);}
+  x.stroke();x.setLineDash([]);
+  x.fillStyle='rgba(255,120,140,.7)';x.font='10px ui-monospace,monospace';
+  x.fillText('ketchup: shear-THINNING',cx0+6,cy0+ch-8);
+  // oobleck thickening curve
+  glow('#ffb35c',12,function(){
+    x.strokeStyle='#ffc98a';x.lineWidth=2;x.beginPath();
+    var first=true;
+    for(var g=0.05;g<=200;g*=1.12){var X=px(g),Y=py(etaOf(g,phi));first?(x.moveTo(X,Y),first=false):x.lineTo(X,Y);}
+    x.stroke();});
+  // jam threshold line
+  var jt=jamThreshold(phi);
+  if(isFinite(jt)&&jt<200){
+    x.strokeStyle='rgba(127,255,207,.65)';x.setLineDash([3,3]);
+    x.beginPath();x.moveTo(px(jt),cy0);x.lineTo(px(jt),cy0+ch);x.stroke();x.setLineDash([]);
+    x.fillStyle='#7fffcf';x.fillText('jam γ̇*='+jt.toFixed(1),Math.min(cx0+cw-70,px(jt)+3),cy0+12);
+  } else {
+    x.fillStyle='#ff8fa0';x.fillText('φ too low — no jamming',cx0+6,cy0+12);
+  }
+  // operating point trail
+  for(var i=0;i<opHist.length;i++){
+    var o=opHist[i],a=i/opHist.length;
+    x.fillStyle='rgba(255,255,255,'+(a*0.35)+')';
+    x.beginPath();x.arc(px(o.g),py(o.e),1.6,0,6.283);x.fill();
+  }
+  var go=window.__gOp||0.05, eo=etaOf(go,phi);
+  glow('#fff',16,function(){x.fillStyle='#fff';x.beginPath();x.arc(px(go),py(eo),4.5,0,6.283);x.fill();});
+  x.fillStyle='#ffe3c2';x.font='10px ui-monospace,monospace';
+  x.fillText('η(γ̇)  — thickening branch ▲',cx0+6,cy0-6);
+  x.fillText('γ̇ →',cx0+cw-26,cy0+ch+12);
+}
+
+function hud(phi){
+  var jt=jamThreshold(phi), go=window.__gOp||0;
+  var jammedCount=0;for(var i=0;i<P.length;i++)if(P[i].f>0.5)jammedCount++;
+  rd.textContent=
+   'φ (packing)  '+phi.toFixed(2)+(phi<0.5?'   ◀ below ~0.50: magic dies':'')+'\n'+
+   'γ̇ operating  '+go.toFixed(2)+' s⁻¹\n'+
+   'γ̇* jam thr.  '+(isFinite(jt)?jt.toFixed(2)+' s⁻¹':'∞ (never jams)')+'\n'+
+   'η(γ̇)        '+etaOf(go,phi).toFixed(1)+' Pa·s  (η0='+ETA0+')\n'+
+   'state        '+(isJammed(go,phi)?'JAMMED — solid':'FLOWING — liquid')+'\n'+
+   'chained grns '+jammedCount+' / '+P.length+'\n'+
+   'runner       '+(runner.stopped?'stopped, sinking':'running, sunk '+runner.sunk.toFixed(0));
+}
+
+var last=0;
+function loop(t){
+  if(!last)last=t;var dt=Math.min(0.033,(t-last)/1000);last=t;
+  step(dt,t/1000);draw(t/1000);requestAnimationFrame(loop);
+}
+rz();requestAnimationFrame(loop);
+})();
+</script>

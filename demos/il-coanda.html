@@ -1,0 +1,294 @@
+<title>Coandă Attachment</title>
+<style>
+html,body{margin:0;padding:0;height:100%;background:#03060b;overflow:hidden}
+canvas{display:block;position:fixed;inset:0}
+#ui{position:fixed;top:0;left:0;margin:10px;padding:10px 12px;max-width:340px;
+  background:rgba(5,10,18,.74);border:1px solid #1c4a4a;border-radius:8px;
+  color:#c6f2ea;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;
+  text-shadow:0 0 6px #0ff4;z-index:10;backdrop-filter:blur(4px)}
+#ui h1{font-size:14px;margin:0 0 4px;color:#5ff5d0;letter-spacing:.08em;text-shadow:0 0 12px #0fa8}
+#ui .m{color:#9fd6cc;margin:0 0 6px}
+#ui .sci{color:#ffd27f;text-shadow:0 0 8px #fa06}
+#ui .lin{color:#8ab0aa;font-size:10px;margin:4px 0}
+#ui a{color:#5ff5d0;text-decoration:none;border-bottom:1px dotted #5ff5d06a}
+#ui label{display:block;margin:5px 0 0;color:#9fd6cc}
+#ui input[type=range]{width:100%;height:14px;accent-color:#0fd;background:transparent}
+#ui .rd{color:#ffe38a;text-shadow:0 0 8px #fa06}
+#ui button{background:#082a26;color:#5ff5d0;border:1px solid #2b8a78;border-radius:4px;
+  font:11px ui-monospace,monospace;padding:3px 8px;cursor:pointer;margin:5px 4px 0 0}
+#ui button:hover{background:#0e453d}
+#ui button.on{background:#12604f;color:#eafff8}
+</style>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>COANDĂ EFFECT</h1>
+<p class="m">A jet clings to a curved surface because it entrains the air in the gap; the starved gap's pressure drops and the ambient shoves the jet onto the wall.</p>
+<p class="sci">Henri Coandă, 1930s — noted a century earlier by Thomas Young (1800).</p>
+<p class="lin">LINEAGE: Young's 19th-c. note → Coandă names the effect → NOTAR helicopters &amp; fluidic logic devices.</p>
+<button id="a1" class="on">ACT 1 cylinder</button><button id="a2">ACT 2 spoon</button><button id="a3">ACT 3 paper</button>
+<label>jet speed <span class="rd" id="vSpd"></span></label><input type="range" id="sSpd" min="20" max="260" step="1" value="150">
+<label>surface curvature (radius) <span class="rd" id="vRad"></span></label><input type="range" id="sRad" min="24" max="150" step="1" value="70">
+<p class="m" style="margin-top:6px">drag the cylinder / spoon · pull it away to snap the jet straight</p>
+<p class="rd" id="ro">—</p>
+<a href="index.html">← gallery</a>
+</div>
+<script>
+(function(){
+var c=document.getElementById('c'),x=c.getContext('2d');
+var W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
+ c.width=W*DPR;c.height=H*DPR;c.style.width=W+'px';c.style.height=H+'px';x.setTransform(DPR,0,0,DPR,0,0);
+ layout();}
+function g(i){return document.getElementById(i);}
+var S={spd:150,rad:70,act:1};
+function bind(id,k,f,o){var e=g(id),ot=g(o);function u(){S[k]=parseFloat(e.value);ot.textContent=f(S[k]);}
+ e.addEventListener('input',u);u();}
+bind('sSpd','spd',function(v){return v.toFixed(0)+' u/s';},'vSpd');
+bind('sRad','rad',function(v){return v.toFixed(0)+' px';},'vRad');
+
+var cyl={x:0,y:0}, nz={x:0,y:0}, spoon={x:0,y:0}, paper={x:0,y:0,ang:0,vang:0};
+function layout(){
+  nz.x=W*0.14; nz.y=H*0.46;
+  if(cyl.x===0){cyl.x=W*0.40;cyl.y=H*0.46+S.rad*0.86;}
+  spoon.x=W*0.52;spoon.y=H*0.52;
+  paper.x=W*0.30;paper.y=H*0.42;
+}
+window.addEventListener('resize',resize);resize();layout();
+
+['a1','a2','a3'].forEach(function(id,i){g(id).addEventListener('click',function(){
+  S.act=i+1;['a1','a2','a3'].forEach(function(j,k){g(j).className=(k===i)?'on':'';});
+  init();});});
+
+// --- particles ---
+var P=[];
+function init(){P.length=0;
+  for(var i=0;i<900;i++)P.push(newP(true));
+}
+function newP(rand){
+  if(S.act===1)return {x:nz.x+(rand?Math.random()*40:0),y:nz.y+(Math.random()*2-1)*13,vx:S.spd,vy:0,l:1};
+  if(S.act===2)return {x:spoon.x-140+(Math.random()*2-1)*9,y:(rand?Math.random()*H*0.3:-10),vx:0,vy:S.spd*0.9,l:1};
+  return {x:paper.x-70+(rand?Math.random()*40:0),y:paper.y-16+(Math.random()*2-1)*8,vx:S.spd,vy:0,l:1};
+}
+init();
+
+// --- attachment model ---
+// separation angle grows monotonically with jet speed (momentum vs adverse gradient)
+function sepAngle(spd,rad){
+  var k=spd/(spd+55);                     // 0..1, monotonic increasing in spd
+  var curv=1/(1+rad/220);                 // tighter radius -> earlier separation
+  return Math.PI*(0.22+1.05*k)*(1-0.30*curv);
+}
+var attach=0, attachTarget=0;
+
+var drag=null;
+c.addEventListener('pointerdown',function(e){
+  var t=(S.act===2)?spoon:(S.act===3?paper:cyl);
+  if(Math.hypot(e.clientX-t.x,e.clientY-t.y)<Math.max(60,S.rad+30))drag=t;
+});
+c.addEventListener('pointermove',function(e){if(drag){drag.x=e.clientX;drag.y=e.clientY;}});
+window.addEventListener('pointerup',function(){drag=null;});
+
+function step(dt){
+  var i,p;
+  if(S.act===1){
+    // gap between jet centerline and cylinder top surface
+    var gap=Math.hypot(cyl.x-nz.x,cyl.y-nz.y);
+    var vert=cyl.y-nz.y;
+    var near=(vert>0&&vert<S.rad+70&&cyl.x>nz.x-20&&cyl.x<nz.x+W*0.6);
+    attachTarget=near?Math.max(0,1-Math.abs(vert-S.rad*0.92)/(S.rad*1.15+40)):0;
+    attach+= (attachTarget-attach)*Math.min(1,dt*(attachTarget>attach?2.6:5.0)); // hysteresis: slow on, fast off
+    var sa=sepAngle(S.spd,S.rad)*attach;
+    for(i=0;i<P.length;i++){p=P[i];
+      var dx=p.x-cyl.x,dy=p.y-cyl.y,d=Math.hypot(dx,dy);
+      var sp=Math.hypot(p.vx,p.vy)||1;
+      if(attach>0.02&&d<S.rad+52&&d>1){
+        var th=Math.atan2(dy,dx);
+        // angle measured from top of cylinder (-PI/2) going clockwise (downstream)
+        var arc=th+Math.PI/2; while(arc<-Math.PI)arc+=6.2832; while(arc>Math.PI)arc-=6.2832;
+        if(arc>=-0.35&&arc<sa){
+          // tangential steering + wall-normal suction
+          var tx=-dy/d,ty=dx/d;
+          if(p.vx*tx+p.vy*ty<0){tx=-tx;ty=-ty;}
+          var pull=(S.rad+18-d)*0.9;
+          var w=0.10+0.16*attach;
+          p.vx+= (tx*sp-p.vx)*w + (-dx/d)*pull*dt*8;
+          p.vy+= (ty*sp-p.vy)*w + (-dy/d)*pull*dt*8;
+        }
+      }
+      // hard collision
+      if(d<S.rad+2&&d>0.001){var n=S.rad+2;p.x=cyl.x+dx/d*n;p.y=cyl.y+dy/d*n;}
+      p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=6*dt;p.l-=dt*0.55;
+      if(p.x>W+20||p.l<=0||p.y>H+30||p.y<-30){P[i]=newP(false);}
+    }
+  } else if(S.act===2){
+    var sa2=sepAngle(S.spd,S.rad);
+    var pulled=0;
+    for(i=0;i<P.length;i++){p=P[i];
+      var dx2=p.x-spoon.x,dy2=p.y-spoon.y,d2=Math.hypot(dx2,dy2);
+      var sp2=Math.hypot(p.vx,p.vy)||1;
+      if(d2<S.rad+46&&d2>1&&p.y>spoon.y-S.rad-30){
+        var tx2=dy2/d2,ty2=-dx2/d2;                       // wrap direction
+        if(p.vy*ty2+p.vx*tx2<0){tx2=-tx2;ty2=-ty2;}
+        var w2=0.13*Math.min(1,sa2/2.2);
+        var pull2=(S.rad+14-d2)*0.85;
+        p.vx+=(tx2*sp2-p.vx)*w2+(-dx2/d2)*pull2*dt*8;
+        p.vy+=(ty2*sp2-p.vy)*w2+(-dy2/d2)*pull2*dt*8;
+        pulled++;
+      }
+      if(d2<S.rad&&d2>0.001){p.x=spoon.x+dx2/d2*S.rad;p.y=spoon.y+dy2/d2*S.rad;}
+      p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=340*dt;p.l-=dt*0.4;
+      if(p.y>H+20||p.l<=0||p.x<-30||p.x>W+30){P[i]=newP(false);}
+    }
+    spoon.pull=pulled;
+  } else {
+    // paper strip: fast air over top -> low pressure -> lifts
+    var lift=Math.min(1,S.spd/170);
+    paper.vang+= ((-0.75*lift)-paper.ang)*7*dt;
+    paper.vang*=0.90; paper.ang+=paper.vang*dt*3;
+    for(i=0;i<P.length;i++){p=P[i];
+      var ty3=paper.y+Math.sin(paper.ang)*(p.x-paper.x)*0.5;
+      if(p.x>paper.x-70&&p.x<paper.x+180){
+        p.vy+=((ty3-24)-p.y)*2.2*dt*4;
+      }
+      p.x+=p.vx*dt;p.y+=p.vy*dt;p.l-=dt*0.6;
+      if(p.x>W+20||p.l<=0){P[i]=newP(false);}
+    }
+  }
+}
+
+var last=performance.now(),T=0;
+function frame(now){
+  var dt=Math.min(0.032,(now-last)/1000);last=now;T+=dt;
+  // keep injection speed in sync
+  for(var i=0;i<P.length;i++){}
+  step(dt);
+  x.fillStyle='#03060b';x.fillRect(0,0,W,H);
+  x.strokeStyle='rgba(20,80,80,.15)';x.lineWidth=1;
+  for(var gx=0;gx<W;gx+=64){x.beginPath();x.moveTo(gx,0);x.lineTo(gx,H);x.stroke();}
+  for(var gy=0;gy<H;gy+=64){x.beginPath();x.moveTo(0,gy);x.lineTo(W,gy);x.stroke();}
+
+  if(S.act===1)drawAct1();
+  else if(S.act===2)drawAct2();
+  else drawAct3();
+
+  // particles
+  for(var j=0;j<P.length;j++){var p=P[j];
+    var sp=Math.hypot(p.vx,p.vy),f=Math.min(1,sp/(S.spd+1));
+    x.strokeStyle='rgba('+Math.round(80+130*f)+',255,'+Math.round(200+55*f)+','+(0.12+0.55*f*Math.max(0,p.l)).toFixed(3)+')';
+    x.lineWidth=1+1.3*f;
+    x.beginPath();x.moveTo(p.x,p.y);x.lineTo(p.x-p.vx*0.022,p.y-p.vy*0.022);x.stroke();
+  }
+  requestAnimationFrame(frame);
+}
+
+function nozzleGfx(px,py,ang){
+  x.save();x.translate(px,py);x.rotate(ang);
+  x.fillStyle='#0a2a26';x.strokeStyle='#5ff5d0';x.lineWidth=2;x.shadowColor='#0fd';x.shadowBlur=12;
+  x.beginPath();x.moveTo(-56,-26);x.lineTo(0,-14);x.lineTo(0,14);x.lineTo(-56,26);x.closePath();
+  x.fill();x.stroke();x.restore();x.shadowBlur=0;
+}
+
+function drawAct1(){
+  nozzleGfx(nz.x,nz.y,0);
+  // low pressure shading in the gap
+  if(attach>0.02){
+    var gx0=cyl.x-S.rad*0.4, gy0=cyl.y-S.rad-6;
+    var gg=x.createRadialGradient(gx0,gy0,2,gx0,gy0,S.rad*1.3);
+    gg.addColorStop(0,'rgba(90,150,255,'+(0.55*attach).toFixed(3)+')');
+    gg.addColorStop(1,'rgba(90,150,255,0)');
+    x.fillStyle=gg;x.beginPath();x.arc(gx0,gy0,S.rad*1.3,0,6.2832);x.fill();
+    x.fillStyle='rgba(150,190,255,'+(0.8*attach).toFixed(2)+')';x.font='10px ui-monospace,monospace';
+    x.fillText('low P (entrained gap)',gx0-52,gy0-S.rad*0.75);
+  }
+  // cylinder
+  var cg=x.createRadialGradient(cyl.x-S.rad*0.3,cyl.y-S.rad*0.3,3,cyl.x,cyl.y,S.rad);
+  cg.addColorStop(0,'#2a4a66');cg.addColorStop(1,'#0b1a28');
+  x.shadowColor='#4fd6ff';x.shadowBlur=18;
+  x.fillStyle=cg;x.beginPath();x.arc(cyl.x,cyl.y,S.rad,0,6.2832);x.fill();
+  x.strokeStyle='#4fd6ff';x.lineWidth=2;x.stroke();x.shadowBlur=0;
+
+  // separation marker
+  var sa=sepAngle(S.spd,S.rad)*attach;
+  if(attach>0.05){
+    var th=sa-Math.PI/2;
+    var sx=cyl.x+Math.cos(th)*S.rad, sy=cyl.y+Math.sin(th)*S.rad;
+    x.strokeStyle='#ffd27f';x.lineWidth=2;x.shadowColor='#fa0';x.shadowBlur=12;
+    x.beginPath();x.arc(cyl.x,cyl.y,S.rad+7,-Math.PI/2,th);x.stroke();
+    x.beginPath();x.arc(sx,sy,5,0,6.2832);x.fillStyle='#ffd27f';x.fill();x.shadowBlur=0;
+    x.fillStyle='#ffd27f';x.font='11px ui-monospace,monospace';
+    x.fillText('separation '+(sa*180/Math.PI).toFixed(0)+'°',sx+9,sy+4);
+  }
+  // entrainment arrows
+  entrain(cyl.x,cyl.y-S.rad-24,6,attach);
+  g('ro').textContent='attachment '+(attach*100).toFixed(0)+'%  ·  separation '+(sa*180/Math.PI).toFixed(0)+
+    '°  ·  '+(attach>0.5?'JET CLINGING':'jet straight');
+}
+
+function drawAct2(){
+  // faucet
+  x.fillStyle='#0d2430';x.strokeStyle='#4fd6ff';x.lineWidth=2;
+  x.beginPath();x.rect(spoon.x-160,0,40,54);x.fill();x.stroke();
+  // spoon: curved back
+  x.save();x.translate(spoon.x,spoon.y);
+  x.shadowColor='#bfe6ff';x.shadowBlur=16;
+  var sg=x.createLinearGradient(-S.rad,-S.rad,S.rad,S.rad);
+  sg.addColorStop(0,'#dfeef8');sg.addColorStop(0.5,'#8fa9bb');sg.addColorStop(1,'#31465a');
+  x.fillStyle=sg;
+  x.beginPath();x.ellipse(0,0,S.rad*0.9,S.rad*0.62,-0.35,0,6.2832);x.fill();
+  x.strokeStyle='#eaf6ff';x.lineWidth=2;x.stroke();
+  x.beginPath();x.moveTo(S.rad*0.7,S.rad*0.35);x.lineTo(S.rad*2.4,S.rad*1.5);
+  x.lineWidth=8;x.strokeStyle='#9fb8c9';x.stroke();
+  x.shadowBlur=0;x.restore();
+  // force arrow: spoon pulled INTO the stream (leftward/up-stream)
+  var mag=Math.min(90,(spoon.pull||0)*0.8+22);
+  var ax=spoon.x-mag, ay=spoon.y;
+  x.strokeStyle='#ff7ad9';x.lineWidth=3;x.shadowColor='#f4f';x.shadowBlur=14;
+  x.beginPath();x.moveTo(spoon.x,spoon.y);x.lineTo(ax,ay);x.stroke();
+  x.beginPath();x.moveTo(ax,ay);x.lineTo(ax+11,ay-6);x.lineTo(ax+11,ay+6);x.closePath();
+  x.fillStyle='#ff7ad9';x.fill();x.shadowBlur=0;
+  x.fillStyle='#ff7ad9';x.font='11px ui-monospace,monospace';
+  x.fillText('spoon pulled INTO the jet',ax-10,ay-12);
+  // low P shading on stream side
+  var lx=spoon.x-S.rad*0.75,ly=spoon.y-S.rad*0.2;
+  var lg=x.createRadialGradient(lx,ly,2,lx,ly,S.rad*1.2);
+  lg.addColorStop(0,'rgba(90,150,255,.5)');lg.addColorStop(1,'rgba(90,150,255,0)');
+  x.fillStyle=lg;x.beginPath();x.arc(lx,ly,S.rad*1.2,0,6.2832);x.fill();
+  entrain(spoon.x-S.rad*0.8,spoon.y-S.rad,5,1);
+  g('ro').textContent='ACT 2 spoon · wrap '+((sepAngle(S.spd,S.rad)*180/Math.PI)|0)+
+    '° · reaction force pulls spoon upstream (anti-intuitive)';
+}
+
+function drawAct3(){
+  nozzleGfx(paper.x-92,paper.y-16,0);
+  x.save();x.translate(paper.x,paper.y);x.rotate(paper.ang);
+  var pg=x.createLinearGradient(0,-6,180,10);
+  pg.addColorStop(0,'#f2f6ff');pg.addColorStop(1,'#8fa6bd');
+  x.fillStyle=pg;x.shadowColor='#cfe8ff';x.shadowBlur=14;
+  x.beginPath();x.moveTo(0,-4);x.lineTo(180,4);x.lineTo(180,10);x.lineTo(0,4);x.closePath();x.fill();
+  x.shadowBlur=0;x.restore();
+  x.fillStyle='rgba(90,150,255,.28)';
+  x.beginPath();x.ellipse(paper.x+80,paper.y-22,110,26,paper.ang*0.5,0,6.2832);x.fill();
+  x.fillStyle='#9fc8ff';x.font='11px ui-monospace,monospace';
+  x.fillText('fast air above → low P → strip RISES to meet the jet',paper.x-60,paper.y-64);
+  entrain(paper.x+60,paper.y-40,5,1);
+  g('ro').textContent='ACT 3 paper strip · lift angle '+(-paper.ang*180/Math.PI).toFixed(0)+
+    '° · blowing OVER lifts, not pushes down';
+}
+
+function entrain(px,py,n,a){
+  if(a<0.05)return;
+  x.strokeStyle='rgba(255,210,127,'+(0.55*a).toFixed(2)+')';x.lineWidth=1.4;
+  for(var i=0;i<n;i++){
+    var t=(T*0.9+i/n)%1;
+    var ex=px-60+i*24, ey=py-70+t*56;
+    x.beginPath();x.moveTo(ex,ey);x.lineTo(ex,ey+14);x.stroke();
+    x.beginPath();x.moveTo(ex,ey+14);x.lineTo(ex-3.5,ey+8);x.lineTo(ex+3.5,ey+8);x.closePath();
+    x.fillStyle='rgba(255,210,127,'+(0.55*a).toFixed(2)+')';x.fill();
+  }
+  x.fillStyle='rgba(255,210,127,'+(0.75*a).toFixed(2)+')';x.font='10px ui-monospace,monospace';
+  x.fillText('entrainment',px-60,py-78);
+}
+requestAnimationFrame(frame);
+})();
+</script>

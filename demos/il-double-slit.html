@@ -1,0 +1,292 @@
+<title>Young's Double Slit</title>
+<style>
+html,body{margin:0;padding:0;height:100%;background:#02040a;overflow:hidden}
+canvas#c{display:block;position:fixed;inset:0}
+#ui{position:fixed;top:0;left:0;margin:10px;padding:10px 12px;max-width:352px;
+  background:rgba(4,8,16,.74);border:1px solid rgba(150,120,255,.30);border-radius:8px;
+  color:#d8ccff;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;z-index:10;
+  box-shadow:0 0 26px rgba(130,90,255,.18),inset 0 0 20px rgba(90,60,200,.07);backdrop-filter:blur(3px)}
+#ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.09em;color:#b79bff;text-shadow:0 0 10px #7b4dff}
+.m{color:#c3b6e8}.s{color:#9fe8ff}.l{color:#8878aa;font-style:italic}
+.row{margin:5px 0;display:flex;align-items:center;gap:6px}
+.row span{min-width:80px;color:#cbb6ff}
+input[type=range]{flex:1;height:3px;-webkit-appearance:none;appearance:none;background:#2a1e4d;border-radius:2px;outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:11px;border-radius:50%;background:#a97dff;box-shadow:0 0 8px #a97dff;cursor:pointer}
+input[type=range]::-moz-range-thumb{width:11px;height:11px;border:0;border-radius:50%;background:#a97dff;box-shadow:0 0 8px #a97dff;cursor:pointer}
+#rd{margin-top:6px;color:#8dffc9;text-shadow:0 0 8px rgba(60,255,190,.3)}
+a{color:#b79bff;text-decoration:none}a:hover{text-shadow:0 0 8px #b79bff}
+b.on{color:#7dffb0}b.off{color:#ff8090}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>YOUNG'S DOUBLE SLIT</h1>
+<div class="m">Two coherent slits interfere: a path difference d·sinθ = mλ is bright, half-integer dark.</div>
+<div class="s">Thomas Young, 1801.</div>
+<div class="l">Newton's corpuscles → Young 1801 → Fresnel/Arago → electron &amp; C₆₀ double slits</div>
+<div class="row"><span>d spacing</span><input id="sd" type="range" min="60" max="340" value="150"></div>
+<div class="row"><span>λ</span><input id="sl" type="range" min="8" max="34" value="14"></div>
+<div class="row"><span>D distance</span><input id="sD" type="range" min="30" max="100" value="72"></div>
+<div class="row"><span>photon rate</span><input id="sq" type="range" min="0" max="100" value="0"></div>
+<div class="m"><b>1</b> single slit · <b>Q</b> quantum act · <b>K</b> which-slit detector · <b>C</b> clear counts</div>
+<div id="rd">…</div>
+<a href="index.html">← gallery</a>
+</div>
+<script>
+(function(){
+"use strict";
+var c=document.getElementById('c'),g=c.getContext('2d');
+var W,H,DPR,IW,IH,img,buf,SCALE=2,off=document.createElement('canvas'),octx;
+var d=150, lam=14, D=0.72, single=false, quantum=false, which=false, rate=0;
+var t=0;
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  W=window.innerWidth;H=window.innerHeight;
+  c.width=Math.floor(W*DPR);c.height=Math.floor(H*DPR);
+  c.style.width=W+'px';c.style.height=H+'px';
+  IW=Math.max(8,Math.floor(W/SCALE));IH=Math.max(8,Math.floor(H/SCALE));
+  img=g.createImageData(IW,IH);buf=img.data;
+  for(var i=3;i<buf.length;i+=4)buf[i]=255;
+  off.width=IW;off.height=IH;octx=off.getContext('2d');
+  rebuildHist();
+}
+window.addEventListener('resize',resize);
+
+// ---- geometry (all in screen px; lambda and d in px) ---------------------
+function geom(){
+  var bx=W*0.18;                 // barrier x
+  var sx=bx+(W-bx-40)*D;         // screen x
+  var cy=H*0.5;
+  return {bx:bx,sx:sx,cy:cy,Dp:sx-bx};
+}
+function screenIntensity(y){
+  var G=geom(),Y=y-G.cy;
+  var a=lam*2.2;                       // slit width (sets the single-slit envelope)
+  var th=Math.atan2(Y,G.Dp);
+  var st=Math.sin(th);
+  // single-slit envelope (sinc^2)
+  var b=Math.PI*a*st/lam;
+  var env=(Math.abs(b)<1e-7)?1:Math.pow(Math.sin(b)/b,2);
+  if(single)return env;
+  var dphi=Math.PI*d*st/lam;
+  return env*Math.pow(Math.cos(dphi),2);
+}
+function fringeWidth(){var G=geom();return lam*G.Dp/d;}
+
+// ---- photon histogram ----------------------------------------------------
+var hist=null,HN=0,total=0,cdf=null,cdfDirty=true;
+function rebuildHist(){HN=Math.max(16,Math.floor(H));hist=new Float32Array(HN);total=0;cdfDirty=true;}
+function buildCDF(){
+  cdf=new Float32Array(HN);
+  var s=0;
+  for(var i=0;i<HN;i++){
+    var I;
+    if(which){
+      // which-path knowledge destroys coherence: incoherent sum of two single-slit lumps
+      I=lump(i,+d*0.5)+lump(i,-d*0.5);
+    }else{
+      I=screenIntensity(i);
+    }
+    s+=I;cdf[i]=s;
+  }
+  for(var j=0;j<HN;j++)cdf[j]/=s;
+  cdfDirty=false;
+}
+function lump(y,off0){
+  var G=geom();
+  var w=Math.max(6,lam*1.7);
+  var u=(y-(G.cy+off0*1.35))/w; // geometric image of each slit, slightly spread
+  return Math.exp(-u*u);
+}
+function sampleY(){
+  if(cdfDirty)buildCDF();
+  var r=Math.random(),lo=0,hi=HN-1;
+  while(lo<hi){var mid=(lo+hi)>>1;if(cdf[mid]<r)lo=mid+1;else hi=mid;}
+  return lo;
+}
+var dots=[];
+
+// ---- field render --------------------------------------------------------
+function render(){
+  var G=geom(),dd=buf,i=0;
+  var k=2*Math.PI/lam, w=k*1.9, ph=t*w;
+  var bxi=G.bx/SCALE, sxi=G.sx/SCALE, cyi=G.cy/SCALE, di=d/SCALE, lami=lam/SCALE;
+  var ki=2*Math.PI/lami;
+  var s1y=cyi-di*0.5, s2y=cyi+di*0.5;
+  var amp=quantum?0.34:1;
+  for(var y=0;y<IH;y++){
+    for(var x=0;x<IW;x++,i+=4){
+      var R=2,Gc=4,B=10;
+      if(x<bxi-1){
+        // incoming plane wave
+        var pw=Math.sin(ki*(x)-ph);
+        var v=pw*0.30*amp;
+        R+=v*24;Gc+=v*36;B+=v*90+18;
+      }else if(x<=sxi){
+        var r1=Math.hypot(x-bxi,y-s1y);
+        var f1=Math.sin(ki*r1-ph)/Math.sqrt(1+r1*0.45);
+        var f=f1;
+        if(!single){
+          var r2=Math.hypot(x-bxi,y-s2y);
+          var f2=Math.sin(ki*r2-ph)/Math.sqrt(1+r2*0.45);
+          f=f1+f2;
+        }else{f=f1*1.55;}
+        f*=2.6*amp;
+        var pos=f>0?f:0, neg=f<0?-f:0;
+        var I=f*f*0.9;
+        R+=pos*30+I*22;
+        Gc+=pos*14+neg*10+I*38;
+        B+=neg*46+I*60+12;
+      }
+      dd[i]=R>255?255:R;dd[i+1]=Gc>255?255:Gc;dd[i+2]=B>255?255:B;
+    }
+  }
+  octx.putImageData(img,0,0);
+  g.setTransform(1,0,0,1,0,0);
+  g.fillStyle='#02040a';g.fillRect(0,0,c.width,c.height);
+  g.imageSmoothingEnabled=true;
+  g.drawImage(off,0,0,c.width,c.height);
+  g.globalCompositeOperation='lighter';g.globalAlpha=0.28;
+  g.drawImage(off,0,0,c.width,c.height);
+  g.globalAlpha=1;g.globalCompositeOperation='source-over';
+
+  g.save();g.scale(DPR,DPR);
+  // barrier
+  g.fillStyle='rgba(10,14,26,.96)';
+  var sw=Math.max(3,lam*2.2);
+  g.fillRect(G.bx-5,0,10,G.cy-d*0.5-sw*0.5);
+  if(!single)g.fillRect(G.bx-5,G.cy-d*0.5+sw*0.5,10,d-sw);
+  else g.fillRect(G.bx-5,G.cy-d*0.5+sw*0.5,10,d-sw);
+  g.fillRect(G.bx-5,G.cy+d*0.5+sw*0.5,10,H);
+  if(single){ // close the upper slit
+    g.fillRect(G.bx-5,G.cy-d*0.5-sw*0.5,10,sw+1);
+  }
+  g.strokeStyle='rgba(160,200,255,.45)';g.lineWidth=1;
+  g.strokeRect(G.bx-5,0,10,H);
+  // which-slit detectors
+  if(which){
+    g.strokeStyle='#ff6c8a';g.shadowColor='#ff6c8a';g.shadowBlur=10;g.lineWidth=1.5;
+    for(var q=-1;q<=1;q+=2){
+      if(single&&q<0)continue;
+      g.beginPath();g.arc(G.bx+16,G.cy+q*d*0.5,7,0,Math.PI*2);g.stroke();
+    }
+    g.shadowBlur=0;
+    g.fillStyle='#ff9db2';g.font='10px ui-monospace,monospace';
+    g.fillText('which-path ON',G.bx+26,G.cy-d*0.5-12);
+  }
+  // screen line
+  g.strokeStyle='rgba(200,220,255,.55)';g.lineWidth=2;
+  g.shadowColor='rgba(140,180,255,.6)';g.shadowBlur=8;
+  g.beginPath();g.moveTo(G.sx,0);g.lineTo(G.sx,H);g.stroke();g.shadowBlur=0;
+
+  // photon dots on the screen
+  if(dots.length){
+    g.globalCompositeOperation='lighter';
+    for(var p=0;p<dots.length;p++){
+      var dt2=dots[p];
+      g.fillStyle='rgba(255,255,200,'+dt2.a.toFixed(3)+')';
+      g.fillRect(G.sx+1+dt2.x,dt2.y,1.6,1.6);
+    }
+    g.globalCompositeOperation='source-over';
+  }
+  // live intensity profile drawn to the right of the screen
+  var pw2=Math.min(240,W-G.sx-30);
+  drawProfile(g,G,pw2);
+  g.restore();
+}
+function drawProfile(g,G,pw){
+  if(pw<40)return;
+  var x0=G.sx+6;
+  g.fillStyle='rgba(3,6,14,.55)';g.fillRect(x0,0,pw,H);
+  // analytic curve
+  g.beginPath();
+  for(var y=0;y<H;y+=1){
+    var I=which?(lump(y,d*0.5)+lump(y,-d*0.5))*0.5:screenIntensity(y);
+    var x=x0+I*pw*0.92;
+    if(y===0)g.moveTo(x,y);else g.lineTo(x,y);
+  }
+  g.strokeStyle='rgba(140,255,220,.85)';g.lineWidth=1.4;
+  g.shadowColor='rgba(90,255,200,.7)';g.shadowBlur=8;g.stroke();g.shadowBlur=0;
+  // measured histogram
+  if(total>0){
+    var mx=0,i;
+    for(i=0;i<HN;i++)if(hist[i]>mx)mx=hist[i];
+    if(mx>0){
+      g.beginPath();
+      for(i=0;i<HN&&i<H;i++){
+        // 5-bin smooth
+        var s=0,n=0;
+        for(var q=-4;q<=4;q++){var j=i+q;if(j>=0&&j<HN){s+=hist[j];n++;}}
+        var v=(s/n)/mx;
+        var x=x0+v*pw*0.92;
+        if(i===0)g.moveTo(x,i);else g.lineTo(x,i);
+      }
+      g.strokeStyle='rgba(255,220,120,.9)';g.lineWidth=1.2;
+      g.shadowColor='rgba(255,200,90,.6)';g.shadowBlur=7;g.stroke();g.shadowBlur=0;
+    }
+  }
+  g.fillStyle='rgba(140,255,220,.8)';g.font='10px ui-monospace,monospace';
+  g.fillText('I(y) theory',x0+6,14);
+  if(total>0){g.fillStyle='rgba(255,220,120,.9)';g.fillText('photon counts n='+total,x0+6,28);}
+  // fringe tick marks m = 0,±1,±2 ...
+  if(!single&&!which){
+    var beta=fringeWidth();
+    g.strokeStyle='rgba(180,160,255,.35)';g.lineWidth=1;
+    for(var m=-9;m<=9;m++){
+      var yy=G.cy+m*beta;
+      if(yy<0||yy>H)continue;
+      g.beginPath();g.moveTo(x0,yy);g.lineTo(x0+8,yy);g.stroke();
+    }
+  }
+}
+
+// ---- ui ------------------------------------------------------------------
+var sdEl=document.getElementById('sd'),slEl=document.getElementById('sl'),
+    sDEl=document.getElementById('sD'),sqEl=document.getElementById('sq'),rdEl=document.getElementById('rd');
+function dirty(){cdfDirty=true;hist.fill(0);total=0;dots.length=0;}
+sdEl.oninput=function(){d=+sdEl.value;dirty();};
+slEl.oninput=function(){lam=+slEl.value;dirty();};
+sDEl.oninput=function(){D=+sDEl.value/100;dirty();};
+sqEl.oninput=function(){rate=+sqEl.value/100;if(rate>0)quantum=true;};
+window.addEventListener('keydown',function(e){
+  var k=e.key.toLowerCase();
+  if(k==='1'){single=!single;dirty();}
+  if(k==='q'){quantum=!quantum;if(quantum&&rate<0.05){rate=0.35;sqEl.value=35;}}
+  if(k==='k'){which=!which;dirty();}
+  if(k==='c'){dirty();}
+});
+
+var last=performance.now(),acc=0;
+function loop(now){
+  var dt=Math.min(0.05,(now-last)/1000);last=now;
+  t+=dt*60;
+  if(quantum&&rate>0){
+    // photon-by-photon Monte Carlo: each photon lands at a random y drawn from |psi|^2
+    var perSec=Math.pow(10,0.6+rate*3.1); // 4 .. ~5000 photons/s
+    acc+=perSec*dt;
+    var n=Math.floor(acc);acc-=n;
+    if(n>4000)n=4000;
+    for(var i=0;i<n;i++){
+      var y=sampleY();
+      if(y<HN)hist[y]++;
+      total++;
+      dots.push({x:(Math.random()*10)|0,y:y,a:1});
+    }
+    while(dots.length>9000)dots.shift();
+    for(var p=0;p<dots.length;p++){if(dots[p].a>0.30)dots[p].a-=dt*0.10;}
+  }
+  render();
+  var beta=fringeWidth();
+  rdEl.innerHTML='β = λD/d = <b>'+beta.toFixed(1)+' px</b> near axis (λ='+lam+', D='+geom().Dp.toFixed(0)+', d='+d+')'+
+    '<br>θ₁ = '+(Math.asin(Math.min(1,lam/d))*180/Math.PI).toFixed(2)+'° · orders visible ±'+Math.floor(d/lam)+
+    '<br>mode: '+(single?'<b class="off">SINGLE SLIT</b>':'<b class="on">DOUBLE SLIT</b>')+
+      ' · quantum '+(quantum?'<b class="on">ON</b>':'<b class="off">off</b>')+
+      ' · which-path '+(which?'<b class="off">ON — fringes gone</b>':'<b class="on">off</b>')+
+    '<br>photons counted: <b>'+total.toLocaleString()+'</b>';
+  requestAnimationFrame(loop);
+}
+resize();requestAnimationFrame(loop);
+})();
+</script>
+</body>

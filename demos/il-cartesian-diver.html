@@ -1,0 +1,283 @@
+<title>Cartesian Diver</title>
+<style>
+html,body{margin:0;padding:0;height:100%;background:#03060b;overflow:hidden}
+canvas{display:block;width:100%;height:100%}
+#ui{position:fixed;top:0;left:0;padding:10px 12px;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;
+ color:#bfe6ff;background:rgba(4,10,18,.62);border-right:1px solid #123;border-bottom:1px solid #123;
+ max-width:330px;text-shadow:0 0 8px #0af6;backdrop-filter:blur(3px)}
+#ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.14em;color:#7ff;text-transform:uppercase;text-shadow:0 0 12px #0ff8}
+.m{color:#9fd}.s{color:#f9c}.l{color:#8a9}.k{color:#ffd27f}
+#ui a{color:#7ff;text-decoration:none;border-bottom:1px dotted #7ff6}
+label{display:block;margin-top:3px;color:#9ab}
+input[type=range]{width:150px;vertical-align:middle;accent-color:#0ff}
+#rd{margin-top:6px;color:#eaf6ff;white-space:pre;font-size:11px}
+button{background:#0a1a28;color:#7ff;border:1px solid #2a5a70;font:11px ui-monospace,monospace;padding:2px 6px;cursor:pointer;margin-top:4px}
+button.on{background:#0ff2;color:#dff}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>Cartesian Diver</h1>
+<div class="m">Squeezing the bottle compresses the diver's trapped air (Boyle), raising its mean density past the water's — buoyancy loses and it sinks.</div>
+<div class="s">Named for Descartes · Boyle 1662 (P·V=const) · Archimedes (buoyancy)</div>
+<div class="l">LINEAGE: 17th-c. parlour divers → Boyle 1662 → Archimedes' principle</div>
+<div class="k">HOLD mouse / SPACE to squeeze · drag the pressure slider · N = neutral-trap hunt</div>
+<label>squeeze <input id="sq" type="range" min="0" max="100" value="0"></label>
+<label>bubble size <input id="bs" type="range" min="30" max="150" value="90"></label>
+<label>bottle stiffness <input id="st" type="range" min="20" max="200" value="100"></label>
+<button id="dc" class="on">depth–pressure coupling: ON</button>
+<div id="rd"></div>
+<a href="index.html">← gallery</a>
+</div>
+<script>
+(function(){
+var c=document.getElementById('c'),x=c.getContext('2d'),W=0,H=0,DPR=1;
+function rz(){DPR=Math.min(2,window.devicePixelRatio||1);W=c.clientWidth;H=c.clientHeight;
+ c.width=Math.round(W*DPR);c.height=Math.round(H*DPR);x.setTransform(DPR,0,0,DPR,0,0);}
+window.addEventListener('resize',rz);
+
+var sq=document.getElementById('sq'),bs=document.getElementById('bs'),st=document.getElementById('st'),
+    dcB=document.getElementById('dc'),rd=document.getElementById('rd');
+var holding=false,coupling=true,hunt=false;
+c.addEventListener('mousedown',function(){holding=true});
+window.addEventListener('mouseup',function(){holding=false});
+c.addEventListener('touchstart',function(e){holding=true;e.preventDefault()},{passive:false});
+window.addEventListener('touchend',function(){holding=false});
+window.addEventListener('keydown',function(e){if(e.code==='Space'){holding=true;e.preventDefault()}
+ if(e.key==='n'||e.key==='N'){hunt=!hunt}});
+window.addEventListener('keyup',function(e){if(e.code==='Space')holding=false});
+dcB.onclick=function(){coupling=!coupling;dcB.className=coupling?'on':'';
+ dcB.textContent='depth–pressure coupling: '+(coupling?'ON':'OFF')};
+
+// ---- physics (SI-ish, water column of depth Dmax metres) ----
+var P0=101325, RHO_W=1000, G=9.81, DMAX=0.30;      // 30 cm bottle
+var Vshell=2.2e-6;                                  // rigid pipette shell volume m^3
+var Mshell=1.9e-3;                                  // shell mass kg (glass/plastic+water film)
+var st_={y:0.02, v:0, V0:0, P:P0};                  // y = depth (m), v = m/s
+
+function bubbleV0(){ return (+bs.value)*1e-8; }     // 0.3e-6 .. 1.5e-6 m^3 at P0
+function squeezePa(){
+  var s = holding?1:(+sq.value)/100;
+  if(holding) s=Math.max(s,(+sq.value)/100,0.55);
+  return s*(+st.value)/100*45000;                   // up to ~45 kPa gauge
+}
+// Boyle: P*V = P0*V0  →  V = P0*V0/P
+function bubbleV(P,V0){ return P0*V0/P; }
+function density(P,V0){ var V=bubbleV(P,V0); return (Mshell)/(Vshell+V); }
+
+var neutralP=0, hist=[];
+function step(dt){
+  var V0=bubbleV0();
+  var Pg=squeezePa();
+  var Phydro = coupling? RHO_W*G*st_.y : 0;
+  var P = P0+Pg+Phydro;
+  st_.P=P; st_.V0=V0;
+  var V=bubbleV(P,V0);
+  var Vtot=Vshell+V;
+  var rho=Mshell/Vtot;
+  st_.rho=rho; st_.V=V; st_.Vtot=Vtot;
+  // F = (rho_w - rho_d) V g  - drag
+  var Fb=(RHO_W-rho)*Vtot*G;
+  var m=Mshell;
+  var drag = 0.5*RHO_W*0.9*(Math.PI*0.007*0.007)*st_.v*Math.abs(st_.v);
+  var a=(Fb-drag)/m;
+  st_.v += a*dt;
+  st_.v *= 0.985;
+  st_.y -= st_.v*dt;               // buoyant force pushes UP → depth decreases
+  if(st_.y<0.008){st_.y=0.008; if(st_.v>0)st_.v*=-0.25;}
+  if(st_.y>DMAX-0.02){st_.y=DMAX-0.02; if(st_.v<0)st_.v*=-0.25;}
+  // neutral pressure: rho == RHO_W  →  Vtot = M/rho_w → V* = M/rho_w - Vshell
+  var Vstar=Mshell/RHO_W - Vshell;
+  neutralP = Vstar>0 ? P0*V0/Vstar : Infinity;
+  hist.push(rho); if(hist.length>260)hist.shift();
+}
+
+// ---- rendering ----
+function glow(col,b,fn){x.save();x.shadowColor=col;x.shadowBlur=b;fn();x.restore();}
+function bottleRect(){
+  var h=Math.min(H*0.82, 560), w=h*0.34, cx=W*0.62, cy=H*0.5;
+  return {x:cx-w/2,y:cy-h/2,w:w,h:h};
+}
+function draw(t){
+  x.fillStyle='#03060b';x.fillRect(0,0,W,H);
+  // ambient vignette
+  var g=x.createRadialGradient(W*0.62,H*0.5,20,W*0.62,H*0.5,Math.max(W,H)*0.7);
+  g.addColorStop(0,'rgba(10,40,70,.35)');g.addColorStop(1,'rgba(0,0,0,0)');
+  x.fillStyle=g;x.fillRect(0,0,W,H);
+
+  var b=bottleRect();
+  var squeezeAmt=(holding?Math.max(0.55,(+sq.value)/100):(+sq.value)/100);
+  var pinch=squeezeAmt*b.w*0.13;
+
+  // bottle body (deformed)
+  x.save();
+  x.beginPath();
+  var neckW=b.w*0.34, neckH=b.h*0.13;
+  x.moveTo(b.x+b.w/2-neckW/2,b.y);
+  x.lineTo(b.x+b.w/2+neckW/2,b.y);
+  x.lineTo(b.x+b.w/2+neckW/2,b.y+neckH*0.55);
+  x.quadraticCurveTo(b.x+b.w,b.y+neckH*1.1,b.x+b.w-pinch,b.y+b.h*0.5);
+  x.quadraticCurveTo(b.x+b.w,b.y+b.h*0.95,b.x+b.w*0.86,b.y+b.h);
+  x.lineTo(b.x+b.w*0.14,b.y+b.h);
+  x.quadraticCurveTo(b.x,b.y+b.h*0.95,b.x+pinch,b.y+b.h*0.5);
+  x.quadraticCurveTo(b.x,b.y+neckH*1.1,b.x+b.w/2-neckW/2,b.y+neckH*0.55);
+  x.closePath();
+  x.save();x.clip();
+  var wg=x.createLinearGradient(0,b.y,0,b.y+b.h);
+  wg.addColorStop(0,'rgba(10,60,90,.25)');wg.addColorStop(1,'rgba(6,90,140,.55)');
+  x.fillStyle=wg;x.fillRect(b.x-20,b.y+neckH*0.5,b.w+40,b.h);
+  // caustic bands
+  for(var i=0;i<7;i++){
+    x.fillStyle='rgba(80,200,255,'+(0.03+0.02*Math.sin(t*0.001+i))+')';
+    x.fillRect(b.x-20,b.y+neckH+ i*b.h*0.12 + Math.sin(t*0.0012+i)*6, b.w+40, 8);
+  }
+  x.restore();
+  glow('#3cf',18,function(){x.strokeStyle=holding?'#7ff':'#3ad';x.lineWidth=2;x.stroke();});
+  x.restore();
+
+  // water surface line
+  var surfY=b.y+neckH*0.9;
+  x.strokeStyle='rgba(140,230,255,.5)';x.lineWidth=1;
+  x.beginPath();x.moveTo(b.x+pinch,surfY);x.lineTo(b.x+b.w-pinch,surfY);x.stroke();
+
+  // diver
+  var py = surfY + (st_.y/DMAX)*(b.y+b.h-surfY-10);
+  var px = b.x+b.w/2;
+  var scale=b.w/90;
+  drawDiver(px,py,scale,t);
+
+  // rising micro-bubbles
+  for(var i=0;i<26;i++){
+    var ph=(t*0.00006*(1+ (i%5)*0.3)+i*0.137)%1;
+    var bx=b.x+ b.w*(0.15+0.7*((i*0.37)%1)), by=b.y+b.h-ph*(b.h-neckH);
+    x.fillStyle='rgba(160,240,255,'+(0.12*(1-ph))+')';
+    x.beginPath();x.arc(bx,by,1+ (i%3)*0.5,0,6.283);x.fill();
+  }
+
+  drawMeters(b,t);
+  updateHUD();
+}
+
+function drawDiver(px,py,s,t){
+  var V0=st_.V0||bubbleV0();
+  var frac=st_.V/V0;                    // 0..1 compression
+  x.save();x.translate(px,py);
+  // pipette bulb outline
+  glow('#8ef',12,function(){
+    x.strokeStyle='#9ef';x.lineWidth=1.6;
+    x.beginPath();x.ellipse(0,0,9*s,12*s,0,0,6.283);x.stroke();
+    x.beginPath();x.moveTo(-3*s,10*s);x.lineTo(-3*s,22*s);x.lineTo(3*s,22*s);x.lineTo(3*s,10*s);x.stroke();
+  });
+  // trapped air bubble (shrinks per Boyle)
+  var rb=9*s*Math.sqrt(Math.max(0.05,frac));
+  var gg=x.createRadialGradient(-rb*0.3,-rb*0.4,0,0,0,rb);
+  gg.addColorStop(0,'#fff');gg.addColorStop(.4,'#bff');gg.addColorStop(1,'rgba(0,220,255,.25)');
+  glow('#0ff',16,function(){x.fillStyle=gg;x.beginPath();x.arc(0,-2*s,rb,0,6.283);x.fill();});
+  // water that entered the stem
+  x.fillStyle='rgba(60,180,255,.45)';
+  var wl=22*s - (22*s-10*s)*Math.max(0,Math.min(1,frac));
+  x.fillRect(-2.6*s,10*s+ (12*s)*(1-(1-frac)) *0, 5.2*s, 12*s*(1-frac)+0.5);
+  // little face
+  x.fillStyle='#dffaff';x.beginPath();x.arc(-2.4*s,-4*s,1.1*s,0,6.283);x.arc(2.4*s,-4*s,1.1*s,0,6.283);x.fill();
+  x.restore();
+  // velocity arrow
+  if(Math.abs(st_.v)>0.004){
+    var dir=st_.v>0?-1:1;
+    x.strokeStyle=dir<0?'#7fffcf':'#ff8fa0';x.lineWidth=1.4;
+    glow(dir<0?'#7fffcf':'#ff8fa0',10,function(){
+      x.beginPath();x.moveTo(px+26*s,py);x.lineTo(px+26*s,py+dir*Math.min(40,Math.abs(st_.v)*260));x.stroke();
+    });
+  }
+}
+
+function drawMeters(b,t){
+  var mx=W*0.06, my=H*0.30, mw=Math.min(240,W*0.22), mh=16, gap=52;
+  if(W<720){mx=12;my=H-190;mw=Math.min(240,W-30);}
+  function bar(i,label,val,frac,col,note){
+    var y=my+i*gap;
+    x.fillStyle='rgba(255,255,255,.06)';x.fillRect(mx,y,mw,mh);
+    glow(col,14,function(){x.fillStyle=col;x.fillRect(mx,y,mw*Math.max(0,Math.min(1,frac)),mh);});
+    x.strokeStyle='rgba(255,255,255,.18)';x.lineWidth=1;x.strokeRect(mx,y,mw,mh);
+    x.fillStyle='#cfe9ff';x.font='11px ui-monospace,monospace';
+    x.fillText(label,mx,y-5);
+    x.fillText(val,mx+mw-x.measureText(val).width,y-5);
+    if(note){x.fillStyle='#8aa';x.fillText(note,mx,y+mh+12);}
+  }
+  var Pmax=P0+60000;
+  bar(0,'P  bottle pressure',(st_.P/1000).toFixed(1)+' kPa',(st_.P-P0)/(Pmax-P0),'#ffd27f');
+  var V0=st_.V0||bubbleV0();
+  bar(1,'V  bubble  (P·V = const)',(st_.V*1e9).toFixed(0)+' mm³',st_.V/V0,'#7fe8ff','Boyle 1662: P·V = '+((st_.P*st_.V)*1e3).toFixed(2)+' (const)');
+  var rlo=850,rhi=1150;
+  var y=my+2*gap;
+  x.fillStyle='rgba(255,255,255,.06)';x.fillRect(mx,y,mw,mh);
+  var f=(st_.rho-rlo)/(rhi-rlo);
+  var sinking=st_.rho>RHO_W;
+  glow(sinking?'#ff8fa0':'#7fffcf',16,function(){
+    x.fillStyle=sinking?'#ff8fa0':'#7fffcf';x.fillRect(mx,y,mw*Math.max(0,Math.min(1,f)),mh);});
+  x.strokeStyle='rgba(255,255,255,.18)';x.strokeRect(mx,y,mw,mh);
+  x.fillStyle='#cfe9ff';x.fillText('ρ  diver density',mx,y-5);
+  var vs=st_.rho.toFixed(1)+' kg/m³';x.fillText(vs,mx+mw-x.measureText(vs).width,y-5);
+  // the CROSSING marker
+  var cxp=mx+mw*(RHO_W-rlo)/(rhi-rlo);
+  glow('#fff',12,function(){x.strokeStyle='#fff';x.lineWidth=2;
+    x.beginPath();x.moveTo(cxp,y-4);x.lineTo(cxp,y+mh+4);x.stroke();});
+  x.fillStyle='#fff';x.font='10px ui-monospace,monospace';
+  x.fillText('ρ_water 1000 — the crossing',cxp-60,y+mh+16);
+  x.fillStyle=sinking?'#ff8fa0':'#7fffcf';x.font='12px ui-monospace,monospace';
+  x.fillText(sinking?'ρ_d > ρ_w → SINKS':'ρ_d < ρ_w → RISES',mx,y+mh+34);
+
+  // density history trace
+  var hy=y+mh+58, hh=54;
+  x.strokeStyle='rgba(255,255,255,.12)';x.strokeRect(mx,hy,mw,hh);
+  var zy=hy+hh-((RHO_W-rlo)/(rhi-rlo))*hh;
+  x.strokeStyle='rgba(255,255,255,.45)';x.setLineDash([3,3]);
+  x.beginPath();x.moveTo(mx,zy);x.lineTo(mx+mw,zy);x.stroke();x.setLineDash([]);
+  x.beginPath();
+  for(var i=0;i<hist.length;i++){
+    var px2=mx+ i/260*mw, py2=hy+hh-((hist[i]-rlo)/(rhi-rlo))*hh;
+    py2=Math.max(hy,Math.min(hy+hh,py2));
+    i?x.lineTo(px2,py2):x.moveTo(px2,py2);
+  }
+  glow('#0ff',10,function(){x.strokeStyle='#7ff';x.lineWidth=1.4;x.stroke();});
+  x.fillStyle='#8aa';x.font='10px ui-monospace,monospace';x.fillText('ρ_diver(t)',mx+3,hy+12);
+
+  // neutral trap / instability annotation
+  if(hunt||coupling){
+    var ay=hy+hh+22;
+    x.fillStyle=coupling?'#ffd27f':'#8aa';x.font='11px ui-monospace,monospace';
+    x.fillText(coupling?'RUNAWAY: deeper → +ρgh → smaller bubble → denser → deeper':'coupling off: neutral point is marginally stable',mx,ay);
+    var need=(neutralP-P0)/1000;
+    x.fillStyle='#9fd';
+    x.fillText('neutral pressure ≈ '+(isFinite(need)?need.toFixed(2)+' kPa gauge':'unreachable'),mx,ay+15);
+    if(hunt){
+      var err=Math.abs(st_.P-neutralP)/1000;
+      x.fillStyle=err<0.35?'#7fffcf':'#ff8fa0';
+      x.fillText('HUNT: |P − P*| = '+err.toFixed(2)+' kPa '+(err<0.35?'◀ hovering (but UNSTABLE)':''),mx,ay+30);
+    }
+  }
+}
+
+function updateHUD(){
+  var V0=st_.V0||bubbleV0();
+  rd.textContent =
+   'depth      '+(st_.y*100).toFixed(1)+' cm\n'+
+   'v          '+(st_.v*100).toFixed(2)+' cm/s '+(st_.v>0?'↑':'↓')+'\n'+
+   'P          '+(st_.P/1000).toFixed(2)+' kPa   (P0='+(P0/1000).toFixed(1)+')\n'+
+   'V_bubble   '+(st_.V*1e9).toFixed(1)+' mm³  ('+(100*st_.V/V0).toFixed(0)+'% of V0)\n'+
+   'P·V        '+(st_.P*st_.V*1e6).toFixed(4)+' (invariant)\n'+
+   'ρ_diver    '+st_.rho.toFixed(1)+' kg/m³  vs ρ_w 1000\n'+
+   'F_buoy     '+(((RHO_W-st_.rho)*st_.Vtot*G)*1000).toFixed(3)+' mN';
+}
+
+var last=0;
+function loop(t){
+  if(!last)last=t;
+  var dt=Math.min(0.033,(t-last)/1000);last=t;
+  var sub=4;for(var i=0;i<sub;i++)step(dt/sub);
+  draw(t);
+  requestAnimationFrame(loop);
+}
+rz();step(0.001);requestAnimationFrame(loop);
+})();
+</script>

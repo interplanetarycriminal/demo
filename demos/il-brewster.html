@@ -1,0 +1,256 @@
+<title>Brewster Glare</title>
+<style>
+html,body{margin:0;height:100%;background:#03060c;overflow:hidden}
+canvas{display:block;position:fixed;inset:0}
+#ui{position:fixed;top:10px;left:10px;z-index:10;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#bfe;background:rgba(3,10,20,.7);border:1px solid rgba(110,200,255,.28);border-radius:8px;padding:10px 12px;max-width:340px;backdrop-filter:blur(6px);box-shadow:0 0 26px rgba(60,180,255,.14)}
+#ui h1{font-size:13px;margin:0 0 4px;color:#8ef;letter-spacing:.12em;text-shadow:0 0 10px #0cf8}
+#ui .m{color:#d6ecff;margin:0 0 5px}
+#ui .s{color:#ffd07a;margin:0 0 3px}
+#ui .l{color:#8ba8c4;margin:0 0 7px;font-size:10px}
+label{display:block;margin:4px 0;color:#9ed}
+input[type=range]{width:160px;vertical-align:middle;accent-color:#0df}
+#ro{margin-top:7px;border-top:1px solid rgba(110,200,255,.2);padding-top:6px;color:#cff}
+#ro b{color:#ff9}
+a{color:#8ef}
+button{background:#0b2030;color:#9fe;border:1px solid #2a6a88;border-radius:5px;font:11px monospace;padding:3px 8px;cursor:pointer;margin-top:6px}
+button:hover{background:#12374d}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>BREWSTER — THE VANISHING GLARE</h1>
+<p class="m">At Brewster's angle the reflected ray is purely s-polarized, so a crossed polarizer erases a glare that looked like part of the world — and the lake turns transparent.</p>
+<p class="s">Malus 1808 (polarization by reflection) · Brewster 1815 (tan θ_B = n₂/n₁)</p>
+<p class="l">LINEAGE: Malus 1808 → Brewster 1815 → Polaroid sunglasses, photoelastic benches, LCD panels.</p>
+<label>incidence θ <input id="sT" type="range" min="1" max="89" step="0.1" value="40"><span id="vT"></span></label>
+<label>polarizer φ <input id="sP" type="range" min="0" max="180" step="0.5" value="0"><span id="vP"></span></label>
+<label>water n₂ <input id="sN" type="range" min="1.2" max="2.2" step="0.01" value="1.33"><span id="vN"></span></label>
+<button id="bB">snap to θ_B</button> <button id="bC">cross the polarizer</button>
+<div id="ro">
+R_s = <b id="rS">—</b> · R_p = <b id="rP">—</b> · θ_B = <span id="rB">—</span>°<br>
+glare remaining after polarizer: <b id="rG">—</b> %<br>
+<span id="rMsg" style="color:#8f8"></span>
+</div>
+<p class="l" style="margin:6px 0 0">drag ↔ angle · drag ↕ polarizer · put on the sunglasses · <a href="index.html">← gallery</a></p>
+</div>
+<script>
+(function(){
+var c=document.getElementById('c'),g=c.getContext('2d'),W,H,DPR;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;c.width=W*DPR|0;c.height=H*DPR|0;c.style.width=W+'px';c.style.height=H+'px';g.setTransform(DPR,0,0,DPR,0,0);}
+addEventListener('resize',resize);resize();
+var P={th:40,phi:0,n2:1.33},t0=performance.now();
+
+function fresnel(thDeg,n1,n2){
+ var th=thDeg*Math.PI/180, s=n1/n2*Math.sin(th);
+ if(s>=1)return{rs:1,rp:1,tir:true,tr:0};
+ var tt=Math.asin(s),ci=Math.cos(th),ct=Math.cos(tt);
+ var rs=(n1*ci-n2*ct)/(n1*ci+n2*ct);
+ var rp=(n2*ci-n1*ct)/(n2*ci+n1*ct);
+ return{rs:rs*rs,rp:rp*rp,tir:false,tr:tt};
+}
+function brewster(n2){return Math.atan(n2/1.0)*180/Math.PI;}
+
+function draw(now){
+ var T=(now-t0)/1000;
+ var F=fresnel(P.th,1,P.n2), thB=brewster(P.n2);
+ var phi=P.phi*Math.PI/180;
+ // Malus: unpolarized sun -> reflected has Is=Rs/2, Ip=Rp/2 in s/p basis.
+ // polarizer transmission axis at phi from the s-direction (s = horizontal for a lake)
+ var Is=F.rs*0.5, Ip=F.rp*0.5;
+ var cs=Math.cos(phi),sn=Math.sin(phi);
+ var out=Is*cs*cs + Ip*sn*sn;          // Malus per component
+ var full=Is+Ip;
+ var frac= full>1e-12 ? out/full : 0;
+ var glare=Math.min(1,out*3.0);        // display brightness of glare
+ var atB=Math.abs(P.th-thB)<0.8, crossed=Math.abs(Math.cos(phi))<0.06;
+
+ var hz=H*0.56; // horizon / waterline
+ g.clearRect(0,0,W,H);
+ // sky
+ var sky=g.createLinearGradient(0,0,0,hz);
+ sky.addColorStop(0,'#050b1a');sky.addColorStop(.7,'#0d2036');sky.addColorStop(1,'#20374d');
+ g.fillStyle=sky;g.fillRect(0,0,W,hz);
+ // sun in sky, height set by incidence angle
+ var sunY=hz-(90-P.th)/90*hz*0.85, sunX=W*0.70;
+ g.save();g.globalCompositeOperation='lighter';
+ var sg=g.createRadialGradient(sunX,sunY,0,sunX,sunY,120);
+ sg.addColorStop(0,'rgba(255,240,190,.95)');sg.addColorStop(.25,'rgba(255,190,90,.42)');sg.addColorStop(1,'rgba(255,150,60,0)');
+ g.fillStyle=sg;g.beginPath();g.arc(sunX,sunY,120,0,7);g.fill();g.restore();
+
+ // ---- underwater layer (fish, rocks) drawn FIRST ----
+ var wg=g.createLinearGradient(0,hz,0,H);
+ wg.addColorStop(0,'#0a2233');wg.addColorStop(1,'#03101c');
+ g.fillStyle=wg;g.fillRect(0,hz,W,H-hz);
+ // reveal factor: how visible the underwater world is = 1 - glare
+ var reveal=1-glare;
+ g.save();g.globalAlpha=0.25+0.75*reveal;
+ // rocks
+ g.fillStyle='#123043';
+ for(var i=0;i<7;i++){var rx=(i*137.5)%W, ry=H-20-((i*53)%60);
+  g.beginPath();g.ellipse(rx,ry,40+(i%3)*22,14+(i%2)*8,0,0,7);g.fill();}
+ // weeds
+ g.strokeStyle='rgba(40,120,90,.6)';g.lineWidth=2;
+ for(var i=0;i<14;i++){var wx=(i*97)%W;g.beginPath();g.moveTo(wx,H);
+  for(var k=1;k<6;k++)g.lineTo(wx+Math.sin(T*0.9+i+k*0.6)*7*k,H-k*16);
+  g.stroke();}
+ // fish
+ for(var i=0;i<6;i++){
+  var sp=22+i*7, fx=((T*sp+i*260)%(W+220))-110, fy=hz+50+((i*71)%Math.max(40,(H-hz-90)));
+  var bob=Math.sin(T*1.6+i)*5;
+  g.save();g.translate(fx,fy+bob);
+  var hue=[ '#ff9a3c','#7fe3ff','#ffd36e','#a9ff8a','#ff7fb0','#9ab8ff' ][i%6];
+  g.fillStyle=hue;g.shadowColor=hue;g.shadowBlur=10*reveal;
+  g.beginPath();g.ellipse(0,0,18,8,0,0,7);g.fill();
+  g.beginPath();g.moveTo(-16,0);g.lineTo(-30,-9+Math.sin(T*8+i)*3);g.lineTo(-30,9+Math.sin(T*8+i)*3);g.closePath();g.fill();
+  g.fillStyle='#021';g.beginPath();g.arc(8,-2,2,0,7);g.fill();
+  g.restore();
+ }
+ g.restore();
+ if(reveal>0.75){g.fillStyle='rgba(160,255,200,'+((reveal-0.75)*3.4)+')';g.font='13px monospace';
+  g.fillText('the hidden layer: you can see the fish',W*0.06,hz+34);}
+
+ // ---- glare: the reflected sun on the water ----
+ g.save();g.globalCompositeOperation='lighter';
+ var gy=hz+(H-hz)*0.14;
+ var gr=g.createRadialGradient(sunX,gy,0,sunX,gy,Math.min(W*0.42,320));
+ gr.addColorStop(0,'rgba(255,245,205,'+(0.95*glare)+')');
+ gr.addColorStop(.3,'rgba(255,205,120,'+(0.42*glare)+')');
+ gr.addColorStop(1,'rgba(255,170,80,0)');
+ g.fillStyle=gr;g.fillRect(0,hz,W,H-hz);
+ // glitter path
+ for(var i=0;i<90;i++){
+  var yy=hz+ (i/90)*(H-hz);
+  var spread=8+ (i/90)*Math.min(W*0.30,260);
+  var xx=sunX+Math.sin(i*3.1+T*1.7)*spread;
+  var a=glare*0.55*(1-i/90)*(0.4+0.6*Math.abs(Math.sin(i*1.7+T*3)));
+  g.fillStyle='rgba(255,235,190,'+a+')';
+  g.fillRect(xx-9,yy,18+Math.sin(i+T)*6,2.2);
+ }
+ g.restore();
+ // waterline
+ g.strokeStyle='rgba(150,210,255,.35)';g.lineWidth=1;
+ g.beginPath();g.moveTo(0,hz);g.lineTo(W,hz);g.stroke();
+
+ // ---- ray diagram with polarization glyphs (bottom-left) ----
+ var ox=W*0.06, oy=H*0.90, L=Math.min(150,W*0.13);
+ g.strokeStyle='rgba(140,200,255,.5)';g.lineWidth=1;
+ g.beginPath();g.moveTo(ox-L*1.3,oy);g.lineTo(ox+L*1.3,oy);g.stroke();   // surface
+ g.setLineDash([4,4]);g.strokeStyle='rgba(255,255,255,.2)';
+ g.beginPath();g.moveTo(ox,oy-L);g.lineTo(ox,oy+L*0.8);g.stroke();g.setLineDash([]);
+ var a=P.th*Math.PI/180;
+ // incident
+ var ix=ox-Math.sin(a)*L, iy=oy-Math.cos(a)*L;
+ g.strokeStyle='#ffd98a';g.lineWidth=2;g.beginPath();g.moveTo(ix,iy);g.lineTo(ox,oy);g.stroke();
+ // reflected
+ var rx=ox+Math.sin(a)*L, ry=oy-Math.cos(a)*L;
+ g.save();g.globalCompositeOperation='lighter';
+ g.strokeStyle='rgba(140,230,255,'+(0.25+0.75*Math.min(1,full*4))+')';g.lineWidth=2;
+ g.beginPath();g.moveTo(ox,oy);g.lineTo(rx,ry);g.stroke();g.restore();
+ // refracted
+ if(!F.tir){var tx=ox+Math.sin(F.tr)*L*0.8, ty=oy+Math.cos(F.tr)*L*0.8;
+  g.strokeStyle='rgba(120,180,220,.6)';g.beginPath();g.moveTo(ox,oy);g.lineTo(tx,ty);g.stroke();}
+ // glyphs on reflected ray: ⊥ dots (s) large, ∥ arrows (p) sized by Rp
+ function glyphs(x1,y1,x2,y2,sAmp,pAmp,lbl){
+  for(var k=1;k<=3;k++){
+   var u=k/4, gx=x1+(x2-x1)*u, gy2=y1+(y2-y1)*u;
+   var dx=(x2-x1),dy=(y2-y1),ln=Math.hypot(dx,dy);dx/=ln;dy/=ln;
+   // s = dot
+   g.fillStyle='rgba(120,255,220,'+(0.25+0.7*sAmp)+')';
+   g.beginPath();g.arc(gx,gy2,2.2+2.6*sAmp,0,7);g.fill();
+   // p = double arrow along the perpendicular in plane
+   var len=3+13*pAmp;
+   g.strokeStyle='rgba(255,170,120,'+(0.15+0.8*pAmp)+')';g.lineWidth=1.6;
+   g.beginPath();g.moveTo(gx-dy*len,gy2+dx*len);g.lineTo(gx+dy*len,gy2-dx*len);g.stroke();
+  }
+  g.fillStyle='#9cf';g.font='10px monospace';g.fillText(lbl,x2+4,y2);
+ }
+ var sN=Math.min(1,F.rs/0.4), pN=Math.min(1,F.rp/0.4);
+ glyphs(ox,oy,rx,ry,sN,pN,'reflected');
+ g.fillStyle='#8fe';g.font='10px monospace';
+ g.fillText('● = s (⊥ plane)   ↔ = p (∥ plane)',ox-L*1.3,oy+L*0.8+16);
+ if(atB){g.fillStyle='#8f8';g.fillText('p component is GONE — pure s-polarized reflection',ox-L*1.3,oy+L*0.8+30);}
+
+ // ---- Fresnel curves (right panel) ----
+ var px0=W*0.62,py0=H*0.10,pw=W*0.33,ph=H*0.30;
+ g.fillStyle='rgba(3,12,22,.72)';g.fillRect(px0,py0,pw,ph);
+ g.strokeStyle='rgba(110,200,255,.3)';g.strokeRect(px0,py0,pw,ph);
+ g.fillStyle='#8cf';g.font='10px monospace';
+ g.fillText('Fresnel reflectance vs incidence   n₂='+P.n2.toFixed(2),px0+6,py0-6);
+ g.fillText('1.0',px0-20,py0+8);g.fillText('0',px0-12,py0+ph);
+ g.fillText('0°',px0,py0+ph+12);g.fillText('90°',px0+pw-16,py0+ph+12);
+ function curve(key,color){
+  g.strokeStyle=color;g.lineWidth=1.8;g.shadowColor=color;g.shadowBlur=8;g.beginPath();
+  for(var i=0;i<=180;i++){var th=i/180*90,f=fresnel(th,1,P.n2);
+   var x=px0+i/180*pw,y=py0+ph-ph*Math.min(1,f[key]);
+   i?g.lineTo(x,y):g.moveTo(x,y);}
+  g.stroke();g.shadowBlur=0;
+ }
+ g.save();g.globalCompositeOperation='lighter';
+ curve('rs','rgba(120,255,220,.95)');curve('rp','rgba(255,170,120,.95)');g.restore();
+ g.fillStyle='#7fd';g.fillText('R_s',px0+pw-30,py0+16);
+ g.fillStyle='#fa8';g.fillText('R_p',px0+pw-30,py0+30);
+ // Brewster marker
+ var bxp=px0+thB/90*pw;
+ g.strokeStyle='rgba(255,240,140,.7)';g.setLineDash([3,3]);
+ g.beginPath();g.moveTo(bxp,py0);g.lineTo(bxp,py0+ph);g.stroke();g.setLineDash([]);
+ g.fillStyle='#ffe';g.fillText('θ_B '+thB.toFixed(1)+'° : R_p = 0 exactly',bxp+4,py0+ph-8);
+ // current position
+ var cxp=px0+P.th/90*pw;
+ g.strokeStyle='rgba(255,255,255,.5)';g.beginPath();g.moveTo(cxp,py0);g.lineTo(cxp,py0+ph);g.stroke();
+ g.fillStyle='#fff';g.beginPath();g.arc(cxp,py0+ph-ph*Math.min(1,F.rs),3,0,7);g.fill();
+ g.fillStyle='#fc8';g.beginPath();g.arc(cxp,py0+ph-ph*Math.min(1,F.rp),3,0,7);g.fill();
+
+ // ---- polarizer dial ----
+ var dx0=W*0.62+pw*0.5, dy0=py0+ph+90, R=52;
+ g.strokeStyle='rgba(140,200,255,.4)';g.lineWidth=2;
+ g.beginPath();g.arc(dx0,dy0,R,0,7);g.stroke();
+ // hatch lines = transmission axis
+ g.save();g.translate(dx0,dy0);g.rotate(-phi);
+ g.strokeStyle='rgba(160,230,255,.55)';g.lineWidth=1.4;
+ for(var k=-4;k<=4;k++){var yy=k*11;var hw=Math.sqrt(Math.max(0,R*R-yy*yy));
+  g.beginPath();g.moveTo(-hw,yy);g.lineTo(hw,yy);g.stroke();}
+ g.restore();
+ g.fillStyle='#9df';g.font='10px monospace';
+ g.fillText('POLARIZER  φ = '+P.phi.toFixed(0)+'°',dx0-R,dy0+R+16);
+ g.fillText('(sunglasses)',dx0-R,dy0+R+30);
+
+ // headline
+ if(atB&&crossed){
+  var pulse=0.6+0.4*Math.sin(T*4);
+  g.save();g.globalCompositeOperation='lighter';
+  g.fillStyle='rgba(160,255,190,'+pulse+')';g.font='bold 20px ui-monospace,monospace';
+  g.fillText('GLARE ANNIHILATED — the water became glass',W*0.06,H*0.72);
+  g.restore();
+ }
+
+ // readouts
+ document.getElementById('rS').textContent=(F.rs*100).toFixed(2)+'%';
+ document.getElementById('rP').textContent=(F.rp*100).toFixed(4)+'%';
+ document.getElementById('rB').textContent=thB.toFixed(2);
+ document.getElementById('rG').textContent=(frac*100).toFixed(2);
+ document.getElementById('rMsg').textContent = atB&&crossed ? 'total kill: reflection was 100% s-polarized'
+   : atB ? 'reflection is pure s — now rotate φ to 90°'
+   : crossed ? 'partial kill only: R_p ≠ 0 away from θ_B'
+   : '';
+ requestAnimationFrame(draw);
+}
+
+var sT=document.getElementById('sT'),sP=document.getElementById('sP'),sN=document.getElementById('sN');
+function sync(){P.th=+sT.value;P.phi=+sP.value;P.n2=+sN.value;
+ document.getElementById('vT').textContent=P.th.toFixed(1)+'°';
+ document.getElementById('vP').textContent=P.phi.toFixed(0)+'°';
+ document.getElementById('vN').textContent=P.n2.toFixed(2);}
+[sT,sP,sN].forEach(function(s){s.addEventListener('input',sync);});
+document.getElementById('bB').onclick=function(){sT.value=brewster(+sN.value).toFixed(1);sync();};
+document.getElementById('bC').onclick=function(){sP.value=90;sync();};
+var drag=false,lx,ly;
+c.addEventListener('pointerdown',function(e){drag=true;lx=e.clientX;ly=e.clientY;});
+addEventListener('pointerup',function(){drag=false;});
+addEventListener('pointermove',function(e){if(!drag)return;
+ sT.value=Math.max(1,Math.min(89,+sT.value+(e.clientX-lx)*0.15));
+ sP.value=(( +sP.value - (e.clientY-ly)*0.3 )%180+180)%180;
+ lx=e.clientX;ly=e.clientY;sync();});
+sync();requestAnimationFrame(draw);
+})();
+</script>

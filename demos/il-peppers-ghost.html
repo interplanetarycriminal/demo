@@ -1,0 +1,329 @@
+<title>Pepper's Ghost</title>
+<style>
+  html,body{margin:0;height:100%;background:#05040a;overflow:hidden}
+  canvas{display:block;width:100vw;height:100vh}
+  #ui{position:fixed;top:12px;left:12px;width:340px;padding:11px 13px;
+      background:rgba(12,8,20,.76);border:1px solid #5a3a70;border-radius:7px;
+      color:#e2c8ff;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;
+      text-shadow:0 0 8px #a4f6;backdrop-filter:blur(3px);z-index:10}
+  #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.09em;color:#f0d9ff;text-shadow:0 0 12px #b6f}
+  .m{color:#ded0ee;opacity:.92;margin:0 0 6px}
+  .sci{color:#9ff0d0;text-shadow:0 0 8px #6fa8}
+  .lin{color:#9a86b4;font-size:10px;margin:4px 0 7px}
+  label{display:block;margin:6px 0 2px;color:#c6a4e8}
+  input[type=range]{width:100%;accent-color:#c6f}
+  .row{display:flex;gap:8px;margin-top:7px}
+  button{flex:1;background:#211433;border:1px solid #5c3d80;color:#ddc4f5;
+         font:11px ui-monospace,monospace;padding:5px;border-radius:4px;cursor:pointer}
+  button.on{background:#3a1f5c;border-color:#b57ce8;color:#f4e6ff;box-shadow:0 0 12px #a4f8}
+  .read{margin-top:7px;padding-top:6px;border-top:1px solid #422d58;color:#ecdcff}
+  .read b{color:#fff}
+  a{color:#c9f;text-decoration:none;border-bottom:1px dotted #c9f}
+  .hint{color:#8f7aa8;font-size:10px;margin-top:6px}
+</style>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>PEPPER'S GHOST</h1>
+  <p class="m">An angled sheet of plate glass is window and mirror at once, so a hidden bright figure below the stage is optically ADDED to the darker scene the audience sees through it.</p>
+  <p class="sci">Henry Dircks · staged by John Henry Pepper, 1862</p>
+  <p class="lin">LINEAGE: Dircksian Phantasmagoria → Pepper 1862 → "hologram" concerts</p>
+  <label>PIT LAMP (ghost)  L_pit = <span id="vp"></span></label>
+  <input id="sp" type="range" min="0" max="1" step="0.005" value="0.05">
+  <label>STAGE LAMP  L_stage = <span id="vs"></span></label>
+  <input id="ss" type="range" min="0" max="1" step="0.005" value="0.9">
+  <label>GLASS ANGLE θ = <span id="va"></span>°</label>
+  <input id="sa" type="range" min="20" max="70" step="0.25" value="45">
+  <div class="row">
+    <button id="bR">RAY DIAGRAM</button>
+    <button id="bP">SEANCE PRESET</button>
+  </div>
+  <div class="read">
+    incidence on glass: <b id="inc"></b>°<br>
+    R(θ) = <b id="rr"></b> &nbsp; T(θ) = <b id="tt"></b> &nbsp; (R+T=<b id="sum"></b>)<br>
+    ghost luminance = R·L_pit = <b id="gl"></b><br>
+    scene luminance = T·L_stage = <b id="sl"></b><br>
+    ghost/scene ratio = <b id="ratio"></b><br>
+    registration error: <b id="reg"></b>
+  </div>
+  <p class="hint">sliders drive it live · <a href="index.html">← gallery</a></p>
+</div>
+<script>
+(function(){
+const c=document.getElementById('c'),x=c.getContext('2d');
+let W,H,DPR;
+function resize(){DPR=Math.min(2,devicePixelRatio||1);W=innerWidth;H=innerHeight;
+  c.width=W*DPR;c.height=H*DPR;x.setTransform(DPR,0,0,DPR,0,0);}
+addEventListener('resize',resize);resize();
+const el=id=>document.getElementById(id);
+const sp=el('sp'),ss=el('ss'),sa=el('sa');
+let showRays=false, seance=false, t=0, seanceT=0;
+el('bR').onclick=function(){showRays=!showRays;this.className=showRays?'on':'';};
+el('bP').onclick=function(){seance=!seance;this.className=seance?'on':'';seanceT=0;};
+
+const n1=1.0, n2=1.52;   // air / crown plate glass
+
+// Unpolarized Fresnel reflectance at incidence angle ai (radians)
+function fresnel(ai){
+  const s=Math.sin(ai)*n1/n2;
+  if(s>=1) return 1;                       // TIR (not reachable air->glass)
+  const at=Math.asin(s);
+  const rs=(n1*Math.cos(ai)-n2*Math.cos(at))/(n1*Math.cos(ai)+n2*Math.cos(at));
+  const rp=(n1*Math.cos(at)-n2*Math.cos(ai))/(n1*Math.cos(at)+n2*Math.cos(ai));
+  return (rs*rs+rp*rp)/2;
+}
+// single-surface R, then plate boost (two surfaces of a real pane)
+function plateR(ai){const r=fresnel(ai);return 2*r/(1+r);}
+
+function draw(){
+  t+=1/60;
+  if(seance){
+    seanceT+=1/60;
+    const ph=(seanceT%14)/14;
+    // stage dims, pit rises, ghost materializes, then reverses
+    const env=ph<0.5? (ph/0.5) : (1-(ph-0.5)/0.5);
+    const e=env*env*(3-2*env);
+    sp.value=(0.02+0.93*e).toFixed(3);
+    ss.value=(0.92-0.55*e).toFixed(3);
+  }
+  const Lp=+sp.value, Ls=+ss.value, ang=+sa.value;
+  const inc=90-ang;                       // ray from stage hits pane at 90-θ from normal...
+  const ai=inc*Math.PI/180;
+  const R=plateR(ai), T=1-R;
+  const ghostL=R*Lp, sceneL=T*Ls;
+  const misalign=(ang-45);                 // degrees off the correct 45°
+
+  // background
+  x.fillStyle='#05040a';x.fillRect(0,0,W,H);
+  const split=Math.floor(W*0.42);
+
+  drawSideView(0,0,split,H,ang,Lp,Ls,R,T);
+  drawAudience(split,0,W-split,H,ghostL,sceneL,misalign);
+
+  // divider
+  x.save();x.strokeStyle='rgba(180,130,240,.35)';x.lineWidth=1;x.shadowColor='#a5f';x.shadowBlur=10;
+  x.beginPath();x.moveTo(split,0);x.lineTo(split,H);x.stroke();x.restore();
+
+  // R(theta) curve inset
+  drawCurve(split-215,H-165,195,140,ai,R);
+
+  el('vp').textContent=Lp.toFixed(2);
+  el('vs').textContent=Ls.toFixed(2);
+  el('va').textContent=ang.toFixed(2);
+  el('inc').textContent=inc.toFixed(1);
+  el('rr').textContent=R.toFixed(4);
+  el('tt').textContent=T.toFixed(4);
+  el('sum').textContent=(R+T).toFixed(6);
+  el('gl').textContent=ghostL.toFixed(4);
+  el('sl').textContent=sceneL.toFixed(4);
+  el('ratio').textContent=sceneL>1e-6?(ghostL/sceneL).toFixed(3):'∞';
+  el('reg').textContent=Math.abs(misalign)<0.3?'aligned':(misalign>0?'+':'')+(misalign*2).toFixed(1)+'px skew';
+
+  requestAnimationFrame(draw);
+}
+
+// ---------------- SIDE VIEW (the secret) ----------------
+function drawSideView(X,Y,w,h,ang,Lp,Ls,R,T){
+  x.save();x.translate(X,Y);
+  x.beginPath();x.rect(0,0,w,h);x.clip();
+
+  x.fillStyle='rgba(120,90,160,.55)';x.font='11px ui-monospace,monospace';
+  x.fillText('SIDE VIEW — the machinery',18,h-18);
+
+  const floorY=h*0.55;
+  // stage floor line
+  x.strokeStyle='rgba(160,140,190,.5)';x.lineWidth=2;
+  x.beginPath();x.moveTo(w*0.12,floorY);x.lineTo(w*0.92,floorY);x.stroke();
+
+  // stage set behind (right)
+  const setX=w*0.78;
+  x.save();x.globalAlpha=0.25+0.75*Ls;
+  x.fillStyle='#4a3a22';x.shadowColor='#fb6';x.shadowBlur=14*Ls;
+  x.fillRect(setX,floorY-92,54,92);
+  x.fillStyle='rgba(255,200,120,'+(0.3+0.6*Ls)+')';
+  for(let i=0;i<3;i++)x.fillRect(setX+8,floorY-80+i*28,38,10);
+  x.restore();
+  x.fillStyle='rgba(255,200,140,.6)';x.fillText('STAGE SET',setX-6,floorY+18);
+
+  // glass pane at angle
+  const gx=w*0.50, gy=floorY-70, len=150;
+  const a=ang*Math.PI/180;
+  const dxp=Math.cos(a), dyp=-Math.sin(a);
+  const p1=[gx-dxp*len/2, gy-dyp*len/2], p2=[gx+dxp*len/2, gy+dyp*len/2];
+  x.save();
+  x.strokeStyle='rgba(180,235,255,'+(0.35+R*3)+')';x.lineWidth=4;
+  x.shadowColor='#8ef';x.shadowBlur=18;
+  x.beginPath();x.moveTo(p1[0],p1[1]);x.lineTo(p2[0],p2[1]);x.stroke();
+  x.restore();
+  x.fillStyle='rgba(150,230,255,.7)';x.fillText('GLASS '+ang.toFixed(0)+'°',gx+12,gy-52);
+
+  // hidden pit below floor with glowing ghost
+  const pitX=gx, pitY=floorY+h*0.16;
+  x.save();
+  x.fillStyle='rgba(10,6,18,.95)';x.fillRect(w*0.28,floorY+4,w*0.46,h*0.34);
+  x.strokeStyle='rgba(120,90,160,.4)';x.lineWidth=1;x.strokeRect(w*0.28,floorY+4,w*0.46,h*0.34);
+  x.restore();
+  x.fillStyle='rgba(160,120,200,.55)';x.fillText('HIDDEN PIT (below sightline)',w*0.29,floorY+h*0.34-6);
+  drawGhost(pitX,pitY,44,Lp,t,false);
+
+  // ray diagram
+  if(showRays){
+    x.save();x.globalCompositeOperation='lighter';x.lineWidth=1.3;
+    const eye=[w*0.14,floorY-58];
+    // path A: stage set -> through glass -> eye (transmission)
+    x.strokeStyle='rgba(255,190,110,'+(0.35+0.55*Ls)+')';x.shadowColor='#fb6';x.shadowBlur=9;
+    x.beginPath();x.moveTo(setX+4,floorY-52);x.lineTo(gx,gy);x.lineTo(eye[0],eye[1]);x.stroke();
+    // path B: ghost -> reflect off glass -> eye
+    x.strokeStyle='rgba(150,230,255,'+(0.35+0.6*Lp)+')';x.shadowColor='#6ef';x.shadowBlur=9;
+    x.beginPath();x.moveTo(pitX,pitY-20);x.lineTo(gx,gy);x.lineTo(eye[0],eye[1]);x.stroke();
+    // normal at glass
+    x.setLineDash([4,4]);x.shadowBlur=0;x.strokeStyle='rgba(255,255,255,.3)';
+    x.beginPath();x.moveTo(gx,gy);x.lineTo(gx+Math.sin(a)*46,gy+Math.cos(a)*46);x.stroke();
+    x.setLineDash([]);
+    x.restore();
+    // eye
+    x.save();x.fillStyle='#ffe9b0';x.shadowColor='#fd8';x.shadowBlur=18;
+    x.beginPath();x.ellipse(eye[0],eye[1],11,7,0,0,7);x.fill();
+    x.fillStyle='#221';x.beginPath();x.arc(eye[0],eye[1],3.4,0,7);x.fill();x.restore();
+    x.fillStyle='rgba(255,225,160,.75)';x.fillText('AUDIENCE EYE',eye[0]-24,eye[1]+26);
+    x.fillStyle='rgba(255,190,110,.85)';x.fillText('T='+T.toFixed(3),gx+18,gy+34);
+    x.fillStyle='rgba(150,230,255,.9)';x.fillText('R='+R.toFixed(4),gx+18,gy+50);
+    // virtual image position
+    x.save();x.globalAlpha=0.35;
+    drawGhost(setX-90, gy-((pitY-gy)-0)*0+floorY-64, 40, Math.min(1,R*8*Lp+0.05), t, true);
+    x.restore();
+    x.fillStyle='rgba(160,220,255,.5)';x.fillText('virtual image',setX-132,floorY+2);
+  }
+  x.restore();
+}
+
+// ---------------- AUDIENCE VIEW (the illusion) ----------------
+function drawAudience(X,Y,w,h,ghostL,sceneL,misalign){
+  x.save();x.translate(X,Y);
+  x.beginPath();x.rect(0,0,w,h);x.clip();
+
+  // proscenium vignette
+  const g=x.createRadialGradient(w/2,h/2,20,w/2,h/2,Math.max(w,h)*0.72);
+  g.addColorStop(0,'#120e1c');g.addColorStop(1,'#040309');
+  x.fillStyle=g;x.fillRect(0,0,w,h);
+
+  // ---- stage scene, weighted by T*L_stage ----
+  const S=Math.min(1,sceneL);
+  x.save();x.globalAlpha=0.06+0.94*S;
+  // back wall
+  x.fillStyle='#2a1f14';x.fillRect(w*0.12,h*0.18,w*0.76,h*0.52);
+  // floorboards
+  for(let i=0;i<9;i++){
+    x.fillStyle=i%2?'rgba(90,64,38,'+(0.5)+')':'rgba(70,48,28,.5)';
+    x.fillRect(w*0.08,h*0.70+i*10,w*0.84,9);
+  }
+  // a chair + candelabra prop
+  x.save();x.shadowColor='#fa6';x.shadowBlur=16*S;
+  x.strokeStyle='rgba(220,170,110,.9)';x.lineWidth=4;
+  x.beginPath();
+  x.moveTo(w*0.24,h*0.70);x.lineTo(w*0.24,h*0.44);x.lineTo(w*0.36,h*0.44);
+  x.moveTo(w*0.24,h*0.58);x.lineTo(w*0.38,h*0.58);x.lineTo(w*0.38,h*0.70);
+  x.stroke();
+  // candle flames
+  for(let i=0;i<3;i++){
+    const cxx=w*0.70+i*22, cyy=h*0.46;
+    x.fillStyle='rgba(200,170,120,.9)';x.fillRect(cxx-3,cyy,6,44);
+    x.fillStyle='rgba(255,220,140,.95)';
+    x.beginPath();x.ellipse(cxx,cyy-6+Math.sin(t*7+i)*1.5,4,9,0,0,7);x.fill();
+  }
+  x.restore();
+  x.restore();
+
+  // ---- the GHOST: additively composited reflection ----
+  const G=Math.min(1,ghostL*3.2);   // display gain; ratio is what matters
+  x.save();
+  x.globalCompositeOperation='lighter';
+  drawGhost(w*0.56+misalign*2.4, h*0.50+Math.abs(misalign)*1.2, 92, G, t, true);
+  x.restore();
+
+  // glass sheen artifact when badly angled
+  if(Math.abs(misalign)>4){
+    x.save();x.globalAlpha=Math.min(0.25,Math.abs(misalign)/120);
+    x.fillStyle='#9cf';x.fillRect(0,0,w,h);x.restore();
+  }
+
+  x.fillStyle='rgba(150,120,190,.6)';x.font='11px ui-monospace,monospace';
+  x.fillText('AUDIENCE VIEW — scene·T + ghost·R  (additive; the glass never subtracts)',18,h-18);
+  if(Math.abs(misalign)>0.4){
+    x.fillStyle='rgba(255,130,130,.85)';
+    x.fillText('θ ≠ 45° → ghost lands off the stage floor: registration broken',18,h-36);
+  }else{
+    x.fillStyle='rgba(140,255,190,.85)';
+    x.fillText('θ = 45° → ghost stands exactly on the boards',18,h-36);
+  }
+  x.restore();
+}
+
+// glowing spectral figure
+function drawGhost(cx,cy,s,L,tt,spectral){
+  if(L<=0.002) return;
+  const br=Math.min(1,L);
+  const bob=Math.sin(tt*1.1)*s*0.045;
+  const breathe=1+Math.sin(tt*1.7)*0.025;
+  x.save();
+  x.translate(cx,cy+bob);x.scale(breathe,1/breathe);
+  x.globalAlpha=br;
+  const col=spectral?'190,240,255':'170,230,255';
+  x.shadowColor='rgba('+col+',0.9)';x.shadowBlur=34*br;
+  x.strokeStyle='rgba('+col+','+(0.55+0.4*br)+')';
+  x.fillStyle='rgba('+col+','+(0.12+0.30*br)+')';
+  x.lineWidth=2;
+  // robe
+  x.beginPath();
+  x.moveTo(0,-s*0.52);
+  x.bezierCurveTo(s*0.34,-s*0.42, s*0.44,s*0.30, s*0.50,s*0.86);
+  const hem=6;
+  for(let i=hem;i>=-hem;i--){
+    const u=i/hem;
+    x.lineTo(u*s*0.50, s*0.86+Math.sin(tt*2.2+u*3.6)*s*0.05);
+  }
+  x.bezierCurveTo(-s*0.44,s*0.30, -s*0.34,-s*0.42, 0,-s*0.52);
+  x.closePath();x.fill();x.stroke();
+  // head
+  x.beginPath();x.arc(0,-s*0.68,s*0.20,0,7);x.fill();x.stroke();
+  // arms
+  x.beginPath();
+  x.moveTo(-s*0.26,-s*0.16);x.quadraticCurveTo(-s*0.62,-s*0.05+Math.sin(tt*1.3)*s*0.06,-s*0.58,s*0.22);
+  x.moveTo( s*0.26,-s*0.16);x.quadraticCurveTo( s*0.62,-s*0.05-Math.sin(tt*1.3)*s*0.06, s*0.58,s*0.22);
+  x.stroke();
+  // eyes
+  x.shadowBlur=18*br;x.fillStyle='rgba(255,255,255,'+(0.5+0.5*br)+')';
+  x.beginPath();x.arc(-s*0.07,-s*0.70,s*0.028,0,7);x.arc(s*0.07,-s*0.70,s*0.028,0,7);x.fill();
+  x.restore();
+}
+
+// R(theta) curve inset
+function drawCurve(px,py,w,h,ai,R){
+  x.save();x.translate(px,py);
+  x.fillStyle='rgba(8,6,16,.72)';x.strokeStyle='rgba(150,110,200,.4)';x.lineWidth=1;
+  x.beginPath();x.rect(0,0,w,h);x.fill();x.stroke();
+  x.fillStyle='rgba(190,160,230,.75)';x.font='10px ui-monospace,monospace';
+  x.fillText('R(incidence)  n=1.0→1.52',8,14);
+  const x0=10,y0=h-18,pw=w-22,ph=h-36;
+  x.strokeStyle='rgba(120,100,150,.5)';
+  x.beginPath();x.moveTo(x0,y0);x.lineTo(x0+pw,y0);x.moveTo(x0,y0);x.lineTo(x0,y0-ph);x.stroke();
+  x.beginPath();
+  for(let i=0;i<=90;i++){
+    const r=plateR(i*Math.PI/180);
+    const xx=x0+pw*i/90, yy=y0-ph*Math.min(1,r);
+    i?x.lineTo(xx,yy):x.moveTo(xx,yy);
+  }
+  x.strokeStyle='rgba(140,230,255,.95)';x.lineWidth=1.6;x.shadowColor='#6ef';x.shadowBlur=10;x.stroke();
+  // marker
+  const deg=ai*180/Math.PI;
+  const mx=x0+pw*deg/90, my=y0-ph*Math.min(1,R);
+  x.shadowBlur=14;x.fillStyle='#ffd27a';
+  x.beginPath();x.arc(mx,my,3.6,0,7);x.fill();
+  x.shadowBlur=0;x.fillStyle='rgba(255,215,140,.9)';
+  x.fillText(deg.toFixed(0)+'° · '+R.toFixed(3),Math.min(mx+6,w-70),my-6);
+  x.fillStyle='rgba(150,120,180,.6)';x.fillText('0°',x0,h-6);x.fillText('90°',x0+pw-14,h-6);
+  x.restore();
+}
+draw();
+})();
+</script>

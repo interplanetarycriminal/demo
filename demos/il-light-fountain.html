@@ -1,0 +1,266 @@
+<title>Colladon's Light Fountain</title>
+<style>
+html,body{margin:0;padding:0;height:100%;background:#03060c;overflow:hidden}
+canvas{display:block;position:fixed;inset:0}
+#ui{position:fixed;top:10px;left:10px;z-index:10;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;
+ color:#cfe6ff;background:rgba(6,12,22,.62);border:1px solid rgba(110,220,255,.28);border-radius:8px;
+ padding:10px 12px;max-width:340px;backdrop-filter:blur(6px);box-shadow:0 0 24px rgba(40,180,255,.18)}
+#ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.13em;color:#9ff;text-shadow:0 0 10px #0cf}
+#ui .m{color:#9fb6d0;margin:0 0 6px}
+#ui .sci{color:#ffd48a}
+#ui .lin{color:#7fd8a8}
+#ui a{color:#7fc4ff}
+#ui label{display:block;margin:7px 0 1px;color:#8fa9c4}
+#ui input[type=range]{width:100%;accent-color:#5cf}
+.big{color:#fff;font-size:12px}
+.good{color:#8dff9a}.warn{color:#ff9a6a}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>COLLADON'S LIGHT FOUNTAIN</h1>
+<p class="m">A falling water jet traps a laser beam by total internal reflection, so the light bends with the liquid — until the jet curves too steeply and the beam leaks out.</p>
+<p class="sci">Jean-Daniel Colladon, 1842, Geneva</p>
+<p class="lin">LINEAGE: Colladon 1842 → Tyndall's 1854 Royal Institution encore → optical fibre</p>
+<label>Jet speed <span id="vR" class="big">3.4</span> (exit velocity)</label>
+<input id="v" type="range" min="1.2" max="7" step="0.05" value="3.4">
+<label>Refractive index n <span id="nR" class="big">1.333</span></label>
+<input id="n" type="range" min="1.10" max="1.90" step="0.005" value="1.333">
+<label>Jet radius <span id="rR" class="big">14</span> px</label>
+<input id="r" type="range" min="6" max="30" step="1" value="14">
+<label>Entry tilt <span id="aR" class="big">0.0°</span></label>
+<input id="a" type="range" min="-12" max="12" step="0.5" value="0">
+<p class="m">Drag JET SPEED: a fast, flat jet guides light far; a slow jet curves down fast and light sprays out early.</p>
+<div>critical angle C = <span id="cA" class="big">48.6°</span> (from surface normal)</div>
+<div>bounces before leak: <span id="nb" class="big">0</span></div>
+<div>leak at <span id="lk" class="big">—</span> of jet <span id="st"></span></div>
+<div>last incidence: <span id="li" class="big">—</span></div>
+<p><a href="index.html">← gallery</a></p>
+</div>
+<script>
+"use strict";
+var c=document.getElementById('c'),g=c.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
+ c.width=W*DPR;c.height=H*DPR;c.style.width=W+'px';c.style.height=H+'px';g.setTransform(DPR,0,0,DPR,0,0);}
+window.addEventListener('resize',resize);resize();
+var el=function(i){return document.getElementById(i);};
+var Sv=el('v'),Sn=el('n'),Sr=el('r'),Sa=el('a');
+
+// --- jet: parabolic projectile from hole at (hx,hy) ---
+var G=520; // px/s^2 scaled
+function jetOrigin(){return {x:W*0.26,y:H*0.34};}
+function jetSpeed(){return parseFloat(Sv.value)*90;}
+// centreline: x(s)=x0+v*s, y(s)=y0+0.5*G*s^2 with s a time parameter
+function jetPoint(s){var o=jetOrigin(),v=jetSpeed();return{x:o.x+v*s,y:o.y+0.5*G*s*s};}
+function jetTangent(s){var v=jetSpeed();var dx=v,dy=G*s,L=Math.hypot(dx,dy);return{x:dx/L,y:dy/L};}
+function jetNormal(s){var t=jetTangent(s);return{x:-t.y,y:t.x};} // points "down-right" side
+// invert: given a point, find nearest s (Newton on centreline)
+function nearestS(px,py,seed){
+  var o=jetOrigin(),v=jetSpeed(),s=seed===undefined?Math.max(0,(px-o.x)/v):seed;
+  for(var i=0;i<24;i++){
+    var X=o.x+v*s-px, Y=o.y+0.5*G*s*s-py;
+    var dX=v, dY=G*s, d2X=0, d2Y=G;
+    var f=X*dX+Y*dY;
+    var fp=dX*dX+dY*dY+X*d2X+Y*d2Y;
+    if(Math.abs(fp)<1e-9)break;
+    var st=f/fp; s-=st;
+    if(s<0)s=0;
+    if(Math.abs(st)<1e-9)break;
+  }
+  return s;
+}
+// signed distance from jet axis (positive on +normal side)
+function sdf(px,py){
+  var s=nearestS(px,py,undefined);
+  var P=jetPoint(s),N=jetNormal(s);
+  var dx=px-P.x,dy=py-P.y;
+  return {s:s,d:dx*N.x+dy*N.y,dist:Math.hypot(dx,dy),P:P,N:N};
+}
+function sMax(){ // s at which jet leaves the screen bottom
+  var o=jetOrigin();
+  return Math.sqrt(Math.max(0,2*(H+40-o.y)/G));
+}
+
+// --- beam propagation inside the jet ---
+function propagate(n,R,tiltDeg){
+  var o=jetOrigin(), smax=sMax();
+  var C=Math.asin(Math.min(1,1/n));
+  var px=o.x+2, py=o.y, tilt=tiltDeg*Math.PI/180;
+  var dx=Math.cos(tilt),dy=Math.sin(tilt);
+  var path=[{x:px,y:py}],leaks=[],bounces=0,lastInc=0,leakS=null;
+  var step=1.4, maxIter=9000;
+  for(var it=0;it<maxIter;it++){
+    var nx=px+dx*step, ny=py+dy*step;
+    var q=sdf(nx,ny);
+    if(q.s>=smax-1e-4){path.push({x:nx,y:ny});break;}
+    if(Math.abs(q.d)<R){px=nx;py=ny;path.push({x:px,y:py});continue;}
+    // crossed the wall: refine to surface
+    var lo=0,hi=step;
+    for(var k=0;k<22;k++){
+      var mid=(lo+hi)/2;
+      var mq=sdf(px+dx*mid,py+dy*mid);
+      if(Math.abs(mq.d)<R)lo=mid;else hi=mid;
+    }
+    var hx=px+dx*lo, hy=py+dy*lo;
+    var hq=sdf(hx,hy);
+    // outward surface normal at the hit
+    var sgn=hq.d>=0?1:-1;
+    var Nn=jetNormal(hq.s);
+    var Ox=Nn.x*sgn, Oy=Nn.y*sgn;
+    // jet is also thinning/curving; incidence measured against this normal
+    var ci=dx*Ox+dy*Oy;               // cos between ray and outward normal
+    if(ci<0){Ox=-Ox;Oy=-Oy;ci=-ci;}
+    var inc=Math.acos(Math.min(1,Math.max(-1,ci)));
+    lastInc=inc;
+    path.push({x:hx,y:hy});
+    if(Math.sin(inc)*n>=1.0){ // TIR — keep guiding
+      dx=dx-2*ci*Ox; dy=dy-2*ci*Oy;
+      var L=Math.hypot(dx,dy);dx/=L;dy/=L;
+      px=hx+dx*0.6;py=hy+dy*0.6;bounces++;
+      continue;
+    }
+    // refract out: leak streak
+    var kk=1-n*n*(1-ci*ci);
+    var tx,ty;
+    if(kk<0){tx=Ox;ty=Oy;}else{
+      tx=n*dx+(n*ci-Math.sqrt(kk))*Ox; ty=n*dy+(n*ci-Math.sqrt(kk))*Oy;
+      var Lt=Math.hypot(tx,ty);tx/=Lt;ty/=Lt;
+    }
+    leaks.push({x:hx,y:hy,dx:tx,dy:ty,inc:inc});
+    if(leakS===null)leakS=hq.s;
+    // partial reflection continues (Fresnel) so beam fades onward
+    dx=dx-2*ci*Ox; dy=dy-2*ci*Oy;
+    var L2=Math.hypot(dx,dy);dx/=L2;dy/=L2;
+    px=hx+dx*0.6;py=hy+dy*0.6;
+    if(leaks.length>10)break;
+  }
+  return {path:path,leaks:leaks,bounces:bounces,lastInc:lastInc,C:C,leakS:leakS,smax:smax};
+}
+
+var t0=performance.now();
+function render(){
+  var T=(performance.now()-t0)/1000;
+  var n=parseFloat(Sn.value),R=parseFloat(Sr.value),tilt=parseFloat(Sa.value);
+  el('vR').textContent=parseFloat(Sv.value).toFixed(2);
+  el('nR').textContent=n.toFixed(3);
+  el('rR').textContent=R.toFixed(0);
+  el('aR').textContent=tilt.toFixed(1)+'°';
+  var Cdeg=Math.asin(Math.min(1,1/n))*180/Math.PI;
+  el('cA').textContent=Cdeg.toFixed(1)+'°';
+
+  g.fillStyle='#03060c';g.fillRect(0,0,W,H);
+  var vg=g.createRadialGradient(W*0.3,H*0.4,20,W*0.3,H*0.4,Math.max(W,H)*0.8);
+  vg.addColorStop(0,'rgba(10,40,70,0.35)');vg.addColorStop(1,'rgba(0,0,0,0)');
+  g.fillStyle=vg;g.fillRect(0,0,W,H);
+
+  var o=jetOrigin(),smax=sMax();
+  // tank
+  g.fillStyle='rgba(20,70,120,0.18)';
+  g.fillRect(W*0.05,H*0.16,W*0.21,H*0.46);
+  g.strokeStyle='rgba(120,210,255,0.45)';g.lineWidth=2;
+  g.strokeRect(W*0.05,H*0.16,W*0.21,H*0.46);
+  g.fillStyle='rgba(140,220,255,0.10)';
+  for(var w=0;w<3;w++){
+    g.beginPath();
+    for(var xx=W*0.05;xx<W*0.26;xx+=6)g.lineTo(xx,H*0.20+Math.sin(xx*0.03+T*1.2+w)*3+w*4);
+    g.lineTo(W*0.26,H*0.62);g.lineTo(W*0.05,H*0.62);g.closePath();g.fill();
+  }
+  g.fillStyle='rgba(190,235,255,0.6)';g.font='11px ui-monospace,monospace';
+  g.fillText('lit tank',W*0.06,H*0.155-4);
+  g.beginPath();g.arc(o.x,o.y,R*0.9,0,6.2832);g.fillStyle='#0a1a2c';g.fill();
+  g.strokeStyle='#8ff';g.lineWidth=1.5;g.stroke();
+
+  // jet body
+  var STEP=smax/220;
+  g.beginPath();
+  for(var s=0;s<=smax;s+=STEP){var P=jetPoint(s),N=jetNormal(s);g.lineTo(P.x+N.x*R,P.y+N.y*R);}
+  for(var s2=smax;s2>=0;s2-=STEP){var P2=jetPoint(s2),N2=jetNormal(s2);g.lineTo(P2.x-N2.x*R,P2.y-N2.y*R);}
+  g.closePath();
+  var jg=g.createLinearGradient(o.x,o.y,W,H);
+  jg.addColorStop(0,'rgba(120,220,255,0.20)');jg.addColorStop(1,'rgba(60,150,220,0.10)');
+  g.fillStyle=jg;g.fill();
+  g.strokeStyle='rgba(150,230,255,0.42)';g.lineWidth=1.2;g.stroke();
+
+  var res=propagate(n,R,tilt);
+
+  // glowing guided section
+  g.globalCompositeOperation='lighter';
+  var leakIdx=res.path.length;
+  if(res.leaks.length){
+    // find path index of first leak
+    for(var i=0;i<res.path.length;i++){
+      if(Math.abs(res.path[i].x-res.leaks[0].x)<0.01&&Math.abs(res.path[i].y-res.leaks[0].y)<0.01){leakIdx=i;break;}
+    }
+  }
+  // jet glow where guided
+  g.lineWidth=R*2.0;g.strokeStyle='rgba(70,200,255,0.10)';
+  g.beginPath();
+  for(var q=0;q<Math.min(leakIdx,res.path.length);q++)g.lineTo(res.path[q].x,res.path[q].y);
+  g.stroke();
+  g.lineWidth=R*1.1;g.strokeStyle='rgba(120,240,255,0.09)';g.stroke();
+
+  // the beam
+  for(var pass=0;pass<3;pass++){
+    g.lineWidth=[6,2.6,1.1][pass];
+    g.strokeStyle=['rgba(255,60,90,0.10)','rgba(255,110,120,0.35)','rgba(255,230,235,0.95)'][pass];
+    g.beginPath();
+    for(var p=0;p<res.path.length;p++){
+      var a=res.path[p];
+      if(p===0)g.moveTo(a.x,a.y);else g.lineTo(a.x,a.y);
+    }
+    g.stroke();
+  }
+  // leak streaks
+  for(var L=0;L<res.leaks.length;L++){
+    var lk=res.leaks[L],len=90+120*Math.max(0,(res.C-lk.inc)/res.C);
+    var grd=g.createLinearGradient(lk.x,lk.y,lk.x+lk.dx*len,lk.y+lk.dy*len);
+    grd.addColorStop(0,'rgba(255,220,160,0.85)');grd.addColorStop(1,'rgba(255,120,60,0)');
+    g.strokeStyle=grd;g.lineWidth=L===0?5:3;
+    g.beginPath();g.moveTo(lk.x,lk.y);g.lineTo(lk.x+lk.dx*len,lk.y+lk.dy*len);g.stroke();
+    g.fillStyle='rgba(255,240,200,0.9)';
+    g.beginPath();g.arc(lk.x,lk.y,L===0?4:2.5,0,6.2832);g.fill();
+  }
+  g.globalCompositeOperation='source-over';
+
+  // bounce incidence markers
+  g.font='10px ui-monospace,monospace';
+  var shown=0;
+  for(var b=1;b<res.path.length-1&&shown<9;b++){
+    var pt=res.path[b];
+    var pr=res.path[b-1],nx2=res.path[b+1];
+    var v1x=pt.x-pr.x,v1y=pt.y-pr.y,v2x=nx2.x-pt.x,v2y=nx2.y-pt.y;
+    var cross=Math.abs(v1x*v2y-v1y*v2x)/(Math.hypot(v1x,v1y)*Math.hypot(v2x,v2y)+1e-9);
+    if(cross>0.25){
+      var q2=sdf(pt.x,pt.y);
+      var Nn=jetNormal(q2.s),sg=q2.d>=0?1:-1;
+      var incd=Math.acos(Math.min(1,Math.abs((v1x*Nn.x*sg+v1y*Nn.y*sg)/Math.hypot(v1x,v1y))))*180/Math.PI;
+      g.fillStyle=incd>Cdeg?'rgba(140,255,170,0.85)':'rgba(255,160,90,0.9)';
+      g.fillText(incd.toFixed(0)+'°',pt.x+7,pt.y-6);
+      shown++;
+    }
+  }
+
+  el('nb').textContent=res.bounces;
+  if(res.leakS!==null){
+    el('lk').textContent=(100*res.leakS/res.smax).toFixed(0)+'%';
+    el('st').className='warn';el('st').textContent='LEAKING — incidence fell below C';
+  }else{
+    el('lk').textContent='no leak';
+    el('st').className='good';el('st').textContent='GUIDED all the way';
+  }
+  el('li').textContent=(res.lastInc*180/Math.PI).toFixed(1)+'°';
+
+  g.fillStyle='rgba(180,220,255,0.75)';g.font='12px ui-monospace,monospace';
+  g.fillText('C = asin(1/n) = '+Cdeg.toFixed(1)+'°   bounces = '+res.bounces,W-300,H-24);
+  if(res.leakS!==null){
+    var LP=jetPoint(res.leakS);
+    g.fillStyle='rgba(255,200,120,0.95)';
+    g.fillText('light escapes here — jet too steep',Math.min(W-260,LP.x+14),LP.y+22);
+  }
+
+  requestAnimationFrame(render);
+}
+requestAnimationFrame(render);
+</script>
+</body>

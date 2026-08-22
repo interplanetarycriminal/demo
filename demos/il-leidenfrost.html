@@ -1,0 +1,313 @@
+<title>Leidenfrost Skating</title>
+<style>
+html,body{margin:0;padding:0;height:100%;background:#06040a;overflow:hidden}
+canvas{display:block;position:fixed;inset:0}
+#ui{position:fixed;top:0;left:0;margin:10px;padding:10px 12px;max-width:345px;
+  background:rgba(14,6,14,.76);border:1px solid #6a2c2c;border-radius:8px;
+  color:#ffd9c9;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;
+  text-shadow:0 0 6px #f634;z-index:10;backdrop-filter:blur(4px)}
+#ui h1{font-size:14px;margin:0 0 4px;color:#ffb15e;letter-spacing:.08em;text-shadow:0 0 12px #f808}
+#ui .m{color:#e6bfae;margin:0 0 6px}
+#ui .sci{color:#9fe8ff;text-shadow:0 0 8px #0af6}
+#ui .lin{color:#bd9a8a;font-size:10px;margin:4px 0}
+#ui .warn{color:#ff6f6f;font-size:10px;font-weight:bold}
+#ui a{color:#ffb15e;text-decoration:none;border-bottom:1px dotted #ffb15e6a}
+#ui label{display:block;margin:5px 0 0;color:#e6bfae}
+#ui input[type=range]{width:100%;height:14px;accent-color:#ff8a3d;background:transparent}
+#ui .rd{color:#9fe8ff;text-shadow:0 0 8px #0af6}
+#ui button{background:#2a1010;color:#ffb15e;border:1px solid #8a4020;border-radius:4px;
+  font:11px ui-monospace,monospace;padding:3px 8px;cursor:pointer;margin:5px 4px 0 0}
+#ui button:hover{background:#43190f}
+</style>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>LEIDENFROST EFFECT</h1>
+<p class="m">Far above boiling, a drop floats on its own vapour cushion — the insulating film throttles heat in so hard that the drop outlives one on a merely-hot plate, and skates almost frictionlessly.</p>
+<p class="sci">Johann Gottlob Leidenfrost, 1756 — <i>De Aquae Communis Nonnullis Qualitatibus Tractatus</i>.</p>
+<p class="lin">LINEAGE: Leidenfrost 1756 treatise → the kitchen-skillet water dance → self-propelled drops on ratcheted surfaces in modern labs.</p>
+<label>plate temperature <span class="rd" id="vT"></span></label><input type="range" id="sT" min="40" max="420" step="1" value="260">
+<label>drop radius <span class="rd" id="vR"></span></label><input type="range" id="sR" min="6" max="26" step="1" value="13">
+<label>plate tilt <span class="rd" id="vTilt"></span></label><input type="range" id="sTilt" min="-8" max="8" step="0.5" value="2">
+<button id="bDrop">DROP</button><button id="bClear">CLEAR</button><button id="bSweep">AUTO-LOG SWEEP</button>
+<p class="m" style="margin-top:6px">click the plate to deposit a drop · each drop's lifetime logs onto the curve</p>
+<p class="rd">regime: <span id="oReg">—</span> · drops <span id="oN">0</span><br>
+film h = <span id="oH">—</span> · oldest drop age <span id="oA">0.0</span>s · logged <span id="oL">0</span></p>
+<p class="warn">The wet-finger-in-molten-lead and liquid-nitrogen-hand parlour stunts live here. DON'T.</p>
+<a href="index.html">← gallery</a>
+</div>
+<script>
+(function(){
+var c=document.getElementById('c'),x=c.getContext('2d');
+var W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
+ c.width=W*DPR;c.height=H*DPR;c.style.width=W+'px';c.style.height=H+'px';x.setTransform(DPR,0,0,DPR,0,0);}
+window.addEventListener('resize',resize);resize();
+function g(i){return document.getElementById(i);}
+var S={T:260,R:13,tilt:2};
+function bind(id,k,f,o){var e=g(id),ot=g(o);function u(){S[k]=parseFloat(e.value);ot.textContent=f(S[k]);}
+ e.addEventListener('input',u);u();}
+bind('sT','T',function(v){return v.toFixed(0)+' °C';},'vT');
+bind('sR','R',function(v){return v.toFixed(0)+' px';},'vR');
+bind('sTilt','tilt',function(v){return v.toFixed(1)+'°';},'vTilt');
+
+var TB=100, TL=200;  // boiling, Leidenfrost point
+
+// ---- MODEL -------------------------------------------------------------
+// Evaporation rate per unit radius, dR/dt = -E(T)  (px/s), from three regimes.
+// film-evaporation (T<TB): slow diffusion  ~ (T-25)/…
+// nucleate boiling (TB..TL): violent, rate rises steeply, peaks at TL (CHF)
+// film boiling (>TL): vapour film insulates -> rate COLLAPSES, then creeps up slowly
+function evapRate(T){
+  if(T<TB){ return 0.090*Math.max(0,(T-20))/80; }                  // ~0..0.090
+  if(T<TL){ var f=(T-TB)/(TL-TB); return 0.09+2.32*f*f; }          // up to ~2.41 at CHF
+  var d=(T-TL);
+  return 0.028+0.00018*d+0.0000008*d*d;                            // insulated: tiny
+}
+function lifetime(T,R){ return R/Math.max(1e-4,evapRate(T)); }     // seconds
+// vapour film thickness (µm-ish, drawn exaggerated)
+function filmH(T,R){ if(T<=TL)return 0; return 12*Math.pow((T-TL)/120,0.28)*(1+R/40); }
+
+// ---- expose for verification ----
+window.__model={evapRate:evapRate,lifetime:lifetime,filmH:filmH,TB:TB,TL:TL};
+
+// ---- plate geometry ----
+function plateY(px){ return H*0.66 + (px-W/2)*Math.tan(S.tilt*Math.PI/180); }
+function plateL(){return W*0.06;} function plateR(){return W*0.94;}
+
+// ---- drops ----
+var drops=[],logs=[],nLog=0;
+function addDrop(px){
+  var pr=Math.max(plateL()+20,Math.min(plateR()-20,px));
+  drops.push({x:pr,y:plateY(pr)-40,vx:(Math.random()-0.5)*40,vy:0,R:S.R,R0:S.R,
+    T:S.T,age:0,logged:false,ph:Math.random()*6.28,fizz:[]});
+}
+g('bDrop').addEventListener('click',function(){addDrop(W*0.35+Math.random()*W*0.3);});
+g('bClear').addEventListener('click',function(){drops.length=0;});
+var sweep=null;
+g('bSweep').addEventListener('click',function(){
+  sweep={t:60,step:20};
+});
+c.addEventListener('pointerdown',function(e){ addDrop(e.clientX); });
+
+// vapour puff particles
+var puffs=[];
+function puff(px,py,n,fast){
+  for(var i=0;i<n;i++)puffs.push({x:px+(Math.random()-0.5)*10,y:py,
+    vx:(Math.random()-0.5)*(fast?190:70),vy:-Math.random()*(fast?170:60)-20,l:1});
+}
+
+var last=performance.now(),T0=0,sweepAcc=0;
+function frame(now){
+  var dt=Math.min(0.033,(now-last)/1000);last=now;T0+=dt;
+
+  // auto-log sweep: drop small probe drops across temperatures
+  if(sweep){ sweepAcc+=dt;
+    if(sweepAcc>0.35){ sweepAcc=0;
+      var Tp=sweep.t;
+      logs.push({T:Tp,L:lifetime(Tp,10)});nLog++;
+      sweep.t+=sweep.step;
+      if(sweep.t>420)sweep=null;
+    }
+  }
+
+  // physics
+  for(var i=drops.length-1;i>=0;i--){
+    var d=drops[i];
+    d.T=S.T;
+    d.age+=dt;
+    var lev=d.T>TL;
+    var h=filmH(d.T,d.R);
+    // shrink
+    var rate=evapRate(d.T);
+    // clock speedup so slow regimes are watchable but ordering preserved
+    d.R-=rate*dt*1.0;
+    if(d.R<=0.9){
+      puff(d.x,plateY(d.x)-4,18,true);
+      if(!d.logged){logs.push({T:d.T,L:d.age});nLog++;}
+      drops.splice(i,1);continue;
+    }
+    // motion
+    var py=plateY(d.x)-(lev?h*0.42+d.R:d.R);
+    var slope=Math.tan(S.tilt*Math.PI/180);
+    if(lev){
+      d.vx+= -slope*380*dt;      // glides downhill
+      d.vx*=Math.pow(0.995,dt*60);  // near-zero friction
+      d.vy=0;
+      d.y=py+Math.sin(T0*5+d.ph)*1.5;
+    } else {
+      d.vx*=Math.pow(0.80,dt*60); // sticky / wetting
+      d.y=py;
+      if(d.T>TB){ d.y=py+Math.sin(T0*26+d.ph)*3.2; }
+    }
+    d.x+=d.vx*dt;
+    if(d.x<plateL()+d.R){d.x=plateL()+d.R;d.vx*=-0.92;}
+    if(d.x>plateR()-d.R){d.x=plateR()-d.R;d.vx*=-0.92;}
+    // fizz particles for nucleate boiling
+    if(d.T>=TB&&d.T<TL&&Math.random()<0.85)puff(d.x,plateY(d.x)-3,2,true);
+    else if(lev&&Math.random()<0.30)puff(d.x,plateY(d.x)-2,1,false);
+    else if(d.T<TB&&Math.random()<0.05)puff(d.x,plateY(d.x)-d.R,1,false);
+  }
+  for(var j=puffs.length-1;j>=0;j--){var p=puffs[j];
+    p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=-40*dt;p.l-=dt*1.3;
+    if(p.l<=0)puffs.splice(j,1);}
+
+  draw();
+  requestAnimationFrame(frame);
+}
+
+function tempColor(T,a){
+  var t=Math.max(0,Math.min(1,(T-40)/380));
+  var r=Math.round(60+195*t), gg=Math.round(20+120*t*t), b=Math.round(90-70*t);
+  return 'rgba('+r+','+gg+','+Math.max(0,b)+','+a+')';
+}
+
+function draw(){
+  x.fillStyle='#06040a';x.fillRect(0,0,W,H);
+  // heat haze background glow
+  var pl=plateL(),pr=plateR(),my=plateY(W/2);
+  var hg=x.createLinearGradient(0,my-160,0,my+40);
+  hg.addColorStop(0,'rgba(0,0,0,0)');hg.addColorStop(1,tempColor(S.T,0.20));
+  x.fillStyle=hg;x.fillRect(0,my-160,W,200);
+
+  // plate
+  x.save();
+  x.beginPath();
+  x.moveTo(pl,plateY(pl));x.lineTo(pr,plateY(pr));
+  x.lineTo(pr,plateY(pr)+26);x.lineTo(pl,plateY(pl)+26);x.closePath();
+  var pg=x.createLinearGradient(0,my,0,my+26);
+  pg.addColorStop(0,tempColor(S.T,0.95));pg.addColorStop(1,'#180a0a');
+  x.fillStyle=pg;x.shadowColor=tempColor(S.T,1);x.shadowBlur=34;x.fill();
+  x.shadowBlur=0;x.strokeStyle=tempColor(S.T,1);x.lineWidth=1.5;x.stroke();
+  x.restore();
+  x.fillStyle=tempColor(S.T,1);x.font='12px ui-monospace,monospace';
+  x.fillText(S.T.toFixed(0)+' °C',pl+8,plateY(pl)+44);
+
+  // regime bands legend on plate
+  x.font='10px ui-monospace,monospace';
+  x.fillStyle='rgba(255,220,190,.5)';
+  x.fillText('boiling 100°C · Leidenfrost point ≈ 200°C',pl+90,plateY(pl)+44);
+
+  // puffs
+  for(var j=0;j<puffs.length;j++){var p=puffs[j];
+    x.fillStyle='rgba(200,230,255,'+(0.30*p.l).toFixed(3)+')';
+    x.beginPath();x.arc(p.x,p.y,1.6+2.6*(1-p.l),0,6.2832);x.fill();}
+
+  // drops
+  var oldest=0;
+  for(var i=0;i<drops.length;i++){var d=drops[i];
+    if(d.age>oldest)oldest=d.age;
+    var lev=d.T>TL, h=filmH(d.T,d.R);
+    var dy=d.y;
+    // vapour film glow beneath
+    if(lev){
+      var fg=x.createRadialGradient(d.x,plateY(d.x)-1,1,d.x,plateY(d.x)-1,d.R*2.1);
+      fg.addColorStop(0,'rgba(160,220,255,.55)');fg.addColorStop(1,'rgba(160,220,255,0)');
+      x.fillStyle=fg;x.beginPath();x.ellipse(d.x,plateY(d.x)-1,d.R*2.1,d.R*0.8,0,0,6.2832);x.fill();
+    }
+    var squash=lev?1.0:1.25;
+    var gr=x.createRadialGradient(d.x-d.R*0.35,dy-d.R*0.4,1,d.x,dy,d.R*1.2);
+    gr.addColorStop(0,'rgba(235,252,255,.98)');
+    gr.addColorStop(0.55,'rgba(120,205,240,.85)');
+    gr.addColorStop(1,'rgba(40,110,160,.75)');
+    x.shadowColor='#8fdcff';x.shadowBlur=lev?24:10;
+    x.fillStyle=gr;x.beginPath();
+    x.ellipse(d.x,dy,d.R*squash,d.R/Math.sqrt(squash),0,0,6.2832);x.fill();
+    x.shadowBlur=0;
+    x.strokeStyle='rgba(220,250,255,.7)';x.lineWidth=1;x.stroke();
+  }
+
+  drawInset();
+  drawCurve();
+
+  var reg = S.T<TB?'contact evaporation (slow shrink)':
+            S.T<TL?'NUCLEATE BOILING — violent, seconds':'FILM BOILING — levitating, minutes';
+  g('oReg').textContent=reg;
+  g('oN').textContent=drops.length;
+  g('oH').textContent = S.T>TL ? filmH(S.T,S.R).toFixed(1)+' (µm, exagg.)' : 'wetted (0)';
+  g('oA').textContent=oldest.toFixed(1);
+  g('oL').textContent=nLog;
+}
+
+// zoom inset: film cross-section
+function drawInset(){
+  var w=214,h=112,px=W-w-16,py=16;
+  x.fillStyle='rgba(8,4,12,.86)';x.strokeStyle='#8a4020';x.lineWidth=1;
+  x.fillRect(px,py,w,h);x.strokeRect(px,py,w,h);
+  x.fillStyle='#ffb15e';x.font='10px ui-monospace,monospace';
+  x.fillText('ZOOM: vapour film cross-section',px+8,py+14);
+  var base=py+h-26;
+  // plate slab
+  x.fillStyle=tempColor(S.T,0.9);x.fillRect(px+10,base,w-20,16);
+  var h0=filmH(S.T,S.R);
+  var hp=Math.min(24,h0*1.5);
+  if(S.T>TL){
+    // vapour gap
+    x.fillStyle='rgba(150,215,255,.28)';x.fillRect(px+26,base-hp,w-52,hp);
+    x.strokeStyle='#9fe8ff';x.setLineDash([3,3]);x.beginPath();
+    x.moveTo(px+26,base-hp);x.lineTo(px+w-26,base-hp);x.stroke();x.setLineDash([]);
+    // arrow
+    x.strokeStyle='#9fe8ff';x.beginPath();x.moveTo(px+18,base);x.lineTo(px+18,base-hp);x.stroke();
+    x.fillStyle='#9fe8ff';
+    x.fillText('h≈'+h0.toFixed(1),px+w-78,base-hp-4);
+    // vapour escaping arrows
+    for(var i=0;i<5;i++){var ax=px+34+i*30, t=(T0*1.4+i*0.2)%1;
+      x.strokeStyle='rgba(190,235,255,'+(0.7-0.5*t).toFixed(2)+')';
+      x.beginPath();x.moveTo(ax,base-hp*0.5);x.lineTo(ax,base-hp*0.5-10*t-4);x.stroke();}
+    // drop underside
+    x.fillStyle='rgba(120,205,240,.85)';
+    x.beginPath();x.ellipse(px+w/2,base-hp-24,66,26,0,0,6.2832);x.fill();
+  } else {
+    x.fillStyle='rgba(120,205,240,.85)';
+    x.beginPath();x.ellipse(px+w/2,base-16,66,20,0,0,6.2832);x.fill();
+    x.fillStyle='#ff9a6a';x.fillText(S.T<TB?'wetted — direct contact':'wetted — nucleate bubbles',px+22,base-46);
+    if(S.T>=TB)for(var k=0;k<6;k++){var bx=px+40+k*26, bt=(T0*3+k*0.4)%1;
+      x.fillStyle='rgba(255,240,220,'+(0.8-0.7*bt).toFixed(2)+')';
+      x.beginPath();x.arc(bx,base-8-bt*20,2+2*bt,0,6.2832);x.fill();}
+  }
+}
+
+// lifetime vs temperature curve
+function drawCurve(){
+  var w=Math.min(360,W*0.34),h=150,px=W-w-16,py=H-h-16;
+  x.fillStyle='rgba(8,4,12,.86)';x.strokeStyle='#8a4020';x.lineWidth=1;
+  x.fillRect(px,py,w,h);x.strokeRect(px,py,w,h);
+  x.fillStyle='#ffb15e';x.font='10px ui-monospace,monospace';
+  x.fillText('DROPLET LIFETIME vs PLATE TEMPERATURE (log)',px+7,py+13);
+  var x0=px+34,y0=py+h-20,pw=w-46,ph=h-40;
+  var Tmin=40,Tmax=420, Lmin=0.5,Lmax=4000;
+  function X(T){return x0+(T-Tmin)/(Tmax-Tmin)*pw;}
+  function Y(L){var t=(Math.log(Math.max(Lmin,Math.min(Lmax,L)))-Math.log(Lmin))/(Math.log(Lmax)-Math.log(Lmin));
+    return y0-t*ph;}
+  // axes
+  x.strokeStyle='rgba(255,180,120,.35)';
+  x.beginPath();x.moveTo(x0,py+18);x.lineTo(x0,y0);x.lineTo(x0+pw,y0);x.stroke();
+  x.fillStyle='rgba(255,200,170,.6)';
+  x.fillText('40',x0-6,y0+12);x.fillText('420°C',x0+pw-28,y0+12);
+  x.fillText('1s',px+8,Y(1));x.fillText('1h',px+8,Y(3600));
+  // regime markers
+  [[TB,'100'],[TL,'TL 200']].forEach(function(m){
+    x.strokeStyle='rgba(160,220,255,.35)';x.setLineDash([3,4]);
+    x.beginPath();x.moveTo(X(m[0]),py+18);x.lineTo(X(m[0]),y0);x.stroke();x.setLineDash([]);
+    x.fillStyle='rgba(160,220,255,.7)';x.fillText(m[1],X(m[0])+3,py+26);});
+  // curve
+  x.beginPath();x.strokeStyle='#ff9a3d';x.lineWidth=2;x.shadowColor='#f70';x.shadowBlur=10;
+  for(var T=Tmin;T<=Tmax;T+=2){var L=lifetime(T,10);
+    var cx=X(T),cy=Y(L); if(T===Tmin)x.moveTo(cx,cy);else x.lineTo(cx,cy);}
+  x.stroke();x.shadowBlur=0;
+  // logged experiment points
+  for(var i=0;i<logs.length;i++){var lg=logs[i];
+    x.fillStyle='rgba(120,255,200,.85)';
+    x.beginPath();x.arc(X(lg.T),Y(lg.L),2.6,0,6.2832);x.fill();}
+  // live marker
+  var LX=X(S.T),LY=Y(lifetime(S.T,S.R));
+  x.strokeStyle='#9fe8ff';x.lineWidth=1.5;
+  x.beginPath();x.arc(LX,LY,5,0,6.2832);x.stroke();
+  x.fillStyle='#9fe8ff';
+  x.fillText(lifetime(S.T,S.R).toFixed(0)+'s',LX+7,LY-4);
+  x.fillStyle='rgba(255,200,170,.65)';
+  x.fillText('minimum at CHF ~200°C, then the cliff up',x0+4,py+h-6);
+}
+requestAnimationFrame(frame);
+})();
+</script>

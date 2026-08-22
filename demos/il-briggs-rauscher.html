@@ -1,0 +1,222 @@
+<title>Briggs–Rauscher Oscillator</title>
+<style>
+html,body{margin:0;padding:0;background:#05070c;overflow:hidden;height:100%}
+canvas{display:block;position:fixed;inset:0}
+#ui{position:fixed;top:0;left:0;padding:12px 14px;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;
+  color:#ffd9a8;background:rgba(6,5,10,.64);backdrop-filter:blur(6px);border-right:1px solid #4a3a12;
+  border-bottom:1px solid #4a3a12;max-width:340px;z-index:10;text-shadow:0 0 8px #fa06}
+#ui h1{margin:0 0 4px;font-size:14px;letter-spacing:.14em;color:#ffb84f;text-transform:uppercase}
+#ui .m{color:#d8c3a0}#ui .s{color:#9fe8ff}#ui .l{color:#8fd9a0}#ui .k{color:#8a7a62}
+#ui a{color:#ffb84f;text-decoration:none;border-bottom:1px dotted #ffb84f}
+.tag{display:inline-block;margin-top:6px;padding:1px 6px;border:1px solid #6a5424;border-radius:8px;color:#b09a78;font-size:10px}
+.row{display:flex;align-items:center;gap:6px;margin:3px 0}
+.row label{width:104px;color:#8a7a62}
+input[type=range]{flex:1;height:14px;accent-color:#fb4;background:transparent}
+#read{margin-top:6px;color:#ffeccd}#read b{color:#fff}
+button{background:#241a08;color:#ffb84f;border:1px solid #6a5424;border-radius:4px;
+  font:11px ui-monospace,monospace;padding:3px 9px;cursor:pointer;margin:3px 4px 0 0}
+button:hover{background:#3a2a10;box-shadow:0 0 10px #fa06}
+</style>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>Briggs–Rauscher</h1>
+<div class="m">Two competing pathways alternately dominate, so the mixture cycles clear → amber → blue-black for dozens of beats — a chemical relaxation oscillator with starch flagging every iodine pulse.</div>
+<div class="s">Thomas Briggs &amp; Warren Rauscher, 1973 — San Francisco high-school teachers</div>
+<div class="l">LINEAGE: Landolt clock (parent) → Briggs &amp; Rauscher 1973 classroom oscillator → BZ reaction (research-grade sibling)</div>
+<div class="row"><label>k₁ (feed)</label><input id="s1" type="range" min="0.30" max="3.00" step="0.005" value="1.30"></div>
+<div class="row"><label>k₂ (autocat)</label><input id="s2" type="range" min="0.20" max="3.00" step="0.005" value="1.00"></div>
+<div class="row"><label>k₃ (removal)</label><input id="s3" type="range" min="0.10" max="2.00" step="0.005" value="0.62"></div>
+<div class="row"><label>stir</label><input id="sS" type="range" min="0" max="1" step="0.01" value="0.4"></div>
+<div class="row"><label>temp °C</label><input id="sT" type="range" min="10" max="55" step="0.5" value="25"></div>
+<div><button id="bReset">RESET (fresh reagents)</button><button id="bHopf">SNAP TO HOPF</button></div>
+<div class="k">keys: X reset · H Hopf edge · click beaker to stir-kick</div>
+<div id="read"></div>
+<span class="tag">simulation — no recipe · reduced 3-variable model</span>
+<div style="margin-top:6px"><a href="index.html">← gallery</a></div>
+</div>
+<script>
+"use strict";
+var c=document.getElementById('c'),g=c.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;
+ c.width=W*DPR|0;c.height=H*DPR|0;c.style.width=W+'px';c.style.height=H+'px';g.setTransform(DPR,0,0,DPR,0,0);}
+addEventListener('resize',resize);resize();
+
+// ---------------------------------------------------------------------
+// REDUCED 3-variable model (published-style Oregonator/Noyes-Field form,
+// as used for BR-type relaxation oscillators). Dimensionless:
+//   x ~ [HIO2]  (autocatalyst)   y ~ [I-]   z ~ oxidised metal / radical pool
+//   eps x' = q*y - x*y + k2*x*(1 - x)
+//   eps2 y' = -q*y - x*y + k3*f*z
+//   z'      = k1*x - k3*z
+// f is the stoichiometric factor: the Hopf bifurcation lives near f ~ 1+sqrt(2).
+// Slow depletion of the reagent pool R shrinks k1 -> the show winds down.
+var EPS=0.045, EPS2=0.0011, Q=0.0009;
+var F=1.20;
+var st={x:0.06,y:0.30,z:0.10,R:1.0,t:0};
+var beats=0,lastCross=-1,period=0,periodAvg=0,alive=true;
+var trace=[];
+var s1=document.getElementById('s1'),s2=document.getElementById('s2'),s3=document.getElementById('s3'),
+    sS=document.getElementById('sS'),sT=document.getElementById('sT'),read=document.getElementById('read');
+
+function arrh(T){return Math.exp(Math.log(2)/10*(T-25));}
+function params(){
+  var a=arrh(+sT.value);
+  return {k1:+s1.value*a*st.R, k2:+s2.value*a, k3:+s3.value*a, f:F};
+}
+// Hopf boundary for this reduced family (analytic-ish marker used for the map):
+// oscillation window approximately  0.5 < f_eff < 1+sqrt(2) ~ 2.414 with f_eff = k1/k3.
+function fEff(p){return p.k1/Math.max(1e-6,p.k3);}
+var FHOPF=1+Math.SQRT2, FLOW=0.5;
+
+function deriv(s,p){
+  var x=s.x,y=s.y,z=s.z;
+  var dx=(p.q*y - x*y + p.k2*x*(1-x))/EPS;
+  var dy=(-p.q*y - x*y + p.k3*p.fe*z)/EPS2;
+  var dz=p.k1*x - p.k3*z;
+  return [dx,dy,dz];
+}
+function step(dt){
+  var p0=params();
+  var p={q:Q,k1:p0.k1,k2:p0.k2,k3:p0.k3,fe:1.0};
+  // fe encodes the effective stoichiometric factor -> drives the Hopf crossing
+  p.fe=Math.min(3.4,Math.max(0.05,fEff(p0)));
+  var n=200,h=dt/n;
+  for(var i=0;i<n;i++){
+    var d=deriv(st,p);
+    var xm={x:st.x+0.5*h*d[0],y:st.y+0.5*h*d[1],z:st.z+0.5*h*d[2]};
+    if(xm.x<1e-9)xm.x=1e-9; if(xm.y<1e-12)xm.y=1e-12; if(xm.z<0)xm.z=0;
+    var d2=deriv(xm,p);
+    st.x+=h*d2[0]; st.y+=h*d2[1]; st.z+=h*d2[2];
+    if(st.x<1e-9)st.x=1e-9; if(st.x>2)st.x=2;
+    if(st.y<1e-12)st.y=1e-12; if(st.y>4)st.y=4;
+    if(st.z<0)st.z=0; if(st.z>4)st.z=4;
+    st.t+=h;
+  }
+  // slow reagent exhaustion — honest entropy: the show mortally winds down
+  st.R-=dt*0.0026*(0.6+st.z*0.5);
+  if(st.R<0.02){st.R=0.02;alive=false;} else alive=true;
+  // beat detection on log10 y crossing
+  var ly=Math.log(st.y)/Math.LN10;
+  trace.push([st.t,ly,Math.log(Math.max(1e-10,st.x))/Math.LN10,st.z]);
+  if(trace.length>1800)trace.shift();
+  if(trace.length>2){
+    var prev=trace[trace.length-2][1];
+    var thr=-2.0;
+    if(prev<thr&&ly>=thr){
+      if(lastCross>0){period=st.t-lastCross;periodAvg=periodAvg?periodAvg*0.7+period*0.3:period;beats++;}
+      lastCross=st.t;
+    }
+  }
+}
+function reset(){st={x:0.06,y:0.30,z:0.10,R:1.0,t:0};beats=0;lastCross=-1;period=0;periodAvg=0;trace=[];}
+document.getElementById('bReset').onclick=reset;
+document.getElementById('bHopf').onclick=function(){
+  // set k1 so fEff sits just past the Hopf point -> oscillation dies to steady amber
+  s3.value=(+s1.value/(FHOPF+0.10)).toFixed(3);
+};
+addEventListener('keydown',function(e){
+  if(e.key==='x'||e.key==='X')reset();
+  if(e.key==='h'||e.key==='H')document.getElementById('bHopf').onclick();
+});
+c.addEventListener('pointerdown',function(){ st.y*=3.2; st.x*=0.5; }); // stir kick
+
+// ------------------- colour mapping -------------------
+// I- high & I2 low  -> clear ; intermediate -> amber ; I2 pulse -> blue-black
+function mixColour(){
+  var ly=Math.log(Math.max(1e-12,st.y))/Math.LN10;      // -6 .. 0
+  var blue=1/(1+Math.exp(-(ly+2.0)*3.2));               // starch-I2 flag
+  var amber=Math.min(1,Math.max(0,(st.z*1.5)))*(1-blue);
+  var r=255*(1-blue)*(0.72+0.28*amber), gg=245*(1-blue)*(0.80-0.28*amber)+10*blue, bb=250*(1-blue)*(0.9-0.75*amber)+55*blue;
+  var a=0.16+0.35*amber+0.72*blue;
+  return {css:'rgba('+(r|0)+','+(gg|0)+','+(bb|0)+','+a.toFixed(3)+')',blue:blue,amber:amber};
+}
+
+var last=performance.now(),perf=0;
+function frame(now){
+  var dt=Math.min(0.05,(now-last)/1000);last=now;perf=now;
+  var speed=0.6+(+sS.value)*1.2;
+  step(dt*speed);
+  g.fillStyle='#05070c';g.fillRect(0,0,W,H);
+  var rg=g.createRadialGradient(W*0.42,H*0.42,10,W*0.42,H*0.42,Math.max(W,H)*0.7);
+  rg.addColorStop(0,'rgba(60,40,10,.30)');rg.addColorStop(1,'rgba(0,0,0,0)');g.fillStyle=rg;g.fillRect(0,0,W,H);
+
+  var col=mixColour();
+  // ---- beaker ----
+  var bw=Math.min(300,W*0.24),bh=Math.min(360,H*0.46),cx=W*0.44,cy=H*0.40;
+  var x=cx-bw/2,y=cy-bh/2;
+  g.save();
+  if(col.blue>0.4){g.shadowColor='rgba(80,110,255,'+(col.blue*0.8)+')';g.shadowBlur=70*col.blue;}
+  g.strokeStyle='rgba(255,200,140,.5)';g.lineWidth=2;
+  g.beginPath();g.moveTo(x,y);g.lineTo(x,y+bh);g.lineTo(x+bw,y+bh);g.lineTo(x+bw,y);g.stroke();
+  g.shadowBlur=0;
+  var lh=bh*0.80,ly=y+bh-lh;
+  g.fillStyle=col.css;g.fillRect(x+2,ly,bw-4,lh);
+  if(col.blue>0.01){g.save();g.globalCompositeOperation='multiply';
+    g.fillStyle='rgba(8,12,50,'+(col.blue*0.94)+')';g.fillRect(x+2,ly,bw-4,lh);g.restore();}
+  // stirring vortex
+  var stir=+sS.value;
+  g.globalAlpha=0.20+0.25*stir;g.strokeStyle=col.blue>0.4?'#8ab':'#fd9';
+  for(var i=0;i<5;i++){
+    var yy=ly+lh*(0.14+0.18*i);
+    g.beginPath();g.moveTo(x+6,yy);
+    for(var xx=x+6;xx<x+bw-6;xx+=7)g.lineTo(xx,yy+Math.sin(xx*0.045+perf*0.004*(1+stir*2)+i)*(3+4*stir));
+    g.stroke();
+  }
+  g.globalAlpha=1;g.restore();
+  g.font='11px ui-monospace,monospace';g.textAlign='center';g.fillStyle='#b09a78';
+  g.fillText('beaker colour locked to the trace below',cx,y+bh+18);
+
+  // ---- strip chart ----
+  var px=W*0.30,py=H*0.72,pw=Math.min(W*0.64,900),ph=Math.min(H*0.20,190);
+  g.save();g.strokeStyle='rgba(140,110,60,.5)';g.lineWidth=1;g.strokeRect(px,py,pw,ph);
+  g.textAlign='left';g.fillStyle='#8a7a62';g.font='10px ui-monospace,monospace';
+  g.fillText('log₁₀[I⁻] (amber)  ·  log₁₀[HIO₂] autocatalyst (blue)  ·  reduced 3-var model, ε x′=qy−xy+k₂x(1−x)',px,py-8);
+  if(trace.length>2){
+    var t0=trace[0][0],t1=trace[trace.length-1][0],span=Math.max(0.4,t1-t0);
+    function X(t){return px+pw*((t-t0)/span);}
+    function Y(v,lo,hi){return py+ph-ph*((v-lo)/(hi-lo));}
+    g.beginPath();g.strokeStyle='#ffb84f';g.lineWidth=1.6;
+    for(var i2=0;i2<trace.length;i2++){var p=trace[i2];var Xa=X(p[0]),Ya=Y(Math.max(-6,Math.min(0.5,p[1])),-6,0.5);i2?g.lineTo(Xa,Ya):g.moveTo(Xa,Ya);}
+    g.shadowColor='#ffb84f';g.shadowBlur=8;g.stroke();g.shadowBlur=0;
+    g.beginPath();g.strokeStyle='#7ecbff';g.lineWidth=1.4;
+    for(var i3=0;i3<trace.length;i3++){var q2=trace[i3];var Xb=X(q2[0]),Yb=Y(Math.max(-6,Math.min(0.5,q2[2])),-6,0.5);i3?g.lineTo(Xb,Yb):g.moveTo(Xb,Yb);}
+    g.shadowColor='#7ecbff';g.shadowBlur=8;g.stroke();g.shadowBlur=0;
+    // playhead
+    g.strokeStyle='rgba(255,255,255,.25)';g.beginPath();g.moveTo(px+pw,py);g.lineTo(px+pw,py+ph);g.stroke();
+  }
+  g.restore();
+
+  // ---- parameter map (Hopf boundary) ----
+  var mx=W-190,my=H-170,ms=150;
+  g.save();
+  g.fillStyle='rgba(10,8,4,.7)';g.fillRect(mx-8,my-22,ms+16,ms+40);
+  g.strokeStyle='rgba(140,110,60,.6)';g.strokeRect(mx,my,ms,ms);
+  g.fillStyle='#8a7a62';g.font='10px ui-monospace,monospace';g.textAlign='left';
+  g.fillText('parameter map  f_eff = k₁/k₃',mx-4,my-8);
+  // oscillatory band shading
+  var fmin=0,fmax=4;
+  function fx(f){return mx+ms*((f-fmin)/(fmax-fmin));}
+  g.fillStyle='rgba(255,184,79,.16)';g.fillRect(fx(FLOW),my,fx(FHOPF)-fx(FLOW),ms);
+  g.strokeStyle='#ff6ad0';g.setLineDash([4,3]);
+  g.beginPath();g.moveTo(fx(FHOPF),my);g.lineTo(fx(FHOPF),my+ms);g.stroke();
+  g.beginPath();g.moveTo(fx(FLOW),my);g.lineTo(fx(FLOW),my+ms);g.stroke();g.setLineDash([]);
+  g.fillStyle='#ff9ad0';g.fillText('HOPF 1+√2',fx(FHOPF)-4,my+ms+14);
+  var p0=params(),fe=fEff(p0);
+  var inBand=fe>FLOW&&fe<FHOPF;
+  g.fillStyle=inBand?'#8fd9a0':'#f66';
+  g.beginPath();g.arc(Math.max(mx,Math.min(mx+ms,fx(fe))),my+ms*0.5,5,0,6.283);g.fill();
+  g.fillStyle='#d8c3a0';g.fillText('f_eff='+fe.toFixed(2)+(inBand?' OSC':' STEADY'),mx,my+ms+28);
+  g.restore();
+
+  read.innerHTML=
+    'beats: <b>'+beats+'</b> &nbsp; period: <b>'+(periodAvg?periodAvg.toFixed(2):'—')+'</b> s<br>'+
+    'log₁₀[I⁻]=<b>'+(Math.log(st.y)/Math.LN10).toFixed(2)+'</b> &nbsp; [HIO₂]=<b>'+st.x.toExponential(2)+'</b><br>'+
+    'reagent pool R=<b>'+(st.R*100).toFixed(1)+'%</b> '+(st.R<0.15?'<span style="color:#f88">EXHAUSTED — RESET</span>':'')+'<br>'+
+    'f_eff=k₁/k₃=<b>'+fe.toFixed(3)+'</b> vs Hopf <b>'+FHOPF.toFixed(3)+'</b> → '+(inBand?'<b>oscillating</b>':'<b style="color:#f88">steady amber</b>')+'<br>'+
+    'Arrhenius ×<b>'+arrh(+sT.value).toFixed(2)+'</b><br>'+
+    '<span style="color:#b09a78">real demos manage 5–15 min of beats before exhaustion — this one obeys the same decay.</span>';
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>

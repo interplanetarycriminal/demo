@@ -1,0 +1,230 @@
+<title>Acoustic Levitation</title>
+<style>
+html,body{margin:0;padding:0;background:#04060b;overflow:hidden;height:100%}
+canvas{display:block;position:fixed;inset:0}
+#ui{position:fixed;top:0;left:0;padding:10px 12px;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;
+ color:#cfe6ff;background:rgba(4,8,16,.62);border-right:1px solid #143048;border-bottom:1px solid #143048;
+ max-width:352px;backdrop-filter:blur(6px);z-index:5}
+#ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.17em;color:#a6f0ff;text-shadow:0 0 12px #0ff8}
+#ui .m{color:#93b6cc}#ui .s{color:#ffc07a}#ui .l{color:#6f8fa6;font-style:italic}
+#ui a{color:#a6f0ff}#ui b{color:#fff}
+.row{display:flex;align-items:center;gap:6px;margin:3px 0}
+input[type=range]{width:126px;accent-color:#00e5ff;height:14px}
+button{background:#0a1b2b;color:#a6f0ff;border:1px solid #1d4f6e;padding:3px 7px;font:11px ui-monospace,monospace;cursor:pointer;border-radius:3px}
+button:hover{background:#123a55;box-shadow:0 0 10px #0ff5}
+#rd{margin-top:5px;color:#9ff0c0}
+hr{border:0;border-top:1px solid #14344d;margin:6px 0}
+.bar{height:7px;background:#0b1c2a;border:1px solid #1d4f6e;border-radius:3px;overflow:hidden;width:130px}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,#0af,#7dffb0)}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>ACOUSTIC LEVITATION</h1>
+<div class="m">A standing ultrasound wave has pressure <b>nodes</b> every λ/2 where radiation force traps light beads — they float on sound.</div>
+<div class="s">A. Kundt, 1866 (dust figures) · 20th-c. levitators · modern phased arrays</div>
+<div class="l">Kundt's tube 1866 → Chladni plates → arrays levitating droplets &amp; insects</div>
+<hr>
+<div class="row">freq <input id="fq" type="range" min="20" max="80" step="0.5" value="40"><span id="fqv">40.0 kHz</span></div>
+<div class="row">gap <input id="gp" type="range" min="10" max="60" step="0.05" value="30"><span id="gpv">30.00 mm</span></div>
+<div class="row">amp <input id="am" type="range" min="20" max="100" step="1" value="80"><span id="amv">0.80</span></div>
+<div class="row"><button id="bTune">SNAP TO RESONANCE</button><button id="bDrop">DROP BEADS</button></div>
+<div class="row"><button id="bCoin">DROP A COIN</button><button id="bPh">PHASED [P]</button></div>
+<div class="m">drag a bead off its node → restoring force snaps it back</div>
+<div id="rd"></div>
+</div>
+<script>
+(function(){
+var c=document.getElementById('c'),g=c.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,devicePixelRatio||1);W=innerWidth;H=innerHeight;
+ c.width=W*DPR|0;c.height=H*DPR|0;c.style.width=W+'px';c.style.height=H+'px';g.setTransform(DPR,0,0,DPR,0,0);}
+addEventListener('resize',resize);resize();
+
+var CS=343000; // mm/s
+var f=40000, gap=30, amp=0.80, phase=0, phased=false, t=0;
+function lam(){return CS/f;}                       // mm
+function nodeSpacing(){return lam()/2;}
+function modeN(){return gap/nodeSpacing();}
+function resonance(){var n=modeN();var d=Math.abs(n-Math.round(n));return Math.max(0,1-d*3.4);} // 0..1 Q-ish
+// transducer at y=0 (bottom), reflector at y=gap
+function pAmp(y){ // standing-wave pressure envelope, weakened off resonance
+  var k=2*Math.PI/lam();
+  var Q=resonance();
+  var stand=Math.cos(k*(y-phase)); // pressure antinode at transducer face
+  var trav=0.30*(1-Q);
+  return amp*(Q*stand + trav*Math.cos(k*(y-phase)-1.2));
+}
+function pressure(y,tt){return pAmp(y)*Math.cos(2*Math.PI*f*tt*1e-5);}
+// time-averaged Gor'kov-like potential ∝ <p²> ; wells at pressure nodes
+function U(y){var a=pAmp(y);return a*a;}           // arbitrary units, minima at nodes
+var Ugain=1.0, gravity=1.0;
+function force(y){var h=0.02;return -(U(y+h)-U(y-h))/(2*h)*Ugain - gravity*0.030;}
+
+var beads=[],coin=null;
+function Bead(y,x){return{y:y,vy:0,x:x,r:0.55,held:false};}
+function dropBeads(){beads=[];var n=Math.max(2,Math.round(modeN())+3);
+ for(var i=0;i<n;i++)beads.push(Bead(gap*0.95-i*(gap/(n+1))*0.9+ (Math.random()-.5)*0.6,(Math.random()-.5)*7));
+ coin=null;}
+function dropCoin(){coin={y:gap*0.92,vy:0,x:0,r:2.6};}
+
+function stepPhys(dt){
+  for(var i=0;i<beads.length;i++){var b=beads[i];if(b.held)continue;
+    var F=force(b.y);
+    b.vy+=F*dt*160; b.vy*=Math.pow(0.06,dt); b.y+=b.vy*dt;
+    if(b.y<0.4){b.y=0.4;b.vy=Math.abs(b.vy)*0.25;}
+    if(b.y>gap-0.4){b.y=gap-0.4;b.vy=-Math.abs(b.vy)*0.25;}
+  }
+  if(coin){var Fm=(-(U(coin.y+0.02)-U(coin.y-0.02))/0.04)*Ugain/18 - gravity*0.030; // 18x heavier
+    coin.vy+=Fm*dt*160;coin.vy*=Math.pow(0.5,dt);coin.y+=coin.vy*dt;
+    if(coin.y<0.9){coin.y=0.9;coin.vy=0;}}
+  if(phased){phase+=dt*nodeSpacing()*0.22;}
+}
+
+// ---- UI ----
+var fq=document.getElementById('fq'),fqv=document.getElementById('fqv');
+fq.oninput=function(){f=(+fq.value)*1000;fqv.textContent=(+fq.value).toFixed(1)+' kHz';};
+var gp=document.getElementById('gp'),gpv=document.getElementById('gpv');
+gp.oninput=function(){gap=+gp.value;gpv.textContent=gap.toFixed(2)+' mm';};
+var am=document.getElementById('am'),amv=document.getElementById('amv');
+am.oninput=function(){amp=(+am.value)/100;amv.textContent=amp.toFixed(2);};
+document.getElementById('bTune').onclick=function(){var n=Math.max(1,Math.round(modeN()));gap=n*nodeSpacing();
+ gap=Math.max(10,Math.min(60,gap));gp.value=gap;gpv.textContent=gap.toFixed(2)+' mm';};
+document.getElementById('bDrop').onclick=dropBeads;
+document.getElementById('bCoin').onclick=dropCoin;
+document.getElementById('bPh').onclick=function(){phased=!phased};
+addEventListener('keydown',function(e){if(e.key==='p'||e.key==='P')phased=!phased;});
+
+// mapping mm <-> screen
+var VX=0,VY0=0,VY1=0;
+function y2s(y){return VY1+(VY0-VY1)*(y/gap);}
+function s2y(sy){return (VY1-sy)/(VY1-VY0)*gap;}
+var held=null;
+c.addEventListener('pointerdown',function(e){
+  var best=null,bd=1e9;
+  for(var i=0;i<beads.length;i++){var b=beads[i];var d=Math.hypot(e.clientX-(VX+b.x*4),e.clientY-y2s(b.y));
+    if(d<bd){bd=d;best=b;}}
+  if(best&&bd<26){held=best;best.held=true;}
+});
+addEventListener('pointermove',function(e){if(held){held.y=Math.max(0.4,Math.min(gap-0.4,s2y(e.clientY)));held.vy=0;}});
+addEventListener('pointerup',function(){if(held){held.held=false;held=null;}});
+
+// ---- draw ----
+function drawField(){
+  var x0=VX-150,x1=VX+150;
+  var steps=170;
+  for(var i=0;i<steps;i++){
+    var y=i/(steps-1)*gap, sy=y2s(y), sy2=y2s((i+1)/(steps-1)*gap);
+    var p=pressure(y,t);
+    var v=Math.max(-1,Math.min(1,p));
+    var col = v>0 ? 'rgba('+(60+180*v|0)+',180,255,' : 'rgba(255,'+(120-60*v|0)+',110,';
+    g.fillStyle=col+(0.10+0.42*Math.abs(v))+')';
+    g.fillRect(x0,Math.min(sy,sy2)-1,x1-x0,Math.abs(sy-sy2)+2);
+  }
+  // pressure waveform curve
+  g.beginPath();
+  for(var i=0;i<=240;i++){var y=i/240*gap;var sy=y2s(y);g.lineTo(VX+pressure(y,t)*72,sy);}
+  g.shadowColor='#4fd9ff';g.shadowBlur=12;g.strokeStyle='#8fe9ff';g.lineWidth=1.8;g.stroke();g.shadowBlur=0;
+  // envelope
+  g.setLineDash([4,4]);g.strokeStyle='rgba(120,220,255,.4)';g.lineWidth=1;
+  g.beginPath();for(var i=0;i<=240;i++){var y=i/240*gap;g.lineTo(VX+pAmp(y)*72,y2s(y));}g.stroke();
+  g.beginPath();for(var i=0;i<=240;i++){var y=i/240*gap;g.lineTo(VX-pAmp(y)*72,y2s(y));}g.stroke();
+  g.setLineDash([]);
+  // node markers
+  var k=2*Math.PI/lam();
+  for(var m=0;m<40;m++){
+    var yn=phase+lam()/4+m*nodeSpacing();
+    if(yn<0.2||yn>gap-0.2)continue;
+    var sy=y2s(yn);
+    g.strokeStyle='rgba(125,255,176,.55)';g.setLineDash([2,5]);g.lineWidth=1;
+    g.beginPath();g.moveTo(x0,sy);g.lineTo(x1,sy);g.stroke();g.setLineDash([]);
+    g.fillStyle='rgba(125,255,176,.75)';g.font='9px monospace';g.fillText('node',x1+6,sy+3);
+  }
+}
+function drawWell(){
+  var wx=VX+210,ww=150;
+  g.fillStyle='rgba(6,14,24,.55)';g.fillRect(wx,VY0,ww,VY1-VY0);
+  g.strokeStyle='#143c56';g.strokeRect(wx+.5,VY0+.5,ww-1,VY1-VY0-1);
+  g.beginPath();
+  var mx=0;for(var i=0;i<=200;i++){mx=Math.max(mx,U(i/200*gap)+gravity*0.030*(i/200*gap));}
+  for(var i=0;i<=200;i++){var y=i/200*gap;var u=(U(y)+gravity*0.030*y)/(mx||1);g.lineTo(wx+8+u*(ww-24),y2s(y));}
+  g.shadowColor='#c8a6ff';g.shadowBlur=9;g.strokeStyle='#c8a6ff';g.lineWidth=1.6;g.stroke();g.shadowBlur=0;
+  g.fillStyle='#c8a6ff';g.font='10px monospace';g.fillText('U(y) = ⟨p²⟩ + mgy',wx+6,VY0+13);
+  g.fillStyle='#8fb6cc';g.fillText('wells ← trapped',wx+6,VY1-6);
+  for(var i=0;i<beads.length;i++){var b=beads[i];var u=(U(b.y)+gravity*0.030*b.y)/(mx||1);
+    g.fillStyle='#ffe9a8';g.beginPath();g.arc(wx+8+u*(ww-24),y2s(b.y),2.6,0,7);g.fill();}
+}
+function drawHardware(){
+  // transducer
+  var sy=y2s(0);
+  g.fillStyle='#0e2436';g.fillRect(VX-92,sy,184,26);
+  g.strokeStyle='#2b7fa8';g.lineWidth=2;g.strokeRect(VX-92,sy,184,26);
+  g.shadowColor='#00d5ff';g.shadowBlur=18;g.strokeStyle='#6fe6ff';
+  g.beginPath();g.moveTo(VX-88,sy+2);g.lineTo(VX+88,sy+2);g.stroke();g.shadowBlur=0;
+  g.fillStyle='#7fb6cc';g.font='10px monospace';g.textAlign='center';g.fillText('TRANSDUCER '+(f/1000).toFixed(1)+' kHz',VX,sy+18);
+  // reflector
+  var ry=y2s(gap);
+  g.fillStyle='#22262c';g.fillRect(VX-92,ry-20,184,20);
+  g.strokeStyle='#7d8894';g.lineWidth=2;g.strokeRect(VX-92,ry-20,184,20);
+  g.fillStyle='#9aa7b4';g.fillText('REFLECTOR',VX,ry-6);g.textAlign='left';
+}
+function drawBeads(){
+  for(var i=0;i<beads.length;i++){var b=beads[i];var sx=VX+b.x*4,sy=y2s(b.y);
+    g.shadowColor='#fff3c4';g.shadowBlur=14;
+    var grd=g.createRadialGradient(sx-2,sy-2,0.5,sx,sy,7);
+    grd.addColorStop(0,'#ffffff');grd.addColorStop(1,'#ffcf6b');
+    g.fillStyle=grd;g.beginPath();g.arc(sx,sy,6,0,7);g.fill();g.shadowBlur=0;
+    if(b.held){g.strokeStyle='#ff8a3d';g.lineWidth=1.5;g.beginPath();g.arc(sx,sy,10,0,7);g.stroke();
+      var F=force(b.y);g.beginPath();g.moveTo(sx,sy);g.lineTo(sx,sy+ (F>0?-1:1)*Math.min(46,Math.abs(F)*900));
+      g.strokeStyle='#7dffb0';g.lineWidth=2;g.stroke();}
+  }
+  if(coin){var sx=VX+70,sy=y2s(coin.y);
+    g.shadowColor='#ffd76b';g.shadowBlur=10;g.fillStyle='#caa14a';
+    g.beginPath();g.ellipse(sx,sy,13,4.5,0,0,7);g.fill();g.shadowBlur=0;
+    g.strokeStyle='#f0d894';g.lineWidth=1;g.stroke();
+    g.fillStyle='#ffb46b';g.font='10px monospace';g.fillText('coin: too heavy',sx+18,sy+3);}
+}
+function meter(x,y,w,v,col,label){
+  g.fillStyle='#0b1c2a';g.fillRect(x,y,w,8);g.strokeStyle='#1d4f6e';g.strokeRect(x+.5,y+.5,w-1,7);
+  g.fillStyle=col;g.fillRect(x+1,y+1,Math.max(0,Math.min(1,v))*(w-2),6);
+  g.fillStyle='#8fb6cc';g.font='10px monospace';g.fillText(label,x,y-4);
+}
+
+var last=performance.now();
+function frame(now){
+  var dt=Math.min(0.05,(now-last)/1000);last=now;t+=dt;
+  stepPhys(dt);
+  g.fillStyle='#04060b';g.fillRect(0,0,W,H);
+  VX=W*0.44;VY0=H*0.10;VY1=H*0.88;
+  drawField();drawHardware();drawBeads();drawWell();
+
+  // meters
+  var mx=VX+210, my=H*0.90;
+  meter(mx,my,150,resonance(),'#7dffb0','RESONANCE  n='+modeN().toFixed(2));
+  var wt=gravity*0.030, fmax=0;
+  for(var i=0;i<=100;i++){fmax=Math.max(fmax,Math.abs(-(U(i/100*gap+0.02)-U(i/100*gap-0.02))/0.04*Ugain));}
+  meter(mx,my+26,150,Math.min(1,fmax/(wt*3)),'#4fd9ff','FORCE / WEIGHT (bead)');
+  meter(mx,my+52,150,Math.min(1,fmax/18/(wt*3)),'#ff6b8a','FORCE / WEIGHT (coin)');
+
+  var eq=null,off=null;
+  var yn=phase+lam()/4;
+  while(yn<gap*0.5)yn+=nodeSpacing();
+  if(yn<gap){ // find equilibrium near that node
+    var lo=yn-nodeSpacing()*0.45, hi=yn+nodeSpacing()*0.45;
+    for(var i=0;i<50;i++){var mid=(lo+hi)/2; if(force(mid)>0)lo=mid;else hi=mid;}
+    eq=(lo+hi)/2; off=eq-yn;
+  }
+  document.getElementById('rd').innerHTML=
+   'λ = <b>'+lam().toFixed(3)+'</b> mm &nbsp; λ/2 = <b>'+nodeSpacing().toFixed(3)+'</b> mm'+
+   '<br>node spacing @40 kHz ≈ <b>4.288 mm</b>'+
+   '<br>mode n = gap/(λ/2) = <b>'+modeN().toFixed(3)+'</b> '+(resonance()>0.85?'<span style="color:#7dffb0">LOCKED</span>':'<span style="color:#ff8a3d">off-resonance</span>')+
+   '<br>beads: <b>'+beads.length+'</b>'+(phased?' &nbsp;<span style="color:#c8a6ff">PHASED ELEVATOR ON</span>':'')+
+   '<br>gravity offset: bead sits <b>'+(off===null?'—':(off*1000).toFixed(1)+' µm')+'</b> below node'+
+   '<br><span style="color:#8fb6cc">beads rest slightly BELOW nodes — gravity shifts the trap.</span>'+
+   '<br><a href="index.html">← gallery</a>';
+  requestAnimationFrame(frame);
+}
+dropBeads();
+requestAnimationFrame(frame);
+})();
+</script>

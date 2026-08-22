@@ -1,0 +1,391 @@
+<title>Meissner Lock</title>
+<style>
+html,body{margin:0;padding:0;background:#03060c;overflow:hidden;height:100%}
+canvas{display:block}
+#ui{position:fixed;top:0;left:0;padding:10px 12px;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;
+ color:#c6e8ff;background:rgba(3,7,15,.64);border-right:1px solid #17364f;border-bottom:1px solid #17364f;
+ max-width:345px;text-shadow:0 0 8px rgba(90,190,255,.4);z-index:10;backdrop-filter:blur(3px)}
+#ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.14em;color:#9fd7ff;text-transform:uppercase}
+#ui .m{color:#90b4cc;margin:0 0 5px}
+#ui .sci{color:#ffcf7a;margin:0 0 2px}
+#ui .lin{color:#7d92a8;margin:0 0 7px;font-size:10px}
+#ui .row{display:flex;align-items:center;gap:6px;margin:3px 0}
+#ui .row label{width:70px;color:#9fd8ee}
+#ui input[type=range]{flex:1;height:3px;-webkit-appearance:none;appearance:none;background:#1b4257;outline:none;border-radius:2px}
+#ui input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:#7fd4ff;box-shadow:0 0 9px #3aa8ff;cursor:pointer}
+#ui .v{width:60px;text-align:right;color:#ffe7a8}
+#ui .out{margin-top:7px;border-top:1px solid #163a52;padding-top:6px;color:#9ae7c0;white-space:pre}
+#ui .warn{color:#ff9a7a;margin-top:3px}
+#ui .cap{color:#8fa8bd;margin-top:5px;font-size:10px;border-top:1px solid #163a52;padding-top:5px}
+#ui a{color:#68d0ff;text-decoration:none;display:inline-block;margin-top:7px}
+#ui button{background:#0d2637;color:#9fe7ff;border:1px solid #1d5674;font:10px ui-monospace,monospace;padding:3px 7px;cursor:pointer;border-radius:3px;margin:2px 3px 0 0}
+#ui button:hover{background:#14405c}
+#ui button.on{background:#0f3f38;border-color:#2f9c86;color:#a8ffe0}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>Meissner Levitation</h1>
+<p class="m">Below T_c a superconductor <b>expels</b> B (perfect diamagnet) and <b>pins</b> the flux it traps — so the magnet doesn't merely balance, it LOCKS in space, even hanging below.</p>
+<p class="sci">Walther Meissner &amp; Robert Ochsenfeld, 1933</p>
+<p class="lin">LINEAGE: Onnes 1911 zero resistance → Meissner–Ochsenfeld 1933 expulsion → YBCO/LN₂ classroom kits</p>
+<div class="row"><label>temperature</label><input id="sT" type="range" min="65" max="130" value="77"><span class="v" id="vT"></span></div>
+<div class="row"><label>pinning k</label><input id="sK" type="range" min="0" max="100" value="55"><span class="v" id="vK"></span></div>
+<div class="row"><label>magnet m</label><input id="sM" type="range" min="30" max="180" value="100"><span class="v" id="vM"></span></div>
+<div><button id="bFlip">flip puck (suspend below)</button></div>
+<div><button id="bBoil" class="on">LN₂ boil-off: ON</button><button id="bFill">refill LN₂</button><button id="bReset">reset</button></div>
+<div style="color:#7d92a8;margin-top:4px">drag the magnet — it springs back · cross T_c = 92 K</div>
+<div class="out" id="out"></div>
+<div class="warn" id="warn"></div>
+<div class="cap">Perfect conductor would merely FREEZE whatever flux was there when it cooled. A superconductor <i>throws the field out</i> even after cooling — the 1933 surprise, and proof it is a new thermodynamic state.</div>
+<a href="index.html">← gallery</a>
+</div>
+<script>
+(function(){
+"use strict";
+var c=document.getElementById('c'),g=c.getContext('2d');
+var W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
+ c.width=Math.floor(W*DPR);c.height=Math.floor(H*DPR);c.style.width=W+'px';c.style.height=H+'px';g.setTransform(DPR,0,0,DPR,0,0);}
+window.addEventListener('resize',resize);
+
+var TC=92.0;          // YBCO
+var S={T:77,k:0.55,m:1.0,flipped:false,boil:true,expel:0};
+// expel = order parameter 0..1 : fraction of field excluded (superconducting fraction)
+function scFrac(T){ if(T>=TC)return 0; var t=1-T/TC; return Math.max(0,Math.min(1,Math.pow(t,0.5)*1.35)); }
+
+// ---------- physics model ----------
+// image-dipole repulsion: F_img = C * m^2 * expel / gap^4  (2D-ish dipole-over-mirror)
+// pinning: restoring spring toward the pinned position, stiffness ∝ k * expel
+var C=2.2e-4;
+var mag={x:0,y:0.022,vx:0,vy:0,ang:0,va:0};   // metres, y measured from puck face (up positive)
+var pinned={x:0,y:0.022,set:false};
+var G=9.81, MASS=1.0;                          // arbitrary-mass model: forces expressed as accelerations
+
+function imageForce(gap){                      // upward accel from Meissner image, gap in m
+  var gp=Math.max(0.0015,gap);
+  return C*S.m*S.m*S.expel/Math.pow(gp,4);
+}
+// net vertical accel; sign flips with orientation (flipped: magnet is BELOW the puck, gravity still down)
+function netAccel(x,y){
+  var dir=S.flipped?-1:1;                      // in flipped mode the "gap" grows downward
+  var gap=Math.abs(y);
+  var Fimg=imageForce(gap)*dir*(y>=0?1:-1);    // repulsion always pushes away from face
+  var ax=0, ay=Fimg - G;
+  if(S.flipped){
+    // hanging below: repulsion pushes DOWN, pinning holds it UP. Net vertical:
+    ay=-imageForce(gap) - G + pinK()*(pinned.y-y);
+    ax=pinK()*(pinned.x-x);
+    return [ax,ay];
+  }
+  if(pinned.set){ ay+=pinK()*(pinned.y-y); ax+=pinK()*(pinned.x-x); }
+  else { ax+= -x*(2.0*S.expel); }              // weak lateral centring from field shape
+  return [ax,ay];
+}
+function pinK(){ return 900*S.k*S.expel; }     // 1/s^2 stiffness
+
+// equilibrium gap (unflipped, no pinning): C m^2 expel / d^4 = g
+function eqGap(){
+  if(S.expel<=0.001)return null;
+  return Math.pow(C*S.m*S.m*S.expel/G,0.25);
+}
+
+// ---------- view ----------
+var V={cx:0,puckY:0,scale:1};
+function setView(){V.scale=Math.min(W,H)/0.13;V.cx=W*0.60;V.puckY=H*(S.flipped?0.36:0.66);}
+function sx(x){return V.cx+x*V.scale;}
+function sy(y){return V.puckY-(S.flipped?-1:1)*y*V.scale;}
+function ux(px){return (px-V.cx)/V.scale;}
+function uy(py){return (V.puckY-py)/V.scale*(S.flipped?-1:1);}
+
+var PUCK={r:0.026,h:0.008};
+var MAGD={w:0.011,h:0.008};
+
+// ---------- field lines ----------
+// Lines from a vertical dipole at the magnet, deflected by the puck.
+// expel=0 : straight through. expel=1 : compressed around, plus a few pinned threads.
+function drawFieldLines(t){
+  var mx=sx(mag.x),my=sy(mag.y);
+  var puckTopY=V.puckY, R=PUCK.r*V.scale, HH=PUCK.h*V.scale;
+  var e=S.expel;
+  g.save();g.globalCompositeOperation='lighter';g.lineWidth=1.2;
+  var N=16;
+  for(var i=0;i<N;i++){
+    var a0=(i/N)*Math.PI*2;
+    var pts=[];
+    // parametric dipole-ish loop from magnet, radius grows
+    var Rl=(0.006+0.030*(i%8)/7)*V.scale;
+    for(var s=0;s<=64;s++){
+      var th=a0+ (s/64)*0;
+      var u=s/64;
+      var ang=Math.PI*2*u;
+      var px=mx+Math.cos(ang)*Rl*1.15;
+      var py=my+Math.sin(ang)*Rl*(0.75+0.5*Math.abs(Math.cos(a0)));
+      // deflection: push points out of puck region when superconducting
+      var dxp=px-V.cx, dyp=py-puckTopY;
+      var inPuckBand=(Math.abs(dxp)<R*1.25)&&(S.flipped? (dyp<HH*0.6&&dyp>-R*1.1) : (dyp>-HH*0.6&&dyp<R*1.1));
+      if(e>0.01&&inPuckBand){
+        var push=e*(1-Math.min(1,Math.abs(dxp)/(R*1.3)));
+        var sign=S.flipped?-1:1;
+        // squeeze along the face, never into the puck
+        var targetY=puckTopY - sign*HH*0.15;
+        py=py+(targetY-py)*push*0.95;
+        px=px+dxp*push*0.45;
+      }
+      pts.push([px,py]);
+    }
+    var alpha=0.10+0.20*(1-e*0.4);
+    g.strokeStyle='rgba(120,200,255,'+alpha.toFixed(3)+')';
+    g.beginPath();
+    for(var q=0;q<pts.length;q++){if(q===0)g.moveTo(pts[q][0],pts[q][1]);else g.lineTo(pts[q][0],pts[q][1]);}
+    g.stroke();
+  }
+  // PINNED FLUX THREADS — survive through the puck
+  if(e>0.05&&S.k>0.02){
+    var nT=Math.max(1,Math.round(6*S.k));
+    for(var j=0;j<nT;j++){
+      var fx=V.cx+((j/(nT-1||1))-0.5)*R*1.5;
+      var wob=Math.sin(t*1.6+j)*3;
+      g.strokeStyle='rgba(255,190,90,'+(0.30+0.45*e).toFixed(3)+')';
+      g.lineWidth=1.6;g.shadowBlur=8;g.shadowColor='rgba(255,170,60,.7)';
+      g.beginPath();
+      g.moveTo(mx+(fx-V.cx)*0.35,my);
+      g.bezierCurveTo(fx+wob,my+(puckTopY-my)*0.5,fx-wob,puckTopY-(S.flipped?-1:1)*HH*2,fx,puckTopY+(S.flipped?-1:1)*HH*1.4);
+      g.stroke();g.shadowBlur=0;
+      // vortex core dot inside puck
+      g.fillStyle='rgba(255,215,140,.9)';
+      g.beginPath();g.arc(fx,puckTopY+(S.flipped?-1:1)*HH*0.5,2,0,6.284);g.fill();
+    }
+  }
+  g.restore();
+}
+
+// ---------- drawing ----------
+function drawStage(t){
+  var R=PUCK.r*V.scale,HH=PUCK.h*V.scale;
+  // LN2 bath dish
+  var dishY=V.puckY+(S.flipped?-1:1)*HH*1.0;
+  g.save();
+  var sign=S.flipped?-1:1;
+  g.fillStyle='rgba(12,30,46,.9)';
+  g.beginPath();
+  g.moveTo(V.cx-R*2.1,dishY);g.lineTo(V.cx+R*2.1,dishY);
+  g.lineTo(V.cx+R*1.9,dishY+sign*HH*3.0);g.lineTo(V.cx-R*1.9,dishY+sign*HH*3.0);g.closePath();g.fill();
+  g.strokeStyle='rgba(120,190,230,.45)';g.stroke();
+  // LN2 liquid + vapour
+  if(S.T<100){
+    g.fillStyle='rgba(150,220,255,.22)';
+    g.fillRect(V.cx-R*2.0,dishY+sign*HH*0.4,R*4.0,sign*HH*2.2);
+    for(var i=0;i<24;i++){
+      var px=V.cx+(Math.sin(i*12.9+t*0.9)*R*1.9);
+      var ph=(t*0.55+i*0.37)%1;
+      g.fillStyle='rgba(200,240,255,'+(0.30*(1-ph)).toFixed(3)+')';
+      g.beginPath();g.arc(px,dishY-sign*ph*90,1.6+3*ph,0,6.284);g.fill();
+    }
+  }
+  g.restore();
+  // PUCK (YBCO)
+  g.save();
+  var ex=S.expel;
+  g.shadowBlur=10+30*ex;g.shadowColor='rgba(90,200,255,'+(0.2+0.6*ex)+')';
+  var grd=g.createLinearGradient(V.cx-R,V.puckY-HH,V.cx+R,V.puckY+HH);
+  grd.addColorStop(0,ex>0.02?'#1d3a4e':'#3a3226');
+  grd.addColorStop(.5,ex>0.02?'#0e2a3c':'#2a2419');
+  grd.addColorStop(1,ex>0.02?'#153347':'#332c20');
+  g.fillStyle=grd;
+  g.beginPath();
+  g.ellipse(V.cx,V.puckY,R,HH*0.55,0,0,6.284);g.fill();
+  g.fillRect(V.cx-R,V.puckY,R*2,sign*HH*1.6);
+  g.beginPath();g.ellipse(V.cx,V.puckY+sign*HH*1.6,R,HH*0.55,0,0,6.284);g.fill();
+  g.strokeStyle='rgba(140,220,255,'+(0.3+0.5*ex)+')';g.lineWidth=1.2;
+  g.beginPath();g.ellipse(V.cx,V.puckY,R,HH*0.55,0,0,6.284);g.stroke();
+  g.restore();
+  g.font='10px ui-monospace,monospace';g.textAlign='center';
+  g.fillStyle='rgba(150,210,240,.7)';
+  g.fillText('YBa₂Cu₃O₇ puck  ·  T_c = 92 K',V.cx,V.puckY+sign*HH*4.6+(S.flipped?-6:14));
+  g.textAlign='left';
+}
+function drawMagnet(){
+  var px=sx(mag.x),py=sy(mag.y),w=MAGD.w*V.scale,h=MAGD.h*V.scale;
+  g.save();g.translate(px,py);g.rotate(mag.ang);
+  g.shadowBlur=24;g.shadowColor='rgba(255,110,150,.6)';
+  var grd=g.createLinearGradient(0,-h/2,0,h/2);
+  grd.addColorStop(0,'#e8536f');grd.addColorStop(.5,'#8e2036');grd.addColorStop(1,'#2f5fdd');
+  g.fillStyle=grd;g.fillRect(-w/2,-h/2,w,h);
+  g.strokeStyle='rgba(240,250,255,.5)';g.lineWidth=1;g.strokeRect(-w/2,-h/2,w,h);
+  g.fillStyle='rgba(255,255,255,.9)';g.font='bold 9px ui-monospace,monospace';g.textAlign='center';
+  g.fillText('N',0,-h*0.14);g.fillText('S',0,h*0.42);g.textAlign='left';
+  g.restore();
+  // gap annotation
+  var gy=sy(0);
+  g.save();g.setLineDash([2,4]);g.strokeStyle='rgba(160,235,255,.5)';
+  g.beginPath();g.moveTo(px,py);g.lineTo(px,gy);g.stroke();g.setLineDash([]);
+  g.fillStyle='#9fe7ff';g.font='10px ui-monospace,monospace';
+  g.fillText((Math.abs(mag.y)*1000).toFixed(1)+' mm',px+7,(py+gy)/2);
+  g.restore();
+}
+function drawForceCurve(){
+  var x0=W*0.05,x1=Math.min(W*0.28,300),yTop=H*0.24,yBot=H*0.84;
+  g.save();
+  g.fillStyle='rgba(5,10,18,.55)';g.fillRect(x0-14,yTop-26,(x1-x0)+30,(yBot-yTop)+44);
+  g.strokeStyle='rgba(90,150,180,.4)';g.strokeRect(x0-14,yTop-26,(x1-x0)+30,(yBot-yTop)+44);
+  g.font='10px ui-monospace,monospace';g.fillStyle='#8fd8f0';
+  g.fillText('F_lift(gap)  vs  weight',x0-8,yTop-12);
+  var gmax=0.05,fmax=G*3;
+  // weight line
+  var wy=yBot-(G/fmax)*(yBot-yTop);
+  g.setLineDash([4,4]);g.strokeStyle='rgba(255,130,130,.75)';
+  g.beginPath();g.moveTo(x0,wy);g.lineTo(x1,wy);g.stroke();g.setLineDash([]);
+  g.fillStyle='#ff9a9a';g.fillText('mg',x1-16,wy-4);
+  // force curve
+  g.beginPath();
+  for(var i=0;i<=120;i++){
+    var d=0.0015+(gmax-0.0015)*i/120;
+    var F=Math.min(fmax,imageForce(d));
+    var px=x0+(d/gmax)*(x1-x0), py=yBot-(F/fmax)*(yBot-yTop);
+    if(i===0)g.moveTo(px,py);else g.lineTo(px,py);
+  }
+  g.shadowBlur=10;g.shadowColor='#4dc8ff';g.strokeStyle='#7fd4ff';g.lineWidth=2;g.stroke();g.shadowBlur=0;
+  var eg=eqGap();
+  if(eg!==null&&eg<gmax){
+    var epx=x0+(eg/gmax)*(x1-x0);
+    g.fillStyle='#ffd778';g.beginPath();g.arc(epx,wy,4,0,6.284);g.fill();
+    g.fillText('d* = '+(eg*1000).toFixed(1)+' mm',epx+6,wy+14);
+  }
+  // current gap marker
+  var cpx=x0+(Math.min(gmax,Math.abs(mag.y))/gmax)*(x1-x0);
+  g.strokeStyle='rgba(180,255,220,.8)';
+  g.beginPath();g.moveTo(cpx,yTop);g.lineTo(cpx,yBot);g.stroke();
+  g.fillStyle='#a8ffd8';g.fillText('now',cpx+4,yTop+10);
+  g.fillStyle='rgba(140,180,205,.6)';g.fillText('gap →',x1-26,yBot+14);
+  g.restore();
+}
+function drawThermo(){
+  var x=W-72,y0=H*0.22,y1=H*0.80;
+  g.save();
+  g.fillStyle='rgba(5,10,18,.6)';g.fillRect(x-22,y0-24,64,(y1-y0)+44);
+  g.strokeStyle='rgba(90,150,180,.4)';g.strokeRect(x-22,y0-24,64,(y1-y0)+44);
+  var f=(S.T-65)/(130-65), py=y1-(y1-y0)*f;
+  g.fillStyle='rgba(30,60,80,.8)';g.fillRect(x-6,y0,12,y1-y0);
+  var cold=S.T<TC;
+  var grd=g.createLinearGradient(0,y1,0,py);
+  grd.addColorStop(0,cold?'#4dd0ff':'#ff8a4d');grd.addColorStop(1,cold?'#a8f0ff':'#ffd08a');
+  g.fillStyle=grd;g.fillRect(x-6,py,12,y1-py);
+  var tcy=y1-(y1-y0)*((TC-65)/65);
+  g.strokeStyle='rgba(255,200,110,.9)';g.setLineDash([3,3]);
+  g.beginPath();g.moveTo(x-16,tcy);g.lineTo(x+16,tcy);g.stroke();g.setLineDash([]);
+  g.font='9px ui-monospace,monospace';g.fillStyle='#ffd06e';g.fillText('T_c 92K',x-20,tcy-5);
+  g.fillStyle=cold?'#9fe7ff':'#ff9a7a';g.font='11px ui-monospace,monospace';
+  g.fillText(S.T.toFixed(1)+' K',x-20,y0-8);
+  g.restore();
+}
+
+// ---------- interaction ----------
+var drag=false;
+function pos(e){var r=c.getBoundingClientRect();var t=e.touches?e.touches[0]:e;return[t.clientX-r.left,t.clientY-r.top];}
+c.addEventListener('mousedown',down);c.addEventListener('touchstart',function(e){down(e);e.preventDefault();},{passive:false});
+window.addEventListener('mousemove',move);window.addEventListener('touchmove',function(e){move(e);},{passive:false});
+window.addEventListener('mouseup',up);window.addEventListener('touchend',up);
+function down(e){var p=pos(e);if(Math.hypot(p[0]-sx(mag.x),p[1]-sy(mag.y))<55)drag=true;}
+function move(e){if(!drag)return;var p=pos(e);
+ mag.x=Math.max(-0.045,Math.min(0.045,ux(p[0])));
+ mag.y=Math.max(0.0016,Math.min(0.06,uy(p[1])));mag.vx=0;mag.vy=0;}
+function up(){drag=false;}
+
+// ---------- UI ----------
+var sT=document.getElementById('sT'),sK=document.getElementById('sK'),sM=document.getElementById('sM');
+var vT=document.getElementById('vT'),vK=document.getElementById('vK'),vM=document.getElementById('vM');
+var out=document.getElementById('out'),warn=document.getElementById('warn');
+var bBoil=document.getElementById('bBoil'),bFlip=document.getElementById('bFlip');
+function sync(){
+  S.T=+sT.value;S.k=sK.value/100;S.m=sM.value/100;
+  vT.textContent=S.T.toFixed(0)+' K';vK.textContent=(S.k).toFixed(2);vM.textContent=S.m.toFixed(2);
+}
+sT.oninput=function(){sync();};sK.oninput=sM.oninput=sync;
+bFlip.onclick=function(){
+  S.flipped=!S.flipped;setView();
+  pinned.x=0;pinned.y=eqGap()||0.02;pinned.set=true;
+  mag.x=pinned.x;mag.y=pinned.y;mag.vx=0;mag.vy=0;
+  bFlip.textContent=S.flipped?'flip puck (upright again)':'flip puck (suspend below)';
+  bFlip.className=S.flipped?'on':'';
+};
+bBoil.onclick=function(){S.boil=!S.boil;bBoil.textContent='LN₂ boil-off: '+(S.boil?'ON':'OFF');bBoil.className=S.boil?'on':'';};
+document.getElementById('bFill').onclick=function(){sT.value=77;sync();};
+document.getElementById('bReset').onclick=function(){
+  S.flipped=false;bFlip.textContent='flip puck (suspend below)';bFlip.className='';
+  sT.value=77;sK.value=55;sM.value=100;sync();setView();
+  mag.x=0;mag.y=0.022;mag.vx=0;mag.vy=0;pinned.set=false;
+};
+
+// ---------- loop ----------
+var last=performance.now(),tt=0,prevE=0;
+function frame(now){
+  var dt=Math.min(0.033,(now-last)/1000);last=now;tt+=dt;
+  setView();
+  // LN2 boil-off
+  if(S.boil&&S.T<130){S.T+=dt*1.35;sT.value=Math.round(S.T);vT.textContent=S.T.toFixed(0)+' K';}
+  // order parameter relaxes toward target (gives the visible EJECTION animation)
+  var target=scFrac(S.T);
+  S.expel+=(target-S.expel)*Math.min(1,dt*3.2);
+  // pin the flux at the moment of transition
+  if(prevE<0.05&&S.expel>=0.05){pinned.x=mag.x;pinned.y=Math.max(eqGap()||0.02,mag.y);pinned.set=true;}
+  if(S.expel<0.03){pinned.set=false;}
+  prevE=S.expel;
+
+  if(!drag){
+    var sub=5,h=dt/sub;
+    for(var i=0;i<sub;i++){
+      var a=netAccel(mag.x,mag.y);
+      mag.vx+=a[0]*h;mag.vy+=a[1]*h;
+      var damp=Math.pow(0.18,h);
+      mag.vx*=damp;mag.vy*=damp;
+      mag.x+=mag.vx*h;mag.y+=mag.vy*h;
+      if(!S.flipped){
+        if(mag.y<0.0016){mag.y=0.0016;if(mag.vy<0)mag.vy*=-0.2;}
+      }else{
+        if(mag.y>0.09){mag.y=0.09;mag.vy=0;}
+        if(mag.y<0.0016){mag.y=0.0016;mag.vy=0;}
+      }
+      if(mag.y>0.12)mag.y=0.12;
+    }
+    mag.va+=(-mag.ang*24-mag.va*7)*dt;mag.ang+=mag.va*dt;
+  }
+
+  g.fillStyle='#03060c';g.fillRect(0,0,W,H);
+  var vg=g.createRadialGradient(V.cx,V.puckY,10,V.cx,V.puckY,Math.max(W,H)*0.8);
+  vg.addColorStop(0,'rgba(20,60,95,'+(0.10+0.28*S.expel)+')');vg.addColorStop(1,'rgba(0,0,0,0)');
+  g.fillStyle=vg;g.fillRect(0,0,W,H);
+
+  drawFieldLines(tt);
+  drawStage(tt);
+  drawMagnet();
+  drawForceCurve();
+  drawThermo();
+
+  g.save();g.font='11px ui-monospace,monospace';g.textAlign='center';
+  g.fillStyle='rgba(150,200,225,.75)';
+  g.fillText('F_lift = C·m²·φ(T)/d⁴   ·   pinning spring k·φ(T)·(r_pin − r)   ·   φ(T)=0 above T_c',W/2,H-22);
+  g.fillStyle='rgba(255,190,120,.7)';
+  g.fillText(S.flipped?'SUSPENSION: repulsion now pushes DOWN — only trapped, pinned flux holds it up.':'Cross T_c and watch the lines eject and compress around the puck.',W/2,H-6);
+  g.restore();
+
+  var eg=eqGap();
+  out.textContent=
+   'T        : '+S.T.toFixed(1)+' K   ('+(S.T<TC?'SUPERCONDUCTING':'normal metal')+')\n'+
+   'φ(T)     : '+S.expel.toFixed(3)+'  (field expelled)\n'+
+   'pin k    : '+pinK().toFixed(0)+' s⁻²\n'+
+   'gap      : '+(Math.abs(mag.y)*1000).toFixed(2)+' mm\n'+
+   'd*(free) : '+(eg!==null?(eg*1000).toFixed(2)+' mm':'—')+'\n'+
+   'F_lift   : '+imageForce(Math.abs(mag.y)).toFixed(2)+' m/s²  vs g = 9.81\n'+
+   'mode     : '+(S.flipped?'INVERTED — hanging below':'upright levitation')+'\n'+
+   'pinned r : '+(pinned.set?('('+(pinned.x*1000).toFixed(1)+', '+(pinned.y*1000).toFixed(1)+') mm'):'not pinned');
+  if(S.T>=TC)warn.textContent='Above T_c — φ=0, field passes straight through, magnet falls. '+(S.flipped?'Nothing holds it.':'');
+  else if(S.flipped&&S.k<0.08)warn.textContent='Inverted with no pinning: pure Meissner repulsion cannot suspend. Raise pinning k.';
+  else if(S.T>TC-6)warn.textContent='Near T_c — φ collapsing, the lock is going soft.';
+  else warn.textContent='';
+  requestAnimationFrame(frame);
+}
+resize();sync();setView();requestAnimationFrame(frame);
+})();
+</script>

@@ -1,0 +1,262 @@
+<title>Iodine Clock</title>
+<style>
+html,body{margin:0;padding:0;background:#05070c;overflow:hidden;height:100%}
+canvas{display:block;position:fixed;inset:0}
+#ui{position:fixed;top:0;left:0;padding:12px 14px;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;
+  color:#bfe6ff;background:rgba(4,8,16,.62);backdrop-filter:blur(6px);border-right:1px solid #12324a;
+  border-bottom:1px solid #12324a;max-width:330px;z-index:10;text-shadow:0 0 8px #0af6}
+#ui h1{margin:0 0 4px;font-size:14px;letter-spacing:.16em;color:#7ef;text-transform:uppercase}
+#ui .m{color:#9fc8dd}
+#ui .s{color:#ffd98a}
+#ui .l{color:#7fa}
+#ui .k{color:#6f8fa5}
+#ui a{color:#7ef;text-decoration:none;border-bottom:1px dotted #7ef}
+.tag{display:inline-block;margin-top:6px;padding:1px 6px;border:1px solid #2a5a72;border-radius:8px;
+  color:#8ab;font-size:10px;letter-spacing:.08em}
+.row{display:flex;align-items:center;gap:6px;margin:3px 0}
+.row label{width:96px;color:#6f8fa5}
+input[type=range]{flex:1;height:14px;accent-color:#4fd;background:transparent}
+#read{margin-top:6px;color:#dff;font-size:11px}
+#read b{color:#fff}
+.big{font-size:13px;color:#ffe58a}
+button{background:#0b2233;color:#7ef;border:1px solid #2a5a72;border-radius:4px;
+  font:11px ui-monospace,monospace;padding:3px 9px;cursor:pointer;margin:3px 4px 0 0}
+button:hover{background:#14384f;box-shadow:0 0 10px #0af6}
+</style>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>Iodine Clock</h1>
+<div class="m">Iodine is made at a steady rate but instantly eaten by a reductant — the moment the reductant hits zero, free I₂ floods the starch and the beaker snaps blue-black.</div>
+<div class="s">Hans Heinrich Landolt, 1886</div>
+<div class="l">LINEAGE: Landolt 1886 → Harcourt–Esson kinetics teaching → kitchen vitamin-C clocks</div>
+<div class="row"><label>reductant</label><input id="sR" type="range" min="0.2" max="4" step="0.01" value="1.6"></div>
+<div class="row"><label>rate k</label><input id="sK" type="range" min="0.2" max="3" step="0.01" value="1"></div>
+<div class="row"><label>temp °C</label><input id="sT" type="range" min="0" max="60" step="0.5" value="25"></div>
+<div><button id="bPour">POUR</button><button id="bRace">RACE MODE</button><button id="bReset">RESET</button></div>
+<div class="k">keys: SPACE pour · R race · X reset · click beaker to pour</div>
+<div id="read"></div>
+<span class="tag">simulation — no recipe</span>
+<div style="margin-top:6px"><a href="index.html">← gallery</a></div>
+</div>
+<script>
+"use strict";
+var c=document.getElementById('c'),g=c.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
+ c.width=Math.floor(W*DPR);c.height=Math.floor(H*DPR);c.style.width=W+'px';c.style.height=H+'px';
+ g.setTransform(DPR,0,0,DPR,0,0);}
+window.addEventListener('resize',resize);resize();
+
+// ---- kinetics ----------------------------------------------------------
+// Landolt scheme, mass-action, reduced:
+//   (1) production:  A + B -> I2       rate  P = k * [A][B]   (A,B in vast excess -> ~constant => P ~ const)
+//   (2) scavenging:  I2 + S -> 2I- + ... rate  Q = kf * [I2][S]   (kf enormous => I2 pinned at ~0)
+//   (3) indicator:   I2 + starch -> blue complex  (visual only, threshold-free, saturating)
+// Predicted clock time: t* = [S]0 / (2 * P)   (each I2 consumes 2 equivalents of reductant here: nu=2)
+var NU=2.0;              // reductant equivalents per I2
+var KF=4000;             // scavenging rate constant (fast)
+var T_REF=25, EA_FACTOR=Math.log(2)/10; // Arrhenius tuned: rate doubles per 10 degC
+
+function arr(T){return Math.exp(EA_FACTOR*(T-T_REF));}
+
+function Beaker(x,y,r,S0,k,T,label){
+  this.x=x;this.y=y;this.r=r;this.S0=S0;this.k=k;this.T=T;this.label=label;
+  this.reset();
+}
+Beaker.prototype.reset=function(){
+  this.S=this.S0;this.I2=0;this.blue=0;this.t=0;this.running=false;this.snapT=-1;this.flash=0;
+  this.trace=[];this.pred=this.predict();
+};
+Beaker.prototype.P=function(){return this.k*arr(this.T)*0.05;}; // production rate (M/s, scaled)
+Beaker.prototype.predict=function(){return this.S0/(NU*this.P());};
+Beaker.prototype.step=function(dt){
+  if(!this.running)return;
+  var n=24,h=dt/n; // stiff -> substep
+  for(var i=0;i<n;i++){
+    var P=this.P();
+    var Q=KF*this.I2*Math.max(0,this.S);
+    var dI=P-Q, dS=-NU*Q;
+    this.I2+=dI*h; if(this.I2<0)this.I2=0;
+    this.S+=dS*h;  if(this.S<0)this.S=0;
+    this.t+=h;
+  }
+  // starch complex: saturating, fast on
+  var target=1-Math.exp(-this.I2*260);
+  this.blue+=(target-this.blue)*Math.min(1,dt*9);
+  if(this.snapT<0&&this.blue>0.5){this.snapT=this.t;this.flash=1;}
+  if(this.flash>0)this.flash-=dt*1.6;
+  if(this.trace.length===0||this.t-this.trace[this.trace.length-1][0]>0.03)
+    this.trace.push([this.t,this.I2,this.S]);
+  if(this.trace.length>4000)this.trace.shift();
+};
+
+var sR=document.getElementById('sR'),sK=document.getElementById('sK'),sT=document.getElementById('sT');
+var read=document.getElementById('read');
+var mode='single';
+var main=new Beaker(0,0,0,+sR.value,+sK.value,+sT.value,'MAIN');
+var race=[];
+function buildRace(){
+  var base=+sR.value;
+  race=[new Beaker(0,0,0,base*0.55,+sK.value,+sT.value,'A'),
+        new Beaker(0,0,0,base*1.00,+sK.value,+sT.value,'B'),
+        new Beaker(0,0,0,base*1.60,+sK.value,+sT.value,'C')];
+}
+buildRace();
+function syncIdle(){
+  if(mode==='single'){ if(!main.running){main.S0=+sR.value;main.k=+sK.value;main.T=+sT.value;main.reset();} }
+  else { var any=race.some(function(b){return b.running;}); if(!any)buildRace(); }
+}
+sR.oninput=sK.oninput=sT.oninput=syncIdle;
+
+function pour(){
+  if(mode==='single'){ if(main.running)main.reset(); main.running=true; }
+  else { race.forEach(function(b){b.reset();b.running=true;}); }
+}
+function reset(){ if(mode==='single'){main.reset();} else buildRace(); }
+document.getElementById('bPour').onclick=pour;
+document.getElementById('bReset').onclick=reset;
+document.getElementById('bRace').onclick=function(){mode=(mode==='single'?'race':'single');syncIdle();};
+window.addEventListener('keydown',function(e){
+  if(e.code==='Space'){e.preventDefault();pour();}
+  else if(e.key==='r'||e.key==='R'){mode=(mode==='single'?'race':'single');syncIdle();}
+  else if(e.key==='x'||e.key==='X')reset();
+});
+c.addEventListener('pointerdown',pour);
+
+// ---- drawing -----------------------------------------------------------
+function beakerColor(b){
+  // colourless -> pale amber -> blue-black
+  var v=b.blue;
+  var r=Math.round(200*(1-v)+8*v), gg=Math.round(215*(1-v)+14*v), bb=Math.round(230*(1-v)+42*v);
+  var a=0.14+0.80*v;
+  return 'rgba('+r+','+gg+','+bb+','+a+')';
+}
+function drawBeaker(b,cx,cy,rw,rh,showLabel){
+  var x=cx-rw/2,y=cy-rh/2;
+  g.save();
+  // glow halo when snapping
+  if(b.flash>0){
+    g.shadowColor='rgba(90,120,255,'+(b.flash*0.9)+')';g.shadowBlur=90*b.flash;
+  }
+  // glass
+  g.strokeStyle='rgba(120,220,255,.55)';g.lineWidth=2;
+  g.beginPath();g.moveTo(x,y);g.lineTo(x,y+rh);g.lineTo(x+rw,y+rh);g.lineTo(x+rw,y);g.stroke();
+  g.shadowBlur=0;
+  // liquid
+  var lh=rh*0.78, ly=y+rh-lh;
+  var grd=g.createLinearGradient(0,ly,0,ly+lh);
+  var col=beakerColor(b);
+  grd.addColorStop(0,col);grd.addColorStop(1,col);
+  g.fillStyle=grd;
+  g.fillRect(x+2,ly,rw-4,lh);
+  // dark bloom overlay
+  if(b.blue>0.01){
+    g.save();g.globalCompositeOperation='multiply';
+    g.fillStyle='rgba(10,16,60,'+(b.blue*0.92)+')';g.fillRect(x+2,ly,rw-4,lh);g.restore();
+    g.save();g.globalCompositeOperation='lighter';
+    g.fillStyle='rgba(60,90,255,'+(b.blue*0.10+b.flash*0.25)+')';g.fillRect(x+2,ly,rw-4,lh);g.restore();
+  }
+  // meniscus + shimmer
+  g.strokeStyle='rgba(180,240,255,.35)';g.lineWidth=1.5;
+  g.beginPath();g.moveTo(x+2,ly);g.lineTo(x+rw-2,ly);g.stroke();
+  // swirl lines
+  g.globalAlpha=0.18+0.2*(1-b.blue);
+  g.strokeStyle='#9fe';
+  for(var i=0;i<4;i++){
+    var yy=ly+lh*(0.2+0.2*i)+Math.sin(perf*0.0016+i*1.7)*4;
+    g.beginPath();g.moveTo(x+6,yy);
+    for(var xx=x+6;xx<x+rw-6;xx+=8)g.lineTo(xx,yy+Math.sin(xx*0.05+perf*0.003+i)*2.2);
+    g.stroke();
+  }
+  g.globalAlpha=1;
+  if(showLabel){
+    g.font='11px ui-monospace,monospace';g.fillStyle='#7fb8d0';g.textAlign='center';
+    var txt=b.label+'  [S]₀='+b.S0.toFixed(2)+'  pred '+b.pred.toFixed(2)+'s';
+    g.fillText(txt,cx,y+rh+18);
+    if(b.snapT>0){g.fillStyle='#ffe58a';g.fillText('SNAP '+b.snapT.toFixed(2)+'s',cx,y+rh+34);}
+    else if(b.running){g.fillStyle='#8fd';g.fillText('t='+b.t.toFixed(2)+'s',cx,y+rh+34);}
+  }
+  g.restore();
+}
+
+function drawTraces(b,x,y,w,h){
+  g.save();
+  g.strokeStyle='rgba(60,120,160,.5)';g.lineWidth=1;g.strokeRect(x,y,w,h);
+  g.font='10px ui-monospace,monospace';
+  g.fillStyle='#6f8fa5';g.textAlign='left';
+  g.fillText('UNDER THE HOOD · mass-action ODE  dI₂/dt = P − k_f[I₂][S] ,  dS/dt = −2k_f[I₂][S]',x,y-8);
+  var tmax=Math.max(b.pred*1.35,b.t*1.05,1);
+  var smax=Math.max(b.S0,0.001), imax=0.02;
+  for(var i=0;i<b.trace.length;i++)if(b.trace[i][1]>imax)imax=b.trace[i][1];
+  function px(t){return x+w*(t/tmax);}
+  // [S] ramp
+  g.beginPath();g.strokeStyle='#ffd98a';g.lineWidth=1.8;
+  for(var i2=0;i2<b.trace.length;i2++){
+    var p=b.trace[i2];var X=px(p[0]),Y=y+h-h*(p[2]/smax)*0.92;
+    if(i2===0)g.moveTo(X,Y);else g.lineTo(X,Y);
+  }
+  g.shadowColor='#ffd98a';g.shadowBlur=8;g.stroke();g.shadowBlur=0;
+  // [I2] hockey stick
+  g.beginPath();g.strokeStyle='#7ecbff';g.lineWidth=1.8;
+  for(var i3=0;i3<b.trace.length;i3++){
+    var p2=b.trace[i3];var X2=px(p2[0]),Y2=y+h-h*(p2[1]/imax)*0.92;
+    if(i3===0)g.moveTo(X2,Y2);else g.lineTo(X2,Y2);
+  }
+  g.shadowColor='#7ecbff';g.shadowBlur=10;g.stroke();g.shadowBlur=0;
+  // predicted time marker
+  var pxp=px(b.pred);
+  g.strokeStyle='rgba(255,120,200,.8)';g.setLineDash([4,4]);g.beginPath();
+  g.moveTo(pxp,y);g.lineTo(pxp,y+h);g.stroke();g.setLineDash([]);
+  g.fillStyle='#ff9ad0';g.fillText('predicted t*',pxp+4,y+12);
+  g.fillStyle='#ffd98a';g.fillText('[reductant] → 0',x+6,y+h-6);
+  g.fillStyle='#7ecbff';g.fillText('[I₂] pinned ≈0 then floods',x+6,y+14);
+  g.restore();
+}
+
+var perf=0,last=performance.now();
+function frame(now){
+  var dt=Math.min(0.05,(now-last)/1000);last=now;perf=now;
+  // background
+  g.fillStyle='#05070c';g.fillRect(0,0,W,H);
+  var grd=g.createRadialGradient(W*0.55,H*0.45,10,W*0.55,H*0.45,Math.max(W,H)*0.7);
+  grd.addColorStop(0,'rgba(20,50,80,.35)');grd.addColorStop(1,'rgba(0,0,0,0)');
+  g.fillStyle=grd;g.fillRect(0,0,W,H);
+
+  if(mode==='single'){
+    main.step(dt);
+    var rw=Math.min(280,W*0.26),rh=Math.min(340,H*0.44);
+    drawBeaker(main,W*0.56,H*0.40,rw,rh,true);
+    drawTraces(main,W*0.30,H*0.72,Math.min(W*0.62,860),Math.min(180,H*0.20));
+    // countdown suspense ring
+    if(main.running&&main.snapT<0){
+      var frac=Math.min(1,main.t/main.pred);
+      g.save();g.translate(W*0.56,H*0.40);
+      g.strokeStyle='rgba(120,220,255,.25)';g.lineWidth=3;
+      g.beginPath();g.arc(0,0,rw*0.86,0,Math.PI*2);g.stroke();
+      g.strokeStyle='rgba(255,215,120,.9)';g.shadowColor='#fd8';g.shadowBlur=14;
+      g.beginPath();g.arc(0,0,rw*0.86,-Math.PI/2,-Math.PI/2+Math.PI*2*frac);g.stroke();
+      g.restore();
+    }
+    var err=main.snapT>0?((main.snapT-main.pred)/main.pred*100).toFixed(2)+'%':'—';
+    read.innerHTML='<span class="big">predicted t* = '+main.pred.toFixed(2)+' s</span><br>'+
+      'state: <b>'+(main.running?(main.snapT>0?'SNAPPED':'clear · waiting'):'poured? no')+'</b><br>'+
+      't = <b>'+main.t.toFixed(2)+'</b> s &nbsp; [I₂]=<b>'+main.I2.toExponential(2)+'</b><br>'+
+      '[reductant]=<b>'+main.S.toFixed(3)+'</b> &nbsp; blue=<b>'+(main.blue*100).toFixed(0)+'%</b><br>'+
+      'Arrhenius ×<b>'+arr(main.T).toFixed(2)+'</b> @ '+main.T.toFixed(1)+'°C (×2 per +10°C)<br>'+
+      'error vs prediction: <b>'+err+'</b>';
+  } else {
+    var n=race.length, bw=Math.min(200,W*0.17), bh=Math.min(300,H*0.40);
+    for(var i=0;i<n;i++){
+      race[i].step(dt);
+      var cx=W*(0.34+0.16*i)+W*0.06, cy=H*0.40;
+      drawBeaker(race[i],cx,cy,bw,bh,true);
+    }
+    drawTraces(race[2],W*0.30,H*0.74,Math.min(W*0.62,860),Math.min(150,H*0.17));
+    var lines=race.map(function(b){return b.label+': pred '+b.pred.toFixed(2)+'s  '+(b.snapT>0?'SNAP '+b.snapT.toFixed(2)+'s':'…');});
+    read.innerHTML='<span class="big">RACE MODE — chemical metronome</span><br>'+lines.join('<br>')+
+      '<br>Arrhenius ×<b>'+arr(+sT.value).toFixed(2)+'</b>';
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>

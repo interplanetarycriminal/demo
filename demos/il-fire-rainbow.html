@@ -1,0 +1,333 @@
+<title>Fire Rainbow</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;background:#04060d;overflow:hidden}
+  canvas{display:block;position:fixed;inset:0}
+  #ui{position:fixed;top:0;left:0;z-index:10;margin:10px;padding:10px 12px;width:330px;
+      background:rgba(4,8,18,.72);border:1px solid rgba(120,200,255,.28);border-radius:8px;
+      font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#bfe6ff;
+      box-shadow:0 0 26px rgba(60,150,255,.18);backdrop-filter:blur(4px)}
+  #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.11em;color:#ffd9a0;text-shadow:0 0 12px #ff9a3c}
+  .m{color:#9fd0e8}.s{color:#8fb4c8;font-style:italic}.l{color:#6f93a8}
+  .row{display:flex;align-items:center;gap:6px;margin:3px 0}
+  .row label{width:78px;color:#89b6cc}
+  input[type=range]{flex:1;height:3px;accent-color:#ff8a3c;background:#1a2a3a}
+  #rd{margin-top:6px;padding-top:6px;border-top:1px solid rgba(120,200,255,.2);color:#d8f0ff;white-space:pre}
+  .on{color:#7dff9c}.off{color:#ff6a6a}
+  a{color:#7fd4ff;text-decoration:none}a:hover{text-decoration:underline}
+  b{color:#ffd9a0;font-weight:600}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>CIRCUMHORIZONTAL ARC</h1>
+  <div class="m">Hexagonal ice <b>plates</b> in cirrus take sun in a vertical side face and out the flat bottom &mdash; a 90&deg; prism that paints a spectral band under the sun.</div>
+  <div class="s">classical halo optics &mdash; Pernter &amp; Exner, 1910</div>
+  <div class="l">LINEAGE: 22&deg; halo / sundogs &rarr; circumhorizontal "fire rainbow" (no fire, no rain, no bow) &rarr; circumzenithal arc</div>
+  <div class="row"><label>sun elev</label><input id="sEl" type="range" min="0" max="88" step="0.25" value="66"></div>
+  <div class="row"><label>tilt jitter</label><input id="sJt" type="range" min="0.1" max="8" step="0.1" value="1.2"></div>
+  <div class="row"><label>crystals</label><input id="sNc" type="range" min="200" max="4000" step="50" value="1600"></div>
+  <div class="row"><label>cirrus</label><input id="sCi" type="range" min="0" max="1" step="0.01" value="0.55"></div>
+  <div class="l">drag sky up/down = elevation &middot; &uarr;&darr; keys nudge</div>
+  <div id="rd"></div>
+  <div style="margin-top:6px"><a href="index.html">&larr; gallery</a></div>
+</div>
+<script>
+"use strict";
+var c=document.getElementById('c'),g=c.getContext('2d');
+var W=0,H=0,DPR=1;
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  W=window.innerWidth;H=window.innerHeight;
+  c.width=Math.round(W*DPR);c.height=Math.round(H*DPR);
+  c.style.width=W+'px';c.style.height=H+'px';
+  g.setTransform(DPR,0,0,DPR,0,0);
+  buildCirrus();
+}
+window.addEventListener('resize',resize);
+
+var D2R=Math.PI/180,R2D=180/Math.PI;
+
+/* --- ice refractive index, Cauchy fit (n(550nm)=1.311, n(400)=1.322) --- */
+function nIce(lam){ return 1.2980 + 3900/(lam*lam); }
+var N_REF=1.31;
+/* turn-on elevation for the 90 deg prism: h_min = asin(sqrt(n^2-1)) */
+function turnOn(n){ return Math.asin(Math.sqrt(n*n-1))*R2D; }
+var H_MIN=turnOn(N_REF);           /* 57.75 deg */
+
+/* deviation through a 90-degree ice prism: in a side face, out the base.
+   returns null when the exit ray is totally internally reflected. */
+function deviation(hDeg,n){
+  var i1=hDeg*D2R;
+  var s=Math.sin(i1)/n;
+  if(s>=1) return null;
+  var r1=Math.asin(s);
+  var r2=Math.PI/2-r1;
+  var s2=n*Math.sin(r2);
+  if(s2>=1) return null;               /* TIR at the bottom window */
+  var i2=Math.asin(s2);
+  return (i1+i2-Math.PI/2)*R2D;
+}
+function arcAlt(hDeg,lam){
+  var d=deviation(hDeg,nIce(lam));
+  return d===null?null:hDeg-d;
+}
+/* visibility weight: nothing below h_min, ignites fast, richest 62-72 */
+function ignition(h){
+  if(h<=H_MIN) return 0;
+  var a=Math.min(1,(h-H_MIN)/4.2);
+  var b=1-Math.max(0,(h-74)/18);
+  return Math.max(0,a*Math.min(1,b));
+}
+
+function wl2rgb(l){
+  var r=0,gg=0,b=0;
+  if(l<440){r=-(l-440)/60;b=1;}
+  else if(l<490){gg=(l-440)/50;b=1;}
+  else if(l<510){gg=1;b=-(l-510)/20;}
+  else if(l<580){r=(l-510)/70;gg=1;}
+  else if(l<645){r=1;gg=-(l-645)/65;}
+  else {r=1;}
+  var f=1;
+  if(l<420)f=.3+.7*(l-380)/40; else if(l>700)f=.3+.7*(780-l)/80;
+  return [Math.round(255*Math.pow(Math.max(0,r)*f,.8)),
+          Math.round(255*Math.pow(Math.max(0,gg)*f,.8)),
+          Math.round(255*Math.pow(Math.max(0,b)*f,.8))];
+}
+
+var P={h:66,jit:1.2,nc:1600,ci:.55};
+function bind(id,k,f){var e=document.getElementById(id);e.addEventListener('input',function(){P[k]=parseFloat(e.value);if(f)f();});}
+bind('sEl','h');bind('sJt','jit');bind('sNc','nc');bind('sCi','ci');
+
+var drag=false,dy0=0,h0=0;
+c.addEventListener('pointerdown',function(e){drag=true;dy0=e.clientY;h0=P.h;});
+window.addEventListener('pointerup',function(){drag=false;});
+window.addEventListener('pointermove',function(e){
+  if(!drag)return;
+  P.h=Math.max(0,Math.min(88,h0+(dy0-e.clientY)*0.14));
+  document.getElementById('sEl').value=P.h;
+});
+window.addEventListener('keydown',function(e){
+  if(e.key==='ArrowUp'||e.key==='ArrowDown'){
+    P.h=Math.max(0,Math.min(88,P.h+(e.key==='ArrowUp'?.5:-.5)));
+    document.getElementById('sEl').value=P.h;e.preventDefault();
+  }
+});
+
+/* --- cirrus streaks --- */
+var cirrus=[];
+function buildCirrus(){
+  cirrus=[];
+  for(var i=0;i<46;i++){
+    cirrus.push({x:Math.random()*W,y:Math.random()*H*0.72,
+      w:80+Math.random()*420,h:3+Math.random()*13,
+      a:.05+Math.random()*.16,r:(Math.random()-.5)*.22,v:.05+Math.random()*.25});
+  }
+}
+
+var t0=performance.now();
+function frame(now){
+  var t=(now-t0)/1000;
+  var horizon=H*0.80, ppd=Math.max(4,(horizon-24)/92);
+  var cx=W*0.5;
+  var h=P.h, ign=ignition(h);
+
+  /* sky */
+  var sky=g.createLinearGradient(0,0,0,horizon);
+  var dusk=1-Math.min(1,h/60);
+  sky.addColorStop(0,'rgb('+Math.round(4+18*dusk)+','+Math.round(10+14*dusk)+','+Math.round(34+18*dusk)+')');
+  sky.addColorStop(.55,'rgb('+Math.round(14+70*dusk)+','+Math.round(38+40*dusk)+','+Math.round(78+10*dusk)+')');
+  sky.addColorStop(1,'rgb('+Math.round(40+120*dusk)+','+Math.round(62+40*dusk)+','+Math.round(96-30*dusk)+')');
+  g.fillStyle=sky;g.fillRect(0,0,W,horizon);
+  g.fillStyle='#05070d';g.fillRect(0,horizon,W,H-horizon);
+  g.strokeStyle='rgba(150,190,230,.28)';g.lineWidth=1;
+  g.beginPath();g.moveTo(0,horizon+.5);g.lineTo(W,horizon+.5);g.stroke();
+
+  /* cirrus */
+  g.save();g.globalCompositeOperation='lighter';
+  for(var i=0;i<cirrus.length;i++){
+    var s=cirrus[i];
+    s.x+=s.v; if(s.x-s.w>W)s.x=-s.w;
+    g.save();g.translate(s.x,s.y);g.rotate(s.r);
+    var lg=g.createLinearGradient(-s.w/2,0,s.w/2,0);
+    lg.addColorStop(0,'rgba(190,220,255,0)');
+    lg.addColorStop(.5,'rgba(210,235,255,'+(s.a*P.ci)+')');
+    lg.addColorStop(1,'rgba(190,220,255,0)');
+    g.fillStyle=lg;g.fillRect(-s.w/2,-s.h/2,s.w,s.h);
+    g.restore();
+  }
+  g.restore();
+
+  var sunY=horizon-h*ppd;
+
+  /* --- faint 22 deg halo + sundogs (cheap approximation, labeled) --- */
+  g.save();g.globalCompositeOperation='lighter';
+  g.lineWidth=3.2;
+  for(var k=0;k<9;k++){
+    var lam=430+k*34, rgb=wl2rgb(lam);
+    var rad=(21.4+ (lam-430)/34*1.1 )*ppd;
+    g.strokeStyle='rgba('+rgb[0]+','+rgb[1]+','+rgb[2]+',0.055)';
+    g.beginPath();g.arc(cx,sunY,rad,0,Math.PI*2);g.stroke();
+  }
+  for(var sgn=-1;sgn<=1;sgn+=2){
+    var dx=sgn*22*ppd/Math.max(.35,Math.cos(h*D2R));
+    if(Math.abs(dx)<W){
+      var gr=g.createRadialGradient(cx+dx,sunY,0,cx+dx,sunY,20);
+      gr.addColorStop(0,'rgba(255,225,170,.30)');gr.addColorStop(1,'rgba(255,120,60,0)');
+      g.fillStyle=gr;g.beginPath();g.arc(cx+dx,sunY,20,0,Math.PI*2);g.fill();
+    }
+  }
+  g.restore();
+
+  /* --- circumzenithal arc: same prism, sun below 32.2 deg (top face in, side out) --- */
+  if(h<32.2 && h>2){
+    g.save();g.globalCompositeOperation='lighter';g.lineWidth=4;
+    for(var k2=0;k2<26;k2++){
+      var lam2=400+k2*13, d2=deviation(90-h,nIce(lam2));
+      if(d2===null)continue;
+      var alt=Math.min(89.4,(90-h)+d2-(90-h)+h+d2*0); /* CZA sits ~(h+d) above sun */
+      alt=Math.min(89.4,h+d2);
+      var yy=horizon-alt*ppd, rgb2=wl2rgb(lam2);
+      var w2=Math.min(1,(32.2-h)/12)*0.5;
+      g.strokeStyle='rgba('+rgb2[0]+','+rgb2[1]+','+rgb2[2]+','+(0.10*w2)+')';
+      g.beginPath();
+      for(var x=0;x<=W;x+=8){var u=(x-cx)/(W*.5);g.lineTo(x,yy+u*u*46);}
+      g.stroke();
+    }
+    g.restore();
+  }
+
+  /* --- THE CIRCUMHORIZONTAL ARC --- */
+  var arcMid=null;
+  if(ign>0){
+    g.save();g.globalCompositeOperation='lighter';
+    var nc=P.nc|0, jit=P.jit;
+    var lo=1e9,hi=-1e9;
+    for(var q=0;q<nc;q++){
+      /* one plate crystal: gaussian tilt jitter about horizontal */
+      var u1=Math.random(),u2=Math.random();
+      var gauss=Math.sqrt(-2*Math.log(u1+1e-9))*Math.cos(2*Math.PI*u2);
+      var he=h+gauss*jit;
+      var lam=400+Math.random()*300;
+      var a=arcAlt(he,lam);
+      if(a===null||a<-1)continue;
+      if(a<lo)lo=a; if(a>hi)hi=a;
+      var rgb=wl2rgb(lam);
+      var yy=horizon-a*ppd;
+      var xx=Math.random()*W;
+      var u=(xx-cx)/(W*.5);
+      yy+=u*u*26;                       /* the arc bows gently downward at the ends */
+      var spread=Math.exp(-u*u*0.7);
+      var al=0.30*ign*spread*(1600/Math.max(400,nc));
+      g.fillStyle='rgba('+rgb[0]+','+rgb[1]+','+rgb[2]+','+al+')';
+      g.fillRect(xx,yy,3.5,3.0);
+    }
+    arcMid=arcAlt(h,550);
+    g.restore();
+  }
+
+  /* sun */
+  g.save();g.globalCompositeOperation='lighter';
+  var sg=g.createRadialGradient(cx,sunY,0,cx,sunY,110);
+  sg.addColorStop(0,'rgba(255,250,225,.95)');
+  sg.addColorStop(.12,'rgba(255,215,140,.55)');
+  sg.addColorStop(1,'rgba(255,140,50,0)');
+  g.fillStyle=sg;g.beginPath();g.arc(cx,sunY,110,0,Math.PI*2);g.fill();
+  g.fillStyle='#fffbe8';g.beginPath();g.arc(cx,sunY,7,0,Math.PI*2);g.fill();
+  g.restore();
+
+  /* labels in-scene */
+  g.font='10px ui-monospace,monospace';
+  g.fillStyle='rgba(150,200,230,.5)';
+  g.fillText('22° halo (approx.)',cx+22*ppd*0.72,sunY-22*ppd*0.72);
+  if(h<32.2&&h>2) g.fillText('circumzenithal arc',cx+W*0.22,horizon-Math.min(89,h+ (deviation(90-h,N_REF)||0))*ppd-8);
+
+  drawInset(now);
+
+  /* readouts */
+  var st=ign>0?'<span class="on">ARC LIT</span>':'<span class="off">GEOMETRICALLY IMPOSSIBLE</span>';
+  var dv=deviation(h,N_REF);
+  var r1=Math.asin(Math.min(1,Math.sin(h*D2R)/N_REF))*R2D;
+  var r2=90-r1, tc=Math.asin(1/N_REF)*R2D;
+  document.getElementById('rd').innerHTML=
+    'sun elevation   '+h.toFixed(2)+'°   '+st+
+    '\nturn-on         '+H_MIN.toFixed(2)+'°  (asin√(n²-1), n=1.31)'+
+    '\ninternal r₁/r₂    '+r1.toFixed(1)+'° / '+r2.toFixed(1)+'°   crit '+tc.toFixed(1)+'°'+
+    '\nexit window     '+(r2<tc?'<span class="on">OPEN</span>':'<span class="off">SEALED by TIR</span>')+
+    '\ndeviation       '+(dv===null?'—':dv.toFixed(1)+'°')+
+    '\narc altitude    '+(arcMid===null||arcMid===undefined?'—':arcMid.toFixed(1)+'° above horizon')+
+    '\nsaturation      '+(ign*100).toFixed(0)+'%'+
+    '\n<span class="l">Impossible after autumn at high latitude:\nit is your solar elevation, not your luck.</span>';
+
+  requestAnimationFrame(frame);
+}
+
+/* ---- crystal inset: live ray trace through the 90 deg prism ---- */
+function drawInset(now){
+  var w=250,hh=190,x0=W-w-14,y0=H-hh-14;
+  g.save();
+  g.fillStyle='rgba(4,8,18,.80)';g.strokeStyle='rgba(120,200,255,.3)';g.lineWidth=1;
+  g.beginPath();g.rect(x0,y0,w,hh);g.fill();g.stroke();
+  g.font='10px ui-monospace,monospace';g.fillStyle='#8fc4dc';
+  g.fillText('PLATE CRYSTAL — 90° prism',x0+9,y0+15);
+
+  var pw=112,ph=52,px=x0+w/2-pw/2,py=y0+78;
+  /* the hexagonal plate seen edge-on: top face, bottom face, vertical side faces */
+  g.fillStyle='rgba(140,200,255,.10)';
+  g.strokeStyle='rgba(160,215,255,.55)';g.lineWidth=1.3;
+  g.beginPath();g.rect(px,py,pw,ph);g.fill();g.stroke();
+  g.fillStyle='rgba(140,190,220,.55)';
+  g.fillText('top',px+pw/2-8,py-5);g.fillText('base',px+pw/2-11,py+ph+13);
+
+  var h=P.h, n=N_REF;
+  var r1=Math.asin(Math.min(1,Math.sin(h*D2R)/n));
+  var r2=Math.PI/2-r1;
+  var tir=(n*Math.sin(r2)>=1);
+
+  /* incoming ray hits the vertical LEFT side face at height mid */
+  var ex=px, ey=py+ph*0.34;
+  var inLen=78;
+  g.lineWidth=1.7;
+  g.strokeStyle='rgba(255,224,150,.95)';
+  g.beginPath();
+  g.moveTo(ex-inLen*Math.cos(h*D2R),ey-inLen*Math.sin(h*D2R));
+  g.lineTo(ex,ey);g.stroke();
+  /* refracted ray inside: angle r1 from the horizontal side-normal */
+  var seg=Math.min(pw*0.94,(ph-(ey-py))/Math.max(0.08,Math.tan(r1))*0.98);
+  var ix=ex+seg*Math.cos(r1)*0+seg, iy=ey+seg*Math.tan(r1);
+  if(iy>py+ph){ seg=(py+ph-ey)/Math.tan(r1); ix=ex+seg; iy=py+ph; }
+  g.strokeStyle='rgba(160,230,255,.95)';
+  g.beginPath();g.moveTo(ex,ey);g.lineTo(ix,iy);g.stroke();
+
+  if(!tir && iy>=py+ph-0.5){
+    var i2=Math.asin(n*Math.sin(r2));
+    g.lineWidth=2.2;
+    for(var k=0;k<7;k++){
+      var lam=420+k*45,rgb=wl2rgb(lam);
+      var nn=nIce(lam);
+      var rr1=Math.asin(Math.min(1,Math.sin(h*D2R)/nn));
+      var ss=nn*Math.cos(rr1);
+      if(ss>=1)continue;
+      var ii2=Math.asin(ss);
+      g.strokeStyle='rgba('+rgb[0]+','+rgb[1]+','+rgb[2]+',.9)';
+      g.beginPath();g.moveTo(ix,iy);
+      g.lineTo(ix+62*Math.sin(ii2)*0+62*Math.sin(ii2),iy+62*Math.cos(ii2));
+      g.stroke();
+    }
+    g.fillStyle='#7dff9c';g.fillText('exits base → spectrum',x0+9,y0+hh-10);
+  }else{
+    /* TIR: bounce back up, exit ray misses the downward window */
+    g.strokeStyle='rgba(255,90,90,.9)';g.setLineDash([4,3]);
+    g.beginPath();g.moveTo(ix,iy);g.lineTo(ix+(pw*0.5),iy-(pw*0.5)*Math.tan(r1)*0-(pw*0.5)/Math.max(.2,Math.tan(r2)));g.stroke();
+    g.setLineDash([]);
+    g.fillStyle='#ff6a6a';g.fillText('TIR at base — window sealed',x0+9,y0+hh-10);
+  }
+  g.fillStyle='#8fc4dc';
+  g.fillText('h='+h.toFixed(1)+'°  r₁='+(r1*R2D).toFixed(1)+'°  r₂='+(r2*R2D).toFixed(1)+'°',x0+9,y0+hh-26);
+  g.restore();
+}
+
+resize();
+requestAnimationFrame(frame);
+</script>
+</body>

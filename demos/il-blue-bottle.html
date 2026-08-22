@@ -1,0 +1,227 @@
+<title>Blue Bottle</title>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<style>
+html,body{margin:0;padding:0;height:100%;background:#04060c;overflow:hidden}
+canvas{display:block;position:fixed;inset:0}
+#ui{position:fixed;top:0;left:0;padding:10px 12px;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;
+ color:#bfe8ff;background:rgba(4,8,18,.62);border-right:1px solid #12314a;border-bottom:1px solid #12314a;
+ max-width:330px;z-index:10;backdrop-filter:blur(4px);text-shadow:0 0 8px #1e6ea033}
+#ui h1{margin:0 0 3px;font-size:14px;letter-spacing:.16em;color:#7fd8ff;text-shadow:0 0 12px #35b6ff88}
+.dim{color:#5d87a6}.lin{color:#4f7d9c;font-style:italic}
+.tag{display:inline-block;margin-top:6px;padding:1px 6px;border:1px solid #2a5a7a;border-radius:8px;color:#6fa8c8;font-size:9px;letter-spacing:.1em}
+label{display:block;margin:5px 0 0}
+input[type=range]{width:100%;height:14px;accent-color:#35b6ff;background:transparent}
+.rd{color:#8ff0d0}
+a{color:#66c8ff}
+button{font:10px ui-monospace,monospace;background:#0d2438;color:#8fd8ff;border:1px solid #2a5a7a;border-radius:4px;padding:3px 8px;margin:4px 4px 0 0;cursor:pointer}
+button:hover{background:#153b58}
+button.on{background:#1d5a7a;color:#dff4ff}
+#shake{width:100%;padding:7px;font-size:12px;letter-spacing:.1em}
+</style>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>BLUE BOTTLE</h1>
+<div>Alkaline sugar reduces methylene blue to a colourless form; shaking dissolves O<sub>2</sub> that re-oxidizes it blue, so the colour is a live dissolved-oxygen meter.</div>
+<div class="dim">dye-redox tradition · popularized by J. A. Campbell, 1963</div>
+<div class="lin">lineage: 19th-c. vat-dye redox → Campbell 1963 lecture demo → chemical traffic light cousin</div>
+<div class="dim" id="hint">hold SHAKE (or SPACE / drag flask) — then watch the fade</div>
+<button id="shake">▮ HOLD TO SHAKE ▮</button>
+<label>sugar (reductant) <span class="rd" id="vS"></span><input type="range" id="sug" min="0.05" max="1" step="0.01" value="0.5"></label>
+<label>temperature <span class="rd" id="vT"></span><input type="range" id="tmp" min="5" max="60" step="0.5" value="25"></label>
+<label>headspace O<sub>2</sub> fraction <span class="rd" id="vO"></span><input type="range" id="oxy" min="0" max="0.4" step="0.005" value="0.209"></label>
+<div><button id="loop">lecture loop</button><button id="n2">N₂ flush</button><button id="air">air</button><button id="rst">reset</button></div>
+<div>dissolved O₂ <span class="rd" id="rO2"></span> · blue fraction <span class="rd" id="rB"></span></div>
+<div>dye alive <span class="rd" id="rD"></span> · sugar left <span class="rd" id="rSu"></span></div>
+<div>shakes <span class="rd" id="rC"></span> · state <span class="rd" id="rSt"></span></div>
+<div><a href="index.html">← gallery</a> <span class="tag">simulation — no recipe</span></div>
+</div>
+<script>
+(function(){
+var c=document.getElementById('c'),g=c.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;
+ c.width=Math.floor(W*DPR);c.height=Math.floor(H*DPR);c.style.width=W+'px';c.style.height=H+'px';
+ g.setTransform(DPR,0,0,DPR,0,0);}
+addEventListener('resize',resize);resize();
+
+var el=function(i){return document.getElementById(i)};
+var S={ox:0.0,o2:0.0,dye:1.0,sugar:1.0,shakes:0,shaking:0,slosh:0,sloshV:0,t:0,loop:false,lastState:''};
+var bubbles=[];
+
+function P(){return{sug:+el('sug').value,T:+el('tmp').value,fO2:+el('oxy').value}}
+
+// ---- kinetics ------------------------------------------------------------
+// dye_ox (blue) <-> dye_red (colourless)
+//   oxidation:  d(ox)/dt = kox * o2 * (1-ox)
+//   reduction:  d(ox)/dt = -kred * sugar * ox
+// dissolved O2 driven toward headspace saturation by shaking, consumed by oxidation.
+function arr(T){return Math.exp((T-25)/14);}      // Arrhenius-ish, ~2x per 10 C
+function step(st,p,dt,shakeI){
+  var k=arr(p.T);
+  var sat=p.fO2/0.209;                             // 1.0 at air
+  var kL=0.06+2.6*shakeI;                          // gas transfer coefficient
+  st.o2+=(kL*(sat-st.o2))*dt;
+  if(st.o2<0)st.o2=0;
+  var kox=9.0*k, kred=0.30*k*p.sug*st.sugar;
+  var up=kox*st.o2*(1-st.ox);
+  var dn=kred*st.ox*st.dye;
+  st.ox+=(up-dn)*dt;
+  if(st.ox>st.dye)st.ox=st.dye; if(st.ox<0)st.ox=0;
+  st.o2-=up*0.055*dt;  if(st.o2<0)st.o2=0;
+  // slow exhaustion: each turnover costs a little sugar and a little dye
+  st.sugar-=dn*0.0016*dt*60/60; if(st.sugar<0)st.sugar=0;
+  st.dye  -=dn*0.00042*dt;      if(st.dye<0.02)st.dye=0.02;
+  return st;
+}
+window.__bb={step:step,arr:arr};
+
+// ---- input ---------------------------------------------------------------
+var holding=false;
+function down(){holding=true}function up(){holding=false}
+el('shake').addEventListener('mousedown',down);el('shake').addEventListener('touchstart',function(e){e.preventDefault();down()},{passive:false});
+addEventListener('mouseup',up);addEventListener('touchend',up);
+addEventListener('keydown',function(e){if(e.code==='Space'){e.preventDefault();down()}});
+addEventListener('keyup',function(e){if(e.code==='Space')up()});
+c.addEventListener('mousedown',down);c.addEventListener('touchstart',function(e){e.preventDefault();down()},{passive:false});
+el('loop').onclick=function(){S.loop=!S.loop;el('loop').className=S.loop?'on':''};
+el('n2').onclick=function(){el('oxy').value=0};
+el('air').onclick=function(){el('oxy').value=0.209};
+el('rst').onclick=function(){S.ox=0;S.o2=0;S.dye=1;S.sugar=1;S.shakes=0;bubbles.length=0};
+
+// ---- render --------------------------------------------------------------
+function mixColour(f,alive){
+  // colourless (pale straw) -> methylene blue
+  var r=(1-f)*212+f*24, gg=(1-f)*226+f*86, b=(1-f)*206+f*236;
+  var a=0.30+0.62*f*alive;
+  return 'rgba('+(r|0)+','+(gg|0)+','+(b|0)+','+a.toFixed(3)+')';
+}
+function flaskGeom(){
+  var s=Math.min(W,H)*0.62;
+  return {cx:W*0.60,cy:H*0.56,w:s*0.52,h:s*0.60,neck:s*0.16};
+}
+function drawFlask(F,f,tilt){
+  g.save();g.translate(F.cx,F.cy);g.rotate(tilt);
+  var w=F.w,h=F.h,nw=w*0.26,nh=F.neck;
+  // outline path (round-bottom flask)
+  function body(){g.beginPath();
+    g.moveTo(-nw/2,-h/2-nh);g.lineTo(-nw/2,-h/2+h*0.06);
+    g.bezierCurveTo(-w/2,-h*0.10,-w/2,h/2,0,h/2);
+    g.bezierCurveTo(w/2,h/2,w/2,-h*0.10,nw/2,-h/2+h*0.06);
+    g.lineTo(nw/2,-h/2-nh);g.closePath();}
+  // liquid clipped
+  g.save();body();g.clip();
+  var lvl=-h*0.06+S.slosh*h*0.06;
+  var grd=g.createLinearGradient(0,lvl,0,h/2);
+  grd.addColorStop(0,f);grd.addColorStop(1,f);
+  g.fillStyle='rgba(8,14,26,0.9)';g.fillRect(-w,-h-nh,2*w,2*(h+nh));
+  g.save();g.translate(0,0);g.rotate(S.slosh*0.16);
+  g.fillStyle=grd;g.fillRect(-w,lvl,2*w,2*h);
+  g.restore();
+  // glow of liquid
+  g.globalCompositeOperation='lighter';
+  var rg=g.createRadialGradient(0,h*0.12,4,0,h*0.12,w*0.8);
+  rg.addColorStop(0,f);rg.addColorStop(1,'rgba(0,0,0,0)');
+  g.globalAlpha=0.5;g.fillStyle=rg;g.fillRect(-w,-h,2*w,2*h);
+  g.globalAlpha=1;g.globalCompositeOperation='source-over';
+  // bubbles
+  for(var i=0;i<bubbles.length;i++){var b=bubbles[i];
+    g.beginPath();g.arc(b.x*w*0.42,b.y*h*0.45,b.r,0,6.2832);
+    g.fillStyle='rgba(220,245,255,'+(0.10+0.4*b.l)+')';g.fill();}
+  g.restore();
+  // glass
+  g.lineWidth=Math.max(1.5,w*0.012);
+  g.strokeStyle='rgba(150,215,255,0.55)';g.shadowColor='#3ea8ff';g.shadowBlur=18;body();g.stroke();
+  g.shadowBlur=0;
+  // stopper
+  g.fillStyle='#2a3346';g.strokeStyle='rgba(160,200,240,.5)';
+  g.beginPath();g.roundRect(-nw*0.62,-h/2-nh-nw*0.5,nw*1.24,nw*0.62,3);g.fill();g.stroke();
+  // specular
+  g.beginPath();g.moveTo(-w*0.30,-h*0.10);g.quadraticCurveTo(-w*0.42,h*0.16,-w*0.16,h*0.36);
+  g.lineWidth=Math.max(2,w*0.02);g.strokeStyle='rgba(255,255,255,0.14)';g.stroke();
+  g.restore();
+}
+function gauge(x,y,w,h,v,lab,col){
+  g.fillStyle='rgba(255,255,255,0.05)';g.fillRect(x,y,w,h);
+  g.fillStyle=col;g.shadowColor=col;g.shadowBlur=14;g.fillRect(x,y+h*(1-v),w,h*v);g.shadowBlur=0;
+  g.strokeStyle='rgba(160,210,240,0.35)';g.lineWidth=1;g.strokeRect(x+.5,y+.5,w-1,h-1);
+  g.fillStyle='#7fb6d8';g.font='10px ui-monospace,monospace';g.textAlign='center';
+  g.fillText(lab,x+w/2,y+h+13);g.textAlign='left';
+}
+function trace(){
+  // history strip
+  var n=hist.length,x0=W*0.06,y0=H*0.86,w=W*0.40,h=H*0.10;
+  g.strokeStyle='rgba(120,180,220,.25)';g.strokeRect(x0,y0,w,h);
+  g.beginPath();
+  for(var i=0;i<n;i++){var x=x0+w*i/(HN-1),y=y0+h*(1-hist[i]);i?g.lineTo(x,y):g.moveTo(x,y)}
+  g.strokeStyle='#4fc2ff';g.lineWidth=1.6;g.shadowColor='#3aa8ff';g.shadowBlur=10;g.stroke();g.shadowBlur=0;
+  g.beginPath();
+  for(i=0;i<n;i++){x=x0+w*i/(HN-1);y=y0+h*(1-histO[i]);i?g.lineTo(x,y):g.moveTo(x,y)}
+  g.strokeStyle='rgba(140,255,210,.75)';g.lineWidth=1;g.stroke();
+  g.fillStyle='#5d87a6';g.font='10px ui-monospace,monospace';
+  g.fillText('blue fraction (blue) · dissolved O₂ (green) — they track together',x0,y0-6);
+}
+var HN=260,hist=[],histO=[];
+
+var last=performance.now();
+function frame(now){
+  var dt=Math.min(0.05,(now-last)/1000);last=now;S.t+=dt;
+  var p=P();
+  if(S.loop){var ph=S.t%9;holding=(ph<1.1);}
+  var target=holding?1:0;
+  S.shaking+=(target-S.shaking)*Math.min(1,dt*9);
+  if(holding&&S.shakes>=0){/*count edges*/}
+  if(holding&&!S._wasHold){S.shakes++;}
+  S._wasHold=holding;
+  // slosh spring
+  S.sloshV+=(-S.slosh*46-S.sloshV*2.2)*dt + (S.shaking>0.05?Math.sin(S.t*22)*S.shaking*7*dt*30:0);
+  S.slosh+=S.sloshV*dt; if(S.slosh>1)S.slosh=1; if(S.slosh<-1)S.slosh=-1;
+  step(S,p,dt,S.shaking);
+  // bubbles entrained only when actual O2 available
+  if(S.shaking>0.2&&bubbles.length<160){
+    var n=Math.round(S.shaking*4*(0.25+p.fO2*3.6));
+    for(var i=0;i<n;i++)bubbles.push({x:(Math.random()*2-1)*0.8,y:0.9,r:1+Math.random()*3.4,l:Math.random(),v:0.5+Math.random()});
+  }
+  for(i=bubbles.length-1;i>=0;i--){var b=bubbles[i];b.y-=b.v*dt*0.9;b.x+=Math.sin(S.t*3+b.l*9)*dt*0.12;b.l-=dt*0.25;
+    if(b.y<-0.9||b.l<=0)bubbles.splice(i,1);}
+
+  hist.push(S.ox/Math.max(0.02,S.dye));histO.push(Math.min(1,S.o2));
+  if(hist.length>HN){hist.shift();histO.shift()}
+
+  // ---- draw
+  g.fillStyle='#04060c';g.fillRect(0,0,W,H);
+  var rg=g.createRadialGradient(W*0.6,H*0.5,10,W*0.6,H*0.5,Math.max(W,H)*0.7);
+  rg.addColorStop(0,'rgba(20,50,86,0.55)');rg.addColorStop(1,'rgba(4,6,12,0)');
+  g.fillStyle=rg;g.fillRect(0,0,W,H);
+  var F=flaskGeom();
+  var frac=S.ox/Math.max(0.02,S.dye);
+  drawFlask(F,mixColour(frac,S.dye),S.slosh*0.10);
+  // gauges
+  var gx=W*0.06,gy=H*0.30,gw=Math.max(18,W*0.022),gh=H*0.40;
+  gauge(gx,gy,gw,gh,Math.min(1,S.o2),'O₂','rgba(120,255,205,0.85)');
+  gauge(gx+gw*2.4,gy,gw,gh,frac,'blue','rgba(70,150,255,0.9)');
+  gauge(gx+gw*4.8,gy,gw,gh,S.dye,'dye','rgba(190,140,255,0.8)');
+  gauge(gx+gw*7.2,gy,gw,gh,S.sugar,'sugar','rgba(255,205,120,0.8)');
+  trace();
+  if(p.fO2<0.005){
+    g.fillStyle='rgba(255,150,150,0.85)';g.font='12px ui-monospace,monospace';g.textAlign='center';
+    g.fillText('N₂-FLUSHED CONTROL — shaking does nothing. The dye had nothing to report.',W*0.6,H*0.94);
+    g.textAlign='left';
+  }
+  if(S.dye<0.25||S.sugar<0.10){
+    g.fillStyle='rgba(255,200,120,0.8)';g.font='12px ui-monospace,monospace';g.textAlign='center';
+    g.fillText('the show is mortal: dye degrades, sugar depletes — reset to refill',W*0.6,H*0.97);g.textAlign='left';
+  }
+  // readouts
+  el('vS').textContent=p.sug.toFixed(2);
+  el('vT').textContent=p.T.toFixed(0)+' °C';
+  el('vO').textContent=(p.fO2*100).toFixed(1)+' %';
+  el('rO2').textContent=S.o2.toFixed(3);
+  el('rB').textContent=frac.toFixed(3);
+  el('rD').textContent=(S.dye*100).toFixed(0)+'%';
+  el('rSu').textContent=(S.sugar*100).toFixed(0)+'%';
+  el('rC').textContent=S.shakes;
+  el('rSt').textContent=frac>0.55?'BLUE (oxidized)':frac>0.12?'fading…':'colourless (reduced)';
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+})();
+</script>

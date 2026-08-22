@@ -1,0 +1,307 @@
+<title>Soap Film Iridescence</title>
+<style>
+html,body{margin:0;padding:0;height:100%;background:#04060a;overflow:hidden}
+canvas{display:block;position:fixed;inset:0}
+#ui{position:fixed;top:0;left:0;margin:10px;padding:10px 12px;max-width:340px;
+  background:rgba(6,10,18,.72);border:1px solid rgba(120,200,255,.28);border-radius:8px;
+  color:#bfe6ff;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;z-index:10;
+  box-shadow:0 0 24px rgba(60,160,255,.18),inset 0 0 20px rgba(40,120,220,.06);backdrop-filter:blur(3px)}
+#ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.09em;color:#8ff0ff;text-shadow:0 0 10px #23d5ff}
+.m{color:#9fd0e8}.s{color:#ffd28a}.l{color:#7fa8c0;font-style:italic}
+.row{margin:5px 0;display:flex;align-items:center;gap:6px}
+input[type=range]{flex:1;height:3px;-webkit-appearance:none;appearance:none;background:#1d4260;border-radius:2px;outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:11px;border-radius:50%;background:#4de0ff;box-shadow:0 0 8px #4de0ff;cursor:pointer}
+input[type=range]::-moz-range-thumb{width:11px;height:11px;border:0;border-radius:50%;background:#4de0ff;box-shadow:0 0 8px #4de0ff;cursor:pointer}
+#rd{margin-top:6px;color:#7dffcf;text-shadow:0 0 8px rgba(60,255,190,.35)}
+a{color:#6ad6ff;text-decoration:none}a:hover{text-shadow:0 0 8px #6ad6ff}
+#spec{display:block;margin-top:6px;border:1px solid rgba(120,200,255,.2);border-radius:4px;background:#02040a}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>THIN-FILM IRIDESCENCE</h1>
+<div class="m">Two surface reflections interfere, so colour tracks local thickness — a draining soap film paints its own thickness map.</div>
+<div class="s">Boyle / Hooke / Newton observed it; Young's interference account explained it.</div>
+<div class="l">Newton's rings → soap-bubble classroom → Morpho butterfly structural colour</div>
+<div class="row">drain <input id="sd" type="range" min="0" max="100" value="42"></div>
+<div class="row">swirl <input id="ss" type="range" min="0" max="100" value="45"></div>
+<div class="m">move cursor = thickness probe · <b>B</b> bubble mode · <b>R</b> reset · click = poke</div>
+<canvas id="spec" width="316" height="46"></canvas>
+<div id="rd">…</div>
+<a href="index.html">← gallery</a>
+</div>
+<script>
+(function(){
+"use strict";
+var c=document.getElementById('c'),g=c.getContext('2d');
+var sc=document.getElementById('spec'),sg=sc.getContext('2d');
+var W=0,H=0,DPR=1,IW=0,IH=0,img=null,buf=null;
+var SCALE=3; // simulate at 1/SCALE resolution then upscale
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  W=window.innerWidth;H=window.innerHeight;
+  c.width=Math.floor(W*DPR);c.height=Math.floor(H*DPR);
+  c.style.width=W+'px';c.style.height=H+'px';
+  IW=Math.max(8,Math.floor(W/SCALE));IH=Math.max(8,Math.floor(H/SCALE));
+  img=g.createImageData(IW,IH);buf=img.data;
+  for(var i=3;i<buf.length;i+=4)buf[i]=255;
+}
+window.addEventListener('resize',resize);
+
+// ---- physics -------------------------------------------------------------
+// Two-beam reflectance of a film of index n, thickness h, at normal-ish incidence.
+// Front reflection gets a pi phase flip (air->soap, n rises) => R has minima
+// when 2*n*h = m*lambda and maxima when 2*n*h = (m+1/2)*lambda.
+var n_film=1.35;
+var r0=(1-n_film)/(1+n_film); // amplitude reflection coefficient (front, includes sign)
+var Rs=r0*r0;
+function reflectance(h_nm,lam_nm,cosT){
+  var delta=4*Math.PI*n_film*h_nm*cosT/lam_nm; // phase from optical path 2nh cos
+  // Airy-lite two-beam with pi flip: R = 2R0(1-cos d)/(1+R0^2-2R0 cos d)
+  var cd=Math.cos(delta);
+  var num=2*Rs*(1-cd), den=1+Rs*Rs-2*Rs*cd;
+  return num/den;
+}
+// CIE-ish RGB sampling: 9 wavelengths per channel band, cheap gaussian weights.
+var LAM=[],WR=[],WG=[],WB=[];
+(function(){
+  function gau(x,mu,s){return Math.exp(-(x-mu)*(x-mu)/(2*s*s));}
+  for(var l=400;l<=700;l+=12){
+    LAM.push(l);
+    WR.push(gau(l,602,42)+0.32*gau(l,448,22));
+    WG.push(gau(l,540,46));
+    WB.push(gau(l,455,42));
+  }
+  var sr=0,sg2=0,sb=0,i;
+  for(i=0;i<LAM.length;i++){sr+=WR[i];sg2+=WG[i];sb+=WB[i];}
+  for(i=0;i<LAM.length;i++){WR[i]/=sr;WG[i]/=sg2;WB[i]/=sb;}
+})();
+function filmRGB(h,cosT,out){
+  var R=0,G=0,B=0;
+  for(var i=0;i<LAM.length;i++){
+    var r=reflectance(h,LAM[i],cosT);
+    R+=r*WR[i];G+=r*WG[i];B+=r*WB[i];
+  }
+  out[0]=R;out[1]=G;out[2]=B;return out;
+}
+// Precompute a colour LUT over thickness (nm) for the flat-film case.
+var LUTN=1400, LUT=new Uint8Array(LUTN*3), tmp=[0,0,0];
+(function(){
+  for(var i=0;i<LUTN;i++){
+    var h=i; // nm, 0..1399
+    filmRGB(h,1,tmp);
+    // tone map: reflectance maxes ~0.08 for a soap film; boost hard
+    for(var k=0;k<3;k++){
+      var v=tmp[k]*11.0;
+      v=v/(1+v*0.55);
+      v=Math.pow(Math.max(0,Math.min(1,v)),0.72);
+      LUT[i*3+k]=(v*255)|0;
+    }
+  }
+})();
+
+// ---- thickness field -----------------------------------------------------
+var t=0,drain=0.42,swirl=0.45,mode=0/*0 flat film,1 bubble*/;
+var pokes=[];
+var age=0, popping=-1;
+function reset(){age=0;t=0;popping=-1;pokes.length=0;}
+function hAt(u,v){ // u,v in 0..1 ; v=0 top
+  // base: gravity-drained wedge, thick at bottom. Age thins everything.
+  var A=age;
+  var base=(60+2100*Math.pow(v,1.55))*Math.exp(-A*0.055*(0.25+drain*1.75));
+  // marginal regeneration: rising plumes of thin film
+  var sw=swirl;
+  var w1=Math.sin(u*9.3+t*0.55+Math.sin(v*7.1-t*0.31)*2.2);
+  var w2=Math.sin(v*13.7-t*1.15+Math.cos(u*5.3+t*0.22)*1.7);
+  var w3=Math.sin((u*3.1+v*6.9)*2.3-t*0.8);
+  base*= 1 + sw*(0.20*w1+0.16*w2+0.11*w3);
+  // horizontal banding that marches downward as it drains
+  base+= sw*95*Math.sin(v*26.0 - t*1.9 - A*0.9);
+  for(var i=0;i<pokes.length;i++){
+    var p=pokes[i],dx=u-p.x,dy=v-p.y,d2=dx*dx+dy*dy;
+    base+=p.a*Math.exp(-d2*140)*Math.sin(Math.sqrt(d2)*90-p.t*7);
+  }
+  // top black film clamp
+  return Math.max(2,base);
+}
+function frameGeom(){
+  var m=Math.min(W,H)*0.40;
+  return {cx:W*0.5,cy:H*0.5,rx:Math.min(W*0.30,m*1.05),ry:m*1.15};
+}
+var mx=-1,my=-1,probeH=0;
+
+function render(){
+  var geo=frameGeom(),d=buf,idx=0;
+  var cx=geo.cx/SCALE,cy=geo.cy/SCALE,rx=geo.rx/SCALE,ry=geo.ry/SCALE;
+  var bubR=Math.min(W,H)*0.36/SCALE;
+  for(var y=0;y<IH;y++){
+    for(var x=0;x<IW;x++,idx+=4){
+      var r=6,gg=9,b=14,inside=false,h=0,cosT=1;
+      if(mode===0){
+        var nx=(x-cx)/rx, ny=(y-cy)/ry;
+        if(nx*nx+ny*ny<=1){
+          inside=true;
+          var u=(nx+1)*0.5, v=(ny+1)*0.5;
+          h=hAt(u,v);
+          cosT=1;
+        }
+      }else{
+        var bx=(x-cx)/bubR, by=(y-cy)/bubR, rr=bx*bx+by*by;
+        if(rr<=1){
+          inside=true;
+          var cz=Math.sqrt(1-rr);
+          // internal angle from Snell: sinT_in = sinT_out/n ; here view angle ~ surface normal angle
+          var sinO=Math.sqrt(rr), sinI=sinO/n_film;
+          cosT=Math.sqrt(Math.max(0,1-sinI*sinI));
+          var lat=Math.acos(Math.max(-1,Math.min(1,by)))/Math.PI; // 0 top -> 1 bottom
+          var lon=(Math.atan2(bx,cz)/Math.PI+1)*0.5;
+          h=hAt(lon,lat)*(0.55+0.55*cz);
+        }
+      }
+      if(inside){
+        if(popping>=0){
+          var pr=popping*Math.max(IW,IH)*0.9;
+          var dd=Math.hypot(x-cx,y-cy);
+          if(dd<pr){ d[idx]=4;d[idx+1]=7;d[idx+2]=12;continue; }
+          if(dd<pr+3){ d[idx]=255;d[idx+1]=255;d[idx+2]=255;continue; }
+        }
+        var li,rgb0,rgb1,f;
+        if(cosT>0.999){
+          var hh=h; if(hh>LUTN-2)hh=LUTN-2;
+          li=hh|0; f=hh-li;
+          r=LUT[li*3]*(1-f)+LUT[(li+1)*3]*f;
+          gg=LUT[li*3+1]*(1-f)+LUT[(li+1)*3+1]*f;
+          b=LUT[li*3+2]*(1-f)+LUT[(li+1)*3+2]*f;
+        }else{
+          filmRGB(h,cosT,tmp);
+          r=tone(tmp[0]);gg=tone(tmp[1]);b=tone(tmp[2]);
+        }
+        // black film: below ~100nm the interference vanishes -> true black
+        if(h<105){var k=Math.max(0,(h-18)/87);k=k*k;r*=k;gg*=k;b*=k;}
+        // faint specular sheen
+        var sheen=mode===1?0:8*Math.exp(-Math.pow((x-cx*0.72)/(IW*0.09),2));
+        r+=sheen;gg+=sheen;b+=sheen;
+      }
+      d[idx]=r>255?255:r;d[idx+1]=gg>255?255:gg;d[idx+2]=b>255?255:b;
+    }
+  }
+  g.setTransform(1,0,0,1,0,0);
+  g.imageSmoothingEnabled=false;
+  g.fillStyle='#04060a';g.fillRect(0,0,c.width,c.height);
+  // draw the low-res field scaled up, smoothed
+  var off=render.off||(render.off=document.createElement('canvas'));
+  off.width=IW;off.height=IH;
+  off.getContext('2d').putImageData(img,0,0);
+  g.imageSmoothingEnabled=true;
+  g.globalCompositeOperation='source-over';
+  g.drawImage(off,0,0,c.width,c.height);
+  // glow pass
+  g.globalCompositeOperation='lighter';
+  g.globalAlpha=0.35;
+  g.drawImage(off,0,0,c.width,c.height);
+  g.globalAlpha=1;g.globalCompositeOperation='source-over';
+  // wire frame
+  g.save();g.scale(DPR,DPR);
+  g.strokeStyle='rgba(150,210,255,.55)';g.lineWidth=2.5;
+  g.shadowColor='rgba(90,200,255,.8)';g.shadowBlur=14;
+  g.beginPath();
+  if(mode===0)g.ellipse(geo.cx,geo.cy,geo.rx,geo.ry,0,0,Math.PI*2);
+  else g.arc(geo.cx,geo.cy,Math.min(W,H)*0.36,0,Math.PI*2);
+  g.stroke();
+  if(mx>0){
+    g.shadowBlur=8;g.strokeStyle='rgba(255,255,255,.75)';g.lineWidth=1;
+    g.beginPath();g.arc(mx,my,9,0,Math.PI*2);g.stroke();
+    g.beginPath();g.moveTo(mx-14,my);g.lineTo(mx-11,my);g.moveTo(mx+11,my);g.lineTo(mx+14,my);g.stroke();
+  }
+  g.restore();
+}
+function tone(x){var v=x*11.0;v=v/(1+v*0.55);v=Math.pow(Math.max(0,Math.min(1,v)),0.72);return v*255;}
+
+// ---- probe spectrum ------------------------------------------------------
+function drawSpec(h){
+  sg.clearRect(0,0,sc.width,sc.height);
+  sg.fillStyle='#02040a';sg.fillRect(0,0,sc.width,sc.height);
+  var w=sc.width,ht=sc.height;
+  for(var x=0;x<w;x++){
+    var lam=400+ (x/w)*300;
+    var R=reflectance(h,lam,1);
+    var y=ht-2-(R/0.16)*(ht-6);
+    // wavelength colour bar at bottom
+    var col=lam2rgb(lam);
+    sg.fillStyle='rgba('+col[0]+','+col[1]+','+col[2]+',0.30)';
+    sg.fillRect(x,ht-4,1,4);
+    sg.fillStyle='rgba('+col[0]+','+col[1]+','+col[2]+',0.95)';
+    sg.fillRect(x,Math.max(0,y),1,2);
+  }
+  sg.strokeStyle='rgba(120,200,255,.25)';sg.strokeRect(.5,.5,w-1,ht-1);
+}
+function lam2rgb(l){
+  var r=0,g2=0,b=0;
+  if(l<440){r=-(l-440)/60;b=1;}
+  else if(l<490){g2=(l-440)/50;b=1;}
+  else if(l<510){g2=1;b=-(l-510)/20;}
+  else if(l<580){r=(l-510)/70;g2=1;}
+  else if(l<645){r=1;g2=-(l-645)/65;}
+  else {r=1;}
+  return [(r*255)|0,(g2*255)|0,(b*255)|0];
+}
+
+// ---- ui ------------------------------------------------------------------
+var sdEl=document.getElementById('sd'),ssEl=document.getElementById('ss'),rdEl=document.getElementById('rd');
+sdEl.oninput=function(){drain=+sdEl.value/100;};
+ssEl.oninput=function(){swirl=+ssEl.value/100;};
+window.addEventListener('mousemove',function(e){mx=e.clientX;my=e.clientY;});
+window.addEventListener('mouseleave',function(){mx=-1;});
+window.addEventListener('mousedown',function(e){
+  if(e.target.tagName==='INPUT'||e.target.tagName==='A')return;
+  var geo=frameGeom();
+  pokes.push({x:(e.clientX-geo.cx)/geo.rx*0.5+0.5,y:(e.clientY-geo.cy)/geo.ry*0.5+0.5,a:340,t:0});
+  if(pokes.length>6)pokes.shift();
+});
+window.addEventListener('keydown',function(e){
+  var k=e.key.toLowerCase();
+  if(k==='b'){mode=1-mode;}
+  if(k==='r'){reset();}
+});
+
+function probeThickness(){
+  var geo=frameGeom();
+  if(mx<0)return -1;
+  if(mode===0){
+    var nx=(mx-geo.cx)/geo.rx,ny=(my-geo.cy)/geo.ry;
+    if(nx*nx+ny*ny>1)return -1;
+    return hAt((nx+1)*0.5,(ny+1)*0.5);
+  }else{
+    var R=Math.min(W,H)*0.36;
+    var bx=(mx-geo.cx)/R,by=(my-geo.cy)/R,rr=bx*bx+by*by;
+    if(rr>1)return -1;
+    var cz=Math.sqrt(1-rr);
+    var lat=Math.acos(Math.max(-1,Math.min(1,by)))/Math.PI;
+    var lon=(Math.atan2(bx,cz)/Math.PI+1)*0.5;
+    return hAt(lon,lat)*(0.55+0.55*cz);
+  }
+}
+
+var last=performance.now();
+function loop(now){
+  var dt=Math.min(0.05,(now-last)/1000);last=now;
+  t+=dt;age+=dt;
+  for(var i=0;i<pokes.length;i++){pokes[i].t+=dt;pokes[i].a*=Math.pow(0.25,dt);}
+  // top-of-film thinning triggers black film then burst
+  var topH=hAt(0.5,0.06);
+  if(popping<0 && topH<26 && age>4){popping=0;}
+  if(popping>=0){popping+=dt*1.6;if(popping>1.35){reset();}}
+  render();
+  var ph=probeThickness();
+  if(ph>0){probeH=ph;drawSpec(ph);}
+  var order=probeH>0?(2*n_film*probeH/550):0;
+  rdEl.innerHTML='probe h = <b>'+(ph>0?ph.toFixed(0):'--')+' nm</b> &nbsp; 2nh/λ₅₅₀ = '+order.toFixed(2)+
+    '<br>top film = '+topH.toFixed(0)+' nm '+(topH<105?'<span style="color:#fff">◼ BLACK FILM — about to pop</span>':'')+
+    '<br>age '+age.toFixed(1)+' s · mode '+(mode?'BUBBLE':'FLAT FRAME')+' · n='+n_film;
+}
+function tick(now){loop(now);requestAnimationFrame(tick);}
+resize();drawSpec(500);requestAnimationFrame(tick);
+})();
+</script>
+</body>

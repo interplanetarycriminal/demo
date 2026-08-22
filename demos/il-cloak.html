@@ -1,0 +1,333 @@
+<title>Transformation Cloak</title>
+<style>
+  html,body{margin:0;height:100%;background:#03050b;overflow:hidden}
+  canvas{display:block;width:100vw;height:100vh}
+  #ui{position:fixed;top:12px;left:12px;width:340px;padding:11px 13px;
+      background:rgba(5,10,22,.74);border:1px solid #2a3d70;border-radius:7px;
+      color:#a9c6ff;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;
+      text-shadow:0 0 8px #46f6;backdrop-filter:blur(3px);z-index:10}
+  #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.09em;color:#a9d8ff;text-shadow:0 0 12px #4af}
+  .m{color:#d3e0ff;opacity:.9;margin:0 0 6px}
+  .sci{color:#ffc9f0;text-shadow:0 0 8px #f4a8}
+  .lin{color:#7c8fc0;font-size:10px;margin:4px 0 7px}
+  label{display:block;margin:6px 0 2px;color:#8fb1ff}
+  input[type=range]{width:100%;accent-color:#6af}
+  .row{display:flex;gap:8px;margin-top:7px}
+  button{flex:1;background:#101c3a;border:1px solid #35538f;color:#bcd8ff;
+         font:11px ui-monospace,monospace;padding:5px;border-radius:4px;cursor:pointer}
+  button.on{background:#1c3a72;border-color:#6ab0ff;color:#e6f2ff;box-shadow:0 0 12px #38f8}
+  .read{margin-top:7px;padding-top:6px;border-top:1px solid #26365e;color:#c7dcff}
+  .read b{color:#fff}
+  .ok{color:#7cff9d;text-shadow:0 0 10px #0f8}
+  .bad{color:#ff8b8b}
+  a{color:#8bf;text-decoration:none;border-bottom:1px dotted #8bf}
+  .hint{color:#6d7fae;font-size:10px;margin-top:6px}
+  .note{color:#ffb27a;font-size:10px;margin-top:5px}
+</style>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>TRANSFORMATION CLOAK (ray optics)</h1>
+  <p class="m">A designed gradient n(r) in the shell bends every ray smoothly around the hidden core and lands it back on its original straight line — the wavefront is restored, so the detector sees empty space.</p>
+  <p class="sci">Pendry, Schurig &amp; Smith 2006 · conformal maps: Leonhardt 2006</p>
+  <p class="lin">LINEAGE: index matching → Leonhardt/Pendry 2006 → carpet cloaks</p>
+  <div class="row">
+    <button id="bC" class="on">CLOAK: ON</button>
+    <button id="bAB">A/B DETECTOR</button>
+  </div>
+  <div class="row">
+    <button id="bH" class="on">n(r) HEATMAP</button>
+    <button id="bS">SOURCE: PARALLEL</button>
+  </div>
+  <label>INNER RADIUS R1 <span id="v1"></span></label>
+  <input id="s1" type="range" min="20" max="140" step="1" value="62">
+  <label>OUTER RADIUS R2 <span id="v2"></span></label>
+  <input id="s2" type="range" min="60" max="260" step="1" value="150">
+  <label>RAY COUNT <span id="v3"></span></label>
+  <input id="s3" type="range" min="12" max="90" step="1" value="46">
+  <div class="read">
+    n range in shell: <b id="nr">—</b><br>
+    exit-line residual: <b id="res">—</b> <span id="rtag"></span><br>
+    detector RMS Δ vs free space: <b id="rms">—</b>
+  </div>
+  <p class="note">Note: real BROADBAND optical cloaks remain impossible (causality + dispersion). Microwave, single-frequency: 2006.</p>
+  <p class="hint">drag cloak to move · drag source dot · <a href="index.html">← gallery</a></p>
+</div>
+<script>
+(function(){
+const c=document.getElementById('c'),x=c.getContext('2d');
+let W,H,DPR;
+function resize(){DPR=Math.min(2,devicePixelRatio||1);W=innerWidth;H=innerHeight;
+  c.width=W*DPR;c.height=H*DPR;x.setTransform(DPR,0,0,DPR,0,0);}
+addEventListener('resize',resize);resize();
+
+const S={cx:0,cy:0,R1:62,R2:150,cloak:true,ab:false,heat:true,point:false,
+         sx:60,sy:0,rays:46,t:0};
+S.cx=W*0.46;S.cy=H*0.5;S.sy=H*0.5;
+
+const el=id=>document.getElementById(id);
+const s1=el('s1'),s2=el('s2'),s3=el('s3');
+function tog(b,k,on,off){b.onclick=()=>{S[k]=!S[k];b.className=S[k]?'on':'';b.textContent=S[k]?on:off;};}
+tog(el('bC'),'cloak','CLOAK: ON','CLOAK: OFF');
+tog(el('bAB'),'ab','A/B: OVERLAY','A/B DETECTOR');
+tog(el('bH'),'heat','n(r) HEATMAP','n(r) HEATMAP OFF');
+tog(el('bS'),'point','SOURCE: POINT','SOURCE: PARALLEL');
+
+// dragging
+let drag=null;
+c.addEventListener('pointerdown',e=>{
+  const mx=e.clientX,my=e.clientY;
+  if(Math.hypot(mx-S.sx,my-S.sy)<26) drag='src';
+  else if(Math.hypot(mx-S.cx,my-S.cy)<S.R2+20) drag='cloak';
+});
+addEventListener('pointermove',e=>{
+  if(!drag)return;
+  if(drag==='src'){S.sx=Math.max(20,Math.min(W*0.35,e.clientX));S.sy=e.clientY;}
+  else{S.cx=e.clientX;S.cy=e.clientY;}
+});
+addEventListener('pointerup',()=>drag=null);
+
+// ---- Pendry radial cloak map: r' = R1 + r*(R2-R1)/R2  (r = virtual, r' = physical)
+// inverse (physical -> virtual): r = (r' - R1) * R2/(R2-R1)
+function virt(rp){return (rp-S.R1)*S.R2/(S.R2-S.R1);}
+// effective isotropic index used for the heatmap / display (radial component)
+function nOf(rp){
+  if(rp>=S.R2) return 1;
+  if(rp<=S.R1) return 4;
+  const R1=S.R1,R2=S.R2;
+  const n=(R2/(R2-R1))*(rp-R1)/rp;      // n_r of the Pendry shell
+  return Math.max(0.02,n);
+}
+
+// ---- Trace one ray. We use the EXACT transformation-optics property:
+// inside the shell the ray is the image, under the coordinate map, of a straight
+// line in virtual space. So we map the straight virtual ray through the map.
+function traceRay(x0,y0,dx,dy){
+  const L=Math.hypot(dx,dy); dx/=L; dy/=L;
+  const pts=[[x0,y0]];
+  const cx=S.cx,cy=S.cy,R1=S.R1,R2=S.R2;
+  if(!S.cloak){
+    // uncloaked: straight until it hits the opaque core, then stop (shadow) + scatter
+    const t=hitCircle(x0,y0,dx,dy,cx,cy,R1);
+    if(t!==null&&t>0){ pts.push([x0+dx*t,y0+dy*t]); return {pts,blocked:true}; }
+    pts.push([x0+dx*4000,y0+dy*4000]); return {pts,blocked:false};
+  }
+  // cloaked: virtual straight line is the SAME line (identity outside R2).
+  // Sample along the virtual line; where virtual radius rv < R2, push it out to
+  // physical radius rp = R1 + rv*(R2-R1)/R2 along the same angle.
+  const N=260, span=Math.hypot(W,H)*1.6;
+  for(let i=1;i<=N;i++){
+    const s=span*i/N;
+    const vx=x0+dx*s, vy=y0+dy*s;
+    const ax=vx-cx, ay=vy-cy;
+    const rv=Math.hypot(ax,ay);
+    if(rv>=R2){ pts.push([vx,vy]); }
+    else{
+      const rp=R1+rv*(R2-R1)/R2;
+      const k=rv<1e-9?0:rp/rv;
+      pts.push([cx+ax*k, cy+ay*k]);
+    }
+  }
+  return {pts,blocked:false};
+}
+function hitCircle(px,py,dx,dy,cx,cy,r){
+  const ox=px-cx,oy=py-cy;
+  const b=2*(ox*dx+oy*dy), cc=ox*ox+oy*oy-r*r;
+  const disc=b*b-4*cc; if(disc<0) return null;
+  const sq=Math.sqrt(disc); const t1=(-b-sq)/2,t2=(-b+sq)/2;
+  if(t1>0)return t1; if(t2>0)return t2; return null;
+}
+
+// ---- heatmap cache
+let heatCv=document.createElement('canvas'),heatKey='';
+function heatmap(){
+  const key=[S.R1,S.R2].join(',');
+  if(key===heatKey) return heatCv;
+  heatKey=key;
+  const D=Math.ceil(S.R2*2)+4;
+  heatCv.width=D;heatCv.height=D;
+  const hx=heatCv.getContext('2d');
+  const img=hx.createImageData(D,D);
+  for(let j=0;j<D;j++)for(let i=0;i<D;i++){
+    const rr=Math.hypot(i-D/2,j-D/2);
+    const o=(j*D+i)*4;
+    if(rr>S.R2){img.data[o+3]=0;continue;}
+    if(rr<S.R1){img.data[o]=8;img.data[o+1]=4;img.data[o+2]=16;img.data[o+3]=230;continue;}
+    const n=nOf(rr);
+    const u=Math.max(0,Math.min(1,n/1.05));    // 0 (n=0 at inner edge) .. 1
+    img.data[o]  = 30+225*Math.pow(1-u,1.2);
+    img.data[o+1]= 40+150*Math.pow(u,0.7);
+    img.data[o+2]= 90+165*u;
+    img.data[o+3]= 120;
+  }
+  hx.putImageData(img,0,0);
+  return heatCv;
+}
+
+// ---- detector accumulation
+function detect(cloakOn){
+  const bins=new Float32Array(140);
+  const dxRay=1,dyRay=0;
+  const n=90, y0=H*0.5-H*0.42, y1=H*0.5+H*0.42;
+  const save=S.cloak; S.cloak=cloakOn;
+  for(let i=0;i<n;i++){
+    const yy=y0+(y1-y0)*i/(n-1);
+    const r=traceRay(-40,yy,dxRay,dyRay);
+    const p=r.pts[r.pts.length-1];
+    if(r.blocked) continue;
+    if(p[0]<W*0.86) continue;
+    // find where it crosses the detector plane
+    let hy=null;
+    for(let k=1;k<r.pts.length;k++){
+      const a=r.pts[k-1],b=r.pts[k];
+      if((a[0]-detX)*(b[0]-detX)<=0 && b[0]!==a[0]){
+        const f=(detX-a[0])/(b[0]-a[0]); hy=a[1]+f*(b[1]-a[1]); break;
+      }
+    }
+    if(hy===null) continue;
+    const bi=Math.floor((hy-y0)/(y1-y0)*bins.length);
+    if(bi>=0&&bi<bins.length) bins[bi]+=1;
+  }
+  S.cloak=save;
+  return bins;
+}
+let detX=0;
+
+function draw(){
+  S.t+=1/60;
+  S.R1=+s1.value; S.R2=Math.max(+s2.value,S.R1+22);
+  if(+s2.value<S.R1+22) s2.value=S.R1+22;
+  S.rays=+s3.value;
+  el('v1').textContent=S.R1+'px'; el('v2').textContent=S.R2.toFixed(0)+'px'; el('v3').textContent=S.rays;
+  detX=W*0.88;
+
+  // background
+  const g=x.createRadialGradient(W*0.5,H*0.5,0,W*0.5,H*0.5,Math.max(W,H)*0.7);
+  g.addColorStop(0,'#0a1024');g.addColorStop(1,'#03050b');
+  x.fillStyle=g;x.fillRect(0,0,W,H);
+
+  // heatmap underlay
+  if(S.heat){
+    const hm=heatmap();
+    x.save();x.globalCompositeOperation='lighter';x.globalAlpha=0.85;
+    x.drawImage(hm,S.cx-hm.width/2,S.cy-hm.height/2);
+    x.restore();
+  }
+
+  // cloak rings
+  x.save();
+  x.strokeStyle=S.cloak?'rgba(120,190,255,.75)':'rgba(255,110,110,.7)';
+  x.lineWidth=1.6;x.shadowColor=S.cloak?'#5af':'#f66';x.shadowBlur=16;
+  x.beginPath();x.arc(S.cx,S.cy,S.R2,0,7);x.stroke();
+  x.setLineDash([5,5]);
+  x.beginPath();x.arc(S.cx,S.cy,S.R1,0,7);x.stroke();
+  x.restore();
+
+  // hidden object (star) in the core
+  drawStar(S.cx,S.cy,Math.min(S.R1*0.62,54),S.t);
+
+  // ---- rays ----
+  let residSum=0,residN=0;
+  const y0=H*0.5-H*0.44,y1=H*0.5+H*0.44;
+  x.save();x.globalCompositeOperation='lighter';
+  for(let i=0;i<S.rays;i++){
+    let px,py,dx,dy;
+    if(S.point){
+      px=S.sx;py=S.sy;
+      const a=(-0.55+1.10*i/(S.rays-1));
+      dx=Math.cos(a);dy=Math.sin(a);
+    }else{
+      px=-40;py=y0+(y1-y0)*i/(S.rays-1);dx=1;dy=0;
+    }
+    const r=traceRay(px,py,dx,dy);
+    const hue=200+55*(i/S.rays);
+    x.strokeStyle='hsla('+hue+',100%,68%,'+(r.blocked?0.35:0.55)+')';
+    x.lineWidth=1.2;x.shadowColor='hsla('+hue+',100%,60%,.9)';x.shadowBlur=8;
+    x.beginPath();
+    for(let k=0;k<r.pts.length;k++){k?x.lineTo(r.pts[k][0],r.pts[k][1]):x.moveTo(r.pts[k][0],r.pts[k][1]);}
+    x.stroke();
+    if(r.blocked){
+      x.fillStyle='rgba(255,90,90,.9)';
+      x.beginPath();x.arc(r.pts[1][0],r.pts[1][1],2.4,0,7);x.fill();
+    }else if(S.cloak&&!S.point){
+      // residual: does the ray end on its original straight line?
+      const p=r.pts[r.pts.length-1];
+      residSum+=Math.abs(p[1]-py); residN++;
+    }
+    // ghost of the undisturbed straight line
+    if(S.cloak&&!S.point&&i%4===0){
+      x.strokeStyle='rgba(255,255,255,.10)';x.shadowBlur=0;x.lineWidth=1;
+      x.beginPath();x.moveTo(px,py);x.lineTo(W,py+dy/dx*(W-px));x.stroke();
+    }
+  }
+  x.restore();
+
+  // source handle
+  if(S.point){
+    x.save();x.fillStyle='#ffe9a8';x.shadowColor='#fd6';x.shadowBlur=24;
+    x.beginPath();x.arc(S.sx,S.sy,7,0,7);x.fill();x.restore();
+  }
+
+  // ---- detector screen ----
+  const bA=detect(true), bB=detect(false);
+  const cur=S.cloak?bA:bB;
+  x.save();
+  x.strokeStyle='rgba(170,220,255,.5)';x.lineWidth=2;x.shadowColor='#5af';x.shadowBlur=12;
+  x.beginPath();x.moveTo(detX,H*0.06);x.lineTo(detX,H*0.94);x.stroke();
+  const dy0=H*0.5-H*0.42, dh=H*0.84;
+  let rms=0;
+  for(let i=0;i<cur.length;i++){
+    const yy=dy0+dh*i/cur.length;
+    const wA=cur[i]*11, wFree=bA[i]*11;
+    x.fillStyle='hsla(190,100%,65%,'+Math.min(0.9,cur[i]*0.5)+')';
+    x.fillRect(detX+4,yy,Math.min(70,wA),dh/cur.length+0.6);
+    if(S.ab){
+      x.fillStyle='rgba(255,120,160,.45)';
+      x.fillRect(detX+4,yy,Math.min(70,bB[i]*11),(dh/cur.length)*0.45);
+    }
+    const d=(bA[i]-bB[i]); rms+=d*d;
+  }
+  rms=Math.sqrt(rms/cur.length);
+  x.fillStyle='rgba(160,210,240,.7)';x.font='10px ui-monospace,monospace';
+  x.save();x.translate(detX+86,H*0.5);x.rotate(Math.PI/2);x.textAlign='center';
+  x.fillText('DETECTOR SCREEN'+(S.ab?'  (cyan=cloaked · pink=bare object)':''),0,0);x.restore();
+  x.restore();
+
+  // status text
+  x.save();
+  x.font='12px ui-monospace,monospace';
+  if(S.cloak){x.fillStyle='rgba(124,255,157,.9)';x.shadowColor='#0f8';x.shadowBlur=12;
+    x.fillText('CLOAKED — rays rejoin their straight lines; detector reads FREE SPACE',26,H-28);}
+  else{x.fillStyle='rgba(255,120,120,.92)';x.shadowColor='#f44';x.shadowBlur=12;
+    x.fillText('BARE OBJECT — shadow + scattering betray it on the detector',26,H-28);}
+  x.restore();
+
+  const resid=residN?residSum/residN:0;
+  const nInner=nOf(S.R1+0.5),nOuter=nOf(S.R2-0.5);
+  el('nr').textContent=nInner.toFixed(3)+' → '+nOuter.toFixed(3);
+  el('res').textContent=resid.toFixed(4)+' px';
+  el('rtag').className=resid<1?'ok':'bad';
+  el('rtag').textContent=S.cloak?(resid<1?'PERFECT RESTORE':'—'):'n/a';
+  el('rms').textContent=S.cloak?rms.toFixed(3)+' (0 = indistinguishable)':rms.toFixed(3);
+
+  requestAnimationFrame(draw);
+}
+
+function drawStar(cx,cy,R,t){
+  x.save();x.translate(cx,cy);x.rotate(t*0.3);
+  x.beginPath();
+  for(let i=0;i<10;i++){
+    const a=Math.PI*2*i/10-Math.PI/2, rr=i%2?R*0.44:R;
+    i?x.lineTo(Math.cos(a)*rr,Math.sin(a)*rr):x.moveTo(Math.cos(a)*rr,Math.sin(a)*rr);
+  }
+  x.closePath();
+  const pulse=0.7+0.3*Math.sin(t*2);
+  x.fillStyle='rgba(255,215,120,'+(0.85*pulse)+')';
+  x.shadowColor='#fc6';x.shadowBlur=30*pulse;x.fill();
+  x.restore();
+  x.save();x.fillStyle='rgba(255,200,120,.5)';x.font='10px ui-monospace,monospace';
+  x.textAlign='center';x.fillText('HIDDEN',cx,cy+R+16);x.restore();
+}
+draw();
+})();
+</script>

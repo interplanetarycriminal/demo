@@ -1,0 +1,371 @@
+<title>Acceptance Cone</title>
+<style>
+html,body{margin:0;padding:0;height:100%;background:#03050b;overflow:hidden}
+canvas{display:block;position:fixed;inset:0;cursor:crosshair}
+#ui{position:fixed;top:10px;left:10px;z-index:10;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;
+ color:#cfe6ff;background:rgba(6,10,20,.64);border:1px solid rgba(120,190,255,.28);border-radius:8px;
+ padding:10px 12px;max-width:350px;backdrop-filter:blur(6px);box-shadow:0 0 24px rgba(60,140,255,.18)}
+#ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.13em;color:#9ff;text-shadow:0 0 10px #0cf}
+#ui .m{color:#9fb6d0;margin:0 0 6px}
+#ui .sci{color:#ffd48a}
+#ui .lin{color:#7fd8a8}
+#ui a{color:#7fc4ff}
+#ui label{display:block;margin:7px 0 1px;color:#8fa9c4}
+#ui input[type=range]{width:100%;accent-color:#5cf}
+#ui button{background:#12203a;color:#bfe4ff;border:1px solid #3a6a9a;border-radius:5px;padding:4px 8px;font:11px monospace;cursor:pointer;margin:6px 4px 0 0}
+#ui button:hover{background:#1b3255}
+#ui button.on{background:#1e4a2e;border-color:#4ea86a;color:#c8ffd8}
+.big{color:#fff;font-size:12px}
+.good{color:#8dff9a}.warn{color:#ff9a6a}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>OPTICAL FIBRE — ACCEPTANCE CONE</h1>
+<p class="m">A high-index core in lower-index cladding holds light by repeated total internal reflection — but only for rays launched inside the acceptance cone, NA = √(n₁²−n₂²).</p>
+<p class="sci">Colladon/Tyndall guiding principle; low-loss silica fibre — Charles K. Kao &amp; George Hockham, 1966 (Nobel 2009)</p>
+<p class="lin">LINEAGE: Colladon's 1842 jet → endoscope fibre bundles → Kao 1966 low-loss silica</p>
+<label>Launch angle <span id="aR" class="big">6.0°</span></label>
+<input id="a" type="range" min="-40" max="40" step="0.25" value="6">
+<label>Cladding n₂ <span id="n2R" class="big">1.4570</span></label>
+<input id="n2" type="range" min="1.20" max="1.4740" step="0.0005" value="1.4570">
+<label>Core n₁ <span id="n1R" class="big">1.4750</span></label>
+<input id="n1" type="range" min="1.40" max="1.70" step="0.0025" value="1.475">
+<label>Bend tightness <span id="bR" class="big">0.30</span></label>
+<input id="b" type="range" min="0" max="1" step="0.005" value="0.30">
+<div>
+<button id="fan">FAN of rays: ON</button>
+<button id="pul">PULSE mode: OFF</button>
+</div>
+<p class="m">Drag the two control dots on the fibre to bend it. Tighten the bend until light sprays out.</p>
+<div>NA = <span id="na" class="big">0.229</span> → acceptance θ = <span id="th" class="big">13.2°</span></div>
+<div>critical angle C = <span id="ca" class="big">80.6°</span> (core→clad)</div>
+<div>this ray: <span id="stat" class="big">—</span></div>
+<div>bounces <span id="nb">0</span> · path/length <span id="pl">1.000</span></div>
+<div id="disp" class="m"></div>
+<p><a href="index.html">← gallery</a></p>
+</div>
+<script>
+"use strict";
+var c=document.getElementById('c'),g=c.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
+ c.width=W*DPR;c.height=H*DPR;c.style.width=W+'px';c.style.height=H+'px';g.setTransform(DPR,0,0,DPR,0,0);
+ layout();}
+var el=function(i){return document.getElementById(i);};
+var Sa=el('a'),Sn1=el('n1'),Sn2=el('n2'),Sb=el('b'),Bfan=el('fan'),Bpul=el('pul');
+var fanOn=true,pulseOn=false;
+Bfan.onclick=function(){fanOn=!fanOn;Bfan.textContent='FAN of rays: '+(fanOn?'ON':'OFF');Bfan.className=fanOn?'on':'';};
+Bpul.onclick=function(){pulseOn=!pulseOn;Bpul.textContent='PULSE mode: '+(pulseOn?'ON':'OFF');Bpul.className=pulseOn?'on':'';};
+Bfan.className='on';
+
+// --- fibre centreline: cubic Bezier with draggable control points ---
+var P0={x:0,y:0},P1={x:0,y:0},P2={x:0,y:0},P3={x:0,y:0},CORE=26;
+function layout(){
+  P0={x:W*0.20,y:H*0.50};
+  P3={x:W*0.95,y:H*0.50};
+  if(!P1.set){P1={x:W*0.45,y:H*0.28,set:true};}
+  if(!P2.set){P2={x:W*0.70,y:H*0.72,set:true};}
+  CORE=Math.max(16,Math.min(34,H*0.045));
+}
+window.addEventListener('resize',resize);resize();
+
+function bez(t){
+  var u=1-t,a=u*u*u,b=3*u*u*t,d=3*u*t*t,e=t*t*t;
+  return{x:a*P0.x+b*P1.x+d*P2.x+e*P3.x, y:a*P0.y+b*P1.y+d*P2.y+e*P3.y};
+}
+function bezD(t){
+  var u=1-t;
+  var x=3*u*u*(P1.x-P0.x)+6*u*t*(P2.x-P1.x)+3*t*t*(P3.x-P2.x);
+  var y=3*u*u*(P1.y-P0.y)+6*u*t*(P2.y-P1.y)+3*t*t*(P3.y-P2.y);
+  var L=Math.hypot(x,y)||1;return{x:x/L,y:y/L,L:L};
+}
+// bend amount from slider warps P1/P2 vertically around the base drag
+var bendBias=0;
+function ctrl1(){return{x:P1.x,y:P1.y-bendBias};}
+function ctrl2(){return{x:P2.x,y:P2.y+bendBias};}
+function bezB(t){
+  var A=ctrl1(),B=ctrl2(),u=1-t,a=u*u*u,b=3*u*u*t,d=3*u*t*t,e=t*t*t;
+  return{x:a*P0.x+b*A.x+d*B.x+e*P3.x, y:a*P0.y+b*A.y+d*B.y+e*P3.y};
+}
+function bezBD(t){
+  var A=ctrl1(),B=ctrl2(),u=1-t;
+  var x=3*u*u*(A.x-P0.x)+6*u*t*(B.x-A.x)+3*t*t*(P3.x-B.x);
+  var y=3*u*u*(A.y-P0.y)+6*u*t*(B.y-A.y)+3*t*t*(P3.y-B.y);
+  var L=Math.hypot(x,y)||1;return{x:x/L,y:y/L,L:L};
+}
+function nrm(t){var d=bezBD(t);return{x:-d.y,y:d.x};}
+
+// arc-length table
+var TBL=[],TOT=0;
+function buildTable(){
+  TBL=[];var prev=bezB(0),acc=0;TBL.push({t:0,s:0});
+  for(var i=1;i<=400;i++){var t=i/400,p=bezB(t);acc+=Math.hypot(p.x-prev.x,p.y-prev.y);prev=p;TBL.push({t:t,s:acc});}
+  TOT=acc;
+}
+function tAtS(s){
+  if(s<=0)return 0; if(s>=TOT)return 1;
+  var lo=0,hi=TBL.length-1;
+  while(hi-lo>1){var m=(lo+hi)>>1; if(TBL[m].s<s)lo=m;else hi=m;}
+  var f=(s-TBL[lo].s)/((TBL[hi].s-TBL[lo].s)||1);
+  return TBL[lo].t+f*(TBL[hi].t-TBL[lo].t);
+}
+// nearest t to a point (coarse + refine)
+function nearestT(px,py,hint){
+  var best=hint===undefined?0:hint,bd=1e18;
+  var lo=Math.max(0,best-0.06),hi=Math.min(1,best+0.10);
+  if(hint===undefined){lo=0;hi=1;}
+  for(var i=0;i<=60;i++){
+    var t=lo+(hi-lo)*i/60,p=bezB(t),d=(p.x-px)*(p.x-px)+(p.y-py)*(p.y-py);
+    if(d<bd){bd=d;best=t;}
+  }
+  var span=(hi-lo)/60;
+  for(var k=0;k<12;k++){
+    var t1=Math.max(0,best-span),t2=Math.min(1,best+span);
+    var p1=bezB(t1),p2=bezB(t2);
+    var d1=(p1.x-px)*(p1.x-px)+(p1.y-py)*(p1.y-py);
+    var d2=(p2.x-px)*(p2.x-px)+(p2.y-py)*(p2.y-py);
+    if(d1<bd){bd=d1;best=t1;} if(d2<bd){bd=d2;best=t2;}
+    span*=0.55;
+  }
+  return best;
+}
+function signedOffset(px,py,hint){
+  var t=nearestT(px,py,hint),p=bezB(t),N=nrm(t);
+  return{t:t,d:(px-p.x)*N.x+(py-p.y)*N.y,p:p,N:N};
+}
+
+// --- ray tracing inside the guide ---
+function traceRay(angDeg,n1,n2){
+  var C=Math.asin(Math.min(1,n2/n1));
+  var st=bezBD(0),N0=nrm(0);
+  var th=angDeg*Math.PI/180;
+  // launch from entrance face centre, angle relative to axis (external -> internal by Snell)
+  var sinInt=Math.sin(th)/n1;
+  var thi=Math.asin(Math.max(-1,Math.min(1,sinInt)));
+  var dx=st.x*Math.cos(thi)+N0.x*Math.sin(thi);
+  var dy=st.y*Math.cos(thi)+N0.y*Math.sin(thi);
+  var px=P0.x,py=P0.y;
+  var path=[{x:px,y:py}],escapes=[],bounces=0,len=0,guided=true,minInc=999;
+  var step=2.0,hint=0;
+  for(var it=0;it<6000;it++){
+    var nx=px+dx*step, ny=py+dy*step;
+    var q=signedOffset(nx,ny,hint);hint=q.t;
+    len+=step;
+    if(q.t>=0.9995){path.push({x:nx,y:ny});break;}
+    if(Math.abs(q.d)<CORE){px=nx;py=ny;path.push({x:px,y:py});continue;}
+    // bisect to the core wall
+    var lo=0,hi=step;
+    for(var k=0;k<20;k++){
+      var mid=(lo+hi)/2,mq=signedOffset(px+dx*mid,py+dy*mid,hint);
+      if(Math.abs(mq.d)<CORE)lo=mid;else hi=mid;
+    }
+    var hx=px+dx*lo,hy=py+dy*lo;
+    var hq=signedOffset(hx,hy,hint);
+    var sg=hq.d>=0?1:-1,Nn=nrm(hq.t);
+    var Ox=Nn.x*sg,Oy=Nn.y*sg;
+    var ci=dx*Ox+dy*Oy; if(ci<0){Ox=-Ox;Oy=-Oy;ci=-ci;}
+    var inc=Math.acos(Math.min(1,Math.max(-1,ci)));
+    if(inc<minInc)minInc=inc;
+    path.push({x:hx,y:hy});
+    if(Math.sin(inc)*n1>=n2){ // TIR: guided
+      dx=dx-2*ci*Ox;dy=dy-2*ci*Oy;
+      var L=Math.hypot(dx,dy);dx/=L;dy/=L;
+      px=hx+dx*0.8;py=hy+dy*0.8;bounces++;continue;
+    }
+    // refracts into cladding -> escapes
+    var eta=n1/n2, kk=1-eta*eta*(1-ci*ci),tx,ty;
+    if(kk<0){tx=Ox;ty=Oy;}else{
+      tx=eta*dx+(eta*ci-Math.sqrt(kk))*Ox; ty=eta*dy+(eta*ci-Math.sqrt(kk))*Oy;
+      var Lt=Math.hypot(tx,ty);tx/=Lt;ty/=Lt;
+    }
+    escapes.push({x:hx,y:hy,dx:tx,dy:ty,inc:inc});
+    guided=false;
+    dx=dx-2*ci*Ox;dy=dy-2*ci*Oy;
+    var L2=Math.hypot(dx,dy);dx/=L2;dy/=L2;
+    px=hx+dx*0.8;py=hy+dy*0.8;
+    if(escapes.length>8)break;
+  }
+  return{path:path,escapes:escapes,bounces:bounces,len:len,guided:guided,C:C,minInc:minInc};
+}
+
+// --- drag control points ---
+var drag=null;
+function pos(e){var r=c.getBoundingClientRect();var t=e.touches?e.touches[0]:e;return{x:t.clientX-r.left,y:t.clientY-r.top};}
+function down(e){
+  var p=pos(e),A=ctrl1(),B=ctrl2();
+  if(Math.hypot(p.x-A.x,p.y-A.y)<26)drag=1;
+  else if(Math.hypot(p.x-B.x,p.y-B.y)<26)drag=2;
+  if(drag)e.preventDefault();
+}
+function move(e){
+  if(!drag)return;var p=pos(e);
+  if(drag===1){P1.x=p.x;P1.y=p.y+bendBias;}else{P2.x=p.x;P2.y=p.y-bendBias;}
+  e.preventDefault();
+}
+function up(){drag=null;}
+c.addEventListener('mousedown',down);window.addEventListener('mousemove',move);window.addEventListener('mouseup',up);
+c.addEventListener('touchstart',down,{passive:false});window.addEventListener('touchmove',move,{passive:false});window.addEventListener('touchend',up);
+
+var t0=performance.now();
+function render(){
+  var T=(performance.now()-t0)/1000;
+  var n1=parseFloat(Sn1.value),n2=Math.min(parseFloat(Sn2.value),parseFloat(Sn1.value)-0.001);
+  var ang=parseFloat(Sa.value), bend=parseFloat(Sb.value);
+  bendBias=bend*H*0.34;
+  buildTable();
+
+  var NA=Math.sqrt(Math.max(0,n1*n1-n2*n2));
+  var accept=Math.asin(Math.min(1,NA))*180/Math.PI;
+  var C=Math.asin(Math.min(1,n2/n1))*180/Math.PI;
+  el('aR').textContent=ang.toFixed(2)+'°';
+  el('n1R').textContent=n1.toFixed(4);
+  el('n2R').textContent=n2.toFixed(4);
+  el('bR').textContent=bend.toFixed(2);
+  el('na').textContent=NA.toFixed(3);
+  el('th').textContent=accept.toFixed(2)+'°';
+  el('ca').textContent=C.toFixed(2)+'°';
+
+  g.fillStyle='#03050b';g.fillRect(0,0,W,H);
+  var vg=g.createRadialGradient(W*0.5,H*0.5,20,W*0.5,H*0.5,Math.max(W,H)*0.8);
+  vg.addColorStop(0,'rgba(12,32,64,0.35)');vg.addColorStop(1,'rgba(0,0,0,0)');
+  g.fillStyle=vg;g.fillRect(0,0,W,H);
+
+  // cladding + core ribbon
+  function ribbon(halfw,fill,stroke){
+    g.beginPath();
+    for(var i=0;i<=200;i++){var t=i/200,p=bezB(t),N=nrm(t);g.lineTo(p.x+N.x*halfw,p.y+N.y*halfw);}
+    for(var j=200;j>=0;j--){var t2=j/200,p2=bezB(t2),N2=nrm(t2);g.lineTo(p2.x-N2.x*halfw,p2.y-N2.y*halfw);}
+    g.closePath();g.fillStyle=fill;g.fill();
+    if(stroke){g.strokeStyle=stroke;g.lineWidth=1.2;g.stroke();}
+  }
+  ribbon(CORE*2.0,'rgba(40,80,140,0.14)','rgba(110,170,240,0.25)');
+  ribbon(CORE,'rgba(90,180,255,0.10)','rgba(150,220,255,0.42)');
+
+  var main=traceRay(ang,n1,n2);
+
+  // fan of rays
+  g.globalCompositeOperation='lighter';
+  if(fanOn){
+    for(var f=-9;f<=9;f++){
+      if(f===0)continue;
+      var a2=f*(accept*1.9/9);
+      var r2=traceRay(a2,n1,n2);
+      var inside=Math.abs(a2)<=accept;
+      g.strokeStyle=inside?'rgba(90,220,255,0.30)':'rgba(255,120,80,0.22)';
+      g.lineWidth=1;
+      g.beginPath();
+      for(var p3=0;p3<r2.path.length;p3++){var q3=r2.path[p3];if(p3===0)g.moveTo(q3.x,q3.y);else g.lineTo(q3.x,q3.y);}
+      g.stroke();
+      for(var e2=0;e2<r2.escapes.length;e2++){
+        var es=r2.escapes[e2];
+        var gr=g.createLinearGradient(es.x,es.y,es.x+es.dx*70,es.y+es.dy*70);
+        gr.addColorStop(0,'rgba(255,170,90,0.55)');gr.addColorStop(1,'rgba(255,80,40,0)');
+        g.strokeStyle=gr;g.lineWidth=2;
+        g.beginPath();g.moveTo(es.x,es.y);g.lineTo(es.x+es.dx*70,es.y+es.dy*70);g.stroke();
+      }
+    }
+  }
+
+  // main ray
+  for(var pass=0;pass<3;pass++){
+    g.lineWidth=[7,3,1.2][pass];
+    g.strokeStyle=main.guided
+      ? ['rgba(60,255,190,0.10)','rgba(90,255,210,0.35)','rgba(225,255,245,0.95)'][pass]
+      : ['rgba(255,90,60,0.10)','rgba(255,140,90,0.35)','rgba(255,235,220,0.95)'][pass];
+    g.beginPath();
+    for(var p4=0;p4<main.path.length;p4++){var q4=main.path[p4];if(p4===0)g.moveTo(q4.x,q4.y);else g.lineTo(q4.x,q4.y);}
+    g.stroke();
+  }
+  for(var e3=0;e3<main.escapes.length;e3++){
+    var ee=main.escapes[e3],len=140;
+    var gr2=g.createLinearGradient(ee.x,ee.y,ee.x+ee.dx*len,ee.y+ee.dy*len);
+    gr2.addColorStop(0,'rgba(255,220,150,0.95)');gr2.addColorStop(1,'rgba(255,90,40,0)');
+    g.strokeStyle=gr2;g.lineWidth=4;
+    g.beginPath();g.moveTo(ee.x,ee.y);g.lineTo(ee.x+ee.dx*len,ee.y+ee.dy*len);g.stroke();
+    g.fillStyle='rgba(255,245,210,0.95)';g.beginPath();g.arc(ee.x,ee.y,3.5,0,6.2832);g.fill();
+  }
+
+  // pulses (mode dispersion)
+  var dispTxt='';
+  if(pulseOn){
+    var modes=[0.15,0.45,0.8,1.0];
+    var arrive=[];
+    for(var m=0;m<modes.length;m++){
+      var am=accept*modes[m];
+      var rm=traceRay(am,n1,n2);
+      arrive.push(rm.len/TOT);
+      var period=2.4, tt=((T/period)%1);
+      var sIdx=Math.floor(tt*rm.path.length);
+      for(var rep=0;rep<3;rep++){
+        var idx=Math.floor((( (T/period)+rep*0.33 )%1)*rm.path.length);
+        if(idx<0||idx>=rm.path.length)continue;
+        var pp=rm.path[idx];
+        var hue=[170,140,50,20][m];
+        g.fillStyle='hsla('+hue+',100%,70%,0.9)';
+        g.beginPath();g.arc(pp.x,pp.y,5,0,6.2832);g.fill();
+        g.fillStyle='hsla('+hue+',100%,70%,0.18)';
+        g.beginPath();g.arc(pp.x,pp.y,13,0,6.2832);g.fill();
+      }
+    }
+    var spread=(Math.max.apply(null,arrive)/Math.min.apply(null,arrive)-1)*100;
+    dispTxt='MODE DISPERSION: steep rays travel '+spread.toFixed(1)+'% farther → pulses smear (multimode limit)';
+  }
+  g.globalCompositeOperation='source-over';
+  el('disp').textContent=dispTxt;
+
+  // acceptance cone at entrance face
+  var d0=bezBD(0),N0=nrm(0);
+  var conL=Math.min(W,H)*0.20;
+  var aR=accept*Math.PI/180;
+  g.beginPath();g.moveTo(P0.x,P0.y);
+  for(var i2=-12;i2<=12;i2++){
+    var th2=aR*i2/12;
+    g.lineTo(P0.x-(d0.x*Math.cos(th2)+N0.x*Math.sin(th2))*conL,
+             P0.y-(d0.y*Math.cos(th2)+N0.y*Math.sin(th2))*conL);
+  }
+  g.closePath();
+  g.fillStyle='rgba(90,220,255,0.13)';g.fill();
+  g.strokeStyle='rgba(120,235,255,0.55)';g.lineWidth=1.2;g.stroke();
+  // the launched direction
+  var lr=ang*Math.PI/180;
+  g.strokeStyle=Math.abs(ang)<=accept?'#7fffd0':'#ff8a5a';g.lineWidth=2;
+  g.beginPath();g.moveTo(P0.x,P0.y);
+  g.lineTo(P0.x-(d0.x*Math.cos(lr)+N0.x*Math.sin(lr))*conL*1.15,
+           P0.y-(d0.y*Math.cos(lr)+N0.y*Math.sin(lr))*conL*1.15);
+  g.stroke();
+  g.font='11px ui-monospace,monospace';g.fillStyle='rgba(160,225,255,0.85)';
+  g.fillText('acceptance cone ±'+accept.toFixed(1)+'°',P0.x-conL-10,P0.y-conL*0.55);
+  g.fillStyle='rgba(190,225,255,0.8)';
+  g.fillText('entrance face',P0.x-4,P0.y+CORE*2.6);
+
+  // control dots
+  var A=ctrl1(),B=ctrl2();
+  [[A,'#ffd48a'],[B,'#ffd48a']].forEach(function(pr){
+    g.beginPath();g.arc(pr[0].x,pr[0].y,8,0,6.2832);
+    g.fillStyle='rgba(20,28,44,0.9)';g.fill();
+    g.strokeStyle=pr[1];g.lineWidth=2;g.stroke();
+  });
+  g.fillStyle='rgba(255,212,138,0.65)';g.font='10px ui-monospace,monospace';
+  g.fillText('drag',A.x+11,A.y+3);g.fillText('drag',B.x+11,B.y+3);
+
+  // status
+  el('nb').textContent=main.bounces;
+  el('pl').textContent=(main.len/TOT).toFixed(3);
+  var s=el('stat');
+  if(Math.abs(ang)>accept){s.className='big warn';s.textContent='OUTSIDE the cone — refracts into cladding, dies';}
+  else if(!main.guided){s.className='big warn';s.textContent='BEND LOSS — incidence '+(main.minInc*180/Math.PI).toFixed(1)+'° < C '+C.toFixed(1)+'°';}
+  else{s.className='big good';s.textContent='GUIDED — '+main.bounces+' TIR bounces to the far end';}
+
+  g.font='12px ui-monospace,monospace';
+  g.fillStyle=main.guided?'rgba(150,255,215,0.85)':'rgba(255,170,120,0.9)';
+  g.fillText('NA='+NA.toFixed(3)+'  θmax='+accept.toFixed(2)+'°  C='+C.toFixed(2)+'°  min incidence='+(main.minInc*180/Math.PI).toFixed(1)+'°',20,H-22);
+  if(!main.guided&&Math.abs(ang)<=accept&&main.escapes.length){
+    g.fillStyle='rgba(255,200,140,0.95)';
+    g.fillText('sharp bend → light sprays out here',Math.min(W-320,main.escapes[0].x+12),main.escapes[0].y-14);
+  }
+  requestAnimationFrame(render);
+}
+requestAnimationFrame(render);
+</script>
+</body>

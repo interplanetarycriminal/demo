@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Crookes Radiometer</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;background:#04060a;overflow:hidden}
+  canvas{display:block;width:100vw;height:100vh}
+  #ui{position:fixed;top:0;left:0;margin:10px;padding:10px 12px;max-width:350px;
+      background:rgba(5,9,16,.74);border:1px solid rgba(120,255,220,.22);border-radius:6px;
+      color:#b6f2e4;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;
+      text-shadow:0 0 6px rgba(80,255,210,.4);z-index:10;backdrop-filter:blur(3px)}
+  #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.12em;color:#9fffe0;text-shadow:0 0 10px rgba(80,255,200,.7)}
+  #ui .dim{color:#6fa79b}
+  #ui .hot{color:#ffe08a}
+  #ui a{color:#7ff0ff;text-decoration:none;border-bottom:1px dotted #7ff0ff}
+  #ui label{display:block;margin-top:5px}
+  #ui input[type=range]{width:100%;accent-color:#3fe0b0;height:14px}
+  #ui .row{display:flex;justify-content:space-between}
+  button{background:rgba(60,255,200,.1);border:1px solid rgba(80,255,210,.45);color:#9fffe0;
+    font:11px ui-monospace,monospace;padding:3px 7px;border-radius:4px;cursor:pointer;margin:4px 4px 0 0}
+  button:hover{background:rgba(60,255,200,.26)}
+  hr{border:0;border-top:1px solid rgba(120,255,220,.16);margin:6px 0}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>CROOKES RADIOMETER</h1>
+  <div>The vanes spin <b>black-face-retreating</b> not from light pressure but from rarefied-gas thermal creep sliding along the hot vane edges.</div>
+  <div class="dim">William Crookes, 1873 &mdash; explained by Maxwell &amp; Reynolds, 1879</div>
+  <div class="dim">LINEAGE: Crookes 1873 &rarr; Maxwell/Reynolds/Einstein thermal transpiration &rarr; Lebedev &amp; Nichols&ndash;Hull measure real radiation pressure (1899&ndash;1901).</div>
+  <hr>
+  <div class="dim">CONTROLS: drag sliders &middot; <span class="hot">E</span> edge-flow arrows &middot; <span class="hot">M</span> myth panel &middot; <span class="hot">R</span> radiation-pressure-only mode</div>
+  <label>light intensity <span id="lI" class="hot">600 W/m&sup2;</span><input id="sI" type="range" min="0" max="1500" value="600"></label>
+  <label>gas pressure <span id="lP" class="hot">10.0 mTorr</span><input id="sP" type="range" min="0" max="1000" value="500"></label>
+  <div><button id="bE">EDGE FLOW</button><button id="bM">MYTH</button><button id="bR">RAD-ONLY</button></div>
+  <hr>
+  <div class="row"><span>pressure</span><span id="rP" class="hot">&mdash;</span></div>
+  <div class="row"><span>mean free path &lambda;</span><span id="rL" class="hot">&mdash;</span></div>
+  <div class="row"><span>Knudsen Kn = &lambda;/L</span><span id="rK" class="hot">&mdash;</span></div>
+  <div class="row"><span>regime</span><span id="rR" class="hot">&mdash;</span></div>
+  <div class="row"><span>creep torque</span><span id="rT" class="hot">&mdash;</span></div>
+  <div class="row"><span>photon torque</span><span id="rPh" class="hot">&mdash;</span></div>
+  <div class="row"><span>spin</span><span id="rS" class="hot">&mdash;</span></div>
+  <div><a href="index.html">&larr; gallery</a></div>
+</div>
+<script>
+(function(){
+"use strict";
+var c=document.getElementById('c'),g=c.getContext('2d');
+var W=0,H=0,DPR=1;
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  W=window.innerWidth;H=window.innerHeight;
+  c.width=Math.round(W*DPR);c.height=Math.round(H*DPR);
+  c.style.width=W+'px';c.style.height=H+'px';
+  g.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize',resize);resize();
+
+var el=function(i){return document.getElementById(i)};
+var S={I:600,slider:500,edge:true,myth:false,radOnly:false,ang:0,omega:0};
+
+// pressure mapping: slider 0..1000 -> 1e-5 .. 1e3 Torr, log
+function sliderToTorr(v){ return Math.pow(10, -5 + (v/1000)*8 ); }  // 1e-5 .. 1e3 Torr
+function fmtP(t){
+  if(t<1e-3)return (t*1e6).toFixed(1)+' µTorr';
+  if(t<1)return (t*1e3).toFixed(2)+' mTorr';
+  if(t<760)return t.toFixed(2)+' Torr';
+  return (t/760).toFixed(2)+' atm';
+}
+// mean free path (air, ~room T): lambda[m] ~ 6.6e-3 / P[Torr] ... in cm: 5e-3/P(Torr) m
+function lambda(t){ return 5.0e-3/Math.max(t,1e-12); }  // metres
+var L_VANE=0.010; // 1 cm characteristic vane size
+function knudsen(t){ return lambda(t)/L_VANE; }
+
+// Creep torque: peaked in Kn ~ 1 (transition regime). Zero at both extremes.
+// tau ∝ I * Kn/(1+Kn)^2 * 4  -> peak at Kn=1, ->0 as Kn->0 (continuum) and Kn->inf (free molecular)
+function creepTorque(I,t){
+  var Kn=knudsen(t);
+  var shape=4*Kn/((1+Kn)*(1+Kn));   // peak 1.0 at Kn=1, →0 both ends
+  return I*shape;
+}
+// True radiation pressure torque: tiny, opposite sign (mirror retreats -> negative here)
+function photonTorque(I){ return -I*0.0012; }
+
+function totalTorque(){
+  var t=sliderToTorr(S.slider);
+  var ph=photonTorque(S.I);
+  if(S.radOnly)return ph;
+  return creepTorque(S.I,t)+ph;
+}
+
+el('sI').oninput=function(){S.I=+this.value;el('lI').textContent=S.I+' W/m²'};
+el('sP').oninput=function(){S.slider=+this.value;el('lP').textContent=fmtP(sliderToTorr(S.slider))};
+el('bE').onclick=function(){S.edge=!S.edge};
+el('bM').onclick=function(){S.myth=!S.myth};
+el('bR').onclick=function(){S.radOnly=!S.radOnly};
+window.addEventListener('keydown',function(e){
+  var k=e.key.toLowerCase();
+  if(k==='e')S.edge=!S.edge;
+  if(k==='m')S.myth=!S.myth;
+  if(k==='r')S.radOnly=!S.radOnly;
+});
+el('lP').textContent=fmtP(sliderToTorr(S.slider));
+
+// gas particles inside bulb
+var gas=[];
+for(var i=0;i<400;i++)gas.push({a:Math.random()*6.283,r:Math.random(),th:Math.random()*6.283,sp:.3+Math.random()});
+
+var last=performance.now();
+function step(dt){
+  var tau=totalTorque();
+  // inertia + gas drag (drag rises with pressure)
+  var t=sliderToTorr(S.slider);
+  var drag=0.9+ 6.0*(t/(t+1.0));
+  S.omega += (tau*0.0016 - S.omega*drag)*dt*6;
+  S.ang += S.omega*dt;
+  for(var i=0;i<gas.length;i++){var m=gas[i];m.th+=dt*m.sp*1.6;m.a+=dt*m.sp*.9;}
+}
+
+function glow(col,b){g.shadowColor=col;g.shadowBlur=b;}
+function noglow(){g.shadowBlur=0;}
+
+function arrow(x1,y1,x2,y2,col,w){
+  g.strokeStyle=col;g.lineWidth=w||1.4;g.beginPath();g.moveTo(x1,y1);g.lineTo(x2,y2);g.stroke();
+  var a=Math.atan2(y2-y1,x2-x1),s=5;
+  g.beginPath();g.moveTo(x2,y2);
+  g.lineTo(x2-Math.cos(a-0.4)*s,y2-Math.sin(a-0.4)*s);
+  g.lineTo(x2-Math.cos(a+0.4)*s,y2-Math.sin(a+0.4)*s);
+  g.closePath();g.fillStyle=col;g.fill();
+}
+
+function draw(){
+  g.fillStyle='#04060a';g.fillRect(0,0,W,H);
+  var cx=W*0.46, cy=H*0.52;
+  var R=Math.min(W,H)*0.26;
+
+  var t=sliderToTorr(S.slider), Kn=knudsen(t);
+  var heat=S.I/1500;
+
+  // light beam from left
+  if(S.I>1){
+    var lg=g.createLinearGradient(0,cy,cx,cy);
+    lg.addColorStop(0,'rgba(255,236,170,'+(0.02+0.13*heat)+')');
+    lg.addColorStop(1,'rgba(255,236,170,0)');
+    g.fillStyle=lg;g.fillRect(0,cy-R*1.1,cx,R*2.2);
+    g.strokeStyle='rgba(255,230,150,'+(0.15+0.35*heat)+')';g.lineWidth=1;
+    for(var b=-5;b<=5;b++){
+      var yy=cy+b*R*0.18;
+      g.beginPath();g.moveTo(10,yy);g.lineTo(cx-R*0.9,yy);g.stroke();
+    }
+    g.fillStyle='rgba(255,230,150,.7)';g.font='10px ui-monospace,monospace';
+    g.fillText('LIGHT '+S.I+' W/m²',14,cy-R*1.05);
+  }
+
+  // glass bulb
+  g.save();
+  var bg=g.createRadialGradient(cx-R*0.3,cy-R*0.4,R*0.1,cx,cy,R*1.05);
+  bg.addColorStop(0,'rgba(120,220,255,.10)');
+  bg.addColorStop(1,'rgba(40,90,120,.05)');
+  g.fillStyle=bg;
+  g.beginPath();g.arc(cx,cy,R,0,6.283);g.fill();
+  glow('#7ff0ff',18);
+  g.strokeStyle='rgba(150,240,255,.55)';g.lineWidth=2.5;
+  g.beginPath();g.arc(cx,cy,R,0,6.283);g.stroke();noglow();
+  // neck + stem
+  g.strokeStyle='rgba(150,240,255,.4)';g.lineWidth=2;
+  g.beginPath();g.moveTo(cx-R*0.16,cy+R*0.96);g.lineTo(cx-R*0.16,cy+R*1.35);
+  g.lineTo(cx+R*0.16,cy+R*1.35);g.lineTo(cx+R*0.16,cy+R*0.96);g.stroke();
+  g.restore();
+
+  // gas molecules, density from pressure (log-ish)
+  var dens=Math.min(1,Math.max(0,(Math.log10(t)+5)/8));
+  var n=Math.round(gas.length*dens);
+  g.fillStyle='rgba(140,255,220,.55)';
+  for(var i=0;i<n;i++){
+    var m=gas[i];
+    var rr=m.r*R*0.94, an=m.a+m.th*0.3;
+    g.globalAlpha=0.25+0.4*dens;
+    g.fillRect(cx+Math.cos(an)*rr,cy+Math.sin(an)*rr,2,2);
+  }
+  g.globalAlpha=1;
+
+  // spindle
+  g.strokeStyle='rgba(200,240,255,.5)';g.lineWidth=2;
+  g.beginPath();g.moveTo(cx,cy-R*0.75);g.lineTo(cx,cy+R*0.75);g.stroke();
+
+  // vanes
+  var vr=R*0.62, vw=R*0.30;
+  for(var k=0;k<4;k++){
+    var a=S.ang + k*Math.PI/2;
+    var vx=cx+Math.cos(a)*vr, vy=cy+Math.sin(a)*vr;
+    var sq=Math.abs(Math.cos(a))*0.35+0.65; // foreshorten fake
+    g.save();g.translate(vx,vy);g.rotate(a+Math.PI/2);g.scale(1,sq);
+    var isBlack=(k%2===0);
+    // heating depends on facing the light (light from -x)
+    var facing=Math.max(0,-Math.cos(a));
+    var T=isBlack? heat*facing : heat*facing*0.15;
+    if(isBlack){
+      g.fillStyle='rgb('+Math.round(20+180*T)+','+Math.round(14+40*T)+','+Math.round(16+20*T)+')';
+      glow('rgb(255,'+Math.round(80+100*T)+',60)',T*22);
+    }else{
+      g.fillStyle='rgba(215,240,255,'+(0.75+0.2*T)+')';
+      glow('#cfe9ff',6);
+    }
+    g.fillRect(-vw/2,-vw*0.62,vw,vw*1.24);
+    noglow();
+    g.strokeStyle=isBlack?'rgba(255,140,80,.8)':'rgba(210,245,255,.9)';
+    g.lineWidth=1.5;g.strokeRect(-vw/2,-vw*0.62,vw,vw*1.24);
+    g.restore();
+
+    // edge-flow (thermal creep) arrows around the rim of black vanes
+    if(S.edge && isBlack && T>0.02 && !S.radOnly){
+      var mag=Math.min(1, creepTorque(S.I,t)/900 );
+      var col='rgba(255,190,90,'+(0.25+0.65*mag)+')';
+      for(var e=-1;e<=1;e+=2){
+        var ex=vx+Math.cos(a+Math.PI/2)*e*vw*0.55;
+        var ey=vy+Math.sin(a+Math.PI/2)*e*vw*0.55*sq;
+        // creep goes cold->hot along the edge: from mirror side toward black side
+        var dxn=Math.cos(a), dyn=Math.sin(a);
+        arrow(ex-dxn*16,ey-dyn*16, ex+dxn*16, ey+dyn*16, col, 1.6);
+      }
+      // reaction push on vane (black face retreats => tangential)
+      var tx=-Math.sin(a),ty=Math.cos(a);
+      arrow(vx,vy, vx+tx*34*Math.max(.3,mag), vy+ty*34*Math.max(.3,mag), 'rgba(120,255,200,.9)', 2.2);
+    }
+    if(S.radOnly && !isBlack && T>0.02){
+      var tx2=-Math.sin(a),ty2=Math.cos(a);
+      arrow(vx,vy, vx-tx2*26, vy-ty2*26, 'rgba(160,200,255,.9)', 2);
+    }
+  }
+  // hub
+  g.fillStyle='#9fffe0';glow('#9fffe0',10);
+  g.beginPath();g.arc(cx,cy,4,0,6.283);g.fill();noglow();
+
+  // spin direction label
+  var dir=S.omega>0.05?'BLACK RETREATING (creep)':(S.omega<-0.05?'MIRROR RETREATING (photon pressure)':'STALLED');
+  g.fillStyle=S.omega<-0.05?'rgba(150,200,255,.95)':'rgba(160,255,220,.95)';
+  g.font='12px ui-monospace,monospace';
+  g.fillText(dir, cx-g.measureText(dir).width/2, cy+R+34);
+
+  // ---- pressure response curve ----
+  var pw=Math.min(400,W*0.36), ph=170, pxx=W-pw-24, pyy=H-ph-24;
+  g.fillStyle='rgba(5,9,16,.78)';g.strokeStyle='rgba(120,255,220,.25)';g.lineWidth=1;
+  g.fillRect(pxx,pyy,pw,ph);g.strokeRect(pxx,pyy,pw,ph);
+  g.fillStyle='#6fa79b';g.font='10px ui-monospace,monospace';
+  g.fillText('SPIN RATE vs PRESSURE  (log P, Torr)',pxx+8,pyy+14);
+  g.fillText('1e-5',pxx+8,pyy+ph-4);
+  g.fillText('Kn=1',pxx+pw*0.5-14,pyy+ph-4);
+  g.fillText('1 atm',pxx+pw-40,pyy+ph-4);
+  // axis
+  g.strokeStyle='rgba(120,255,220,.2)';
+  g.beginPath();g.moveTo(pxx+8,pyy+ph-18);g.lineTo(pxx+pw-8,pyy+ph-18);g.stroke();
+  // curve
+  var peak=creepTorque(S.I,5.0e-3/L_VANE)||1; // Kn=1 -> t = 5e-3/L
+  g.strokeStyle='#3fe0b0';g.lineWidth=2;glow('#3fe0b0',10);g.beginPath();
+  for(var q=0;q<=140;q++){
+    var v=q/140*1000, tt=sliderToTorr(v);
+    var val=creepTorque(S.I,tt);
+    var X=pxx+8+(q/140)*(pw-16);
+    var Y=pyy+ph-18-(val/Math.max(peak,1))*(ph-46);
+    q?g.lineTo(X,Y):g.moveTo(X,Y);
+  }
+  g.stroke();noglow();
+  // photon-only baseline (opposite sign, tiny)
+  g.strokeStyle='rgba(150,190,255,.55)';g.lineWidth=1.5;g.setLineDash([4,4]);
+  var yb=pyy+ph-18-(photonTorque(S.I)/Math.max(peak,1))*(ph-46);
+  g.beginPath();g.moveTo(pxx+8,yb);g.lineTo(pxx+pw-8,yb);g.stroke();g.setLineDash([]);
+  g.fillStyle='rgba(150,190,255,.8)';
+  g.fillText('true radiation pressure (×~1000 smaller, OTHER WAY)',pxx+10,yb-4);
+  // marker
+  var mx2=pxx+8+(S.slider/1000)*(pw-16);
+  var my2=pyy+ph-18-(creepTorque(S.I,t)/Math.max(peak,1))*(ph-46);
+  g.strokeStyle='rgba(255,224,138,.6)';g.lineWidth=1;
+  g.beginPath();g.moveTo(mx2,pyy+18);g.lineTo(mx2,pyy+ph-18);g.stroke();
+  g.fillStyle='#ffe08a';glow('#ffe08a',12);g.beginPath();g.arc(mx2,my2,4.5,0,6.283);g.fill();noglow();
+
+  // regime tags on curve
+  g.fillStyle='rgba(111,167,155,.9)';
+  g.fillText('free-molecular: no gas to creep',pxx+10,pyy+30);
+  var s5='continuum: gas equilibrates';
+  g.fillText(s5,pxx+pw-8-g.measureText(s5).width,pyy+30);
+
+  // ---- myth panel ----
+  if(S.myth){
+    var mw=Math.min(430,W*0.4), mh=200, mxp=W-mw-24, myp=24;
+    g.fillStyle='rgba(5,9,16,.88)';g.strokeStyle='rgba(255,140,140,.35)';
+    g.fillRect(mxp,myp,mw,mh);g.strokeRect(mxp,myp,mw,mh);
+    g.font='11px ui-monospace,monospace';
+    g.fillStyle='#ff9d9d';g.fillText('GIFT-SHOP STORY',mxp+10,myp+18);
+    g.fillStyle='#9fffe0';g.fillText('REAL MECHANISM',mxp+mw/2+6,myp+18);
+    g.strokeStyle='rgba(255,255,255,.12)';
+    g.beginPath();g.moveTo(mxp+mw/2,myp+8);g.lineTo(mxp+mw/2,myp+mh-8);g.stroke();
+    var A=['"Photons push the vanes."','Light hits black, is absorbed.','Momentum transfer spins it.','Predicts: BLACK retreats.','But photon force here is','~1e-6 N/m² — 1000× too small,','and a mirror reflects 2× more,','so the MIRROR should retreat.'];
+    var B=['Rarefied thermal creep.','Black face runs hotter than mirror.','Gas slides cold→hot along the','vane EDGE (thermal transpiration).','Reaction pushes vane the other way:','BLACK RETREATS. Needs Kn ~ 1:','no gas ⇒ no creep; too much gas','⇒ temperature equalises. Peaked.'];
+    for(var L=0;L<A.length;L++){
+      g.fillStyle='rgba(255,180,180,.85)';g.fillText(A[L],mxp+10,myp+38+L*17);
+      g.fillStyle='rgba(160,255,225,.85)';g.fillText(B[L],mxp+mw/2+6,myp+38+L*17);
+    }
+    g.fillStyle='#ffe08a';
+    g.fillText('TIEBREAKER: it spins black-retreating → creep wins.',mxp+10,myp+mh-10);
+  }
+
+  // caption
+  g.fillStyle='rgba(160,200,190,.5)';g.font='italic 12px Georgia,serif';
+  var cap='Crookes 1873: found while weighing samples in vacuo — the balance would not sit still.';
+  g.fillText(cap,24,H-14);
+
+  // readouts
+  el('rP').textContent=fmtP(t);
+  el('rL').textContent=lambda(t)<1e-3?(lambda(t)*1e6).toFixed(1)+' µm':(lambda(t)*1e3).toFixed(2)+' mm';
+  el('rK').textContent=Kn<0.01?Kn.toExponential(2):Kn.toFixed(3);
+  el('rR').textContent=Kn<0.01?'continuum':(Kn>10?'free molecular':'transition (sweet spot)');
+  el('rT').textContent=(S.radOnly?0:creepTorque(S.I,t)).toFixed(1)+' au';
+  el('rPh').textContent=photonTorque(S.I).toFixed(3)+' au';
+  el('rS').textContent=(S.omega*9.549).toFixed(2)+' rpm'+(S.omega<-1e-3?' (reversed)':'');
+}
+
+function loop(now){
+  var dt=Math.min(0.05,(now-last)/1000);last=now;
+  step(dt);draw();requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

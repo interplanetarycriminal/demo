@@ -1,0 +1,393 @@
+<title>Inferior Mirage</title>
+<style>
+html,body{margin:0;padding:0;height:100%;background:#05060a;overflow:hidden}
+canvas{display:block;position:fixed;inset:0}
+#ui{position:fixed;top:0;left:0;margin:12px;padding:10px 12px;max-width:340px;
+  background:rgba(6,10,18,.62);border:1px solid rgba(120,200,255,.25);border-radius:8px;
+  color:#bfe9ff;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;
+  text-shadow:0 0 8px rgba(90,190,255,.5);backdrop-filter:blur(4px);z-index:10}
+#ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.14em;color:#ffd9a0;text-shadow:0 0 12px rgba(255,180,90,.7)}
+#ui .m{color:#eaf6ff;opacity:.92}
+#ui .s{color:#7fc9ff;opacity:.75}
+#ui .lin{color:#9d8bff;opacity:.85;margin:5px 0}
+#ui hr{border:0;border-top:1px solid rgba(120,200,255,.18);margin:7px 0}
+#ui label{display:flex;align-items:center;gap:7px;margin:3px 0}
+#ui label span{min-width:82px;color:#89d8ff}
+#ui input[type=range]{flex:1;height:3px;-webkit-appearance:none;appearance:none;
+  background:linear-gradient(90deg,#1b5f8a,#67e6ff);border-radius:2px;outline:none}
+#ui input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:11px;border-radius:50%;
+  background:#ffd9a0;box-shadow:0 0 8px #ffb45a;cursor:pointer}
+#ui input[type=range]::-moz-range-thumb{width:11px;height:11px;border:0;border-radius:50%;background:#ffd9a0;box-shadow:0 0 8px #ffb45a}
+#ui b{color:#ffd9a0;font-weight:600}
+#ui a{color:#7fc9ff;text-decoration:none;border-bottom:1px dotted #7fc9ff}
+#ui .k{color:#8fa}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>INFERIOR MIRAGE</h1>
+<div class="m">Air heated by the ground has a lower refractive index, so downward rays bend back up and the sky is mistaken for a puddle.</div>
+<div class="s">19th-c. meteorological optics (Wollaston, Biot, Monge's Egypt report, 1799)</div>
+<div class="lin">LINEAGE: desert tarmac water → highway shimmer → Fata Morgana</div>
+<hr>
+<label><span>ground T</span><input id="sT" type="range" min="0" max="100" value="62"><b id="vT">62</b></label>
+<label><span>shimmer</span><input id="sS" type="range" min="0" max="100" value="38"><b id="vS">38</b></label>
+<label><span>eye height</span><input id="sE" type="range" min="4" max="90" value="30"><b id="vE">30</b></label>
+<div class="k">[R] rays &nbsp;[Space] pause &nbsp;drag = move eye</div>
+<hr>
+<div>ΔT ground: <b id="rdT">—</b> &nbsp; dn/dy: <b id="rdn">—</b></div>
+<div>mirage horizon: <b id="rmh">—</b> &nbsp; sky rays: <b id="rsr">—</b></div>
+<div>critical angle: <b id="rca">—</b></div>
+<div style="margin-top:5px"><a href="index.html">← gallery</a></div>
+</div>
+<script>
+"use strict";
+var c=document.getElementById('c'),g=c.getContext('2d');
+var W=0,H=0,DPR=1;
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  W=window.innerWidth;H=window.innerHeight;
+  c.width=Math.round(W*DPR);c.height=Math.round(H*DPR);
+  c.style.width=W+'px';c.style.height=H+'px';
+  g.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize',resize);resize();
+
+var el=function(i){return document.getElementById(i)};
+var sT=el('sT'),sS=el('sS'),sE=el('sE');
+var showRays=true,paused=false;
+window.addEventListener('keydown',function(e){
+  if(e.key==='r'||e.key==='R')showRays=!showRays;
+  if(e.code==='Space'){paused=!paused;e.preventDefault();}
+});
+
+// ---- physics -------------------------------------------------
+// Model in a vertical slice. y = height above ground in metres (world),
+// n(y) = 1 + N0*(1 - exp(-y/h0)) ... i.e. n is LOWEST at the ground and
+// rises with height. dn/dy > 0.
+// Ray curvature for a shallow ray:  d(theta)/dx = (1/n) dn/dy  (theta from horizontal,
+// positive = upward). With dn/dy > 0 rays curve UPWARD -> concave up -> inferior mirage.
+var N0base=2.6e-4;      // total refractivity span (scaled for visibility)
+function scaleH(){ return 1.0; }   // e-folding height in metres
+
+function gradStrength(){ // 0..1 from ground temperature slider
+  return +sT.value/100;
+}
+function nProfile(y,K){
+  // K = gradient strength; larger K = more of the index deficit crammed near ground
+  var h0=scaleH();
+  var dn=N0base*(1+18*K);
+  return 1 + dn*(1-Math.exp(-Math.max(0,y)/h0));
+}
+function dndy(y,K){
+  var h0=scaleH();
+  var dn=N0base*(1+18*K);
+  return dn/h0*Math.exp(-Math.max(0,y)/h0);
+}
+// integrate a ray leaving the eye at (0, ye) with initial slope th (rad, + = up),
+// marching in x. Returns array of {x,y} in world metres, and a flag if it hit ground.
+function traceRay(ye,th,K,maxX,dx){
+  var pts=[],x=0,y=ye,t=th,hit=false;
+  pts.push({x:0,y:ye});
+  for(var i=0;i<4000&&x<maxX;i++){
+    var n=nProfile(y,K);
+    var dt=(dndy(y,K)/n)*dx;   // curvature: bends toward higher n... sign per eikonal
+    t+=dt;                      // dn/dy>0 => t increases => curves upward
+    y+=t*dx; x+=dx;
+    if(y<=0){ hit=true; y=0; pts.push({x:x,y:0}); break; }
+    if(y>400){ pts.push({x:x,y:y}); break; }
+    if((i&3)===0)pts.push({x:x,y:y});
+  }
+  if(!hit)pts.push({x:x,y:y});
+  return {pts:pts,hit:hit,endY:y,endT:t,x:x};
+}
+// critical (grazing) launch angle: the most-downward ray that still escapes.
+// From the ray invariant n(y)cos(theta) = const: a ray launched down at ye with
+// angle t escapes if n(ye)cos(t) < n(inf).
+function criticalAngle(ye,K){
+  var nE=nProfile(ye,K), nInf=nProfile(1e4,K);
+  var r=nInf/nE;
+  if(r>=1)return 0;
+  return Math.acos(Math.min(1,r)); // radians, magnitude
+}
+
+// ---- world <-> screen ---------------------------------------
+// Camera: eye at world x=0. Screen is an angular projection: horizontal
+// direction fixed, vertical = launch angle * focal.
+var FOCAL=1.0;
+function angToScreen(t){ return horizonY() - t*FOCAL*H*4.2; }
+function horizonY(){ return H*0.50; }
+
+// ---- scene assets -------------------------------------------
+var duneSeed=[],palmSeed=[];
+(function(){
+  for(var i=0;i<7;i++)duneSeed.push({a:Math.random(),b:Math.random(),c:Math.random()});
+  for(var j=0;j<40;j++)palmSeed.push(Math.random());
+})();
+
+// distant objects live at angular positions; each has a color + angular half-height
+function objects(){
+  return [
+    {u:0.30,col:'#2f7a4a',hi:0.0125,w:0.010,kind:'palm'},
+    {u:0.44,col:'#b8712f',hi:0.0072,w:0.014,kind:'rock'},
+    {u:0.62,col:'#7a5cff',hi:0.0098,w:0.007,kind:'palm'},
+    {u:0.78,col:'#c94f4f',hi:0.0058,w:0.020,kind:'rock'}
+  ];
+}
+
+var t0=performance.now(),TT=0;
+
+function skyColor(t){
+  // t = elevation angle (rad). above horizon -> sky gradient
+  var f=Math.max(0,Math.min(1,t*46));
+  var r=Math.round(24+ (10-24)*f);
+  var gg=Math.round(96+ (40-96)*f);
+  var b=Math.round(170+ (120-170)*f);
+  return [r,gg,b];
+}
+
+function draw(){
+  var now=performance.now();
+  if(!paused)TT=(now-t0)/1000;
+  var K=gradStrength();
+  var SH=+sS.value/100;
+  var ye=+sE.value/10; // eye height metres (0.4 .. 9)
+  var hy=horizonY();
+
+  // sky
+  var sg=g.createLinearGradient(0,0,0,hy);
+  sg.addColorStop(0,'#050a1e');sg.addColorStop(.45,'#123a6b');
+  sg.addColorStop(.82,'#3f79a8');sg.addColorStop(1,'#a9c6d8');
+  g.fillStyle=sg;g.fillRect(0,0,W,hy+2);
+
+  // sun glow
+  g.save();g.globalCompositeOperation='lighter';
+  var sx=W*0.80,sy=hy-H*0.22;
+  var gr=g.createRadialGradient(sx,sy,0,sx,sy,H*0.34);
+  gr.addColorStop(0,'rgba(255,236,190,.55)');gr.addColorStop(.3,'rgba(255,180,90,.16)');
+  gr.addColorStop(1,'rgba(255,150,60,0)');
+  g.fillStyle=gr;g.beginPath();g.arc(sx,sy,H*0.34,0,6.2832);g.fill();
+  g.restore();
+
+  // ------- distant objects (direct, above the mirage line) -------
+  var objs=objects();
+  // The mirage "vanishing line": launch angles more negative than -critical
+  // never reach the far field -> they see the hot ground/sky-by-reflection.
+  var tc=criticalAngle(ye,K);           // radians (positive magnitude)
+  var mirageY=angToScreen(-tc);
+
+  // direct images: sit on the true horizon
+  for(var i=0;i<objs.length;i++){
+    var o=objs[i];
+    var ox=o.u*W;
+    // apparent base angle: objects at the horizon appear at angle ~ -tc*0.15 (slightly lowered)
+    var baseT=-tc*0.55;
+    var by=angToScreen(baseT), ty=angToScreen(baseT+o.hi);
+    drawObject(g,ox,by,ty,o,1,0);
+  }
+
+  // ------- ground / mirage sheet -------
+  // Everything below mirageY is filled by rays that turned around in the hot
+  // layer: they carry SKY radiance (and inverted images of the objects).
+  var groundTop=mirageY;
+  // hot sand below
+  var dgr=g.createLinearGradient(0,hy-4,0,H);
+  dgr.addColorStop(0,'#c69a5e');dgr.addColorStop(.28,'#b07f43');
+  dgr.addColorStop(.7,'#7d5527');dgr.addColorStop(1,'#4a3117');
+  g.fillStyle=dgr;g.fillRect(0,hy-2,W,H-hy+2);
+
+  // dunes silhouettes just above the horizon
+  g.save();
+  g.beginPath();g.moveTo(0,hy);
+  for(var x=0;x<=W;x+=6){
+    var yy=hy - 3 - 7*Math.sin(x*0.004+1.3) - 4*Math.sin(x*0.011+2.7);
+    g.lineTo(x,yy);
+  }
+  g.lineTo(W,hy+40);g.lineTo(0,hy+40);g.closePath();
+  g.fillStyle='#8a6335';g.fill();
+  g.restore();
+
+  // MIRAGE SHEET (the "water"): sky colour, sampled from the ray that turned around.
+  if(mirageY<H){
+    var sheetH=H-mirageY;
+    var rows=Math.min(190,Math.max(40,Math.floor(sheetH/2)));
+    for(var r=0;r<rows;r++){
+      var f=r/rows;
+      var yScreen=mirageY+f*sheetH;
+      // screen angle for this row
+      var tRow=(hy-yScreen)/(FOCAL*H*4.2);      // negative (below horizon)
+      // the ray that appears here launched downward at |tRow| and turned around
+      // at some height, arriving from the sky at elevation ~ sqrt(tRow^2 - tc^2)
+      var d=tRow*tRow - tc*tc;
+      var skyT = d>0 ? Math.sqrt(d)*1.0 : 0;    // reflected sky elevation
+      var col=skyColor(skyT*1.25);
+      var a=Math.max(0,Math.min(1,1.0-f*0.15));
+      g.fillStyle='rgba('+col[0]+','+col[1]+','+col[2]+','+(a*0.93)+')';
+      g.fillRect(0,yScreen,W,sheetH/rows+1.2);
+    }
+    // shimmer: horizontal displacement bands
+    if(SH>0.01){
+      g.save();g.globalCompositeOperation='lighter';
+      for(var b2=0;b2<26;b2++){
+        var yb=mirageY+ (b2/26)*sheetH;
+        var amp=SH*16*(0.3+b2/26);
+        var ph=Math.sin(TT*2.1+b2*0.7)+0.6*Math.sin(TT*3.7+b2*1.9);
+        g.fillStyle='rgba(180,220,255,'+(0.03+0.05*SH)+')';
+        g.fillRect(ph*amp,yb,W,sheetH/26*0.7);
+      }
+      g.restore();
+    }
+
+    // INVERTED IMAGES of the distant objects, mirrored about mirageY
+    for(var k=0;k<objs.length;k++){
+      var ob=objs[k];
+      var oxx=ob.u*W;
+      var bT=-tc*0.55;
+      var bY=angToScreen(bT), tY=angToScreen(bT+ob.hi);
+      // reflect about the mirage line
+      var ibY=mirageY+(mirageY-bY);
+      var itY=mirageY+(mirageY-tY);
+      if(ibY<H){
+        var wob=SH*(9*Math.sin(TT*3.1+ob.u*11)+5*Math.sin(TT*5.3+ob.u*23));
+        drawObject(g,oxx+wob,ibY,itY,ob,0.72,SH);
+      }
+    }
+    // specular sheen line
+    g.save();g.globalCompositeOperation='lighter';
+    var sg2=g.createLinearGradient(0,mirageY,0,mirageY+18);
+    sg2.addColorStop(0,'rgba(200,235,255,.34)');sg2.addColorStop(1,'rgba(200,235,255,0)');
+    g.fillStyle=sg2;g.fillRect(0,mirageY,W,18);
+    g.restore();
+  }
+
+  // ------- ray overlay -------
+  if(showRays)drawRays(ye,K,tc);
+
+  // horizon reference
+  g.save();
+  g.strokeStyle='rgba(255,220,160,.22)';g.setLineDash([6,7]);g.lineWidth=1;
+  g.beginPath();g.moveTo(0,hy);g.lineTo(W,hy);g.stroke();
+  g.setLineDash([]);
+  g.strokeStyle='rgba(120,240,255,.55)';g.lineWidth=1.2;
+  g.beginPath();g.moveTo(0,mirageY);g.lineTo(W,mirageY);g.stroke();
+  g.font='10px ui-monospace,monospace';g.fillStyle='rgba(120,240,255,.8)';
+  g.fillText('mirage line  (θc = '+(tc*1000).toFixed(2)+' mrad)',12,mirageY-6);
+  g.fillStyle='rgba(255,220,160,.6)';g.fillText('true horizon',12,hy-6);
+  g.restore();
+
+  // vignette
+  var vg=g.createRadialGradient(W/2,H/2,H*0.3,W/2,H/2,H*0.95);
+  vg.addColorStop(0,'rgba(0,0,0,0)');vg.addColorStop(1,'rgba(0,0,0,.6)');
+  g.fillStyle=vg;g.fillRect(0,0,W,H);
+
+  // readouts
+  el('vT').textContent=sT.value;el('vS').textContent=sS.value;el('vE').textContent=sE.value;
+  el('rdT').textContent=(K*58+2).toFixed(1)+' K';
+  el('rdn').textContent=dndy(0,K).toExponential(2)+' /m';
+  el('rmh').textContent=(mirageY<H? (mirageY-hy).toFixed(0)+' px below':'off-screen');
+  el('rsr').textContent=(mirageY<H?'YES ← "water" = sky':'none');
+  el('rca').textContent=(tc*1000).toFixed(2)+' mrad';
+
+  requestAnimationFrame(draw);
+}
+
+function drawObject(ctx,x,by,ty,o,alpha,wob){
+  ctx.save();ctx.globalAlpha=alpha;
+  var h=by-ty; if(h===0)h=1;
+  if(o.kind==='palm'){
+    ctx.strokeStyle=o.col;ctx.lineWidth=Math.max(1.4,Math.abs(h)*0.09);
+    ctx.shadowColor=o.col;ctx.shadowBlur=10;
+    ctx.beginPath();ctx.moveTo(x,by);
+    ctx.quadraticCurveTo(x+h*0.10,ty+h*0.35,x+h*0.06,ty);
+    ctx.stroke();
+    var s=Math.sign(ty-by)||-1;
+    for(var f=0;f<6;f++){
+      var a=(-0.5+f*0.2)*Math.PI;
+      ctx.beginPath();ctx.moveTo(x+h*0.06,ty);
+      ctx.quadraticCurveTo(x+h*0.06+Math.cos(a)*Math.abs(h)*0.30, ty+s*Math.abs(h)*0.16,
+                           x+h*0.06+Math.cos(a)*Math.abs(h)*0.52, ty-s*Math.abs(h)*0.06);
+      ctx.lineWidth=Math.max(1,Math.abs(h)*0.05);ctx.stroke();
+    }
+  }else{
+    ctx.fillStyle=o.col;ctx.shadowColor=o.col;ctx.shadowBlur=12;
+    var w=o.w*W;
+    ctx.beginPath();
+    ctx.moveTo(x-w/2,by);ctx.lineTo(x-w*0.34,ty);ctx.lineTo(x+w*0.30,ty);ctx.lineTo(x+w/2,by);
+    ctx.closePath();ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawRays(ye,K,tc){
+  // world: 0..~900 m of desert, mapped to the left 42% of screen as an inset diagram
+  var IW=W*0.40,IH=H*0.30;
+  var ix=W-IW-16,iy=H-IH-16;
+  g.save();
+  g.fillStyle='rgba(3,7,14,.78)';
+  g.strokeStyle='rgba(120,200,255,.28)';g.lineWidth=1;
+  g.beginPath();g.rect(ix,iy,IW,IH);g.fill();g.stroke();
+  g.font='10px ui-monospace,monospace';
+  g.fillStyle='#7fc9ff';g.fillText('ray paths  (n low at ground → rays curve UP)',ix+8,iy+14);
+
+  var MAXX=700, MAXY=14;                  // metres
+  function px(x){return ix+8+(x/MAXX)*(IW-16)}
+  function py(y){return iy+IH-14-(y/MAXY)*(IH-30)}
+
+  // ground
+  g.strokeStyle='rgba(255,190,110,.55)';g.lineWidth=1.4;
+  g.beginPath();g.moveTo(px(0),py(0));g.lineTo(px(MAXX),py(0));g.stroke();
+
+  // n(y) mini profile on the right edge of inset
+  g.strokeStyle='rgba(255,120,220,.7)';g.lineWidth=1.4;
+  g.beginPath();
+  var nMin=nProfile(0,K),nMax=nProfile(MAXY,K);
+  for(var q=0;q<=40;q++){
+    var yy=q/40*MAXY;
+    var fr=(nProfile(yy,K)-nMin)/Math.max(1e-12,nMax-nMin);
+    var X=px(MAXX)-4-fr*(IW*0.16);
+    if(q===0)g.moveTo(X,py(yy));else g.lineTo(X,py(yy));
+  }
+  g.stroke();
+  g.fillStyle='rgba(255,120,220,.85)';g.fillText('n(y)',px(MAXX)-IW*0.16,iy+IH-2);
+
+  // rays: fan of launch angles from the eye
+  var N=13;
+  for(var i=0;i<N;i++){
+    var f=i/(N-1);
+    var th=(-tc*1.9) + f*(tc*1.9 + 0.0032);
+    var res=traceRay(ye,th,K,MAXX,1.2);
+    var turned = th<0 && !res.hit;   // launched down, escaped upward = mirage ray
+    g.beginPath();
+    for(var p=0;p<res.pts.length;p++){
+      var P=res.pts[p];
+      var X=px(P.x),Y=py(Math.min(MAXY,P.y));
+      if(p===0)g.moveTo(X,Y);else g.lineTo(X,Y);
+    }
+    if(res.hit){ g.strokeStyle='rgba(255,110,90,.55)'; g.lineWidth=1; }
+    else if(turned){ g.strokeStyle='rgba(120,255,220,.95)'; g.lineWidth=1.6;
+                     g.shadowColor='#6ff';g.shadowBlur=8; }
+    else { g.strokeStyle='rgba(150,190,255,.45)'; g.lineWidth=1; }
+    g.stroke();g.shadowBlur=0;
+  }
+  // eye marker
+  g.fillStyle='#ffd9a0';g.shadowColor='#ffb45a';g.shadowBlur=10;
+  g.beginPath();g.arc(px(0),py(ye),3.5,0,6.2832);g.fill();g.shadowBlur=0;
+  g.fillStyle='#ffd9a0';g.fillText('eye',px(0)+6,py(ye)-5);
+  g.fillStyle='rgba(120,255,220,.9)';
+  g.fillText('cyan = "water" rays, launched DOWN, arriving from the SKY',ix+8,iy+IH-4);
+  g.restore();
+}
+
+// drag = eye height
+var dragging=false;
+c.addEventListener('pointerdown',function(e){dragging=true;onDrag(e)});
+window.addEventListener('pointerup',function(){dragging=false});
+window.addEventListener('pointermove',function(e){if(dragging)onDrag(e)});
+function onDrag(e){
+  var f=1-Math.max(0,Math.min(1,e.clientY/H));
+  sE.value=Math.round(4+f*86);
+}
+
+requestAnimationFrame(draw);
+</script>

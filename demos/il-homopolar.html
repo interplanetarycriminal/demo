@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Homopolar Motor</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;background:#05060d;overflow:hidden}
+  canvas{display:block;width:100vw;height:100vh}
+  #ui{position:fixed;top:0;left:0;margin:10px;padding:10px 12px;max-width:350px;
+      background:rgba(6,8,20,.74);border:1px solid rgba(160,140,255,.25);border-radius:6px;
+      color:#cfc8ff;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;
+      text-shadow:0 0 6px rgba(140,110,255,.5);z-index:10;backdrop-filter:blur(3px)}
+  #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.12em;color:#a9f7ff;text-shadow:0 0 10px rgba(80,220,255,.7)}
+  #ui .dim{color:#8b86b8}
+  #ui .hot{color:#7dffc4}
+  #ui a{color:#a9f7ff;text-decoration:none;border-bottom:1px dotted #a9f7ff}
+  #ui label{display:block;margin-top:5px}
+  #ui input[type=range]{width:100%;accent-color:#8f6bff;height:14px}
+  #ui .row{display:flex;justify-content:space-between}
+  button{background:rgba(140,110,255,.12);border:1px solid rgba(160,140,255,.5);color:#cfc8ff;
+    font:11px ui-monospace,monospace;padding:3px 7px;border-radius:4px;cursor:pointer;margin:4px 4px 0 0}
+  button:hover{background:rgba(140,110,255,.3)}
+  button.on{background:rgba(125,255,196,.2);border-color:#7dffc4;color:#7dffc4}
+  hr{border:0;border-top:1px solid rgba(160,140,255,.18);margin:6px 0}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>HOMOPOLAR MOTOR</h1>
+  <div>Current crossing the magnet's field feels F&nbsp;=&nbsp;I&nbsp;L&times;B pointing <i>azimuthally everywhere</i> &mdash; no commutator needed, so it simply never stops turning.</div>
+  <div class="dim">Michael Faraday &mdash; Royal Institution, 1821</div>
+  <div class="dim">LINEAGE: &Oslash;rsted 1820 (current makes B) &rarr; Faraday 1821 continuous rotation &rarr; the paperclip-and-AA classroom motor.</div>
+  <hr>
+  <div class="dim">CONTROLS: sliders &middot; click a wire segment to inspect &middot; <span class="hot">B</span> flip magnet &middot; <span class="hot">V</span> reverse battery &middot; <span class="hot">F</span> field lines</div>
+  <label>current I <span id="lI" class="hot">3.0 A</span><input id="sI" type="range" min="0" max="80" value="30"></label>
+  <label>field B <span id="lB" class="hot">0.40 T</span><input id="sB" type="range" min="0" max="120" value="40"></label>
+  <label>loop radius r <span id="lR" class="hot">0.012 m</span><input id="sR" type="range" min="5" max="30" value="12"></label>
+  <div>
+    <button id="bV">REVERSE BATTERY</button><button id="bM">FLIP MAGNET</button><button id="bF">FIELD LINES</button>
+  </div>
+  <hr>
+  <div class="row"><span>polarity battery / magnet</span><span id="rpol" class="hot">+ / +</span></div>
+  <div class="row"><span>torque &tau; = &oint; I r&times;(dL&times;B)</span><span id="rT" class="hot">&mdash;</span></div>
+  <div class="row"><span>I&middot;B&middot;r&sup2; scaling check</span><span id="rS" class="hot">&mdash;</span></div>
+  <div class="row"><span>&omega;</span><span id="rW" class="hot">&mdash;</span></div>
+  <div class="row"><span>segment inspected</span><span id="rSeg" class="hot">&mdash;</span></div>
+  <div><a href="index.html">&larr; gallery</a></div>
+</div>
+<script>
+(function(){
+"use strict";
+var c=document.getElementById('c'),g=c.getContext('2d');
+var W=0,H=0,DPR=1;
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  W=window.innerWidth;H=window.innerHeight;
+  c.width=Math.round(W*DPR);c.height=Math.round(H*DPR);
+  c.style.width=W+'px';c.style.height=H+'px';
+  g.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize',resize);resize();
+var el=function(i){return document.getElementById(i)};
+
+var S={I:3.0,B:0.40,r:0.012,vsign:1,msign:1,field:true,ang:0,omega:0,seg:6,flow:0};
+
+// --- geometry: the bent wire.  Model in the horizontal plane (view: top-down-ish 3/4).
+// Wire descends from battery top terminal, splits into two arms that bow out to radius r
+// and touch the magnet rim, where current flows radially inward to the axis.
+// We integrate torque over discrete segments of the RADIAL current paths on the magnet
+// (that's where L x B is azimuthal), which is the real seat of the torque.
+var NSEG=16;
+function segments(){
+  // two arms, each NSEG/2 radial elements from r down to r*0.15
+  var out=[];
+  for(var arm=0;arm<2;arm++){
+    var base=arm*Math.PI; // two arms 180 deg apart
+    var n=NSEG/2;
+    for(var i=0;i<n;i++){
+      var r0=S.r*(1-(i)/n*0.85);
+      var r1=S.r*(1-(i+1)/n*0.85);
+      out.push({arm:arm,phi:base,r0:r0,r1:r1,rm:(r0+r1)/2,dl:(r1-r0)});
+    }
+  }
+  return out;
+}
+// torque = sum over segments of  r x (I dL x B)_z
+// dL is radial (inward, negative dr), B is axial (z, sign msign), current sign vsign.
+// (dL x B)_z-plane => azimuthal force of magnitude I*|dL|*B, sign = vsign*msign*(direction of dL)
+// tau_z = r_m * F_phi
+function torqueIntegral(I,B,r,vs,ms){
+  var save=S.r;S.r=r;
+  var segs=segments();S.r=save;
+  var tau=0;
+  for(var i=0;i<segs.length;i++){
+    var s=segs[i];
+    // dL points inward => negative radial component; F_phi = I * dL_r * B * (vs*ms)
+    // cross product r_hat x z_hat = -phi_hat, folded into the sign convention below.
+    var Fphi = I * (-s.dl) * B * vs * ms;   // -dl>0 since dl<0 (inward)
+    tau += s.rm * Fphi;
+  }
+  // two arms already summed
+  return tau;
+}
+function torqueNow(){return torqueIntegral(S.I,S.B,S.r,S.vsign,S.msign);}
+
+el('sI').oninput=function(){S.I=(+this.value)/10;el('lI').textContent=S.I.toFixed(1)+' A'};
+el('sB').oninput=function(){S.B=(+this.value)/100;el('lB').textContent=S.B.toFixed(2)+' T'};
+el('sR').oninput=function(){S.r=(+this.value)/1000;el('lR').textContent=S.r.toFixed(3)+' m'};
+function tog(id,key){var b=el(id);b.onclick=function(){S[key]=-S[key];b.classList.toggle('on',S[key]<0)}}
+tog('bV','vsign');tog('bM','msign');
+el('bF').onclick=function(){S.field=!S.field;this.classList.toggle('on',S.field)};
+el('bF').classList.add('on');
+window.addEventListener('keydown',function(e){
+  var k=e.key.toLowerCase();
+  if(k==='b'){S.msign=-S.msign;el('bM').classList.toggle('on',S.msign<0)}
+  if(k==='v'){S.vsign=-S.vsign;el('bV').classList.toggle('on',S.vsign<0)}
+  if(k==='f'){S.field=!S.field;el('bF').classList.toggle('on',S.field)}
+});
+
+var geo={cx:0,cy:0,R:1};
+c.addEventListener('click',function(e){
+  var mx=e.clientX,my=e.clientY;
+  var segs=segments(),best=-1,bd=1e9;
+  for(var i=0;i<segs.length;i++){
+    var p=segPix(segs[i]);
+    var d=Math.hypot(p.x-mx,p.y-my);
+    if(d<bd){bd=d;best=i}
+  }
+  if(bd<70)S.seg=best;
+});
+function segPix(s){
+  var a=s.phi+S.ang;
+  var rr=s.rm/S.r*geo.R;
+  return {x:geo.cx+Math.cos(a)*rr, y:geo.cy+Math.sin(a)*rr*0.42, a:a, rr:rr};
+}
+
+var last=performance.now();
+function step(dt){
+  var tau=torqueNow();
+  var J=2.5e-6, fric=0.9e-6;
+  var alpha=(tau - Math.sign(S.omega)*fric*Math.min(1,Math.abs(S.omega)*8) - S.omega*4.5e-7)/J;
+  S.omega+=alpha*dt;
+  if(Math.abs(S.omega)>400)S.omega=Math.sign(S.omega)*400;
+  S.ang+=S.omega*dt*0.06;
+  S.flow+=dt*(1+Math.abs(S.I)*0.8);
+}
+
+function glow(col,b){g.shadowColor=col;g.shadowBlur=b}
+function noglow(){g.shadowBlur=0}
+function arrow(x1,y1,x2,y2,col,w,head){
+  g.strokeStyle=col;g.lineWidth=w||1.5;g.beginPath();g.moveTo(x1,y1);g.lineTo(x2,y2);g.stroke();
+  var a=Math.atan2(y2-y1,x2-x1),s=head||6;
+  g.beginPath();g.moveTo(x2,y2);
+  g.lineTo(x2-Math.cos(a-0.42)*s,y2-Math.sin(a-0.42)*s);
+  g.lineTo(x2-Math.cos(a+0.42)*s,y2-Math.sin(a+0.42)*s);
+  g.closePath();g.fillStyle=col;g.fill();
+}
+
+function draw(){
+  g.fillStyle='#05060d';g.fillRect(0,0,W,H);
+  var cx=W*0.44, cy=H*0.62, R=Math.min(W,H)*0.20;
+  geo.cx=cx;geo.cy=cy;geo.R=R;
+  var t=performance.now()/1000;
+
+  // desk plane
+  var pg=g.createLinearGradient(0,cy-R,0,H);
+  pg.addColorStop(0,'rgba(30,20,70,0)');pg.addColorStop(1,'rgba(40,25,90,.35)');
+  g.fillStyle=pg;g.fillRect(0,cy-R,W,H-cy+R);
+
+  // magnet disc (neodymium) under the wire
+  g.save();
+  g.translate(cx,cy);g.scale(1,0.42);
+  var mg=g.createRadialGradient(0,0,R*0.1,0,0,R*1.05);
+  var hotc=S.msign>0?'rgba(255,90,120,':'rgba(90,150,255,';
+  mg.addColorStop(0,hotc+'.35)');mg.addColorStop(1,'rgba(120,130,180,.18)');
+  g.fillStyle=mg;glow(S.msign>0?'#ff5f7a':'#5f9bff',24);
+  g.beginPath();g.arc(0,0,R*1.02,0,6.283);g.fill();noglow();
+  g.strokeStyle='rgba(210,215,255,.75)';g.lineWidth=2;
+  g.beginPath();g.arc(0,0,R*1.02,0,6.283);g.stroke();
+  g.strokeStyle='rgba(210,215,255,.3)';
+  g.beginPath();g.arc(0,0,R*0.86,0,6.283);g.stroke();
+  g.restore();
+  g.fillStyle=S.msign>0?'#ff9ab0':'#9ac0ff';g.font='11px ui-monospace,monospace';
+  var lbl='NdFeB  '+(S.msign>0?'N up  (B out of disc)':'S up  (B into disc)');
+  g.fillText(lbl,cx-g.measureText(lbl).width/2,cy+R*0.42+22);
+
+  // B field arrows (axial, drawn as up/down along the axis and dots/crosses)
+  if(S.field){
+    for(var k=0;k<10;k++){
+      var fa=k/10*6.283+0.2, fr=R*(0.35+0.6*((k%3)/3));
+      var fx=cx+Math.cos(fa)*fr, fy=cy+Math.sin(fa)*fr*0.42;
+      g.strokeStyle='rgba(120,160,255,.4)';g.lineWidth=1.2;
+      if(S.msign>0){ // out of disc: dot
+        g.fillStyle='rgba(150,190,255,.6)';
+        g.beginPath();g.arc(fx,fy,2.4,0,6.283);g.fill();
+        g.beginPath();g.arc(fx,fy,6,0,6.283);g.stroke();
+      }else{
+        g.beginPath();g.arc(fx,fy,6,0,6.283);g.stroke();
+        g.beginPath();g.moveTo(fx-4,fy-4);g.lineTo(fx+4,fy+4);
+        g.moveTo(fx+4,fy-4);g.lineTo(fx-4,fy+4);g.stroke();
+      }
+    }
+    g.fillStyle='rgba(150,190,255,.55)';g.font='10px ui-monospace,monospace';
+    g.fillText('B  '+(S.msign>0?'⊙ out of magnet face':'⊗ into magnet face'),cx+R*1.1,cy-R*0.5);
+  }
+
+  // battery (AA) standing on the magnet
+  var bh=R*1.25, bw=R*0.34;
+  var by=cy-bh;
+  g.save();
+  var bgd=g.createLinearGradient(cx-bw/2,0,cx+bw/2,0);
+  bgd.addColorStop(0,'#2a2f52');bgd.addColorStop(.4,'#6b74b8');bgd.addColorStop(1,'#232744');
+  g.fillStyle=bgd;g.fillRect(cx-bw/2,by,bw,bh);
+  g.strokeStyle='rgba(200,210,255,.5)';g.lineWidth=1.5;g.strokeRect(cx-bw/2,by,bw,bh);
+  // terminal cap
+  g.fillStyle=S.vsign>0?'#ffd36b':'#7fa8ff';glow(S.vsign>0?'#ffd36b':'#7fa8ff',14);
+  g.fillRect(cx-bw*0.16,by-7,bw*0.32,8);noglow();
+  g.fillStyle='rgba(220,225,255,.8)';g.font='10px ui-monospace,monospace';
+  g.save();g.translate(cx-3,by+bh*0.55);g.rotate(-Math.PI/2);
+  g.fillText(S.vsign>0?'AA  1.5V  (+ up)':'AA  1.5V  (− up)',-30,4);g.restore();
+  g.restore();
+
+  // --- the bent wire: two arms from top terminal down to magnet rim ---
+  var segs=segments();
+  var flowPhase=(S.flow*S.vsign)%1;
+  for(var arm=0;arm<2;arm++){
+    var a=arm*Math.PI+S.ang;
+    var tipx=cx+Math.cos(a)*R, tipy=cy+Math.sin(a)*R*0.42;
+    g.strokeStyle='rgba(255,220,150,.9)';g.lineWidth=3;glow('#ffd36b',12);
+    g.beginPath();
+    g.moveTo(cx,by-4);
+    g.bezierCurveTo(cx+Math.cos(a)*R*0.5, by+bh*0.1,
+                    cx+Math.cos(a)*R*1.15, cy-bh*0.35,
+                    tipx,tipy);
+    g.stroke();noglow();
+    // contact bead on rim
+    g.fillStyle='#fff0c0';glow('#ffd36b',16);
+    g.beginPath();g.arc(tipx,tipy,4,0,6.283);g.fill();noglow();
+    // charge carriers travelling
+    for(var q=0;q<6;q++){
+      var u=((q/6)+flowPhase+arm*0.13)%1;
+      var px=cx+(tipx-cx)*u, py=(by-4)+(tipy-(by-4))*u;
+      px+=Math.cos(a)*R*0.28*Math.sin(u*Math.PI);
+      g.fillStyle='rgba(255,245,200,'+(0.35+0.6*Math.sin(u*Math.PI))+')';
+      g.beginPath();g.arc(px,py,2.4,0,6.283);g.fill();
+    }
+  }
+  // return path: radial current across the magnet face to the axis/battery base
+  for(var arm2=0;arm2<2;arm2++){
+    var a2=arm2*Math.PI+S.ang;
+    g.strokeStyle='rgba(255,180,120,.35)';g.lineWidth=2;g.setLineDash([4,4]);
+    g.beginPath();g.moveTo(cx+Math.cos(a2)*R,cy+Math.sin(a2)*R*0.42);g.lineTo(cx,cy);g.stroke();
+    g.setLineDash([]);
+  }
+
+  // --- per-segment I, B, F = I L x B vectors ---
+  var tauTotal=torqueNow();
+  var sgn=Math.sign(tauTotal)||1;
+  for(var i=0;i<segs.length;i++){
+    var s=segs[i],p=segPix(s);
+    var ux=Math.cos(p.a),uy=Math.sin(p.a)*0.42;
+    // I direction (inward along radius)
+    var idx=-ux*S.vsign, idy=-uy*S.vsign;
+    // F direction: azimuthal
+    var fx=-Math.sin(p.a)*sgn, fy=Math.cos(p.a)*0.42*sgn;
+    var mag=Math.min(1,Math.abs(S.I*S.B)/2.5);
+    var sel=(i===S.seg);
+    arrow(p.x,p.y,p.x+idx*16,p.y+idy*16,sel?'rgba(255,230,150,1)':'rgba(255,200,120,.4)',sel?2:1.2,5);
+    arrow(p.x,p.y,p.x+fx*(14+30*mag),p.y+fy*(14+30*mag),
+          sel?'rgba(125,255,196,1)':'rgba(125,255,196,'+(0.25+0.45*mag)+')',sel?2.6:1.6,sel?8:6);
+    if(sel){
+      g.fillStyle='#7dffc4';g.font='10px ui-monospace,monospace';
+      g.fillText('F',p.x+fx*(22+30*mag),p.y+fy*(22+30*mag)-4);
+      g.fillStyle='#ffe6a0';g.fillText('I',p.x+idx*22,p.y+idy*22);
+      g.strokeStyle='rgba(255,255,255,.35)';g.lineWidth=1;
+      g.beginPath();g.arc(p.x,p.y,10,0,6.283);g.stroke();
+    }
+  }
+
+  // spin indicator ring
+  if(Math.abs(S.omega)>0.3){
+    g.strokeStyle='rgba(125,255,196,'+Math.min(.6,Math.abs(S.omega)/120)+')';
+    g.lineWidth=2;
+    for(var w2=0;w2<3;w2++){
+      var st=S.ang*1.0+w2*2.1;
+      g.beginPath();
+      g.ellipse(cx,cy,R*1.16,R*1.16*0.42,0,st,st+0.7*Math.sign(S.omega||1));
+      g.stroke();
+    }
+    var dirtxt=(S.omega>0?'↻ clockwise (viewed from above)':'↺ counter-clockwise (viewed from above)');
+    g.fillStyle='rgba(125,255,196,.9)';g.font='12px ui-monospace,monospace';
+    g.fillText(dirtxt,cx-g.measureText(dirtxt).width/2,cy+R*0.42+46);
+  }else{
+    g.fillStyle='rgba(160,150,200,.7)';g.font='12px ui-monospace,monospace';
+    var st2='no torque — raise I or B';
+    g.fillText(st2,cx-g.measureText(st2).width/2,cy+R*0.42+46);
+  }
+
+  // --- right-hand-rule inset tracking the selected segment ---
+  var iw=200, ih=190, ix=W-iw-24, iy=24;
+  g.fillStyle='rgba(6,8,20,.85)';g.strokeStyle='rgba(160,140,255,.3)';g.lineWidth=1;
+  g.fillRect(ix,iy,iw,ih);g.strokeRect(ix,iy,iw,ih);
+  g.fillStyle='#8b86b8';g.font='10px ui-monospace,monospace';
+  g.fillText('RIGHT-HAND RULE  F = I L × B',ix+8,iy+14);
+  var ox=ix+iw/2, oy=iy+ih*0.58;
+  var ss=segs[S.seg]||segs[0], sp=segPix(ss);
+  // local frame: I along -r (inward), B along +z (out of screen if msign>0)
+  var Ilocal=S.vsign>0?1:-1;
+  // draw I (horizontal), B (dot/cross), F (vertical)
+  arrow(ox,oy,ox+Ilocal*52,oy,'#ffe6a0',2.4,8);
+  g.fillStyle='#ffe6a0';g.fillText('I dL',ox+Ilocal*58-(Ilocal<0?26:0),oy-6);
+  g.strokeStyle='#9ac0ff';g.lineWidth=2;
+  g.beginPath();g.arc(ox,oy,11,0,6.283);g.stroke();
+  if(S.msign>0){g.fillStyle='#9ac0ff';g.beginPath();g.arc(ox,oy,3,0,6.283);g.fill();}
+  else{g.beginPath();g.moveTo(ox-7,oy-7);g.lineTo(ox+7,oy+7);g.moveTo(ox+7,oy-7);g.lineTo(ox-7,oy+7);g.stroke();}
+  g.fillStyle='#9ac0ff';g.fillText('B '+(S.msign>0?'⊙':'⊗'),ox+16,oy+22);
+  var Fl=-Ilocal*S.msign; // sign of F in the inset's vertical axis
+  arrow(ox,oy,ox,oy+Fl*54,'#7dffc4',2.6,8);
+  g.fillStyle='#7dffc4';g.fillText('F',ox+8,oy+Fl*60);
+  g.fillStyle='#8b86b8';
+  g.fillText('segment #'+S.seg+'  r='+(ss.rm*1000).toFixed(1)+' mm',ix+8,iy+ih-24);
+  g.fillText('|F| = I·|dL|·B = '+(S.I*Math.abs(ss.dl)*S.B*1000).toFixed(3)+' mN',ix+8,iy+ih-10);
+
+  // --- torque / scaling panel ---
+  var tw=Math.min(340,W*0.3), th=132, tx=W-tw-24, ty=iy+ih+14;
+  g.fillStyle='rgba(6,8,20,.82)';g.strokeStyle='rgba(160,140,255,.3)';
+  g.fillRect(tx,ty,tw,th);g.strokeRect(tx,ty,tw,th);
+  g.fillStyle='#8b86b8';g.fillText('τ vs I   (B, r fixed) — straight line',tx+8,ty+14);
+  var tmax=Math.abs(torqueIntegral(8,S.B,S.r,1,1))||1;
+  g.strokeStyle='#8f6bff';g.lineWidth=2;glow('#8f6bff',8);g.beginPath();
+  for(var q2=0;q2<=40;q2++){
+    var II=q2/40*8;
+    var tv=Math.abs(torqueIntegral(II,S.B,S.r,1,1));
+    var X=tx+8+(q2/40)*(tw-16), Y=ty+th-14-(tv/tmax)*(th-40);
+    q2?g.lineTo(X,Y):g.moveTo(X,Y);
+  }
+  g.stroke();noglow();
+  var qx=tx+8+(S.I/8)*(tw-16), qy=ty+th-14-(Math.abs(tauTotal)/tmax)*(th-40);
+  g.fillStyle='#7dffc4';glow('#7dffc4',12);g.beginPath();g.arc(qx,qy,4.5,0,6.283);g.fill();noglow();
+  g.fillStyle='#8b86b8';
+  g.fillText('flip EITHER polarity → reverses.  flip BOTH → same way.',tx+8,ty+th-2);
+
+  // caption
+  g.fillStyle='rgba(180,170,230,.55)';g.font='italic 12px Georgia,serif';
+  var cap='Faraday, 4 Sept 1821: a wire, a magnet, and a cup of mercury — continuous rotation, the first electric motor.';
+  g.fillText(cap,24,H-30);
+  g.fillStyle='rgba(180,170,230,.35)';g.font='11px Georgia,serif';
+  g.fillText('The original ran on mercury. This AA-battery descendant is the safe one.',24,H-14);
+
+  // readouts
+  el('rpol').textContent=(S.vsign>0?'+':'−')+' / '+(S.msign>0?'N up':'S up');
+  el('rT').textContent=(tauTotal*1e6).toFixed(2)+' µN·m';
+  var pred=S.I*S.B*S.r*S.r;
+  el('rS').textContent='τ/(I·B·r²) = '+(pred!==0?(Math.abs(tauTotal)/pred).toFixed(3):'—');
+  el('rW').textContent=(S.omega*9.549).toFixed(1)+' rpm';
+  el('rSeg').textContent='#'+S.seg+'  r='+((segs[S.seg]||segs[0]).rm*1000).toFixed(1)+' mm';
+}
+
+function loop(now){
+  var dt=Math.min(0.05,(now-last)/1000);last=now;
+  step(dt);draw();requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,252 @@
+<title>Luminol Bench</title>
+<style>
+html,body{margin:0;padding:0;background:#05070a;overflow:hidden;height:100%}
+canvas{display:block;position:fixed;top:0;left:0}
+#ui{position:fixed;top:0;left:0;z-index:10;margin:10px;padding:10px 12px;max-width:340px;
+  background:rgba(4,8,14,.62);border:1px solid rgba(90,170,255,.28);border-radius:6px;
+  color:#9fd0ff;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;text-shadow:0 0 8px rgba(60,140,255,.5)}
+#ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.09em;color:#cfe8ff}
+#ui .m{color:#7fb6e8}
+#ui .s{color:#5f8fbf}
+#ui .lin{color:#4f7fa8;font-size:10px}
+#ui .r{color:#7dffd0;margin-top:6px;white-space:pre}
+#ui a{color:#6fc0ff}
+#ui label{display:block;margin-top:5px;color:#8fc4ee}
+#ui input[type=range]{width:100%;accent-color:#4aa8ff}
+.tag{display:inline-block;margin-top:6px;padding:1px 6px;border:1px solid rgba(255,120,120,.4);
+  border-radius:9px;color:#ff9a9a;font-size:9.5px;letter-spacing:.06em}
+button{background:rgba(30,60,100,.6);color:#bfe2ff;border:1px solid rgba(90,170,255,.35);
+  border-radius:4px;font:10px ui-monospace,monospace;padding:3px 7px;margin:4px 4px 0 0;cursor:pointer}
+button.on{background:rgba(70,150,255,.4);color:#fff}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>LUMINOL GLOW</h1>
+<div class="m">Oxidized luminol lands in an excited state and dumps the energy as a blue photon instead of heat — iron in blood catalyzes it.</div>
+<div class="s">Schmitz, 1902 · forensic spray, Specht 1930s</div>
+<div class="lin">LINEAGE: Schmitz 1902 → 1930s forensic spray → glow-stick cousin next door</div>
+<label>quantum yield Φ <span id="vq">0.30</span> (photons vs heat)</label>
+<input id="q" type="range" min="2" max="60" value="30">
+<div><button id="light">room light: OFF</button><button id="reset">re-wet surface</button></div>
+<div class="m" style="margin-top:6px">drag to SPRAY. Blue pattern = iron traces. The green-white flash patch is bleach — a false positive.</div>
+<div class="r" id="ro">—</div>
+<a href="index.html">← gallery</a>
+<span class="tag">simulation — no recipe</span>
+</div>
+<script>
+(function(){
+var c=document.getElementById('c'),x=c.getContext('2d');
+var W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
+ c.width=W*DPR;c.height=H*DPR;c.style.width=W+'px';c.style.height=H+'px';x.setTransform(DPR,0,0,DPR,0,0);buildField();}
+window.addEventListener('resize',resize);
+
+// ---- hidden catalyst map on a grid ----
+var GS=9; // grid cell px
+var gw=0,gh=0,cat=null,reag=null,exc=null,glow=null,kind=null; // kind 0 none,1 iron,2 bleach
+function bench(){return {x:W*0.30,y:H*0.16,w:W*0.64,h:H*0.72};}
+function stamp(px,py,r,amt,k){
+  var b=bench();
+  var gx=Math.floor((px-b.x)/GS),gy=Math.floor((py-b.y)/GS),rr=Math.ceil(r/GS);
+  for(var j=-rr;j<=rr;j++)for(var i=-rr;i<=rr;i++){
+    var ax=gx+i,ay=gy+j;if(ax<0||ay<0||ax>=gw||ay>=gh)continue;
+    var d=Math.hypot(i,j)/rr;if(d>1)continue;var id=ay*gw+ax;
+    var v=amt*(1-d)*(1-d);
+    if(v>cat[id]){cat[id]=Math.min(1,v);kind[id]=k;}
+  }
+}
+function buildField(){
+  var b=bench();gw=Math.max(4,Math.floor(b.w/GS));gh=Math.max(4,Math.floor(b.h/GS));
+  var n=gw*gh;cat=new Float32Array(n);reag=new Float32Array(n);exc=new Float32Array(n);
+  glow=new Float32Array(n);kind=new Uint8Array(n);
+  // handprint: palm + 4 fingers + thumb
+  var hx=b.x+b.w*0.26,hy=b.y+b.h*0.42;
+  stamp(hx,hy,42,0.95,1);
+  for(var f=0;f<4;f++){var a=-1.9+f*0.30;
+    for(var t=0;t<5;t++){stamp(hx+Math.cos(a)*(26+t*9),hy+Math.sin(a)*(26+t*9),9,0.85,1);}}
+  for(var t2=0;t2<4;t2++)stamp(hx-30-t2*10,hy+18+t2*9,10,0.8,1);
+  // drips running down
+  for(var d=0;d<5;d++){var dx=b.x+b.w*(0.50+d*0.055),dy=b.y+b.h*0.16;
+    for(var s=0;s<26;s++){stamp(dx+Math.sin(s*0.4+d)*4,dy+s*(b.h*0.022),6+ (s>22?7:0),0.9-s*0.012,1);}}
+  // mopped-but-guilty smear: broad low-concentration arcs
+  for(var m=0;m<7;m++){var cy=b.y+b.h*0.78+m*4;
+    for(var s2=0;s2<70;s2++){var t3=s2/69;
+      stamp(b.x+b.w*(0.12+t3*0.72), cy+Math.sin(t3*7+m)*14, 15, 0.13+0.05*Math.sin(t3*9), 1);}}
+  // bleach patch (false positive) — uniform square
+  var bx=b.x+b.w*0.80,by=b.y+b.h*0.24;
+  for(var j=-7;j<=7;j++)for(var i=-7;i<=7;i++)stamp(bx+i*7,by+j*7,7,0.75,2);
+  // control pad: no iron (kind 0) — nothing to stamp, drawn as outline
+}
+
+// ---- state ----
+var phi=0.30, roomLight=false, spraying=false, mx=0,my=0, pm={x:0,y:0};
+var sprayDrops=[],photonsEmitted=0,heatDumped=0,wet=0;
+document.getElementById('q').oninput=function(){phi=this.value/100;document.getElementById('vq').textContent=phi.toFixed(2);};
+document.getElementById('light').onclick=function(){roomLight=!roomLight;this.textContent='room light: '+(roomLight?'ON':'OFF');this.className=roomLight?'on':'';};
+document.getElementById('reset').onclick=function(){for(var i=0;i<reag.length;i++)reag[i]=Math.min(1,reag[i]+0.0);buildField2();};
+function buildField2(){/* re-wet: clear glow but keep catalyst (catalyst is not consumed) */
+  for(var i=0;i<glow.length;i++){glow[i]=0;exc[i]=0;reag[i]=0;}photonsEmitted=0;heatDumped=0;}
+
+function pos(e){var r=c.getBoundingClientRect();var t=e.touches?e.touches[0]:e;return{x:t.clientX-r.left,y:t.clientY-r.top};}
+function down(e){spraying=true;var p=pos(e);mx=p.x;my=p.y;pm=p;e.preventDefault();}
+function move(e){var p=pos(e);mx=p.x;my=p.y;}
+function up(){spraying=false;}
+c.addEventListener('mousedown',down);window.addEventListener('mousemove',move);window.addEventListener('mouseup',up);
+c.addEventListener('touchstart',down,{passive:false});window.addEventListener('touchmove',function(e){move(e);e.preventDefault();},{passive:false});
+window.addEventListener('touchend',up);
+
+function spray(dt){
+  var b=bench();
+  for(var k=0;k<26;k++){
+    var a=Math.random()*Math.PI*2,r=Math.pow(Math.random(),0.6)*34;
+    var px=mx+Math.cos(a)*r,py=my+Math.sin(a)*r;
+    sprayDrops.push({x:px,y:py,l:0.5+Math.random()*0.4});
+    var gx=Math.floor((px-b.x)/GS),gy=Math.floor((py-b.y)/GS);
+    if(gx<0||gy<0||gx>=gw||gy>=gh)continue;var id=gy*gw+gx;
+    reag[id]=Math.min(1,reag[id]+0.30);
+  }
+  wet=1;
+}
+
+var last=performance.now();
+function step(dt){
+  // chemistry: rate = k * catalyst * reagent ; excited pool -> phi photons, (1-phi) heat
+  var kFe=2.6,kBl=6.5;
+  var pE=0,hE=0,tot=0,lit=0;
+  for(var i=0;i<cat.length;i++){
+    var R=reag[i];if(R<=0){ if(glow[i]>0) glow[i]*=Math.exp(-dt*1.6); continue;}
+    var C=cat[i];if(C<=0){glow[i]*=Math.exp(-dt*2);continue;}
+    var rate=(kind[i]===2?kBl:kFe)*C*R;
+    var dR=Math.min(R,rate*dt);
+    reag[i]=R-dR;
+    // dR excited intermediates created; branch
+    pE+=dR*phi; hE+=dR*(1-phi);
+    // glow = photon flux (smoothed for render)
+    var flux=(dR/Math.max(dt,1e-6))*phi;
+    glow[i]+=(flux-glow[i])*Math.min(1,dt*9);
+    tot+=C; if(glow[i]>0.02)lit++;
+  }
+  photonsEmitted+=pE;heatDumped+=hE;
+  wet*=Math.exp(-dt*0.8);
+  for(var s=sprayDrops.length-1;s>=0;s--){var d=sprayDrops[s];d.l-=dt*1.6;if(d.l<=0)sprayDrops.splice(s,1);}
+  return lit;
+}
+
+function draw(lit){
+  var b=bench();
+  x.fillStyle=roomLight?'#20242a':'#04060a';x.fillRect(0,0,W,H);
+  // bench surface
+  var g=x.createLinearGradient(b.x,b.y,b.x,b.y+b.h);
+  if(roomLight){g.addColorStop(0,'#4a4f57');g.addColorStop(1,'#33383f');}
+  else{g.addColorStop(0,'#0b0f15');g.addColorStop(1,'#070a0f');}
+  x.fillStyle=g;x.fillRect(b.x,b.y,b.w,b.h);
+  x.strokeStyle=roomLight?'#6b727c':'rgba(80,120,170,.25)';x.lineWidth=1;x.strokeRect(b.x+.5,b.y+.5,b.w,b.h);
+  // faint tile grid
+  x.strokeStyle=roomLight?'rgba(0,0,0,.18)':'rgba(60,90,130,.09)';
+  for(var tx=1;tx<8;tx++){x.beginPath();x.moveTo(b.x+b.w*tx/8,b.y);x.lineTo(b.x+b.w*tx/8,b.y+b.h);x.stroke();}
+  for(var ty=1;ty<6;ty++){x.beginPath();x.moveTo(b.x,b.y+b.h*ty/6);x.lineTo(b.x+b.w,b.y+b.h*ty/6);x.stroke();}
+
+  // in room light: show a faint visible residue only for bleach patch
+  if(roomLight){
+    x.globalAlpha=0.30;x.fillStyle='#8d949c';
+    for(var i2=0;i2<cat.length;i2++){if(kind[i2]===2&&cat[i2]>0.4){var gx=i2%gw,gy=(i2/gw)|0;x.fillRect(b.x+gx*GS,b.y+gy*GS,GS,GS);}}
+    x.globalAlpha=1;
+  }
+
+  // GLOW
+  x.globalCompositeOperation='lighter';
+  for(var i=0;i<glow.length;i++){
+    var G=glow[i];if(G<0.012)continue;
+    var gx=i%gw,gy=(i/gw)|0;
+    var a=Math.min(1,G*0.9)*(roomLight?0.10:1);
+    if(a<0.01)continue;
+    var px=b.x+gx*GS+GS/2,py=b.y+gy*GS+GS/2;
+    if(kind[i]===2){x.fillStyle='rgba(190,255,230,'+(a*0.75)+')';}
+    else{x.fillStyle='rgba(70,150,255,'+(a*0.65)+')';}
+    x.fillRect(px-GS*0.7,py-GS*0.7,GS*1.4,GS*1.4);
+    if(a>0.25){
+      var rg=x.createRadialGradient(px,py,0,px,py,GS*3.2);
+      rg.addColorStop(0,(kind[i]===2?'rgba(200,255,240,':'rgba(90,170,255,')+(a*0.30)+')');
+      rg.addColorStop(1,'rgba(0,0,0,0)');
+      x.fillStyle=rg;x.beginPath();x.arc(px,py,GS*3.2,0,6.283);x.fill();
+    }
+  }
+  // spray mist
+  for(var s=0;s<sprayDrops.length;s++){var d=sprayDrops[s];
+    x.fillStyle='rgba(140,180,220,'+(d.l*0.16)+')';x.fillRect(d.x-1,d.y-1,2.5,2.5);}
+  x.globalCompositeOperation='source-over';
+
+  // control pad (no iron)
+  var cx=b.x+b.w*0.80,cy=b.y+b.h*0.66,cw=b.w*0.15,ch=b.h*0.22;
+  x.strokeStyle='rgba(140,170,200,.45)';x.setLineDash([4,4]);x.strokeRect(cx-cw/2,cy-ch/2,cw,ch);x.setLineDash([]);
+  x.fillStyle='rgba(150,180,210,.7)';x.font='10px ui-monospace,monospace';x.textAlign='center';
+  x.fillText('CONTROL PAD',cx,cy-4);x.fillText('no iron → no glow',cx,cy+10);
+  x.textAlign='left';
+
+  // labels
+  x.fillStyle='rgba(255,150,150,.75)';x.font='10px ui-monospace,monospace';
+  x.fillText('bleach patch → uniform flash (FALSE POSITIVE)',b.x+b.w*0.62,b.y+b.h*0.10);
+
+  drawInset();
+  drawCursor();
+}
+
+function drawInset(){
+  // energy diagram: excited intermediate branching radiative / non-radiative
+  var w=Math.min(250,W*0.24),h=w*0.78,ix=12,iy=H-h-14;
+  x.fillStyle='rgba(4,10,18,.78)';x.strokeStyle='rgba(90,170,255,.3)';
+  x.fillRect(ix,iy,w,h);x.strokeRect(ix+.5,iy+.5,w,h);
+  x.fillStyle='#9fd0ff';x.font='10px ui-monospace,monospace';
+  x.fillText('EXCITED STATE BRANCHING',ix+8,iy+15);
+  var bx=ix+16,by=iy+h-24,top=iy+34;
+  // ground -> excited
+  x.strokeStyle='#5f8fbf';x.lineWidth=2;
+  x.beginPath();x.moveTo(bx,by);x.lineTo(bx+40,by);x.stroke();
+  x.beginPath();x.moveTo(bx+55,top);x.lineTo(bx+100,top);x.stroke();
+  x.strokeStyle='rgba(255,200,120,.7)';x.beginPath();x.moveTo(bx+20,by-4);x.lineTo(bx+72,top+6);x.stroke();
+  x.fillStyle='#7fb6e8';x.fillText('oxidation',bx+2,by+14);
+  x.fillStyle='#ffd48a';x.fillText('3-APA*',bx+58,top-6);
+  // branches
+  var radLen=phi, nonLen=1-phi;
+  var ex=bx+100;
+  x.lineWidth=Math.max(1.5,radLen*8);
+  x.strokeStyle='rgba(80,160,255,'+(0.35+radLen*0.65)+')';
+  x.beginPath();x.moveTo(ex,top);x.lineTo(ex+70,by-30);x.stroke();
+  x.lineWidth=Math.max(1.5,nonLen*8);
+  x.strokeStyle='rgba(255,110,80,'+(0.35+nonLen*0.65)+')';
+  x.beginPath();x.moveTo(ex,top);x.lineTo(ex+70,by);x.stroke();
+  x.lineWidth=1;
+  x.fillStyle='#6fc0ff';x.fillText('hν  Φ='+phi.toFixed(2),ex+8,by-36);
+  x.fillStyle='#ff8f70';x.fillText('heat 1-Φ='+(1-phi).toFixed(2),ex-6,by+14);
+  x.fillStyle='#5f8fbf';x.font='9px ui-monospace,monospace';
+  x.fillText('total intermediates conserved; Φ only splits them',ix+8,iy+h-6);
+}
+
+function drawCursor(){
+  x.strokeStyle=spraying?'rgba(140,220,255,.9)':'rgba(120,170,220,.45)';
+  x.lineWidth=1.2;x.beginPath();x.arc(mx,my,34,0,6.283);x.stroke();
+  x.beginPath();x.arc(mx,my,3,0,6.283);x.stroke();
+}
+
+function loop(t){
+  var dt=Math.min(0.05,(t-last)/1000);last=t;
+  if(spraying)spray(dt);
+  var lit=step(dt);
+  draw(lit);
+  var tot=photonsEmitted+heatDumped;
+  document.getElementById('ro').textContent=
+    'lit cells   '+lit+
+    '\nphotons     '+photonsEmitted.toFixed(2)+
+    '\nheat        '+heatDumped.toFixed(2)+
+    '\nintermed.   '+tot.toFixed(2)+'  (Φ splits only)'+
+    '\nreagent wet '+(wet*100).toFixed(0)+'%';
+  requestAnimationFrame(loop);
+}
+resize();
+mx=W*0.5;my=H*0.5;
+requestAnimationFrame(function(t){last=t;loop(t);});
+})();
+</script>
+</body>

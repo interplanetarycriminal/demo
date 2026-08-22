@@ -1,0 +1,263 @@
+<title>Hydraulic Jump</title>
+<style>
+html,body{margin:0;padding:0;background:#04070c;overflow:hidden;font-family:monospace}
+canvas{display:block}
+#ui{position:fixed;top:0;left:0;padding:10px 12px;color:#9fe8ff;background:rgba(2,8,16,.62);
+  font:11px/1.5 monospace;max-width:330px;border-right:1px solid #0a3a52;border-bottom:1px solid #0a3a52;
+  text-shadow:0 0 6px #0ff6;z-index:10}
+#ui h1{font-size:13px;margin:0 0 4px;color:#7ff9ff;letter-spacing:.09em;text-shadow:0 0 10px #0ff}
+#ui .m{color:#cfe9f5;margin:0 0 5px}
+#ui .s{color:#5fb0c8;margin:0 0 3px}
+#ui .lin{color:#4d8fa5;font-size:10px;margin:0 0 6px}
+#ui .ctl{color:#ffd27f;margin:6px 0 4px}
+#ui .rd{color:#8affc8}
+#ui a{color:#ff9de0;text-decoration:none}
+#ui a:hover{text-decoration:underline}
+label{display:block;color:#79c7dd;margin:3px 0}
+input[type=range]{width:150px;vertical-align:middle;accent-color:#22d3ee}
+b{color:#fff}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>HYDRAULIC JUMP</h1>
+<p class="m">Fast shallow supercritical flow (Fr&gt;1) cannot send waves upstream, so it slams into a thick slow ring where the two states reconcile — the standing wall in every kitchen sink.</p>
+<p class="s">Leonardo sketched it · Bidone's experiments 1819 · Bélanger's 1-D jump relation (19th c.)</p>
+<p class="lin">LINEAGE: Leonardo's notebooks → Bélanger's equation → the kitchen-sink exhibit. Kin: river weirs, tidal bores.</p>
+<label>flow rate Q <input id="sQ" type="range" min="0.35" max="2.2" step="0.01" value="1.0"></label>
+<label>viscosity ν <input id="sV" type="range" min="0.4" max="2.4" step="0.01" value="1.0"></label>
+<label>plate tilt <input id="sT" type="range" min="0" max="1" step="0.01" value="0"></label>
+<p class="ctl">CLICK the water to drop a ripple — inside the ring it washes downstream (waves lose the race); outside it spreads both ways. Tilt ⇒ horseshoe jump.</p>
+<div class="rd">
+R_jump <b id="rR">–</b> px &nbsp; Fr@ring <b id="rF">–</b><br>
+h₁ <b id="rh1">–</b> → h₂ <b id="rh2">–</b> mm<br>
+Bélanger h₂/h₁ = ½(√(1+8Fr²)−1) = <b id="rB">–</b><br>
+u₁ <b id="ru1">–</b> · u₂ <b id="ru2">–</b> · ripples <b id="rN">0</b>
+</div>
+<p><a href="index.html">← gallery</a></p>
+</div>
+<script>
+(function(){
+var c=document.getElementById('c'),g=c.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
+ c.width=W*DPR|0;c.height=H*DPR|0;c.style.width=W+'px';c.style.height=H+'px';g.setTransform(DPR,0,0,DPR,0,0);}
+window.addEventListener('resize',resize);resize();
+
+var sQ=document.getElementById('sQ'),sV=document.getElementById('sV'),sT=document.getElementById('sT');
+var rR=document.getElementById('rR'),rF=document.getElementById('rF'),rh1=document.getElementById('rh1'),
+    rh2=document.getElementById('rh2'),rB=document.getElementById('rB'),ru1=document.getElementById('ru1'),
+    ru2=document.getElementById('ru2'),rN=document.getElementById('rN');
+
+// ---- physics ----------------------------------------------------------
+// Thin-film radial spread from a jet: continuity Q = 2*pi*r*h*u.
+// Viscous boundary layer thins/slows the film: u(r) ~ u0*(r0/r)^a with a>0.
+// Fr(r) = u / sqrt(g*h).  Jump sits where Fr = 1.
+var G=9.81;
+var P={r0:0.006, u0:1.0, Q:1.0, nu:1.0};
+function film(r,S){          // r in metres -> {h,u}
+  var r0=P.r0; if(r<r0)r=r0;
+  var u0=1.45*Math.sqrt(S.Q);                 // jet impact speed scale
+  var a=0.32+0.30*S.nu;                        // viscous decay exponent
+  var u=u0*Math.pow(r0/r,a);
+  var Qv=2.2e-5*S.Q;                           // volumetric flow m^3/s
+  var h=Qv/(2*Math.PI*r*u);
+  return {h:h,u:u};
+}
+function Fr(r,S){var f=film(r,S);return f.u/Math.sqrt(G*f.h);}
+function jumpRadius(S){       // bisection on Fr(r)=1
+  var lo=P.r0*1.02, hi=0.35;
+  if(Fr(lo,S)<1) return lo;
+  if(Fr(hi,S)>1) return hi;
+  for(var i=0;i<60;i++){var m=0.5*(lo+hi);if(Fr(m,S)>1)lo=m;else hi=m;}
+  return 0.5*(lo+hi);
+}
+function belanger(F){return 0.5*(Math.sqrt(1+8*F*F)-1);}
+window.__phys={film:film,Fr:Fr,jumpRadius:jumpRadius,belanger:belanger};
+
+var S={Q:1,nu:1,tilt:0};
+function readUI(){S.Q=+sQ.value;S.nu=+sV.value;S.tilt=+sT.value;}
+readUI();
+[sQ,sV,sT].forEach(function(s){s.addEventListener('input',readUI)});
+
+// layout: top view on left/centre, side cutaway strip at bottom
+var CX,CY,SCALE,SIDEY;
+function layout(){CX=W*0.5;CY=H*0.42;SCALE=Math.min(W,H*1.15)*0.98;SIDEY=H-Math.max(120,H*0.20);}
+// SCALE: pixels per metre for the top view
+function px(rm){return rm*SCALE*2.0;}
+function m2px(rm){return rm*SCALE*2.0;}
+
+// horseshoe: tilt shifts jump radius with azimuth
+function Rjump(th,Rj){return Rj*(1+S.tilt*0.55*Math.cos(th));}
+
+// ---- particles --------------------------------------------------------
+var N=1100,pr=new Float32Array(N),pth=new Float32Array(N),pseed=new Float32Array(N),pout=new Float32Array(N);
+for(var i=0;i<N;i++){pr[i]=P.r0+Math.random()*0.25;pth[i]=Math.random()*Math.PI*2;pseed[i]=Math.random();pout[i]=0;}
+function respawn(i){pr[i]=P.r0*(1+Math.random()*0.3);pth[i]=Math.random()*Math.PI*2;pout[i]=0;}
+
+// ripples: {r,th,t,inside}  radial+angular spreading with advection
+var rips=[];
+c.addEventListener('pointerdown',function(e){
+  var x=e.clientX-CX,y=(e.clientY-CY);
+  var rr=Math.hypot(x,y)/ (SCALE*2.0), th=Math.atan2(y,x);
+  if(e.clientY>SIDEY-10) return;
+  rips.push({r:Math.max(P.r0*1.2,rr),th:th,t:0,seedR:Math.max(P.r0*1.2,rr),up:0,down:0});
+  if(rips.length>14)rips.shift();
+});
+
+var last=performance.now(),tAcc=0;
+function frame(now){
+  var dt=Math.min(0.033,(now-last)/1000);last=now;tAcc+=dt;
+  layout();
+  var Rj=jumpRadius(S);
+  var f1=film(Rj*0.985,S), F1=Fr(Rj*0.985,S);
+  // just-upstream state used for Bélanger (evaluate slightly inside where Fr>1)
+  var Fu=Fr(Rj*0.80,S), fu=film(Rj*0.80,S);
+  var ratio=belanger(Fu), h2=fu.h*ratio, u2=fu.u/ratio;
+
+  // background
+  g.fillStyle='#04070c';g.fillRect(0,0,W,H);
+
+  // ---- top view -------------------------------------------------------
+  g.save();g.translate(CX,CY);
+  // outer slow pool
+  var Rout=m2px(Rj)*2.35;
+  var gr=g.createRadialGradient(0,0,m2px(Rj)*0.9,0,0,Rout);
+  gr.addColorStop(0,'rgba(20,90,140,.55)');gr.addColorStop(1,'rgba(6,22,40,.05)');
+  g.fillStyle=gr;g.beginPath();g.arc(0,0,Rout,0,7);g.fill();
+
+  // inner supercritical disc glow
+  var gi=g.createRadialGradient(0,0,0,0,0,m2px(Rj));
+  gi.addColorStop(0,'rgba(255,255,255,.85)');gi.addColorStop(.25,'rgba(120,255,240,.35)');
+  gi.addColorStop(1,'rgba(40,190,220,.12)');
+  g.fillStyle=gi;g.beginPath();g.arc(0,0,m2px(Rj),0,7);g.fill();
+
+  // particles advected outward at film speed
+  for(var i=0;i<N;i++){
+    var f=film(pr[i],S);
+    var v=f.u;
+    var Rl=Rjump(pth[i],Rj);
+    if(pr[i]>Rl){ v=f.u*0.14; pout[i]=1; }       // speed collapses past the jump
+    pr[i]+=v*dt*0.85;
+    pth[i]+=(pseed[i]-0.5)*0.25*dt*(pout[i]?1.6:0.2);
+    if(pr[i]>Rj*2.5+0.02) respawn(i);
+    var X=Math.cos(pth[i])*m2px(pr[i]), Y=Math.sin(pth[i])*m2px(pr[i]);
+    var sp=Math.min(1,v/1.5);
+    var R=Math.round(255*sp+40*(1-sp)), Gc=Math.round(120+130*(1-sp)), B=Math.round(90+165*(1-sp));
+    g.fillStyle='rgba('+R+','+Gc+','+B+',' + (pout[i]?0.42:0.85) + ')';
+    var s=pout[i]?1.6:1.1;
+    g.fillRect(X-s/2,Y-s/2,s,s);
+  }
+
+  // THE JUMP ring — bright, drawn exactly where Fr crosses 1
+  g.lineWidth=1;
+  for(var k=0;k<3;k++){
+    g.beginPath();
+    for(var a=0;a<=100;a++){var th=a/100*Math.PI*2,R=m2px(Rjump(th,Rj))+k*1.6;
+      var X=Math.cos(th)*R,Y=Math.sin(th)*R;a?g.lineTo(X,Y):g.moveTo(X,Y);}
+    g.closePath();
+    g.strokeStyle=['rgba(255,255,255,.95)','rgba(140,255,255,.55)','rgba(60,220,255,.25)'][k];
+    g.lineWidth=[2.2,5,11][k];g.shadowColor='#7ff';g.shadowBlur=[10,22,34][k];g.stroke();
+  }
+  g.shadowBlur=0;
+  // Fr = 1 label anchored on the water
+  g.strokeStyle='rgba(255,210,120,.85)';g.lineWidth=1;g.setLineDash([3,3]);
+  g.beginPath();g.moveTo(m2px(Rjump(-0.6,Rj)),0);g.lineTo(m2px(Rjump(-0.6,Rj))+0,0);g.stroke();g.setLineDash([]);
+  var lx=m2px(Rjump(-0.55,Rj))*Math.cos(-0.55), ly=m2px(Rjump(-0.55,Rj))*Math.sin(-0.55);
+  g.fillStyle='rgba(255,214,130,.95)';g.font='11px monospace';
+  g.fillText('Fr = 1  ⟵ the jump sits here',lx+8,ly-6);
+  g.fillStyle='rgba(180,255,255,.6)';
+  g.fillText('Fr > 1  supercritical',-34,-m2px(Rj)*0.45);
+  g.fillText('Fr < 1  subcritical',-30,-m2px(Rj)*1.55);
+
+  // ripples: wave speed c=sqrt(g h) raced against flow u
+  rN.textContent=rips.length;
+  for(var i=rips.length-1;i>=0;i--){
+    var rp=rips[i];rp.t+=dt;
+    var f=film(rp.r,S), cw=Math.sqrt(G*f.h), u=f.u;
+    var Rl=Rjump(rp.th,Rj);
+    if(rp.r>Rl){cw=Math.sqrt(G*h2);u=u2;}
+    rp.down+=(u+cw)*dt*0.85;
+    rp.up  +=(cw-u)*dt*0.85;               // negative inside the ring -> washed out
+    var alpha=Math.max(0,1-rp.t/2.6);
+    if(alpha<=0){rips.splice(i,1);continue;}
+    var cxp=Math.cos(rp.th)*m2px(rp.r), cyp=Math.sin(rp.th)*m2px(rp.r);
+    var Rd=m2px(Math.max(0,rp.down)), Ru=m2px(rp.up);
+    g.strokeStyle='rgba(255,255,255,'+(alpha*0.7)+')';g.lineWidth=1.4;
+    g.beginPath();g.arc(cxp,cyp,Math.max(1,Rd*0.55),0,7);g.stroke();
+    if(Ru>0){g.strokeStyle='rgba(140,255,180,'+(alpha*0.8)+')';
+      g.beginPath();g.arc(cxp,cyp,Math.max(1,Ru*0.55),0,7);g.stroke();}
+    else{g.fillStyle='rgba(255,110,110,'+(alpha*0.9)+')';g.font='10px monospace';
+      g.fillText('washed downstream',cxp+6,cyp-6);}
+  }
+
+  // faucet jet
+  g.fillStyle='rgba(255,255,255,.95)';g.beginPath();g.arc(0,0,3.5,0,7);g.fill();
+  g.shadowColor='#fff';g.shadowBlur=18;g.beginPath();g.arc(0,0,2,0,7);g.fill();g.shadowBlur=0;
+  g.restore();
+
+  // ---- side cutaway ---------------------------------------------------
+  var y0=H-26, x0=W*0.5, sw=Math.min(W*0.44,420);
+  g.strokeStyle='rgba(120,180,210,.35)';g.lineWidth=1;
+  g.beginPath();g.moveTo(x0-sw,y0);g.lineTo(x0+sw,y0);g.stroke();
+  g.fillStyle='rgba(90,140,175,.55)';g.font='10px monospace';
+  g.fillText('SIDE CUTAWAY  — depth step h₁ → h₂',x0-sw,y0-Math.max(70,H*0.13)-6);
+  var hs=Math.max(70,H*0.13)/Math.max(h2*1.6,1e-4);   // px per metre of depth
+  var Rjp=m2px(Rj), sc=sw/(Rj*2.6*SCALE*2.0)*1.0;
+  g.beginPath();g.moveTo(x0-sw,y0);
+  for(var xx=-sw;xx<=sw;xx+=2){
+    var rm=Math.abs(xx)/sw*(Rj*2.6);
+    var h;
+    if(rm<Rj){h=film(Math.max(P.r0,rm),S).h;}
+    else{var t=Math.min(1,(rm-Rj)/(Rj*0.10));h=film(Rj*0.80,S).h+(h2-film(Rj*0.80,S).h)*(t*t*(3-2*t));
+         h*=1+0.06*Math.sin(rm*260+tAcc*4);}
+    g.lineTo(x0+xx,y0-Math.min(Math.max(70,H*0.13),h*hs));
+  }
+  g.lineTo(x0+sw,y0);g.closePath();
+  var gs=g.createLinearGradient(0,y0-Math.max(70,H*0.13),0,y0);
+  gs.addColorStop(0,'rgba(140,240,255,.75)');gs.addColorStop(1,'rgba(20,90,140,.55)');
+  g.fillStyle=gs;g.fill();
+  g.strokeStyle='rgba(180,255,255,.9)';g.lineWidth=1.4;g.shadowColor='#5ff';g.shadowBlur=8;g.stroke();g.shadowBlur=0;
+  // mark jump position on the cutaway
+  [-1,1].forEach(function(sgn){
+    var xj=x0+sgn*(Rj/(Rj*2.6))*sw;
+    g.strokeStyle='rgba(255,210,120,.85)';g.setLineDash([4,3]);
+    g.beginPath();g.moveTo(xj,y0+4);g.lineTo(xj,y0-Math.max(70,H*0.13)-4);g.stroke();g.setLineDash([]);
+  });
+  g.fillStyle='rgba(255,214,130,.95)';
+  g.fillText('Fr=1',x0+(Rj/(Rj*2.6))*sw+4,y0-Math.max(70,H*0.13)+10);
+  g.fillStyle='rgba(200,240,255,.8)';
+  g.fillText('h₁',x0+(Rj*0.55/(Rj*2.6))*sw,y0-6);
+  g.fillText('h₂',x0+(Rj*1.7/(Rj*2.6))*sw,y0-Math.min(Math.max(70,H*0.13),h2*hs)-5);
+
+  // ---- Froude meter ---------------------------------------------------
+  var mx=W-150,my=24,mw=126,mh=10;
+  g.fillStyle='rgba(2,10,20,.7)';g.fillRect(mx-8,my-16,mw+16,58);
+  g.strokeStyle='rgba(80,160,190,.5)';g.strokeRect(mx-8,my-16,mw+16,58);
+  g.fillStyle='rgba(160,230,255,.9)';g.font='10px monospace';g.fillText('FROUDE  Fr(r)',mx,my-4);
+  for(var xx=0;xx<mw;xx++){
+    var rm=P.r0+(xx/mw)*(Rj*2.4);
+    var F=Fr(Math.max(P.r0,rm),S);
+    var t=Math.min(1,F/4);
+    g.fillStyle= F>1? 'rgba('+Math.round(120+135*t)+',255,200,.9)' : 'rgba(70,130,200,.9)';
+    g.fillRect(mx+xx,my,1,mh);
+  }
+  var xf=(Rj-P.r0)/(Rj*2.4)*mw;
+  g.strokeStyle='#ffd27f';g.lineWidth=1.5;g.beginPath();g.moveTo(mx+xf,my-3);g.lineTo(mx+xf,my+mh+3);g.stroke();
+  g.fillStyle='#ffd27f';g.fillText('Fr=1',mx+xf-12,my+mh+14);
+  g.fillStyle='rgba(140,200,220,.7)';g.fillText('r →',mx+mw-18,my+mh+26);
+
+  // readouts
+  rR.textContent=m2px(Rj).toFixed(0);
+  rF.textContent=Fr(Rj,S).toFixed(3);
+  rh1.textContent=(fu.h*1000).toFixed(2);
+  rh2.textContent=(h2*1000).toFixed(2);
+  rB.textContent=ratio.toFixed(2)+'  (Fr₁='+Fu.toFixed(2)+')';
+  ru1.textContent=fu.u.toFixed(2)+' m/s';
+  ru2.textContent=u2.toFixed(2)+' m/s';
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+})();
+</script>

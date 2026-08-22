@@ -1,0 +1,288 @@
+<title>Poisson Spot</title>
+<style>
+html,body{margin:0;height:100%;background:#04060a;overflow:hidden}
+canvas{display:block;position:fixed;inset:0}
+#ui{position:fixed;top:10px;left:10px;z-index:10;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#9fe;background:rgba(4,10,18,.68);border:1px solid rgba(90,220,255,.28);border-radius:8px;padding:10px 12px;max-width:330px;backdrop-filter:blur(6px);box-shadow:0 0 26px rgba(60,200,255,.14)}
+#ui h1{font-size:13px;margin:0 0 4px;color:#7ff;letter-spacing:.12em;text-shadow:0 0 10px #0ff8}
+#ui .m{color:#cfe9ff;margin:0 0 5px}
+#ui .s{color:#ffcf6a;margin:0 0 3px}
+#ui .l{color:#8aa6c0;margin:0 0 7px;font-size:10px}
+#ui .k{color:#6ad}
+label{display:block;margin:4px 0;color:#8fd}
+input[type=range]{width:150px;vertical-align:middle;accent-color:#0ef}
+#ro{margin-top:7px;border-top:1px solid rgba(90,220,255,.2);padding-top:6px;color:#bff}
+#ro b{color:#ff8}
+a{color:#7ff}
+button{background:#0b2030;color:#9fe;border:1px solid #2a6a88;border-radius:5px;font:11px monospace;padding:3px 8px;cursor:pointer;margin-top:6px}
+button:hover{background:#12374d}
+#cap{position:fixed;bottom:8%;left:50%;transform:translateX(-50%);z-index:10;font:15px/1.6 ui-monospace,monospace;color:#dff;text-align:center;max-width:70%;text-shadow:0 0 14px #08f;opacity:0;transition:opacity .5s;pointer-events:none}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="cap"></div>
+<div id="ui">
+<h1>POISSON / ARAGO SPOT</h1>
+<p class="m">Every point on a disc's rim is the same distance from the axis, so all edge wavelets arrive in phase and light floods the exact centre of the shadow.</p>
+<p class="s">Poisson 1818 (as a reductio) · Arago 1818 (measured it)</p>
+<p class="l">LINEAGE: Fresnel's 1818 memoir → Poisson's own-goal → Arago's lamp → modern Fresnel-zone optics.</p>
+<label>disc radius <input id="sR" type="range" min="0.2" max="3" step="0.01" value="1.0"><span class="k" id="vR"></span></label>
+<label>wavelength <input id="sL" type="range" min="400" max="700" step="1" value="550"><span class="k" id="vL"></span></label>
+<label>screen dist <input id="sZ" type="range" min="0.3" max="6" step="0.01" value="2.0"><span class="k" id="vZ"></span></label>
+<button id="bS">▶ STORY MODE</button> <button id="bW">edge wavelets: ON</button>
+<div id="ro">
+on-axis I/I₀ = <b id="rI">—</b> — the centre of the shadow is as bright as no disc at all<br>
+Fresnel number N = <span id="rN">—</span> · 1st ring ≈ <span id="rR">—</span> mm
+</div>
+<p class="l" style="margin:6px 0 0">drag ↔ radius · drag ↕ distance · <a href="index.html">← gallery</a></p>
+</div>
+<script>
+(function(){
+var c=document.getElementById('c'),g=c.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;c.width=W*DPR|0;c.height=H*DPR|0;c.style.width=W+'px';c.style.height=H+'px';g.setTransform(DPR,0,0,DPR,0,0);}
+window.addEventListener('resize',resize);resize();
+
+var P={R:1.0,lam:550,z:2.0};        // R mm, lambda nm, z m
+var showWave=true,t0=performance.now();
+
+// ---- honest 1-D Fresnel-Kirchhoff integral over the OPEN aperture (r > R) ----
+// U(rho) = -i k/z * exp(...) * ∫_R^∞ J0(k r rho/z) exp(i k r^2/2z) r dr
+// Radial symmetry -> one integral. Gaussian apodisation for convergence.
+function J0(x){var ax=Math.abs(x),y,z,xx;
+ if(ax<8){y=x*x;
+  var p=57568490574.0+y*(-13362590354.0+y*(651619640.7+y*(-11214424.18+y*(77392.33017+y*(-184.9052456)))));
+  var q=57568490411.0+y*(1029532985.0+y*(9494680.718+y*(59272.64853+y*(267.8532712+y*1.0))));
+  return p/q;}
+ z=8/ax;y=z*z;xx=ax-0.785398164;
+ var p1=1+y*(-0.1098628627e-2+y*(0.2734510407e-4+y*(-0.2073370639e-5+y*0.2093887211e-6)));
+ var q1=-0.1562499995e-1+y*(0.1430488765e-3+y*(-0.6911147651e-5+y*(0.7621095161e-6-y*0.934935152e-7)));
+ return Math.sqrt(0.636619772/ax)*(Math.cos(xx)*p1-z*Math.sin(xx)*q1);}
+
+var NR=900, APO=1.0; // apodisation width in units of first-zone radius multiples
+function field(rho){ // rho in mm on screen ; returns [Re,Im] of relative amplitude
+ var lam=P.lam*1e-6;      // mm
+ var z=P.z*1000;          // mm
+ var k=2*Math.PI/lam;
+ var rz=Math.sqrt(lam*z);          // first Fresnel-zone radius (mm)
+ var rmax=P.R+8*rz;                // integrate a few zones past the rim
+ var w=4*rz;                       // gaussian apodisation scale
+ var dr=(rmax-P.R)/NR, re=0, im=0;
+ for(var i=0;i<NR;i++){
+   var r=P.R+(i+0.5)*dr;
+   var ph=k*r*r/(2*z);
+   var amp=J0(k*r*rho/z)*r*Math.exp(-Math.pow((r-P.R)/w,2))*dr;
+   re+=amp*Math.cos(ph); im+=amp*Math.sin(ph);
+ }
+ var pre=k/z;
+ return [pre*(im), pre*(-re)]; // times -i
+}
+// unobstructed reference: same integral from 0 -> inf with same apodisation ~ amplitude 1
+function refI(){
+ var lam=P.lam*1e-6,z=P.z*1000,k=2*Math.PI/lam,rz=Math.sqrt(lam*z);
+ var rmax=8*rz,w=4*rz,dr=rmax/NR,re=0,im=0;
+ for(var i=0;i<NR;i++){var r=(i+0.5)*dr,ph=k*r*r/(2*z);
+  var amp=r*Math.exp(-Math.pow(r/w,2))*dr; re+=amp*Math.cos(ph); im+=amp*Math.sin(ph);}
+ var pre=k/z; var a=pre*im,b=-pre*re; return a*a+b*b;
+}
+
+var NS=170, prof=new Float64Array(NS), profR=1, I0=1;
+function compute(){
+ I0=refI();
+ var lam=P.lam*1e-6,z=P.z*1000,rz=Math.sqrt(lam*z);
+ profR=Math.max(P.R*1.9, P.R+4*rz);   // screen half-width in mm
+ for(var i=0;i<NS;i++){
+   var rho=i/(NS-1)*profR;
+   var f=field(rho);
+   prof[i]=(f[0]*f[0]+f[1]*f[1])/I0;
+ }
+}
+function sample(rho){ // linear interp of profile
+ var x=rho/profR*(NS-1); if(x>=NS-1)return prof[NS-1]; if(x<0)x=0;
+ var i=x|0,fr=x-i; return prof[i]*(1-fr)+prof[i+1]*fr;
+}
+function spectralRGB(lam){ // 400-700 -> rgb
+ var r=0,gg=0,b=0;
+ if(lam<440){r=-(lam-440)/40;b=1;}
+ else if(lam<490){gg=(lam-440)/50;b=1;}
+ else if(lam<510){gg=1;b=-(lam-510)/20;}
+ else if(lam<580){r=(lam-510)/70;gg=1;}
+ else if(lam<645){r=1;gg=-(lam-645)/65;}
+ else {r=1;}
+ return [r,gg,b];
+}
+
+// ---------- offscreen screen-image ----------
+var off=document.createElement('canvas'),og=off.getContext('2d');
+function paintScreen(size){
+ if(off.width!==size){off.width=off.height=size;}
+ var img=og.createImageData(size,size),d=img.data,col=spectralRGB(P.lam);
+ var cen=(size-1)/2, scale=profR/(size/2); // mm per px
+ for(var y=0;y<size;y++)for(var x=0;x<size;x++){
+   var dx=x-cen,dy=y-cen,rho=Math.sqrt(dx*dx+dy*dy)*scale;
+   var I=sample(rho); var v=Math.pow(Math.min(1,I*0.95),0.62)*255;
+   var o=(y*size+x)*4;
+   d[o]=v*col[0]*1.05; d[o+1]=v*col[1]*1.05; d[o+2]=v*col[2]*1.15; d[o+3]=255;
+ }
+ og.putImageData(img,0,0);
+ return off;
+}
+
+// ---------- story ----------
+var story=null,STORY=[
+ [0,"1818. The French Academy offers a prize on the nature of light."],
+ [3.4,"Fresnel submits a memoir: light is a WAVE."],
+ [6.8,"Siméon Poisson works the maths — and sneers:"],
+ [9.6,"\"Absurd. His theory demands a BRIGHT SPOT in the darkest part of a disc's shadow.\""],
+ [13.6,"Arago lights the lamp anyway."],
+ [16.6,"…the spot is there. Exactly on axis. Exactly as bright as no disc at all."],
+ [20.6,"Poisson had discovered Fresnel's proof for him. Waves won."]
+];
+function startStory(){story={t:performance.now()};}
+var cap=document.getElementById('cap');
+
+function draw(now){
+ var T=(now-t0)/1000;
+ g.clearRect(0,0,W,H);
+ // vignette bg
+ var bg=g.createRadialGradient(W*.5,H*.5,0,W*.5,H*.5,Math.max(W,H)*.7);
+ bg.addColorStop(0,'#071018');bg.addColorStop(1,'#03050a');g.fillStyle=bg;g.fillRect(0,0,W,H);
+
+ var st=0,sc=1;
+ if(story){var e=(now-story.t)/1000; if(e>24.5){story=null;cap.style.opacity=0;}
+  else{var txt='';for(var i=0;i<STORY.length;i++)if(e>=STORY[i][0])txt=STORY[i][1];
+   cap.textContent=txt;cap.style.opacity=1;
+   sc = e<13.6 ? 0 : Math.min(1,(e-13.6)/2.6);   // lamp fades in
+   st=e;}
+ }else cap.style.opacity=0;
+
+ // ---- optical bench (left/top) ----
+ var bx=W*0.06, by=H*0.5, bw=W*0.44;
+ var srcX=bx, discX=bx+bw*0.42, scrX=bx+bw;
+ var lampOn = story? sc : 1;
+
+ // beam
+ g.save();g.globalCompositeOperation='lighter';
+ var beam=g.createLinearGradient(srcX,0,scrX,0);
+ beam.addColorStop(0,'rgba(120,200,255,'+(0.22*lampOn)+')');beam.addColorStop(1,'rgba(120,200,255,0)');
+ g.fillStyle=beam;
+ g.beginPath();g.moveTo(srcX,by);g.lineTo(scrX,by-70);g.lineTo(scrX,by+70);g.closePath();g.fill();
+ g.restore();
+
+ // source
+ g.save();g.shadowColor='#8df';g.shadowBlur=26*lampOn;
+ g.fillStyle='rgba(200,240,255,'+(0.35+0.65*lampOn)+')';
+ g.beginPath();g.arc(srcX,by,5,0,7);g.fill();g.restore();
+ g.fillStyle='#4a7';g.font='10px monospace';g.fillText('point source',srcX-24,by+24);
+
+ // disc
+ var dpx=26+P.R*16;
+ g.fillStyle='#0a0d12';g.strokeStyle='#2b4a5e';g.lineWidth=2;
+ g.beginPath();g.arc(discX,by,dpx,0,7);g.fill();g.stroke();
+ g.fillStyle='#5a7f95';g.fillText('opaque disc  R='+P.R.toFixed(2)+' mm',discX-52,by+dpx+16);
+
+ // edge wavelets: rays from rim to axis, equal length
+ if(showWave&&lampOn>0.2){
+  var ph=T*2.2;
+  g.save();g.globalCompositeOperation='lighter';
+  for(var i=0;i<26;i++){
+   var a=i/26*Math.PI*2;
+   var ex=discX, ey=by+Math.sin(a)*dpx;
+   var ez=Math.cos(a); // depth -> fade
+   var alpha=0.16+0.16*Math.cos(ph - 0);
+   g.strokeStyle='rgba(120,230,255,'+(alpha*(0.45+0.55*(ez*0.5+0.5)))+')';
+   g.lineWidth=1;
+   g.beginPath();g.moveTo(ex,ey);g.lineTo(scrX,by);g.stroke();
+   // travelling phase bead — all beads arrive together = in phase
+   var u=((T*0.42+0)%1);
+   var px=ex+(scrX-ex)*u, py=ey+(by-ey)*u;
+   g.fillStyle='rgba(180,250,255,'+(0.9*(1-u))+')';
+   g.beginPath();g.arc(px,py,2.2,0,7);g.fill();
+  }
+  g.restore();
+  g.fillStyle='#7ce';g.font='10px monospace';
+  g.fillText('all rim→axis paths equal ⇒ in phase', discX+8, by-dpx-10);
+ }
+
+ // screen with pattern
+ var size=190;
+ var pat=paintScreen(size);
+ var pd=Math.min(H*0.62,W*0.30), px0=scrX+18, py0=by-pd/2;
+ g.save();
+ g.shadowColor='rgba(80,200,255,.35)';g.shadowBlur=30;
+ g.drawImage(pat,px0,py0,pd,pd);
+ g.restore();
+ g.strokeStyle='rgba(90,200,255,.35)';g.lineWidth=1;g.strokeRect(px0,py0,pd,pd);
+ g.fillStyle='#7ce';g.font='10px monospace';
+ g.fillText('screen at z = '+P.z.toFixed(2)+' m   (½-width '+profR.toFixed(2)+' mm)',px0,py0-8);
+
+ // arrow to the spot
+ var cx=px0+pd/2, cy=py0+pd/2;
+ var pulse=0.5+0.5*Math.sin(T*3);
+ g.save();g.globalCompositeOperation='lighter';
+ g.strokeStyle='rgba(255,220,120,'+(0.4+0.4*pulse)+')';g.lineWidth=1.4;
+ g.beginPath();g.arc(cx,cy,16+3*pulse,0,7);g.stroke();g.restore();
+ g.fillStyle='#fd8';g.font='11px monospace';
+ g.fillText('◀ the impossible bright centre',cx+22,cy+4);
+
+ // ---- profile plot (bottom) ----
+ var gx=W*0.06, gy=H*0.80, gw=W*0.88, gh=H*0.15;
+ g.strokeStyle='rgba(90,200,255,.25)';g.strokeRect(gx,gy,gw,gh);
+ g.fillStyle='#6ac';g.font='10px monospace';
+ g.fillText('I(ρ)/I₀  radial intensity — centre at left',gx+4,gy-6);
+ g.fillText('1.0',gx-22,gy+gh*0.02+4);
+ g.strokeStyle='rgba(255,255,255,.16)';g.setLineDash([3,4]);
+ g.beginPath();var y1=gy+gh-gh*Math.min(1,1/1.6);g.moveTo(gx,y1);g.lineTo(gx+gw,y1);g.stroke();g.setLineDash([]);
+ g.save();g.globalCompositeOperation='lighter';
+ var col=spectralRGB(P.lam);
+ g.strokeStyle='rgba('+(col[0]*255|0)+','+(col[1]*255|0)+','+(col[2]*255|0)+',.95)';
+ g.lineWidth=1.8;g.shadowColor=g.strokeStyle;g.shadowBlur=10;
+ g.beginPath();
+ for(var i=0;i<NS;i++){
+  var x=gx+i/(NS-1)*gw, v=Math.min(1.6,prof[i]);
+  var y=gy+gh-gh*(v/1.6);
+  i?g.lineTo(x,y):g.moveTo(x,y);
+ }
+ g.stroke();g.restore();
+ // geometric shadow edge marker
+ var xs=gx+(P.R/profR)*gw;
+ g.strokeStyle='rgba(255,120,120,.5)';g.beginPath();g.moveTo(xs,gy);g.lineTo(xs,gy+gh);g.stroke();
+ g.fillStyle='#f88';g.fillText('geometric shadow edge',xs+4,gy+12);
+
+ requestAnimationFrame(draw);
+}
+
+// ---- readouts / controls ----
+var sR=document.getElementById('sR'),sL=document.getElementById('sL'),sZ=document.getElementById('sZ');
+function refresh(){
+ P.R=+sR.value;P.lam=+sL.value;P.z=+sZ.value;
+ compute();
+ document.getElementById('vR').textContent=P.R.toFixed(2)+'mm';
+ document.getElementById('vL').textContent=P.lam+'nm';
+ document.getElementById('vZ').textContent=P.z.toFixed(2)+'m';
+ document.getElementById('rI').textContent=prof[0].toFixed(3);
+ var N=P.R*P.R/((P.lam*1e-6)*(P.z*1000));
+ document.getElementById('rN').textContent=N.toFixed(2);
+ // first bright ring ~ where profile has its first local max after the centre dip
+ // first bright RING: must come after the profile has genuinely dipped below half the centre
+ var dipped=false,best=0;
+ for(var i=1;i<NS-1;i++){
+  if(!dipped){ if(prof[i]<0.5*prof[0]) dipped=true; continue; }
+  if(prof[i]>prof[i-1]&&prof[i]>=prof[i+1]){best=i;break;}
+ }
+ document.getElementById('rR').textContent = best? (best/(NS-1)*profR).toFixed(3) : '—';
+}
+[sR,sL,sZ].forEach(function(s){s.addEventListener('input',refresh);});
+document.getElementById('bS').onclick=startStory;
+document.getElementById('bW').onclick=function(){showWave=!showWave;this.textContent='edge wavelets: '+(showWave?'ON':'OFF');};
+var drag=false,px,py;
+c.addEventListener('pointerdown',function(e){drag=true;px=e.clientX;py=e.clientY;});
+window.addEventListener('pointerup',function(){drag=false;});
+window.addEventListener('pointermove',function(e){
+ if(!drag)return;
+ sR.value=Math.max(0.2,Math.min(3,+sR.value+(e.clientX-px)*0.004));
+ sZ.value=Math.max(0.3,Math.min(6,+sZ.value-(e.clientY-py)*0.008));
+ px=e.clientX;py=e.clientY;refresh();
+});
+refresh();requestAnimationFrame(draw);
+})();
+</script>

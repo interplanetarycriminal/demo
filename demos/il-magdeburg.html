@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Magdeburg Hemispheres</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;background:#05070c;overflow:hidden}
+  canvas{display:block;width:100vw;height:100vh}
+  #ui{position:fixed;top:0;left:0;margin:10px;padding:10px 12px;max-width:340px;
+      background:rgba(6,10,18,.72);border:1px solid rgba(120,200,255,.25);border-radius:6px;
+      color:#bfe6ff;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;
+      text-shadow:0 0 6px rgba(90,180,255,.5);z-index:10;backdrop-filter:blur(3px)}
+  #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.12em;color:#ffd9a0;text-shadow:0 0 10px rgba(255,180,80,.6)}
+  #ui .dim{color:#7fa4c4}
+  #ui .hot{color:#ffb066}
+  #ui a{color:#8fe9ff;text-decoration:none;border-bottom:1px dotted #8fe9ff}
+  #ui label{display:block;margin-top:5px}
+  #ui input[type=range]{width:100%;accent-color:#ff9a4d;height:14px}
+  #ui .row{display:flex;justify-content:space-between}
+  button{background:rgba(255,150,60,.12);border:1px solid rgba(255,160,80,.5);color:#ffcb96;
+    font:11px ui-monospace,monospace;padding:3px 7px;border-radius:4px;cursor:pointer;margin:4px 4px 0 0}
+  button:hover{background:rgba(255,150,60,.3)}
+  hr{border:0;border-top:1px solid rgba(120,200,255,.18);margin:6px 0}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>MAGDEBURG HEMISPHERES</h1>
+  <div>Evacuate two hemispheres and the atmosphere clamps them with F&nbsp;=&nbsp;&Delta;P&middot;&pi;r&sup2; &mdash; no glue, just ten tonnes of air per square metre.</div>
+  <div class="dim">Otto von Guericke &mdash; Magdeburg, 1654</div>
+  <div class="dim">LINEAGE: Guericke's air pump &rarr; Magdeburg 1654 (16 horses) &rarr; Boyle &amp; Hooke's air-pump programme.</div>
+  <hr>
+  <div class="dim">CONTROLS: hold <span class="hot">PUMP</span> to evacuate &middot; hold <span class="hot">PULL</span> (or SPACE) for the horses &middot; <span class="hot">VENT</span> for the finale &middot; K = kinetic view</div>
+  <label>sphere radius <span id="lr" class="hot">0.30 m</span><input id="sr" type="range" min="10" max="60" value="30"></label>
+  <label>interior pressure <span id="lp" class="hot">101.3 kPa</span><input id="sp" type="range" min="0" max="1013" value="1013"></label>
+  <div>
+    <button id="bp">PUMP</button><button id="bv">VENT</button>
+    <button id="bh">PULL</button><button id="bk">KINETIC</button>
+  </div>
+  <hr>
+  <div class="row"><span>&Delta;P</span><span id="rdp" class="hot">0 kPa</span></div>
+  <div class="row"><span>holding force &Delta;P&middot;&pi;r&sup2;</span><span id="rhf" class="hot">0 N</span></div>
+  <div class="row"><span>team pull</span><span id="rpf" class="hot">0 N</span></div>
+  <div class="row"><span>in horses&trade; (800 N ea.)</span><span id="rho" class="hot">0 / 0</span></div>
+  <div class="row"><span>state</span><span id="rst" class="hot">SEALED</span></div>
+  <div><a href="index.html">&larr; gallery</a></div>
+</div>
+<script>
+(function(){
+"use strict";
+var c=document.getElementById('c'),g=c.getContext('2d');
+var W=0,H=0,DPR=1;
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  W=window.innerWidth;H=window.innerHeight;
+  c.width=Math.round(W*DPR);c.height=Math.round(H*DPR);
+  c.style.width=W+'px';c.style.height=H+'px';
+  g.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize',resize);resize();
+
+var P_ATM=101325;           // Pa
+var HORSE=800;              // N per horse
+var S={
+  r:0.30,                   // m
+  pin:101325,               // Pa interior
+  pumping:false, venting:false, pulling:false,
+  kinetic:false,
+  pull:0,                   // N applied by teams
+  sep:0,                    // separation 0..1 (visual)
+  vel:0,
+  burst:0,
+  hiss:0
+};
+var el=function(i){return document.getElementById(i)};
+var sr=el('sr'),sp=el('sp');
+function syncLabels(){
+  el('lr').textContent=S.r.toFixed(2)+' m';
+  el('lp').textContent=(S.pin/1000).toFixed(1)+' kPa';
+}
+sr.oninput=function(){S.r=(+sr.value)/100;syncLabels()};
+sp.oninput=function(){S.pin=(+sp.value)*100;syncLabels()};
+function hold(btn,key){
+  var b=el(btn);
+  b.onmousedown=b.ontouchstart=function(e){e.preventDefault();S[key]=true};
+}
+hold('bp','pumping');hold('bv','venting');hold('bh','pulling');
+window.addEventListener('mouseup',function(){S.pumping=S.venting=S.pulling=false});
+window.addEventListener('touchend',function(){S.pumping=S.venting=S.pulling=false});
+el('bk').onclick=function(){S.kinetic=!S.kinetic};
+window.addEventListener('keydown',function(e){
+  if(e.code==='Space'){S.pulling=true;e.preventDefault();}
+  if(e.key==='k'||e.key==='K')S.kinetic=!S.kinetic;
+  if(e.key==='p'||e.key==='P')S.pumping=true;
+  if(e.key==='v'||e.key==='V')S.venting=true;
+});
+window.addEventListener('keyup',function(e){
+  if(e.code==='Space')S.pulling=false;
+  if(e.key==='p'||e.key==='P')S.pumping=false;
+  if(e.key==='v'||e.key==='V')S.venting=false;
+});
+
+// ---- physics ----
+function holdingForce(){return Math.max(0,P_ATM-S.pin)*Math.PI*S.r*S.r;}
+
+// molecules
+var inner=[],outer=[];
+for(var i=0;i<260;i++)inner.push({a:Math.random()*6.283,rr:Math.random(),vx:0,vy:0,th:Math.random()*6.283,sp:.4+Math.random()});
+for(var j=0;j<160;j++)outer.push({x:Math.random(),y:Math.random(),a:Math.random()*6.283,sp:.5+Math.random(),hit:0});
+
+var last=performance.now();
+function step(dt){
+  if(S.pumping){S.pin=Math.max(0,S.pin-P_ATM*0.55*dt);sp.value=Math.round(S.pin/100);syncLabels();S.hiss=Math.min(1,S.hiss+dt*3);}
+  else if(S.venting){S.pin=Math.min(P_ATM,S.pin+P_ATM*1.6*dt);sp.value=Math.round(S.pin/100);syncLabels();S.hiss=Math.min(1,S.hiss+dt*5);}
+  else S.hiss=Math.max(0,S.hiss-dt*2);
+
+  var target=S.pulling?45000:0;
+  S.pull+= (target-S.pull)*Math.min(1,dt*1.6);
+  if(S.pull<1)S.pull=0;
+
+  var F=holdingForce();
+  var net=S.pull-F;
+  if(S.sep<=0.001 && net>0){S.vel+=net/40000*dt*6;}
+  else if(S.sep>0){S.vel+= (net>0?net/40000*dt*6:-2.2*dt);}
+  if(S.sep<=0 && S.vel<0)S.vel=0;
+  S.sep+=S.vel*dt;
+  if(S.sep<0){S.sep=0;S.vel=0;}
+  if(S.sep>1.6){S.sep=1.6;S.vel*=0.6;}
+  if(S.sep>0.02&&S.burst<1)S.burst=Math.min(1,S.burst+dt*2); else if(S.sep<=0.02)S.burst=Math.max(0,S.burst-dt*1.5);
+
+  // molecules
+  var frac=S.pin/P_ATM;
+  for(var i=0;i<inner.length;i++){var m=inner[i];
+    m.th+=dt*m.sp*2.2; m.rr+=Math.sin(m.th*1.7+i)*dt*0.6;
+    if(m.rr>1)m.rr=1-Math.random()*0.1; if(m.rr<0)m.rr=Math.random()*0.1;
+    m.a+=dt*m.sp*(0.6+frac);
+  }
+  for(var k=0;k<outer.length;k++){var o=outer[k];
+    o.a+=(Math.random()-0.5)*dt*4;
+    o.x+=Math.cos(o.a)*o.sp*dt*0.25; o.y+=Math.sin(o.a)*o.sp*dt*0.25;
+    if(o.x<0)o.x+=1; if(o.x>1)o.x-=1; if(o.y<0)o.y+=1; if(o.y>1)o.y-=1;
+    o.hit=Math.max(0,o.hit-dt*3);
+  }
+}
+
+// ---- drawing ----
+function glow(col,b){g.shadowColor=col;g.shadowBlur=b;}
+function noglow(){g.shadowBlur=0;}
+
+function drawHorse(x,y,s,dir,phase,col){
+  g.save();g.translate(x,y);g.scale(dir*s,s);
+  g.strokeStyle=col;g.lineWidth=2/s;g.lineCap='round';glow(col,8);
+  var leg=Math.sin(phase)*0.5;
+  g.beginPath();
+  g.moveTo(-18,-6);g.lineTo(14,-8);g.lineTo(20,-16);g.lineTo(26,-14);g.lineTo(24,-6);
+  g.moveTo(-18,-6);g.lineTo(-20,4);
+  g.stroke();
+  g.beginPath(); // body
+  g.moveTo(-18,-6);g.lineTo(14,-8);g.lineTo(14,2);g.lineTo(-18,4);g.closePath();
+  g.stroke();
+  g.beginPath();
+  g.moveTo(10,2);g.lineTo(10+leg*6,14);g.moveTo(-14,4);g.lineTo(-14-leg*6,14);
+  g.moveTo(6,2);g.lineTo(6-leg*6,14);g.moveTo(-10,4);g.lineTo(-10+leg*6,14);
+  g.stroke();
+  noglow();g.restore();
+}
+
+function draw(){
+  g.fillStyle='#05070c';g.fillRect(0,0,W,H);
+  // vignette ground
+  var gr=g.createLinearGradient(0,H*0.45,0,H);
+  gr.addColorStop(0,'rgba(10,16,28,0)');gr.addColorStop(1,'rgba(20,14,8,.55)');
+  g.fillStyle=gr;g.fillRect(0,H*0.45,W,H*0.55);
+
+  var cx=W*0.5, cy=H*0.55;
+  var R=Math.min(W,H)*0.16*(S.r/0.30);
+  R=Math.max(28,Math.min(R,Math.min(W,H)*0.30));
+
+  // outside molecules hammering
+  if(S.kinetic){
+    g.fillStyle='rgba(120,200,255,.5)';
+    for(var k=0;k<outer.length;k++){var o=outer[k];
+      var x=o.x*W,y=o.y*H;
+      var dx=x-cx,dy=y-cy,d=Math.hypot(dx,dy);
+      if(d<R+8&&d>4){o.hit=1;o.a=Math.atan2(dy,dx);}
+      g.globalAlpha=0.35+0.65*o.hit;
+      g.fillRect(x,y,2,2);
+      if(o.hit>0.2){
+        g.strokeStyle='rgba(150,220,255,'+o.hit+')';g.lineWidth=1;
+        g.beginPath();g.moveTo(x,y);g.lineTo(x-Math.cos(o.a)*10,y-Math.sin(o.a)*10);g.stroke();
+      }
+    }
+    g.globalAlpha=1;
+    // pressure arrows inward
+    for(var a=0;a<24;a++){
+      var th=a/24*6.283, ax=cx+Math.cos(th)*(R+46), ay=cy+Math.sin(th)*(R+46);
+      var bx=cx+Math.cos(th)*(R+14), by=cy+Math.sin(th)*(R+14);
+      g.strokeStyle='rgba(90,170,255,.35)';g.lineWidth=1.4;
+      g.beginPath();g.moveTo(ax,ay);g.lineTo(bx,by);g.stroke();
+    }
+  }
+
+  var gap=S.sep*R*1.2;
+
+  // hemispheres (copper)
+  function hemi(sign){
+    g.save();
+    g.translate(cx+sign*gap,cy);
+    var cg=g.createLinearGradient(0,-R,0,R);
+    cg.addColorStop(0,'#8a4b1e');cg.addColorStop(.45,'#e0913f');cg.addColorStop(1,'#5c2e12');
+    g.beginPath();
+    g.arc(0,0,R,sign>0?-Math.PI/2:Math.PI/2,sign>0?Math.PI/2:1.5*Math.PI,false);
+    g.closePath();
+    glow('#ff9a4d',18);
+    g.fillStyle=cg;g.fill();
+    g.strokeStyle='#ffce9a';g.lineWidth=2;g.stroke();
+    noglow();
+    // rim flange
+    g.fillStyle='rgba(255,206,154,.85)';
+    g.fillRect(sign>0?-3:0,-R,3,2*R);
+    // interior molecules of this half
+    var frac=S.pin/P_ATM;
+    var n=Math.round(inner.length*frac);
+    g.fillStyle='rgba(180,240,255,.8)';
+    for(var i=0;i<n;i++){
+      var m=inner[i];
+      var rr=m.rr*(R-6), an=m.a;
+      var px=Math.cos(an)*rr, py=Math.sin(an)*rr;
+      if((sign>0&&px<0)||(sign<0&&px>0))continue;
+      g.globalAlpha=.35+.5*frac;
+      g.fillRect(px,py,2,2);
+    }
+    g.globalAlpha=1;
+    // hitch ring
+    g.strokeStyle='#ffd9a0';g.lineWidth=2;
+    g.beginPath();g.arc(sign*(R+8),0,7,0,6.283);g.stroke();
+    g.restore();
+  }
+  hemi(-1);hemi(1);
+
+  // vacuum-pump lever, left
+  var px=cx-R-150, py=cy+R*0.6;
+  g.strokeStyle=S.pumping?'#ffd070':'#5c86a8';g.lineWidth=3;glow(S.pumping?'#ffb04d':'#000',S.pumping?14:0);
+  var lever=S.pumping?Math.sin(performance.now()/90)*0.5:0;
+  g.beginPath();g.moveTo(px,py);g.lineTo(px+40,py-30+lever*22);g.stroke();
+  g.beginPath();g.moveTo(px,py);g.lineTo(px,py+34);g.lineTo(px+34,py+34);g.stroke();
+  g.beginPath();g.moveTo(px+34,py+34);g.lineTo(cx-R-6,cy+R*0.5);g.stroke();noglow();
+  g.fillStyle='#7fa4c4';g.font='10px ui-monospace,monospace';
+  g.fillText('AIR PUMP (1650)',px-6,py+52);
+
+  // vent valve, right
+  var vx=cx+R+120, vy=cy+R*0.6;
+  g.strokeStyle=S.venting?'#ff7a7a':'#5c86a8';g.lineWidth=3;
+  g.beginPath();g.moveTo(cx+R+6,cy+R*0.5);g.lineTo(vx,vy);g.stroke();
+  g.beginPath();g.arc(vx,vy,8,0,6.283);g.stroke();
+  g.fillStyle='#7fa4c4';g.fillText('VENT',vx-12,vy+24);
+  if(S.hiss>0.05&&S.venting){
+    for(var h=0;h<14;h++){
+      g.strokeStyle='rgba(255,180,180,'+(Math.random()*0.6*S.hiss)+')';
+      g.lineWidth=1;g.beginPath();
+      var ha=Math.random()*6.283,hl=8+Math.random()*26;
+      g.moveTo(vx,vy);g.lineTo(vx+Math.cos(ha)*hl,vy+Math.sin(ha)*hl);g.stroke();
+    }
+    g.fillStyle='rgba(255,190,190,.9)';g.font='12px ui-monospace,monospace';
+    g.fillText('hsssss…',vx+14,vy-14);
+  }
+
+  // horse teams
+  var F=holdingForce();
+  var nHorses=Math.ceil(S.pull/HORSE);
+  var shown=Math.min(16,nHorses);
+  var t=performance.now()/1000;
+  var strain=S.pulling?Math.sin(t*9)*2:0;
+  for(var side=-1;side<=1;side+=2){
+    var ropeX0=cx+side*(R+gap+14);
+    for(var i=0;i<shown;i++){
+      var row=i%2, col=(i/2)|0;
+      var hx=cx+side*(R+gap+70+col*54)+strain*side;
+      var hy=cy-14+row*34+ (Math.sin(t*6+i)* (S.pulling?2:0.6));
+      drawHorse(hx,hy,0.85,-side,t*8+i,S.pull>F?'#ff8f6a':'#c8e6ff');
+      // rope
+      g.strokeStyle='rgba(255,220,160,'+(0.25+0.5*Math.min(1,S.pull/Math.max(F,1)))+')';
+      g.lineWidth=1.4;g.beginPath();
+      g.moveTo(ropeX0,cy);g.lineTo(hx+side*18,hy-2);g.stroke();
+    }
+  }
+
+  // tug meter
+  var mw=Math.min(360,W*0.34), mx=W-mw-24, my=28;
+  g.fillStyle='rgba(6,10,18,.7)';g.strokeStyle='rgba(120,200,255,.25)';
+  g.lineWidth=1;g.fillRect(mx,my,mw,74);g.strokeRect(mx,my,mw,74);
+  g.fillStyle='#7fa4c4';g.font='10px ui-monospace,monospace';
+  g.fillText('TUG METER  pull vs  ΔP·πr²',mx+8,my+14);
+  var maxF=45000;
+  var pw=(Math.min(S.pull,maxF)/maxF)*(mw-16);
+  var hw=(Math.min(F,maxF)/maxF)*(mw-16);
+  g.fillStyle='rgba(255,140,80,.85)';glow('#ff8f50',10);g.fillRect(mx+8,my+22,pw,14);noglow();
+  g.fillStyle='rgba(120,200,255,.25)';g.fillRect(mx+8,my+42,mw-16,14);
+  g.fillStyle='rgba(120,220,255,.8)';g.fillRect(mx+8,my+42,hw,14);
+  g.strokeStyle='#ffd9a0';g.lineWidth=2;
+  g.beginPath();g.moveTo(mx+8+hw,my+18);g.lineTo(mx+8+hw,my+60);g.stroke();
+  g.fillStyle='#ffd9a0';g.fillText('holding',mx+10+hw,my+70);
+
+  // F ∝ r² plot
+  var gw=Math.min(300,W*0.28), gx=W-gw-24, gy=my+92, gh=110;
+  g.fillStyle='rgba(6,10,18,.7)';g.strokeStyle='rgba(120,200,255,.25)';
+  g.fillRect(gx,gy,gw,gh);g.strokeRect(gx,gy,gw,gh);
+  g.fillStyle='#7fa4c4';g.fillText('F = ΔP·πr²   (r: 0.10→0.60 m)',gx+8,gy+14);
+  var dP=Math.max(0,P_ATM-S.pin);
+  var fmax=dP*Math.PI*0.36||1;
+  g.strokeStyle='#ff9a4d';g.lineWidth=2;glow('#ff9a4d',8);g.beginPath();
+  for(var q=0;q<=60;q++){
+    var rr2=0.10+q/60*0.50;
+    var ff=dP*Math.PI*rr2*rr2;
+    var X=gx+8+(q/60)*(gw-16), Y=gy+gh-10-(ff/fmax)*(gh-30);
+    q?g.lineTo(X,Y):g.moveTo(X,Y);
+  }
+  g.stroke();noglow();
+  var qx=gx+8+((S.r-0.10)/0.50)*(gw-16), qy=gy+gh-10-(F/fmax)*(gh-30);
+  g.fillStyle='#8fe9ff';glow('#8fe9ff',12);g.beginPath();g.arc(qx,qy,4,0,6.283);g.fill();noglow();
+
+  // caption, woodcut style
+  g.fillStyle='rgba(200,170,120,.65)';g.font='italic 12px Georgia,serif';
+  var cap='"Sixteen horses, eight to a side, could not draw them asunder." — Magdeburg, 1654';
+  g.fillText(cap,cx-g.measureText(cap).width/2,H-26);
+  g.fillStyle='rgba(200,170,120,.35)';g.font='11px Georgia,serif';
+  var cap2='Experimenta Nova (ut vocantur) Magdeburgica — the emperor was watching.';
+  g.fillText(cap2,cx-g.measureText(cap2).width/2,H-10);
+
+  if(S.burst>0.4){
+    g.fillStyle='rgba(255,150,90,'+S.burst+')';g.font='bold 16px ui-monospace,monospace';
+    var s2='SEPARATED — pull exceeded '+Math.round(F)+' N';
+    g.fillText(s2,cx-g.measureText(s2).width/2,cy-R-40);
+  } else if(S.pulling&&S.pull<F){
+    g.fillStyle='rgba(140,210,255,.9)';g.font='13px ui-monospace,monospace';
+    var s3='HELD — the air outside wins by '+Math.round(F-S.pull)+' N';
+    g.fillText(s3,cx-g.measureText(s3).width/2,cy-R-40);
+  }
+
+  // readouts
+  el('rdp').textContent=(dP/1000).toFixed(1)+' kPa';
+  el('rhf').textContent=Math.round(F).toLocaleString()+' N';
+  el('rpf').textContent=Math.round(S.pull).toLocaleString()+' N';
+  el('rho').textContent=Math.ceil(S.pull/HORSE)+' / '+Math.ceil(F/HORSE)+' needed';
+  el('rst').textContent=S.sep>0.02?'SEPARATED':(dP>1000?'EVACUATED · HELD':'SEALED');
+}
+
+function loop(now){
+  var dt=Math.min(0.05,(now-last)/1000);last=now;
+  step(dt);draw();
+  requestAnimationFrame(loop);
+}
+syncLabels();
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,200 @@
+<title>Rattleback</title>
+<style>
+html,body{margin:0;padding:0;background:#05070c;overflow:hidden;height:100%}
+canvas{display:block;position:fixed;inset:0}
+#ui{position:fixed;top:0;left:0;padding:10px 12px;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;
+  color:#bfe8ff;background:rgba(4,8,16,.62);border-right:1px solid #12304a;border-bottom:1px solid #12304a;
+  max-width:340px;backdrop-filter:blur(6px);z-index:5;text-shadow:0 0 8px #0af6}
+#ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.18em;color:#7ff3ff;text-shadow:0 0 12px #0ff8}
+#ui .m{color:#8fb6cc}#ui .s{color:#ffb46b}#ui .l{color:#6f8fa6;font-style:italic}
+#ui a{color:#7ff3ff}#ui b{color:#fff}
+.row{display:flex;align-items:center;gap:6px;margin:3px 0}
+input[type=range]{width:130px;accent-color:#00e5ff;height:14px}
+button{background:#0a1b2b;color:#7ff3ff;border:1px solid #1d4f6e;padding:3px 7px;font:11px ui-monospace,monospace;cursor:pointer;border-radius:3px}
+button:hover{background:#123a55;box-shadow:0 0 10px #0ff5}
+#rd{margin-top:5px;color:#9ff0c0}
+hr{border:0;border-top:1px solid #14344d;margin:6px 0}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>RATTLEBACK / CELT</h1>
+<div class="m">Skewed principal inertia axes couple spin into pitch-roll wobble, which pumps energy back as <b>reverse</b> spin.</div>
+<div class="s">G. T. Walker, 1896 &middot; H. Bondi, 1986</div>
+<div class="l">prehistoric stone celts → Walker 1896 → Bondi 1986 → desk-toy celts</div>
+<hr>
+<div class="row"><button id="bCCW">SPIN ↺ CCW</button><button id="bCW">SPIN ↻ CW</button></div>
+<div class="row"><button id="bTap">TAP END (rock→spin)</button><button id="bStop">RESET</button></div>
+<div class="row">skew <input id="sk" type="range" min="0" max="30" step="0.5" value="12"><span id="skv">12.0°</span></div>
+<div class="row">damp <input id="dp" type="range" min="0" max="100" step="1" value="30"><span id="dpv">0.30</span></div>
+<div class="m">click canvas + drag left/right = flick spin</div>
+<div id="rd"></div>
+</div>
+<script>
+(function(){
+var c=document.getElementById('c'),g=c.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;
+ c.width=W*DPR|0;c.height=H*DPR|0;c.style.width=W+'px';c.style.height=H+'px';g.setTransform(DPR,0,0,DPR,0,0);}
+addEventListener('resize',resize);resize();
+
+// ---- reduced rattleback model (Walker 1896 / Bondi 1986 linearised skew coupling) ----
+//  A = rattle (pitch-roll) mode envelope, n = spin about the vertical.
+//    dA/dt = +k·sin(2δ)·n·A − ν·A      <- spin of ONE sign feeds the wobble (Walker instability)
+//    dn/dt = −k·sin(2δ)·A²   − µ·n      <- the wobble pays for itself out of the spin
+//  Same k in both → the exchange is conservative; ν,µ are the only sinks, so
+//  E = ½n² + ½A² is MONOTONICALLY DECREASING. At δ=0 the coupling vanishes entirely.
+var S={n:0,A:0,t:0,phi:0,psi:0,P:0,R:0,E0:0,revT:null,dir:0};
+var skew=12*Math.PI/180, damp=0.30;
+var wp=7.0, wr=4.6, KC=1.15;     // pitch / roll mode frequencies, coupling scale
+function skf(){return Math.sin(2*skew);}
+function energy(st){return 0.5*(st.n*st.n + st.A*st.A);}
+var traceN=[],traceP=[],traceE=[];
+function reset(){S.n=0;S.A=0;S.t=0;S.phi=0;S.psi=0;S.P=0;S.R=0;S.revT=null;S.dir=0;S.E0=0;
+  traceN.length=0;traceP.length=0;traceE.length=0;}
+function deriv(st,o){
+  var s=skf()*KC;
+  o.A = s*st.n*st.A - (0.10+0.30*damp)*st.A;
+  o.n = -s*st.A*st.A - (0.02+0.12*damp)*st.n;
+}
+var k1={},k2={},k3={},k4={},tm={};
+function add(a,b,h,o){o.n=a.n+b.n*h;o.A=a.A+b.A*h;return o;}
+function step(h){
+  var pre=S.n;
+  deriv(S,k1);deriv(add(S,k1,h/2,tm),k2);deriv(add(S,k2,h/2,tm),k3);deriv(add(S,k3,h,tm),k4);
+  S.n+=h/6*(k1.n+2*k2.n+2*k3.n+k4.n);
+  S.A+=h/6*(k1.A+2*k2.A+2*k3.A+k4.A);
+  S.t+=h;S.phi+=S.n*h;S.psi+=h;
+  // render the envelope as an actual two-frequency wobble
+  S.P=S.A*Math.cos(wp*S.psi);
+  S.R=S.A*0.72*Math.sin(wr*S.psi);
+  if(S.revT===null && S.dir!==0 && pre*S.n<0 && Math.abs(pre)>1e-3) S.revT=S.t;
+}
+function spin(dir){reset();S.dir=dir;S.n=dir*6.0;S.A=0.012;S.E0=energy(S);}
+function tap(){reset();S.dir=0;S.n=0;S.A=1.05;S.E0=energy(S);}   // tap an end: pure rock → spin
+
+document.getElementById('bCCW').onclick=function(){spin(+1)};
+document.getElementById('bCW').onclick=function(){spin(-1)};
+document.getElementById('bTap').onclick=tap;
+document.getElementById('bStop').onclick=reset;
+var sk=document.getElementById('sk'),skv=document.getElementById('skv');
+sk.oninput=function(){skew=(+sk.value)*Math.PI/180;skv.textContent=(+sk.value).toFixed(1)+'°';};
+var dp=document.getElementById('dp'),dpv=document.getElementById('dpv');
+dp.oninput=function(){damp=(+dp.value)/100;dpv.textContent=damp.toFixed(2);};
+var drag=null;
+c.addEventListener('pointerdown',function(e){drag={x:e.clientX,t:performance.now()};});
+addEventListener('pointerup',function(e){if(!drag)return;var dx=e.clientX-drag.x;drag=null;
+  if(Math.abs(dx)>18){reset();S.dir=dx>0?+1:-1;S.n=S.dir*Math.min(9,Math.abs(dx)/28+2);S.P=0.006;S.R=0.004;S.E0=energy(S);}});
+
+// ---------- drawing ----------
+function glow(col,b,fn){g.save();g.shadowColor=col;g.shadowBlur=b;fn();g.restore();}
+function hullPath(gg,a,b){gg.beginPath();for(var i=0;i<=48;i++){var th=i/48*Math.PI*2;gg.lineTo(a*Math.cos(th),b*Math.sin(th));}gg.closePath();}
+
+function drawTop(cx,cy,R){
+  g.save();g.translate(cx,cy);
+  // plate
+  g.strokeStyle='#12344c';g.lineWidth=1;
+  for(var k=1;k<=3;k++){g.beginPath();g.arc(0,0,R*k/3+18,0,7);g.stroke();}
+  g.save();g.rotate(S.phi);
+  // hull (geometric axes)
+  glow('#00e5ff',18,function(){
+    var grd=g.createLinearGradient(-R,0,R,0);grd.addColorStop(0,'#0b3a52');grd.addColorStop(.5,'#12688f');grd.addColorStop(1,'#0b3a52');
+    g.fillStyle=grd;hullPath(g,R,R*0.34);g.fill();
+    g.strokeStyle='#7ff3ff';g.lineWidth=2;hullPath(g,R,R*0.34);g.stroke();
+  });
+  // geometric axis
+  g.strokeStyle='#3aa0c8';g.setLineDash([4,4]);g.beginPath();g.moveTo(-R,0);g.lineTo(R,0);g.stroke();g.setLineDash([]);
+  // principal inertia axes, skewed
+  g.save();g.rotate(skew);
+  glow('#ff8a3d',14,function(){g.strokeStyle='#ff8a3d';g.lineWidth=2;
+    g.beginPath();g.moveTo(-R*.92,0);g.lineTo(R*.92,0);g.stroke();
+    g.beginPath();g.moveTo(0,-R*.3);g.lineTo(0,R*.3);g.stroke();});
+  g.fillStyle='#ff8a3d';g.font='10px monospace';g.fillText('I₁',R*.94,-4);
+  g.restore();
+  // ends marker (tap ends)
+  g.fillStyle='#ffe9a8';g.beginPath();g.arc(R*0.88,0,3.5,0,7);g.fill();
+  g.restore();
+  // spin arrow
+  var sgn=S.n>=0?1:-1, mag=Math.min(1,Math.abs(S.n)/6);
+  if(mag>0.03){g.strokeStyle=sgn>0?'#7dffb0':'#ff6b8a';g.lineWidth=2.4;g.globalAlpha=.35+.55*mag;
+    g.beginPath();g.arc(0,0,R*1.22,0,sgn*Math.PI*1.25*mag+0.001,sgn<0);g.stroke();g.globalAlpha=1;}
+  g.fillStyle='#5f8ba3';g.font='10px monospace';g.textAlign='center';g.fillText('TOP VIEW',0,R*1.55);g.textAlign='left';
+  g.restore();
+}
+function drawSideView(cx,cy,R){
+  g.save();g.translate(cx,cy);
+  g.strokeStyle='#12344c';g.lineWidth=1;g.beginPath();g.moveTo(-R*1.3,R*0.42);g.lineTo(R*1.3,R*0.42);g.stroke();
+  g.save();
+  g.rotate(S.P*1.6);
+  g.translate(0,-R*0.12*Math.cos(S.R));
+  glow('#00e5ff',16,function(){
+    var grd=g.createLinearGradient(0,-R*.3,0,R*.4);grd.addColorStop(0,'#1a7ba6');grd.addColorStop(1,'#062435');
+    g.fillStyle=grd;
+    g.beginPath();g.moveTo(-R,-R*0.10);
+    g.quadraticCurveTo(0,R*0.55,R,-R*0.10);
+    g.quadraticCurveTo(0,-R*0.34,-R,-R*0.10);g.closePath();g.fill();
+    g.strokeStyle='#7ff3ff';g.lineWidth=2;g.stroke();
+  });
+  // roll shown as tilt shading
+  g.fillStyle='rgba(255,138,61,'+Math.min(.5,Math.abs(S.R)*3)+')';
+  g.beginPath();g.moveTo(-R,-R*0.10);g.quadraticCurveTo(0,R*0.55,R,-R*0.10);g.lineTo(0,-R*0.1);g.closePath();g.fill();
+  g.restore();
+  g.fillStyle='#5f8ba3';g.font='10px monospace';g.textAlign='center';g.fillText('SIDE VIEW  (pitch)',0,R*0.75);g.textAlign='left';
+  g.restore();
+}
+function plot(x,y,w,h,data,col,label,zero,scale){
+  g.save();g.translate(x,y);
+  g.fillStyle='rgba(6,14,24,.55)';g.fillRect(0,0,w,h);
+  g.strokeStyle='#123c56';g.lineWidth=1;g.strokeRect(.5,.5,w-1,h-1);
+  var mid=zero?h/2:h-4;
+  g.strokeStyle='#1d5372';g.setLineDash([3,4]);g.beginPath();g.moveTo(0,mid);g.lineTo(w,mid);g.stroke();g.setLineDash([]);
+  if(data.length>1){
+    g.beginPath();
+    for(var i=0;i<data.length;i++){
+      var px=i/(data.length-1)*w, py=mid-data[i]*scale;
+      py=Math.max(2,Math.min(h-2,py));
+      i?g.lineTo(px,py):g.moveTo(px,py);
+    }
+    g.shadowColor=col;g.shadowBlur=8;g.strokeStyle=col;g.lineWidth=1.6;g.stroke();g.shadowBlur=0;
+  }
+  g.fillStyle=col;g.font='10px monospace';g.fillText(label,6,12);
+  g.restore();
+}
+
+var last=performance.now();
+function frame(now){
+  var dt=Math.min(0.05,(now-last)/1000);last=now;
+  var sub=8;for(var i=0;i<sub;i++)step(dt/sub);
+  traceN.push(S.n);traceP.push(Math.hypot(S.P,S.R));traceE.push(energy(S));
+  if(traceN.length>620){traceN.shift();traceP.shift();traceE.shift();}
+
+  g.fillStyle='#05070c';g.fillRect(0,0,W,H);
+  // vignette grid
+  g.strokeStyle='rgba(20,60,86,.28)';g.lineWidth=1;
+  for(var x=0;x<W;x+=48){g.beginPath();g.moveTo(x,0);g.lineTo(x,H);g.stroke();}
+  for(var y=0;y<H;y+=48){g.beginPath();g.moveTo(0,y);g.lineTo(W,y);g.stroke();}
+
+  var R=Math.min(W,H)*0.15;
+  drawTop(W*0.36,H*0.40,R);
+  drawSideView(W*0.72,H*0.34,R*0.9);
+
+  var pw=Math.min(560,W*0.44), ph=Math.min(96,H*0.14), px=W-pw-24, py=H-ph*3-40;
+  plot(px,py,pw,ph,traceN,'#7dffb0','SPIN RATE n (zero-crossing = REVERSAL)',true,ph/2/7);
+  plot(px,py+ph+8,pw,ph,traceP,'#ff8a3d','RATTLE AMPLITUDE |pitch,roll|',false,ph*0.85/0.6);
+  plot(px,py+2*ph+16,pw,ph,traceE,'#c8a6ff','ENERGY (monotonically decaying)',false,ph*0.85/Math.max(1e-6,S.E0||1));
+
+  var rd=document.getElementById('rd');
+  var pref = skew>1e-4 ? 'CCW ↺' : 'none (symmetric)';
+  rd.innerHTML='spin n = <b>'+S.n.toFixed(3)+'</b> rad/s '+(S.n>0.02?'↺':S.n<-0.02?'↻':'·')+
+   '<br>rattle |θ| = <b>'+Math.hypot(S.P,S.R).toFixed(4)+'</b>'+
+   '<br>energy = <b>'+(energy(S)).toFixed(4)+'</b>  ('+(S.E0>0?(100*energy(S)/S.E0).toFixed(0):'—')+'% of E₀)'+
+   '<br>preferred dir: <b>'+pref+'</b>'+
+   '<br>reversal time: <b>'+(S.revT===null?'—':S.revT.toFixed(2)+' s')+'</b>'+
+   '<br>t = '+S.t.toFixed(2)+' s'+
+   '<br><a href="index.html">← gallery</a>';
+  requestAnimationFrame(frame);
+}
+spin(-1); // start in the forbidden direction so it is alive & dramatic immediately
+requestAnimationFrame(frame);
+})();
+</script>

@@ -1,0 +1,308 @@
+<title>Jumping Ring</title>
+<style>
+  html,body{margin:0;padding:0;height:100%;background:#03060c;overflow:hidden}
+  canvas{display:block;position:fixed;inset:0}
+  #ui{position:fixed;top:0;left:0;z-index:10;margin:10px;padding:10px 12px;width:336px;
+      background:rgba(3,7,16,.74);border:1px solid rgba(120,220,255,.28);border-radius:8px;
+      font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#bfe9ff;
+      box-shadow:0 0 26px rgba(40,180,255,.18);backdrop-filter:blur(4px)}
+  #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.11em;color:#9ff0ff;text-shadow:0 0 12px #22c8ff}
+  .m{color:#9fd0e8}.s{color:#8fb4c8;font-style:italic}.l{color:#6f93a8}
+  .row{display:flex;align-items:center;gap:6px;margin:3px 0}
+  .row label{width:86px;color:#89b6cc}
+  input[type=range]{flex:1;height:3px;accent-color:#31d8ff;background:#152634}
+  #rd{margin-top:6px;padding-top:6px;border-top:1px solid rgba(120,220,255,.2);color:#d8f4ff;white-space:pre}
+  .on{color:#7dff9c}.off{color:#ff6a6a}.wr{color:#ffd07a}
+  a{color:#7fd4ff;text-decoration:none}a:hover{text-decoration:underline}
+  b{color:#9ff0ff;font-weight:600}
+  button{font:10px ui-monospace,monospace;background:#0d2233;color:#9ff0ff;border:1px solid #2b6d8c;
+         border-radius:4px;padding:3px 7px;cursor:pointer;margin:2px 3px 2px 0}
+  button.act{background:#1d5a2c;border-color:#4de07a;color:#c8ffd8}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>LENZ JUMPING RING</h1>
+  <div class="m">AC flux through an iron-cored coil drives a current in the ring that <b>opposes the change</b>, so the ring is thrown upward &mdash; unless its loop is cut.</div>
+  <div class="s">Lenz 1834; Elihu Thomson's lecture ring, 1887</div>
+  <div class="l">LINEAGE: Faraday 1831 induction &rarr; Lenz 1834 direction &rarr; Thomson's jumping ring</div>
+  <div class="row"><label>frequency</label><input id="sF" type="range" min="10" max="180" step="1" value="60"></div>
+  <div class="row"><label>conductivity</label><input id="sS" type="range" min="0.15" max="8" step="0.05" value="1"></div>
+  <div class="row"><label>ring mass g</label><input id="sM" type="range" min="4" max="60" step="1" value="18"></div>
+  <div>
+    <button id="bSlit">RING: SOLID</button>
+    <button id="bLev">MODE: JUMP</button>
+    <button id="bLN2">LN&#8322; PRESET</button>
+  </div>
+  <div class="l">HOLD SPACE (or press &amp; hold the coil) to ENERGIZE</div>
+  <div id="rd"></div>
+  <div style="margin-top:6px"><a href="index.html">&larr; gallery</a></div>
+</div>
+<script>
+"use strict";
+var c=document.getElementById('c'),g=c.getContext('2d');
+var W=0,H=0,DPR=1;
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  W=window.innerWidth;H=window.innerHeight;
+  c.width=Math.round(W*DPR);c.height=Math.round(H*DPR);
+  c.style.width=W+'px';c.style.height=H+'px';
+  g.setTransform(DPR,0,0,DPR,0,0);
+}
+window.addEventListener('resize',resize);
+
+/* ================= physics =================
+   Mutual inductance of coil->ring falls with height z:
+     M(z) = M0 / (1+(z/z0)^2)^(3/2)
+   Ring loop: L dIr/dt + R Ir = -M dIc/dt , with Ic = Ipk sin(wt)
+   Steady state gives amplitude  Ir = w M Ipk / Z,  Z = sqrt(R^2 + w^2 L^2)
+   and phase lag phi = atan(wL/R) behind the EMF (EMF already leads flux by 90).
+   Time-averaged vertical force:
+     <F> = (M w^2 L Ipk^2 / (2 Z^2)) * |dM/dz|      (always repulsive)
+   A SLIT ring has no closed path: R -> infinity, Ir -> 0, F -> 0.
+============================================ */
+var Pk={
+  M0:0.9e-3,        /* H, coil-ring mutual at z=0 */
+  z0:0.062,         /* m, falloff scale */
+  L:2.2e-7,         /* H, ring self inductance */
+  R0:2.6e-4,        /* ohm, solid aluminium ring at room temp */
+  Ipk:180           /* A peak coil current */
+};
+function Mz(z){var u=z/Pk.z0;return Pk.M0/Math.pow(1+u*u,1.5);}
+function dMz(z){var u=z/Pk.z0;return -3*Pk.M0*u/(Pk.z0*Math.pow(1+u*u,2.5));}
+function ringR(){return S.slit? 1e3 : Pk.R0/S.sigma;}
+function forceAt(z,f){
+  var w=2*Math.PI*f,R=ringR(),Z2=R*R+w*w*Pk.L*Pk.L;
+  var amp=Mz(z)*w*w*Pk.L*Pk.Ipk*Pk.Ipk/(2*Z2);
+  return amp*Math.abs(dMz(z));
+}
+function ringAmp(z,f){
+  var w=2*Math.PI*f,R=ringR(),Z=Math.sqrt(R*R+w*w*Pk.L*Pk.L);
+  return w*Mz(z)*Pk.Ipk/Z;
+}
+function phaseLag(f){var w=2*Math.PI*f,R=ringR();return Math.atan2(w*Pk.L,R);}
+
+var S={freq:60,sigma:1,mass:0.018,slit:false,levitate:false,energized:false,
+       z:0,v:0,peak:0,t:0,eqZ:null};
+
+function bind(id,fn){var e=document.getElementById(id);e.addEventListener('input',function(){fn(parseFloat(e.value));});}
+bind('sF',function(v){S.freq=v;});
+bind('sS',function(v){S.sigma=v;});
+bind('sM',function(v){S.mass=v/1000;});
+var bSlit=document.getElementById('bSlit'),bLev=document.getElementById('bLev'),bLN2=document.getElementById('bLN2');
+bSlit.onclick=function(){S.slit=!S.slit;bSlit.textContent='RING: '+(S.slit?'SLIT':'SOLID');bSlit.className=S.slit?'act':'';S.peak=0;};
+bLev.onclick=function(){S.levitate=!S.levitate;bLev.textContent='MODE: '+(S.levitate?'LEVITATE':'JUMP');bLev.className=S.levitate?'act':'';};
+bLN2.onclick=function(){S.sigma=(S.sigma>4?1:6.5);document.getElementById('sS').value=S.sigma;S.peak=0;};
+
+function energize(on){S.energized=on;}
+window.addEventListener('keydown',function(e){if(e.code==='Space'){energize(true);e.preventDefault();}});
+window.addEventListener('keyup',function(e){if(e.code==='Space')energize(false);});
+c.addEventListener('pointerdown',function(){energize(true);});
+window.addEventListener('pointerup',function(){energize(false);});
+
+var Z_MAX=0.42;
+function step(dt){
+  S.t+=dt;
+  var F=(S.energized?forceAt(S.z,S.freq):0);
+  var a=F/S.mass-9.81;
+  if(S.levitate&&S.energized) a-=0.9*S.v;          /* eddy/air damping so it settles visibly */
+  S.v+=a*dt;S.z+=S.v*dt;
+  if(S.z<0){S.z=0;if(S.v<0)S.v=-S.v*0.12;if(Math.abs(S.v)<0.05)S.v=0;}
+  if(S.z>Z_MAX){S.z=Z_MAX;S.v=Math.min(0,S.v);}
+  if(S.z>S.peak)S.peak=S.z;
+  /* equilibrium height where F(z) = mg */
+  S.eqZ=null;
+  var mg=S.mass*9.81;
+  if(forceAt(0,S.freq)>mg){
+    var lo=0,hi=Z_MAX*3;
+    for(var i=0;i<50;i++){var mid=(lo+hi)/2;if(forceAt(mid,S.freq)>mg)lo=mid;else hi=mid;}
+    S.eqZ=lo;
+  }
+}
+
+/* ---------------- rendering ---------------- */
+function neon(x,y,r,col,al){
+  var gr=g.createRadialGradient(x,y,0,x,y,r);
+  gr.addColorStop(0,'rgba('+col+','+al+')');gr.addColorStop(1,'rgba('+col+',0)');
+  g.fillStyle=gr;g.beginPath();g.arc(x,y,r,0,Math.PI*2);g.fill();
+}
+
+var last=performance.now();
+function frame(now){
+  var dt=Math.min(0.033,(now-last)/1000);last=now;
+  for(var k=0;k<4;k++)step(dt/4);
+
+  g.fillStyle='#03060c';g.fillRect(0,0,W,H);
+  /* grid */
+  g.strokeStyle='rgba(60,120,160,.07)';g.lineWidth=1;
+  for(var x=0;x<W;x+=48){g.beginPath();g.moveTo(x,0);g.lineTo(x,H);g.stroke();}
+  for(var y=0;y<H;y+=48){g.beginPath();g.moveTo(0,y);g.lineTo(W,y);g.stroke();}
+
+  var baseY=H*0.86, cx=W*0.44, ppm=Math.min(760,(baseY-90)/Z_MAX);
+  var phi=2*Math.PI*S.freq*S.t;
+  var drive=Math.sin(phi);
+
+  /* bench */
+  g.fillStyle='#0a1420';g.fillRect(cx-190,baseY,380,16);
+  g.strokeStyle='rgba(90,160,200,.35)';g.strokeRect(cx-190,baseY,380,16);
+
+  /* iron core */
+  var coreTop=baseY-Z_MAX*ppm-40;
+  var cw=26;
+  g.fillStyle='#1b2430';g.fillRect(cx-cw/2,coreTop,cw,baseY-coreTop);
+  g.strokeStyle='rgba(140,180,210,.4)';g.strokeRect(cx-cw/2,coreTop,cw,baseY-coreTop);
+  g.fillStyle='rgba(150,190,220,.45)';g.font='10px ui-monospace,monospace';
+  g.fillText('iron core',cx+cw/2+6,coreTop+12);
+
+  /* solenoid cutaway: windings on both sides, glow with drive current */
+  var solTop=baseY-96,turns=14;
+  var glow=S.energized?Math.abs(drive):0;
+  for(var i=0;i<turns;i++){
+    var yy=solTop+i*(96/turns)+3;
+    g.strokeStyle='rgba('+(200+40*glow)+','+(130+90*glow)+',60,'+(0.55+0.4*glow)+')';
+    g.lineWidth=3;
+    g.beginPath();g.ellipse(cx,yy,46,7,0,0,Math.PI*2);g.stroke();
+    g.strokeStyle='rgba(255,190,90,'+(0.10+0.5*glow)+')';g.lineWidth=1;
+    g.beginPath();g.ellipse(cx,yy,46,7,0,0,Math.PI);g.stroke();
+  }
+  if(S.energized){g.save();g.globalCompositeOperation='lighter';neon(cx,solTop+48,150,'255,170,60',0.10+0.22*glow);g.restore();}
+  g.fillStyle='rgba(255,200,120,.6)';g.fillText('AC solenoid (cutaway)',cx-52,baseY+34);
+
+  /* flux lines */
+  if(S.energized){
+    g.save();g.globalCompositeOperation='lighter';
+    var sgn=drive>=0?1:-1;
+    for(var f=1;f<=5;f++){
+      var rr=16+f*22;
+      g.strokeStyle='rgba(90,200,255,'+(0.05+0.16*Math.abs(drive))+')';g.lineWidth=1.4;
+      g.beginPath();
+      g.ellipse(cx,solTop+48,rr*0.55,rr*1.05,0,0,Math.PI*2);g.stroke();
+    }
+    /* arrowheads showing the reversing sense */
+    g.fillStyle='rgba(120,220,255,'+(0.25+0.5*Math.abs(drive))+')';
+    for(var f2=1;f2<=5;f2++){
+      var rr2=16+f2*22, yy2=solTop+48-rr2*1.05*sgn;
+      g.beginPath();g.moveTo(cx-4,yy2+6*sgn);g.lineTo(cx+4,yy2+6*sgn);g.lineTo(cx,yy2-2*sgn);g.fill();
+    }
+    g.restore();
+  }
+
+  /* ring */
+  var ry=baseY-S.z*ppm-8;
+  var rw=54,rh=10;
+  var Ir=S.energized?ringAmp(S.z,S.freq):0;
+  var irNow=Ir*Math.sin(phi-Math.PI/2-phaseLag(S.freq));
+  var iNorm=Math.min(1,Math.abs(irNow)/2200);
+  g.save();
+  if(S.energized&&!S.slit){g.globalCompositeOperation='lighter';neon(cx,ry,86,'90,230,255',0.06+0.30*iNorm);g.globalCompositeOperation='source-over';}
+  g.lineWidth=7;
+  g.strokeStyle=S.slit?'rgba(150,170,185,.9)':'rgba('+(130+90*iNorm)+','+(220)+',255,'+(0.7+0.3*iNorm)+')';
+  g.beginPath();
+  if(S.slit) g.ellipse(cx,ry,rw,rh,0,0.30,Math.PI*2-0.30);
+  else g.ellipse(cx,ry,rw,rh,0,0,Math.PI*2);
+  g.stroke();
+  g.restore();
+  if(S.slit){
+    g.strokeStyle='#ff6a6a';g.lineWidth=2;
+    g.beginPath();g.moveTo(cx+rw-6,ry-9);g.lineTo(cx+rw+8,ry+9);g.stroke();
+    g.fillStyle='#ff8a8a';g.fillText('SLIT — no closed path, no current',cx+rw+14,ry+4);
+  }else{
+    g.fillStyle='rgba(140,230,255,.75)';
+    g.fillText('aluminium ring  Iᵣ='+(Ir/1000).toFixed(2)+' kA',cx+rw+14,ry+4);
+  }
+
+  /* height marker + equilibrium line */
+  g.strokeStyle='rgba(120,200,255,.18)';g.setLineDash([3,4]);
+  g.beginPath();g.moveTo(cx-180,baseY-S.peak*ppm-8);g.lineTo(cx+180,baseY-S.peak*ppm-8);g.stroke();
+  g.setLineDash([]);
+  g.fillStyle='rgba(120,200,255,.5)';g.fillText('peak '+(S.peak*100).toFixed(1)+' cm',cx-178,baseY-S.peak*ppm-12);
+  if(S.eqZ!==null&&S.eqZ<Z_MAX){
+    g.strokeStyle='rgba(125,255,156,.35)';g.setLineDash([6,4]);
+    g.beginPath();g.moveTo(cx-180,baseY-S.eqZ*ppm-8);g.lineTo(cx+180,baseY-S.eqZ*ppm-8);g.stroke();
+    g.setLineDash([]);
+    g.fillStyle='rgba(125,255,156,.7)';g.fillText('force balance '+(S.eqZ*100).toFixed(1)+' cm',cx+96,baseY-S.eqZ*ppm-12);
+  }
+
+  drawPhasor(phi);
+  drawCurve(ppm);
+
+  var mg=S.mass*9.81,Fn=S.energized?forceAt(S.z,S.freq):0;
+  document.getElementById('rd').innerHTML=
+    'ring            '+(S.slit?'<span class="off">SLIT (control)</span>':'<span class="on">SOLID LOOP</span>')+
+    '\ncoil            '+(S.energized?'<span class="on">ENERGIZED '+S.freq.toFixed(0)+' Hz</span>':'<span class="l">idle — hold SPACE</span>')+
+    '\nring current    '+(Ir/1000).toFixed(3)+' kA  lag '+((phaseLag(S.freq)*180/Math.PI)+90).toFixed(1)+'° behind flux'+
+    '\nring R          '+(S.slit?'∞ (open)':(ringR()*1e6).toFixed(0)+' µΩ')+'   σₓ '+S.sigma.toFixed(2)+
+    (S.sigma>4?'  <span class="wr">LN₂-COLD</span>':'')+
+    '\nforce / weight  '+Fn.toFixed(2)+' N / '+mg.toFixed(2)+' N'+
+    '\nheight          '+(S.z*100).toFixed(1)+' cm   v '+S.v.toFixed(2)+' m/s'+
+    '\npeak jump       '+(S.peak*100).toFixed(1)+' cm'+
+    '\n<span class="l">Cut the loop and the flux still passes — but\nnothing jumps. That is the whole proof.</span>';
+
+  requestAnimationFrame(frame);
+}
+
+/* phasor inset: flux, EMF, ring current, force */
+function drawPhasor(phi){
+  var R=62,x0=W-2*R-40,y0=140,cx=x0+R,cy=y0+R;
+  g.save();
+  g.fillStyle='rgba(3,8,18,.8)';g.strokeStyle='rgba(120,220,255,.28)';g.lineWidth=1;
+  g.beginPath();g.rect(x0-14,y0-30,2*R+28,2*R+56);g.fill();g.stroke();
+  g.font='10px ui-monospace,monospace';g.fillStyle='#8fc4dc';
+  g.fillText('PHASORS (rotating)',x0-6,y0-14);
+  g.strokeStyle='rgba(90,150,190,.25)';g.beginPath();g.arc(cx,cy,R,0,Math.PI*2);g.stroke();
+  var lag=phaseLag(S.freq);
+  var ph=[
+    {a:phi,           l:'Φ flux',  c:'90,200,255', s:0.92},
+    {a:phi+Math.PI/2, l:'EMF',          c:'255,200,90', s:0.80},
+    {a:phi+Math.PI/2-lag, l:'I ring',   c:'125,255,156',s:0.72},
+    {a:phi+Math.PI,   l:'F (mean up)',  c:'255,120,180',s:0.55}
+  ];
+  for(var i=0;i<ph.length;i++){
+    var p=ph[i],len=R*p.s;
+    var ex=cx+len*Math.cos(-p.a),ey=cy+len*Math.sin(-p.a);
+    g.strokeStyle='rgba('+p.c+',0.95)';g.lineWidth=2;
+    g.beginPath();g.moveTo(cx,cy);g.lineTo(ex,ey);g.stroke();
+    g.fillStyle='rgba('+p.c+',0.95)';g.beginPath();g.arc(ex,ey,3,0,Math.PI*2);g.fill();
+    g.fillText(p.l,x0-6,y0+2*R+14+i*0);
+  }
+  g.fillStyle='#8fc4dc';
+  g.fillText('I lags Φ by '+(90+lag*180/Math.PI).toFixed(0)+'° → mean F > 0',x0-6,y0+2*R+18);
+  g.restore();
+}
+
+/* force-vs-height curve */
+function drawCurve(){
+  var w=250,hh=140,x0=W-w-24,y0=H-hh-24;
+  g.save();
+  g.fillStyle='rgba(3,8,18,.8)';g.strokeStyle='rgba(120,220,255,.28)';g.lineWidth=1;
+  g.beginPath();g.rect(x0,y0,w,hh);g.fill();g.stroke();
+  g.font='10px ui-monospace,monospace';g.fillStyle='#8fc4dc';
+  g.fillText('F(z) vs weight',x0+8,y0+14);
+  var mg=S.mass*9.81;
+  var fmax=Math.max(mg*1.6,forceAt(0,S.freq)*1.05);
+  var px=x0+34,py=y0+hh-22,pw=w-46,phh=hh-44;
+  g.strokeStyle='rgba(90,150,190,.35)';
+  g.beginPath();g.moveTo(px,y0+22);g.lineTo(px,py);g.lineTo(px+pw,py);g.stroke();
+  g.strokeStyle='rgba(255,120,120,.6)';g.setLineDash([4,3]);
+  var wy=py-mg/fmax*phh;
+  g.beginPath();g.moveTo(px,wy);g.lineTo(px+pw,wy);g.stroke();g.setLineDash([]);
+  g.fillStyle='rgba(255,140,140,.8)';g.fillText('mg',px+pw-16,wy-3);
+  g.strokeStyle='rgba(125,255,255,.9)';g.lineWidth=2;g.beginPath();
+  for(var i=0;i<=90;i++){
+    var z=i/90*Z_MAX,F=forceAt(z,S.freq);
+    var xx=px+i/90*pw,yy=py-Math.min(1,F/fmax)*phh;
+    if(i===0)g.moveTo(xx,yy);else g.lineTo(xx,yy);
+  }
+  g.stroke();
+  var mx=px+Math.min(1,S.z/Z_MAX)*pw,my=py-Math.min(1,forceAt(S.z,S.freq)/fmax)*phh;
+  g.fillStyle='#ffd07a';g.beginPath();g.arc(mx,my,3.5,0,Math.PI*2);g.fill();
+  g.fillStyle='#6f93a8';g.fillText('z → '+(Z_MAX*100).toFixed(0)+' cm',px+pw-58,py+14);
+  g.fillText('F',px-24,y0+28);
+  g.restore();
+}
+
+resize();
+requestAnimationFrame(frame);
+</script>
+</body>

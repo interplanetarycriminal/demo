@@ -1,0 +1,267 @@
+<title>Newton's Rings</title>
+<style>
+html,body{margin:0;padding:0;height:100%;background:#03050a;overflow:hidden}
+canvas#c{display:block;position:fixed;inset:0}
+#ui{position:fixed;top:0;left:0;margin:10px;padding:10px 12px;max-width:352px;
+  background:rgba(5,9,16,.74);border:1px solid rgba(255,170,120,.28);border-radius:8px;
+  color:#ffd9bd;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;z-index:10;
+  box-shadow:0 0 24px rgba(255,140,60,.16),inset 0 0 20px rgba(200,90,30,.06);backdrop-filter:blur(3px)}
+#ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.09em;color:#ffb066;text-shadow:0 0 10px #ff8a2a}
+.m{color:#e8c8ac}.s{color:#9fe0ff}.l{color:#a08a76;font-style:italic}
+.row{margin:5px 0;display:flex;align-items:center;gap:6px}
+.row span{min-width:74px;color:#ffcf9e}
+input[type=range]{flex:1;height:3px;-webkit-appearance:none;appearance:none;background:#4a2a14;border-radius:2px;outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:11px;border-radius:50%;background:#ffa64d;box-shadow:0 0 8px #ffa64d;cursor:pointer}
+input[type=range]::-moz-range-thumb{width:11px;height:11px;border:0;border-radius:50%;background:#ffa64d;box-shadow:0 0 8px #ffa64d;cursor:pointer}
+#rd{margin-top:6px;color:#8dffc9;text-shadow:0 0 8px rgba(60,255,190,.3)}
+table{border-collapse:collapse;margin-top:5px;font:10px/1.4 ui-monospace,monospace;width:100%}
+td,th{border:1px solid rgba(255,170,120,.18);padding:1px 4px;text-align:right;color:#ffe3c8}
+th{color:#ffb066}
+a{color:#ffb066;text-decoration:none}a:hover{text-shadow:0 0 8px #ffb066}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>NEWTON'S RINGS</h1>
+<div class="m">A lens on a flat plate makes a circular air wedge, and the two reflections interfere into rings at r_m = √(mλR).</div>
+<div class="s">Newton saw them (Opticks, 1704); Young &amp; Fresnel explained them.</div>
+<div class="l">Hooke/Boyle thin plates → Newton's rings 1704 → Young 1801, the wave account Newton refused</div>
+<div class="row"><span>λ (nm)</span><input id="sl" type="range" min="400" max="700" value="589"></div>
+<div class="row"><span>R (m)</span><input id="sr" type="range" min="20" max="400" value="100"></div>
+<div class="row"><span>press lens</span><input id="sp" type="range" min="0" max="100" value="0"></div>
+<div class="m"><b>W</b> white light · <b>M</b> measure mode · <b>C</b> clear table · click a ring to measure</div>
+<div id="rd">…</div>
+<table id="tb"></table>
+<a href="index.html">← gallery</a>
+</div>
+<script>
+(function(){
+"use strict";
+var c=document.getElementById('c'),g=c.getContext('2d');
+var W,H,DPR,IW,IH,img,buf,SCALE=2,off=document.createElement('canvas');
+function resize(){
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  W=window.innerWidth;H=window.innerHeight;
+  c.width=Math.floor(W*DPR);c.height=Math.floor(H*DPR);
+  c.style.width=W+'px';c.style.height=H+'px';
+  IW=Math.max(8,Math.floor(W/SCALE));IH=Math.max(8,Math.floor(H/SCALE));
+  img=g.createImageData(IW,IH);buf=img.data;
+  for(var i=3;i<buf.length;i+=4)buf[i]=255;
+  off.width=IW;off.height=IH;
+}
+window.addEventListener('resize',resize);
+
+// ---- physics -------------------------------------------------------------
+// Air gap under a plano-convex lens of radius R: t(r) = r^2 / (2R).
+// Reflection off the glass->air top of the gap has no flip; air->glass bottom flips by pi.
+// => phase difference = 4*pi*t/lambda + pi.  Intensity I = cos^2(phase/2) ... which is
+//    DARK at the contact point r=0. That centre-dark spot is the detail Newton could not explain.
+var lam=589e-9, Rlens=100.0, press=0, white=false, measure=false;
+var PX_PER_M=1;   // set from view scale: how many metres of real radius per pixel
+var viewMM=20;    // half-width of the field of view in millimetres
+
+function gapT(r){ // r in metres -> gap in metres, with contact flattening from pressure
+  var t=r*r/(2*Rlens);
+  if(press>0){
+    var a=press*0.0055; // contact patch radius in metres, grows with force
+    // Hertzian-ish flattening: gap goes to zero inside the patch and rejoins outside
+    if(r<a) return 0;
+    t=(r*r-a*a)/(2*Rlens);
+  }
+  return t;
+}
+function intensity(r,l){
+  var t=gapT(r);
+  var d=4*Math.PI*t/l+Math.PI;   // 2t optical path + pi flip at the air->glass bottom
+  var s=Math.cos(d*0.5);
+  return s*s; // cos^2(2pi t/l + pi/2) -> ZERO at t=0: the DARK CENTRE Newton could not explain
+}
+function ringRadius(m,l,R){return Math.sqrt(m*l*R);} // dark ring m
+
+function lam2rgb(l){ // l in nm
+  var r=0,g2=0,b=0;
+  if(l<440){r=-(l-440)/60;b=1;}
+  else if(l<490){g2=(l-440)/50;b=1;}
+  else if(l<510){g2=1;b=-(l-510)/20;}
+  else if(l<580){r=(l-510)/70;g2=1;}
+  else if(l<645){r=1;g2=-(l-645)/65;}
+  else r=1;
+  var f=1;
+  if(l>700)f=0.3;else if(l>645)f=0.3+0.7*(700-l)/55;
+  if(l<420)f=0.3+0.7*(l-380)/40;
+  return [Math.max(0,Math.min(1,r*f)),Math.max(0,Math.min(1,g2*f)),Math.max(0,Math.min(1,b*f))];
+}
+var baseRGB=lam2rgb(589);
+var WLS=[],WRGB=[];
+(function(){for(var l=410;l<=690;l+=14){WLS.push(l*1e-9);WRGB.push(lam2rgb(l));}})();
+
+// ---- render --------------------------------------------------------------
+var mouse={x:-1,y:-1},marks=[],hoverR=0;
+function viewGeom(){
+  var cx=IW*0.62,cy=IH*0.5;
+  var half=Math.min(IW,IH)*0.44;
+  var mPerPx=(viewMM*1e-3)/half;
+  return {cx:cx,cy:cy,half:half,mPerPx:mPerPx};
+}
+function render(){
+  var v=viewGeom(),d=buf,i=0;
+  var mp=v.mPerPx;
+  for(var y=0;y<IH;y++){
+    var dy=(y-v.cy)*mp;
+    for(var x=0;x<IW;x++,i+=4){
+      var dx=(x-v.cx)*mp;
+      var r=Math.sqrt(dx*dx+dy*dy);
+      var R=0,G=0,B=0;
+      if(r<viewMM*1.6e-3){
+        if(!white){
+          var I=intensity(r,lam);
+          R=I*baseRGB[0];G=I*baseRGB[1];B=I*baseRGB[2];
+        }else{
+          for(var k=0;k<WLS.length;k++){
+            var Ik=intensity(r,WLS[k]);
+            R+=Ik*WRGB[k][0];G+=Ik*WRGB[k][1];B+=Ik*WRGB[k][2];
+          }
+          var nn=WLS.length*0.42;
+          R/=nn;G/=nn;B/=nn;
+        }
+        // lens aperture vignette
+        var vg=1-Math.pow(Math.min(1,r/(viewMM*1.35e-3)),3);
+        R*=vg;G*=vg;B*=vg;
+      }
+      d[i]=Math.min(255,R*255+4);
+      d[i+1]=Math.min(255,G*255+6);
+      d[i+2]=Math.min(255,B*255+11);
+    }
+  }
+  off.getContext('2d').putImageData(img,0,0);
+  g.setTransform(1,0,0,1,0,0);
+  g.fillStyle='#03050a';g.fillRect(0,0,c.width,c.height);
+  g.imageSmoothingEnabled=true;
+  g.drawImage(off,0,0,c.width,c.height);
+  g.globalCompositeOperation='lighter';g.globalAlpha=0.30;
+  g.drawImage(off,0,0,c.width,c.height);
+  g.globalAlpha=1;g.globalCompositeOperation='source-over';
+
+  g.save();g.scale(DPR,DPR);
+  var cxs=v.cx*SCALE,cys=v.cy*SCALE,pxPerM=1/(v.mPerPx*SCALE);
+  // theoretical dark rings overlay
+  g.strokeStyle='rgba(140,255,220,.30)';g.lineWidth=1;g.setLineDash([3,5]);
+  for(var m=1;m<=8;m++){
+    var rr=ringRadius(m,lam,Rlens)*pxPerM;
+    if(rr>Math.min(W,H)*0.55)break;
+    g.beginPath();g.arc(cxs,cys,rr,0,Math.PI*2);g.stroke();
+  }
+  g.setLineDash([]);
+  // measured marks
+  for(var q=0;q<marks.length;q++){
+    var mk=marks[q];
+    g.strokeStyle='rgba(255,180,90,.9)';g.lineWidth=1.4;
+    g.shadowColor='#ff9a3c';g.shadowBlur=10;
+    g.beginPath();g.arc(cxs,cys,mk.r*pxPerM,0,Math.PI*2);g.stroke();
+    g.shadowBlur=0;
+    g.fillStyle='#ffce9a';g.font='11px ui-monospace,monospace';
+    g.fillText('m='+mk.m,cxs+mk.r*pxPerM+4,cys-3);
+  }
+  // cursor readout ring
+  if(mouse.x>0){
+    var rm=Math.hypot(mouse.x-cxs,mouse.y-cys)/pxPerM;
+    hoverR=rm;
+    g.strokeStyle='rgba(255,255,255,.35)';g.lineWidth=1;
+    g.beginPath();g.arc(cxs,cys,rm*pxPerM,0,Math.PI*2);g.stroke();
+  }
+  drawSideView(g);
+  g.restore();
+}
+function drawSideView(g){
+  var x0=W-330,y0=H-190,w=300,h=150;
+  if(x0<20){x0=20;}
+  g.fillStyle='rgba(4,8,14,.82)';
+  g.strokeStyle='rgba(255,170,120,.3)';g.lineWidth=1;
+  g.beginPath();g.rect(x0,y0,w,h);g.fill();g.stroke();
+  g.fillStyle='#ffb066';g.font='10px ui-monospace,monospace';
+  g.fillText('SIDE VIEW — air wedge, gap magnified ×2000',x0+8,y0+14);
+  var cx=x0+w/2, plateY=y0+h-32;
+  // plate
+  g.fillStyle='rgba(90,150,190,.30)';g.fillRect(x0+10,plateY,w-20,20);
+  g.strokeStyle='rgba(150,220,255,.6)';g.beginPath();g.moveTo(x0+10,plateY);g.lineTo(x0+w-10,plateY);g.stroke();
+  // lens underside with magnified gap
+  var span=viewMM*1e-3, MAG=2000;
+  // vertical scale: 1 metre of gap -> MAG * pixels-per-metre of the horizontal axis
+  var pxPerM=(w-20)/(2*span);
+  g.beginPath();
+  for(var px=0;px<=w-20;px++){
+    var rr=((px/(w-20))*2-1)*span;
+    var t=gapT(Math.abs(rr));
+    var yy=plateY-Math.min(84,t*pxPerM*MAG);
+    if(px===0)g.moveTo(x0+10+px,yy);else g.lineTo(x0+10+px,yy);
+  }
+  g.strokeStyle='rgba(180,230,255,.85)';g.lineWidth=1.6;
+  g.shadowColor='rgba(120,200,255,.7)';g.shadowBlur=8;g.stroke();g.shadowBlur=0;
+  g.fillStyle='rgba(120,180,220,.13)';
+  g.lineTo(x0+w-10,y0+24);g.lineTo(x0+10,y0+24);g.closePath();g.fill();
+  // contact point marker
+  g.fillStyle='#ff9a3c';g.beginPath();g.arc(cx,plateY,3,0,Math.PI*2);g.fill();
+  g.fillStyle='#ffd9bd';g.font='10px ui-monospace,monospace';
+  g.fillText('contact → π flip → DARK centre',x0+8,y0+h-6);
+}
+
+// ---- ui ------------------------------------------------------------------
+var slEl=document.getElementById('sl'),srEl=document.getElementById('sr'),spEl=document.getElementById('sp'),
+    rdEl=document.getElementById('rd'),tbEl=document.getElementById('tb');
+slEl.oninput=function(){lam=+slEl.value*1e-9;baseRGB=lam2rgb(+slEl.value);};
+srEl.oninput=function(){Rlens=+srEl.value/1.0;};
+spEl.oninput=function(){press=+spEl.value/100;};
+window.addEventListener('mousemove',function(e){mouse.x=e.clientX;mouse.y=e.clientY;});
+window.addEventListener('keydown',function(e){
+  var k=e.key.toLowerCase();
+  if(k==='w')white=!white;
+  if(k==='m')measure=!measure;
+  if(k==='c'){marks.length=0;updateTable();}
+});
+window.addEventListener('mousedown',function(e){
+  if(e.target.tagName==='INPUT'||e.target.tagName==='A')return;
+  var v=viewGeom(),cxs=v.cx*SCALE,cys=v.cy*SCALE,pxPerM=1/(v.mPerPx*SCALE);
+  var rm=Math.hypot(e.clientX-cxs,e.clientY-cys)/pxPerM;
+  if(rm<=0)return;
+  // snap to the nearest dark ring: m = r^2/(lambda R)
+  var mF=rm*rm/(lam*Rlens);
+  var m=Math.max(1,Math.round(mF));
+  // "measured" radius = where the intensity actually minimises near the click
+  var best=rm,bi=1e9;
+  for(var s=-40;s<=40;s++){
+    var rr=rm+s*v.mPerPx*SCALE*0.35;
+    if(rr<=0)continue;
+    var I=intensity(rr,lam);
+    if(I<bi){bi=I;best=rr;}
+  }
+  marks.push({m:m,r:best});
+  if(marks.length>7)marks.shift();
+  updateTable();
+});
+function updateTable(){
+  if(!marks.length){tbEl.innerHTML='';return;}
+  var rows='<tr><th>m</th><th>r meas (mm)</th><th>√(mλR) (mm)</th><th>λ from r (nm)</th></tr>';
+  for(var i=0;i<marks.length;i++){
+    var mk=marks[i];
+    var th=ringRadius(mk.m,lam,Rlens);
+    var lamMeas=mk.r*mk.r/(mk.m*Rlens)*1e9;
+    rows+='<tr><td>'+mk.m+'</td><td>'+(mk.r*1e3).toFixed(3)+'</td><td>'+(th*1e3).toFixed(3)+
+      '</td><td>'+lamMeas.toFixed(0)+'</td></tr>';
+  }
+  tbEl.innerHTML=rows;
+}
+function tick(){
+  render();
+  var Ic=intensity(0,lam);
+  rdEl.innerHTML='λ = <b>'+(lam*1e9).toFixed(0)+' nm</b> · R = <b>'+Rlens.toFixed(0)+' m</b>'+
+    (white?' · <b>WHITE LIGHT</b>':'')+(press>0?' · pressed '+(press*100|0)+'%':'')+
+    '<br>r₁ = '+(ringRadius(1,lam,Rlens)*1e3).toFixed(3)+' mm · r₅ = '+(ringRadius(5,lam,Rlens)*1e3).toFixed(3)+' mm'+
+    '<br>centre I = '+Ic.toFixed(4)+' → <span style="color:#fff">DARK</span> (π flip)'+
+    '<br>cursor r = '+(hoverR*1e3).toFixed(3)+' mm · gap t = '+(gapT(hoverR)*1e9).toFixed(0)+' nm';
+  requestAnimationFrame(tick);
+}
+resize();tick();
+})();
+</script>
+</body>

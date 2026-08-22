@@ -1,0 +1,303 @@
+<title>Photoelastic Fringes</title>
+<style>
+html,body{margin:0;height:100%;background:#020308;overflow:hidden}
+canvas{display:block;position:fixed;inset:0}
+#ui{position:fixed;top:10px;left:10px;z-index:10;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#cfe;background:rgba(4,8,16,.72);border:1px solid rgba(150,120,255,.3);border-radius:8px;padding:10px 12px;max-width:335px;backdrop-filter:blur(6px);box-shadow:0 0 26px rgba(140,90,255,.16)}
+#ui h1{font-size:13px;margin:0 0 4px;color:#d9b6ff;letter-spacing:.11em;text-shadow:0 0 10px #a0f8}
+#ui .m{color:#e2e6ff;margin:0 0 5px}
+#ui .s{color:#ffd07a;margin:0 0 3px}
+#ui .l{color:#9a9ec0;margin:0 0 7px;font-size:10px}
+label{display:block;margin:4px 0;color:#c8b6ff}
+input[type=range]{width:150px;vertical-align:middle;accent-color:#b78cff}
+#ro{margin-top:7px;border-top:1px solid rgba(150,120,255,.22);padding-top:6px;color:#dde}
+#ro b{color:#ffe08a}
+a{color:#d9b6ff}
+button{background:#1a1030;color:#d9b6ff;border:1px solid #5b3a9a;border-radius:5px;font:11px monospace;padding:3px 7px;cursor:pointer;margin:5px 3px 0 0}
+button:hover{background:#2a1a4a}
+button.on{background:#3d2470;color:#fff}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>PHOTOELASTIC STRESS COLOURS</h1>
+<p class="m">Stress makes clear plastic birefringent — two light speeds — and crossed polarizers turn the principal-stress difference σ₁−σ₂ into visible colour fringes.</p>
+<p class="s">David Brewster, 1816</p>
+<p class="l">LINEAGE: Brewster 1816 → engineering photoelasticity (bridges, crankshafts, dam models) → stress-ball classroom kits.</p>
+<label>load P <input id="sF" type="range" min="0" max="100" step="0.5" value="42"><span id="vF"></span></label>
+<label>thickness t <input id="sT" type="range" min="0.5" max="4" step="0.05" value="1.6"><span id="vT"></span></label>
+<label>polarizer θ <input id="sA" type="range" min="0" max="180" step="1" value="0"><span id="vA"></span></label>
+<div>
+<button id="b0" class="on">beam</button><button id="b1">hook</button><button id="b2">fork</button>
+<button id="bH">hole: ON</button><button id="bI">isoclinics: OFF</button>
+</div>
+<div id="ro">
+probe (hover) → N = <b id="rN">—</b> fringe orders · σ₁−σ₂ ≈ <b id="rS">—</b> MPa<br>
+fringes on axis: <b id="rC">—</b> · δ = N·λ, N = (σ₁−σ₂)·t/f_σ
+</div>
+<p class="l" style="margin:6px 0 0">DRAG on the specimen to move &amp; grow the load · <a href="index.html">← gallery</a></p>
+</div>
+<script>
+(function(){
+var c=document.getElementById('c'),g=c.getContext('2d'),W,H,DPR;
+function resize(){DPR=Math.min(2,devicePixelRatio||1);W=innerWidth;H=innerHeight;c.width=W*DPR|0;c.height=H*DPR|0;c.style.width=W+'px';c.style.height=H+'px';g.setTransform(DPR,0,0,DPR,0,0);dirty=true;}
+addEventListener('resize',resize);
+
+var P={F:42,t:1.6,ang:0,shape:0,hole:true,iso:false,lx:0.5};
+var dirty=true,t0=performance.now(),probe=null;
+var fsig=40.0; // material fringe value MPa*mm per order
+
+// ---------- specimen geometry in normalized [0,1]^2 of the panel ----------
+function inside(u,v){ // u,v in 0..1
+ if(P.shape===0){ // beam
+  var b= (v>0.42&&v<0.58);
+  if(P.hole && Math.hypot(u-0.5,v-0.5)<0.045) return false;
+  return b;
+ }
+ if(P.shape===1){ // crane hook
+  var cx=0.5,cy=0.46,r=Math.hypot(u-cx,v-cy);
+  var ring = r>0.20 && r<0.30 && !(v>cy&&u>cx-0.02&&u<cx+0.32);
+  var shank = (u>cx-0.05&&u<cx+0.05&&v<cy&&v>0.08);
+  var eye = Math.hypot(u-cx,v-0.10)<0.075 && Math.hypot(u-cx,v-0.10)>0.032;
+  return ring||shank||eye;
+ }
+ // fork
+ var handle = (v>0.55&&v<0.90&&u>0.44&&u<0.56);
+ var neck   = (v>0.44&&v<0.56&&u>0.40&&u<0.60);
+ if(v>=0.08&&v<=0.46){
+  var k=(u-0.30)/0.10;
+  var tine = Math.abs(k-Math.round(k))<0.16 && u>0.28&&u<0.72;
+  if(tine) return true;
+ }
+ return handle||neck;
+}
+
+// ---------- stress field: (sigma1 - sigma2) ----------
+function sigDiff(u,v){
+ var F=P.F, lx=P.lx;
+ var s=0;
+ if(P.shape===0){
+  // beam bending: M(x) triangular about the load point on a simply supported span
+  var x=u, a=lx, L=1.0;
+  var M = x<a ? F*(L-a)*x : F*a*(L-x);
+  var yy=(v-0.5)/0.08;            // -1..1 through depth
+  var bend=Math.abs(M*yy)*9.0;
+  var shear=Math.abs(F*(1-yy*yy))*1.6;
+  s=Math.sqrt(bend*bend+shear*shear)*0.6;
+  // contact concentration under the load
+  var d=Math.hypot((u-a)*1.0,(v-0.42)*1.2);
+  s+=F*0.055/(d+0.012);
+  if(P.hole){
+   var dh=Math.hypot(u-0.5,v-0.5);
+   // Kirsch-like: stress concentration ~3x decaying as (a/r)^2
+   var A=0.045;
+   if(dh>A){var k=A/dh; var th=Math.atan2(v-0.5,u-0.5);
+    s*= (1+2.0*k*k*Math.abs(Math.cos(2*th)) + 1.4*k*k);}
+  }
+ } else if(P.shape===1){
+  var cx=0.5,cy=0.46,r=Math.hypot(u-cx,v-cy),th=Math.atan2(v-cy,u-cx);
+  // curved bar: inner fibre screams
+  var rr=Math.max(0.02,r);
+  var inner=Math.max(0,(0.30-rr))/0.10;
+  s=F*(0.35+2.6*inner*inner)*Math.max(0.15,Math.abs(Math.sin(th*0.5+1.2)));
+  if(v<cy) s+=F*(0.4+2.0*Math.abs(u-cx)/0.05)*0.5;   // shank tension + eye
+  var de=Math.abs(Math.hypot(u-cx,v-0.10)-0.05);
+  if(v<0.20) s+=F*0.06/(de+0.02);
+  s*=0.9;
+ } else {
+  var base=F*0.5;
+  s=base*(1+3.0*Math.max(0,(0.46-v))/0.4);
+  // stress raiser at each tine root
+  for(var i=0;i<5;i++){var tx=0.30+i*0.10;
+   var d=Math.hypot(u-tx,v-0.46);
+   s+=F*0.045/(d+0.015);}
+  s*=0.7;
+ }
+ return s;   // stress does NOT depend on thickness; retardation does (delta = s*t/f_sigma)
+}
+// principal direction (for isoclinics)
+function princAng(u,v){
+ if(P.shape===0){var yy=(v-0.5); return Math.atan2(yy*2.2, (u-P.lx)*1.0+0.001)*0.5;}
+ if(P.shape===1){return Math.atan2(v-0.46,u-0.5)+Math.PI/2;}
+ return Math.atan2(v-0.46,u-0.5)*0.5;
+}
+
+// ---------- interference colour (Michel-Lévy-ish ramp), delta in nm ----------
+function fringeColor(delta,out){
+ // integrate white light: sum over sample wavelengths of sin^2(pi*delta/lam)
+ var R=0,G=0,B=0,wsum=0;
+ for(var lam=420;lam<=680;lam+=13){
+  var I=Math.pow(Math.sin(Math.PI*delta/lam),2);
+  var r,gg,b;
+  if(lam<440){r=-(lam-440)/40;gg=0;b=1;}
+  else if(lam<490){r=0;gg=(lam-440)/50;b=1;}
+  else if(lam<510){r=0;gg=1;b=-(lam-510)/20;}
+  else if(lam<580){r=(lam-510)/70;gg=1;b=0;}
+  else if(lam<645){r=1;gg=-(lam-645)/65;b=0;}
+  else {r=1;gg=0;b=0;}
+  R+=I*r;G+=I*gg;B+=I*b;wsum+=1;
+ }
+ var k=2.35/wsum;
+ out[0]=Math.min(1,R*k);out[1]=Math.min(1,G*k);out[2]=Math.min(1,B*k);
+}
+
+// ---------- render buffer ----------
+var buf=document.createElement('canvas'),bg2=buf.getContext('2d'),BW=360,BH=360;
+buf.width=BW;buf.height=BH;
+var col=[0,0,0];
+function render(){
+ var img=bg2.createImageData(BW,BH),d=img.data;
+ var ang=P.ang*Math.PI/180;
+ for(var y=0;y<BH;y++){
+  var v=y/(BH-1);
+  for(var x=0;x<BW;x++){
+   var u=x/(BW-1),o=(y*BW+x)*4;
+   if(!inside(u,v)){ d[o]=4;d[o+1]=4;d[o+2]=10;d[o+3]=255; continue; }
+   var s=sigDiff(u,v);
+   var delta=s*P.t/fsig*560;      // nm of retardation: N = (s*t)/fsig orders, delta = N*lam0
+   fringeColor(delta,col);
+   var f=1;
+   if(P.iso){ // isoclinic: dark where principal axis aligns with polarizer
+    var pa=princAng(u,v);
+    f=Math.pow(Math.abs(Math.sin(2*(pa-ang))),0.55);
+   }
+   d[o]=col[0]*255*f+6; d[o+1]=col[1]*255*f+6; d[o+2]=col[2]*255*f+14; d[o+3]=255;
+  }
+ }
+ bg2.putImageData(img,0,0);
+ // fringe count along the specimen axis
+ var maxN=0;
+ for(var i=0;i<BW;i++){var s=sigDiff(i/(BW-1), P.shape===0?0.44:0.5);
+  var N=s*P.t/fsig; if(N>maxN)maxN=N;}
+ document.getElementById('rC').textContent=Math.floor(maxN)+' orders peak';
+ dirty=false;
+}
+
+function panel(){
+ var side=Math.min(W*0.62,H*0.80);
+ return {x:(W-side)/2+W*0.10,y:(H-side)/2,s:side};
+}
+
+function draw(now){
+ var T=(now-t0)/1000;
+ if(dirty)render();
+ g.fillStyle='#020308';g.fillRect(0,0,W,H);
+ var pn=panel();
+ // crossed-polarizer housing
+ g.save();
+ g.shadowColor='rgba(160,110,255,.45)';g.shadowBlur=34;
+ g.drawImage(buf,pn.x,pn.y,pn.s,pn.s);
+ g.restore();
+ g.strokeStyle='rgba(170,140,255,.35)';g.lineWidth=1;g.strokeRect(pn.x,pn.y,pn.s,pn.s);
+ g.fillStyle='#a89ce0';g.font='11px ui-monospace,monospace';
+ g.fillText('CROSSED POLARIZERS  (P '+P.ang.toFixed(0)+'°  ⟂  A '+((P.ang+90)%180).toFixed(0)+'°)',pn.x,pn.y-9);
+
+ // polarizer hatch decorations top-left / bottom-right of the panel
+ function dial(cx,cy,r,a,lbl){
+  g.save();g.translate(cx,cy);g.rotate(-a);
+  g.strokeStyle='rgba(190,160,255,.5)';g.lineWidth=1.2;
+  for(var k=-3;k<=3;k++){var yy=k*7,hw=Math.sqrt(Math.max(0,r*r-yy*yy));
+   g.beginPath();g.moveTo(-hw,yy);g.lineTo(hw,yy);g.stroke();}
+  g.restore();
+  g.strokeStyle='rgba(190,160,255,.4)';g.beginPath();g.arc(cx,cy,r,0,7);g.stroke();
+  g.fillStyle='#b8a6ff';g.font='9px monospace';g.fillText(lbl,cx-8,cy+r+12);
+ }
+ dial(pn.x-46,pn.y+30,22,P.ang*Math.PI/180,'POL');
+ dial(pn.x-46,pn.y+96,22,(P.ang+90)*Math.PI/180,'ANA');
+
+ // load arrow
+ if(P.shape===0){
+  var ax=pn.x+P.lx*pn.s, ay=pn.y+0.42*pn.s;
+  var len=14+P.F*0.55;
+  g.save();g.globalCompositeOperation='lighter';
+  g.strokeStyle='rgba(255,120,120,.9)';g.lineWidth=3;g.shadowColor='#f66';g.shadowBlur=12;
+  g.beginPath();g.moveTo(ax,ay-len);g.lineTo(ax,ay-4);g.stroke();
+  g.beginPath();g.moveTo(ax-6,ay-11);g.lineTo(ax,ay-2);g.lineTo(ax+6,ay-11);g.closePath();
+  g.fillStyle='rgba(255,140,140,.95)';g.fill();g.restore();
+  g.fillStyle='#f99';g.font='10px monospace';g.fillText('P = '+P.F.toFixed(0),ax+8,ay-len);
+  // supports
+  g.fillStyle='#57a';
+  [0.03,0.97].forEach(function(u){var sx=pn.x+u*pn.s,sy=pn.y+0.58*pn.s;
+   g.beginPath();g.moveTo(sx,sy);g.lineTo(sx-8,sy+14);g.lineTo(sx+8,sy+14);g.closePath();g.fill();});
+ }else{
+  var ax=pn.x+0.5*pn.s, ay=pn.y+ (P.shape===1?0.86:0.92)*pn.s;
+  var len=14+P.F*0.5;
+  g.save();g.globalCompositeOperation='lighter';
+  g.strokeStyle='rgba(255,120,120,.9)';g.lineWidth=3;g.shadowColor='#f66';g.shadowBlur=12;
+  g.beginPath();g.moveTo(ax,ay);g.lineTo(ax,ay+len);g.stroke();g.restore();
+  g.fillStyle='#f99';g.font='10px monospace';g.fillText('P = '+P.F.toFixed(0),ax+8,ay+len);
+ }
+
+ // hole callout
+ if(P.shape===0&&P.hole){
+  var hx=pn.x+0.5*pn.s,hy=pn.y+0.5*pn.s,pl=0.5+0.5*Math.sin(T*3);
+  g.save();g.globalCompositeOperation='lighter';
+  g.strokeStyle='rgba(255,230,140,'+(0.35+0.4*pl)+')';g.lineWidth=1.3;
+  g.beginPath();g.arc(hx,hy,0.045*pn.s+8+3*pl,0,7);g.stroke();g.restore();
+  g.fillStyle='#fe8';g.font='10px monospace';
+  g.fillText('the hole edge screams: fringes crowd where stress concentrates',pn.x,pn.y+pn.s+18);
+ }
+
+ // probe
+ if(probe){
+  var u=(probe.x-pn.x)/pn.s, v=(probe.y-pn.y)/pn.s;
+  if(u>=0&&u<=1&&v>=0&&v<=1&&inside(u,v)){
+   var s=sigDiff(u,v), N=s*P.t/fsig;
+   g.strokeStyle='rgba(255,255,255,.85)';g.lineWidth=1;
+   g.beginPath();g.arc(probe.x,probe.y,9,0,7);g.stroke();
+   g.beginPath();g.moveTo(probe.x-14,probe.y);g.lineTo(probe.x+14,probe.y);
+   g.moveTo(probe.x,probe.y-14);g.lineTo(probe.x,probe.y+14);g.stroke();
+   g.fillStyle='rgba(0,0,0,.7)';g.fillRect(probe.x+14,probe.y-26,150,34);
+   g.fillStyle='#ffe08a';g.font='11px monospace';
+   g.fillText('N = '+N.toFixed(2)+' orders',probe.x+20,probe.y-12);
+   g.fillText('σ₁−σ₂ = '+s.toFixed(1)+' MPa',probe.x+20,probe.y+2);
+   document.getElementById('rN').textContent=N.toFixed(2);
+   document.getElementById('rS').textContent=s.toFixed(1);
+  }
+ }
+
+ // Michel-Lévy legend strip
+ var lgx=W-Math.min(300,W*0.24)-16,lgy=H-56,lgw=Math.min(300,W*0.24);
+ for(var i=0;i<lgw;i++){
+  var delta=i/lgw*2400;
+  fringeColor(delta,col);
+  g.fillStyle='rgb('+(col[0]*255|0)+','+(col[1]*255|0)+','+(col[2]*255|0)+')';
+  g.fillRect(lgx+i,lgy,1,20);
+ }
+ g.strokeStyle='rgba(180,150,255,.35)';g.strokeRect(lgx,lgy,lgw,20);
+ g.fillStyle='#b6a8e0';g.font='10px monospace';
+ g.fillText('retardation δ  0 →  2400 nm   (order 0 → 4)',lgx,lgy-5);
+ g.fillText('black = zero stress difference',lgx,lgy+33);
+
+ requestAnimationFrame(draw);
+}
+
+// controls
+var sF=document.getElementById('sF'),sT=document.getElementById('sT'),sA=document.getElementById('sA');
+function sync(){P.F=+sF.value;P.t=+sT.value;P.ang=+sA.value;
+ document.getElementById('vF').textContent=P.F.toFixed(0);
+ document.getElementById('vT').textContent=P.t.toFixed(2)+'mm';
+ document.getElementById('vA').textContent=P.ang.toFixed(0)+'°';
+ dirty=true;}
+[sF,sT,sA].forEach(function(s){s.addEventListener('input',sync);});
+function pick(n){P.shape=n;dirty=true;[0,1,2].forEach(function(i){
+ document.getElementById('b'+i).className=(i===n?'on':'');});}
+document.getElementById('b0').onclick=function(){pick(0);};
+document.getElementById('b1').onclick=function(){pick(1);};
+document.getElementById('b2').onclick=function(){pick(2);};
+document.getElementById('bH').onclick=function(){P.hole=!P.hole;this.textContent='hole: '+(P.hole?'ON':'OFF');dirty=true;};
+document.getElementById('bI').onclick=function(){P.iso=!P.iso;this.className=P.iso?'on':'';this.textContent='isoclinics: '+(P.iso?'ON':'OFF');dirty=true;};
+
+var drag=false;
+c.addEventListener('pointerdown',function(e){drag=true;apply(e);});
+addEventListener('pointerup',function(){drag=false;});
+addEventListener('pointermove',function(e){probe={x:e.clientX,y:e.clientY};if(drag)apply(e);});
+function apply(e){
+ var pn=panel(),u=(e.clientX-pn.x)/pn.s,v=(e.clientY-pn.y)/pn.s;
+ P.lx=Math.max(0.1,Math.min(0.9,u));
+ sF.value=Math.max(0,Math.min(100,(1-v)*110));
+ sync();
+}
+resize();sync();requestAnimationFrame(draw);
+})();
+</script>

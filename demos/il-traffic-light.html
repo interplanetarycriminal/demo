@@ -1,0 +1,207 @@
+<title>Chemical Traffic Light</title>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<style>
+html,body{margin:0;padding:0;height:100%;background:#05070a;overflow:hidden}
+canvas{display:block;position:fixed;inset:0}
+#ui{position:fixed;top:0;left:0;padding:10px 12px;font:11px/1.5 ui-monospace,Menlo,Consolas,monospace;
+ color:#cfe9d6;background:rgba(5,10,10,.64);border-right:1px solid #1c3a2c;border-bottom:1px solid #1c3a2c;
+ max-width:335px;z-index:10;backdrop-filter:blur(4px)}
+#ui h1{margin:0 0 3px;font-size:14px;letter-spacing:.16em;color:#8dffb0;text-shadow:0 0 12px #35ff8a66}
+.dim{color:#6d9282}.lin{color:#5c8a76;font-style:italic}
+.tag{display:inline-block;margin-top:6px;padding:1px 6px;border:1px solid #2d6047;border-radius:8px;color:#79b998;font-size:9px;letter-spacing:.1em}
+label{display:block;margin:5px 0 0}
+input[type=range]{width:100%;height:14px;accent-color:#4ce08a;background:transparent}
+.rd{color:#ffe07a}a{color:#7ce8b4}
+button{font:10px ui-monospace,monospace;background:#0e2a1e;color:#9fe8c0;border:1px solid #2d6047;border-radius:4px;padding:3px 8px;margin:4px 4px 0 0;cursor:pointer}
+button:hover{background:#164536}button.on{background:#1f6a48;color:#e6fff2}
+#shake{width:100%;padding:7px;font-size:12px;letter-spacing:.1em}
+</style>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>CHEMICAL TRAFFIC LIGHT</h1>
+<div>Indigo carmine in alkaline sugar has three oxidation states — green (oxidized) → red (half-reduced) → yellow (reduced) — so a hard shake, a gentle swirl, or rest parks the flask at a different colour.</div>
+<div class="dim">blue-bottle family classic · dye-redox lecture tradition</div>
+<div class="lin">lineage: blue bottle parent → indigo-carmine 3-state → chemical chameleon (many-state cousin)</div>
+<div class="dim">hold SHAKE (SPACE) — vigour slider sets how far up the ladder it climbs</div>
+<button id="shake">▮ HOLD TO SHAKE ▮</button>
+<label>shake vigour <span class="rd" id="vV"></span><input type="range" id="vig" min="0" max="1" step="0.01" value="1"></label>
+<label>sugar (reductant) <span class="rd" id="vS"></span><input type="range" id="sug" min="0.05" max="1" step="0.01" value="0.5"></label>
+<label>temperature <span class="rd" id="vT"></span><input type="range" id="tmp" min="5" max="60" step="0.5" value="25"></label>
+<label>headspace O<sub>2</sub> <span class="rd" id="vO"></span><input type="range" id="oxy" min="0" max="0.4" step="0.005" value="0.209"></label>
+<div><button id="loop">lecture loop</button><button id="n2">N₂ flush</button><button id="air">air</button><button id="rst">reset</button></div>
+<div>green <span class="rd" id="rG"></span> · red <span class="rd" id="rR"></span> · yellow <span class="rd" id="rY"></span></div>
+<div>dissolved O₂ <span class="rd" id="rO"></span> · ladder <span class="rd" id="rL"></span></div>
+<div>lamp <span class="rd" id="rSt"></span></div>
+<div><a href="index.html">← gallery</a> <span class="tag">simulation — no recipe</span></div>
+</div>
+<script>
+(function(){
+var c=document.getElementById('c'),g=c.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,devicePixelRatio||1);W=innerWidth;H=innerHeight;
+ c.width=W*DPR|0;c.height=H*DPR|0;c.style.width=W+'px';c.style.height=H+'px';g.setTransform(DPR,0,0,DPR,0,0)}
+addEventListener('resize',resize);resize();
+var el=function(i){return document.getElementById(i)};
+
+// species: A = green (fully oxidized), B = red (semi), C = yellow (reduced)
+var S={A:0,B:0,C:1,o2:0,t:0,slosh:0,sloshV:0,shaking:0,loop:false,shakes:0};
+var bub=[];
+function P(){return{vig:+el('vig').value,sug:+el('sug').value,T:+el('tmp').value,fO2:+el('oxy').value}}
+function arr(T){return Math.exp((T-25)/14)}
+
+// A <-(k1ox O2 / k1red sugar)-> B <-(k2ox O2 / k2red sugar)-> C
+function step(st,p,dt,shakeI){
+  var k=arr(p.T),sat=p.fO2/0.209;
+  st.o2+=(0.05+3.0*shakeI)*(sat-st.o2)*dt; if(st.o2<0)st.o2=0;
+  var s=p.sug;
+  var k1o=5.0*k, k2o=9.0*k;      // C->B faster than B->A: needs sustained O2 to reach green
+  var k1r=0.55*k*s, k2r=0.34*k*s; // A->B, B->C
+  var f_CB=k2o*st.o2*st.C;
+  var f_BA=k1o*st.o2*st.B;
+  var f_AB=k1r*st.A;
+  var f_BC=k2r*st.B;
+  var dA=f_BA-f_AB, dB=f_CB+f_AB-f_BA-f_BC, dC=f_BC-f_CB;
+  st.A+=dA*dt; st.B+=dB*dt; st.C+=dC*dt;
+  if(st.A<0)st.A=0; if(st.B<0)st.B=0; if(st.C<0)st.C=0;
+  var tot=st.A+st.B+st.C; if(tot>0){st.A/=tot;st.B/=tot;st.C/=tot}
+  st.o2-=(f_CB+f_BA)*0.035*dt; if(st.o2<0)st.o2=0;
+  return st;
+}
+window.__tl={step:step};
+
+var holding=false;
+function dn(){holding=true}function up(){holding=false}
+el('shake').addEventListener('mousedown',dn);el('shake').addEventListener('touchstart',function(e){e.preventDefault();dn()},{passive:false});
+c.addEventListener('mousedown',dn);c.addEventListener('touchstart',function(e){e.preventDefault();dn()},{passive:false});
+addEventListener('mouseup',up);addEventListener('touchend',up);
+addEventListener('keydown',function(e){if(e.code==='Space'){e.preventDefault();dn()}});
+addEventListener('keyup',function(e){if(e.code==='Space')up()});
+el('loop').onclick=function(){S.loop=!S.loop;el('loop').className=S.loop?'on':''};
+el('n2').onclick=function(){el('oxy').value=0};
+el('air').onclick=function(){el('oxy').value=0.209};
+el('rst').onclick=function(){S.A=0;S.B=0;S.C=1;S.o2=0;S.shakes=0;bub.length=0};
+
+var COL={A:[40,210,120],B:[224,54,74],C:[248,206,52]};
+function mix(st){
+  var r=st.A*COL.A[0]+st.B*COL.B[0]+st.C*COL.C[0];
+  var gg=st.A*COL.A[1]+st.B*COL.B[1]+st.C*COL.C[1];
+  var b=st.A*COL.A[2]+st.B*COL.B[2]+st.C*COL.C[2];
+  return [r,gg,b];
+}
+function css(a,al){return 'rgba('+(a[0]|0)+','+(a[1]|0)+','+(a[2]|0)+','+al+')'}
+
+function drawLight(x,y,w,h,st){
+  g.fillStyle='rgba(14,20,24,0.92)';g.strokeStyle='rgba(120,180,160,0.35)';g.lineWidth=2;
+  g.beginPath();g.roundRect(x,y,w,h,w*0.22);g.fill();g.stroke();
+  var lamps=[['A',COL.A,st.A],['B',COL.B,st.B],['C',COL.C,st.C]];
+  var r=w*0.30, step=h/3;
+  for(var i=0;i<3;i++){
+    var L=lamps[i],cy=y+step*(i+0.5),v=Math.min(1,L[2]*1.25);
+    g.beginPath();g.arc(x+w/2,cy,r,0,6.2832);
+    g.fillStyle='rgba('+L[1][0]+','+L[1][1]+','+L[1][2]+','+(0.10+0.85*v)+')';
+    g.shadowColor='rgb('+L[1][0]+','+L[1][1]+','+L[1][2]+')';g.shadowBlur=6+34*v;g.fill();g.shadowBlur=0;
+    g.strokeStyle='rgba(200,230,220,0.25)';g.lineWidth=1.4;g.stroke();
+  }
+}
+function drawFlask(cx,cy,w,h,col,st){
+  g.save();g.translate(cx,cy);g.rotate(S.slosh*0.09);
+  var nw=w*0.27,nh=h*0.28;
+  function body(){g.beginPath();
+    g.moveTo(-nw/2,-h/2-nh);g.lineTo(-nw/2,-h/2+h*0.06);
+    g.bezierCurveTo(-w/2,-h*0.10,-w/2,h/2,0,h/2);
+    g.bezierCurveTo(w/2,h/2,w/2,-h*0.10,nw/2,-h/2+h*0.06);
+    g.lineTo(nw/2,-h/2-nh);g.closePath()}
+  g.save();body();g.clip();
+  g.fillStyle='rgba(6,10,14,0.92)';g.fillRect(-w,-h-nh,2*w,3*h);
+  g.save();g.rotate(S.slosh*0.18);
+  g.fillStyle=css(col,0.90);g.fillRect(-w,-h*0.06+S.slosh*h*0.05,2*w,2*h);
+  g.restore();
+  g.globalCompositeOperation='lighter';
+  var rg=g.createRadialGradient(0,h*0.12,3,0,h*0.12,w*0.85);
+  rg.addColorStop(0,css(col,0.55));rg.addColorStop(1,'rgba(0,0,0,0)');
+  g.fillStyle=rg;g.fillRect(-w,-h,2*w,2*h);g.globalCompositeOperation='source-over';
+  for(var i=0;i<bub.length;i++){var b=bub[i];
+    g.beginPath();g.arc(b.x*w*0.40,b.y*h*0.44,b.r,0,6.2832);
+    g.fillStyle='rgba(235,255,245,'+(0.08+0.4*b.l)+')';g.fill()}
+  g.restore();
+  g.lineWidth=Math.max(1.6,w*0.013);g.strokeStyle='rgba(180,230,215,0.55)';
+  g.shadowColor=css(col,1);g.shadowBlur=24;body();g.stroke();g.shadowBlur=0;
+  g.fillStyle='#26302c';g.strokeStyle='rgba(180,220,205,.5)';
+  g.beginPath();g.roundRect(-nw*0.62,-h/2-nh-nw*0.5,nw*1.24,nw*0.6,3);g.fill();g.stroke();
+  g.restore();
+}
+function stacked(x,y,w,h,st){
+  var segs=[['green',COL.A,st.A],['red',COL.B,st.B],['yellow',COL.C,st.C]],yy=y;
+  for(var i=0;i<3;i++){var s=segs[i],hh=h*s[2];
+    g.fillStyle='rgb('+s[1][0]+','+s[1][1]+','+s[1][2]+')';
+    g.shadowColor=g.fillStyle;g.shadowBlur=12;g.fillRect(x,yy,w,hh);g.shadowBlur=0;
+    if(hh>13){g.fillStyle='rgba(0,0,0,.65)';g.font='10px ui-monospace,monospace';
+      g.fillText(s[0]+' '+(s[2]*100).toFixed(0)+'%',x+6,yy+hh/2+3)}
+    yy+=hh}
+  g.strokeStyle='rgba(150,210,190,0.35)';g.lineWidth=1;g.strokeRect(x+.5,y+.5,w-1,h-1);
+  g.fillStyle='#6d9282';g.font='10px ui-monospace,monospace';
+  g.fillText('species populations — colour is their honest weighted mix',x,y-7);
+}
+var HN=240,hA=[],hB=[],hC=[];
+function kinetics(x,y,w,h){
+  g.strokeStyle='rgba(120,180,160,.22)';g.strokeRect(x,y,w,h);
+  var sets=[[hA,'rgba(40,210,120,.95)'],[hB,'rgba(224,54,74,.95)'],[hC,'rgba(248,206,52,.95)']];
+  for(var s=0;s<3;s++){var d=sets[s][0];g.beginPath();
+    for(var i=0;i<d.length;i++){var px=x+w*i/(HN-1),py=y+h*(1-d[i]);i?g.lineTo(px,py):g.moveTo(px,py)}
+    g.strokeStyle=sets[s][1];g.lineWidth=1.5;g.shadowColor=sets[s][1];g.shadowBlur=8;g.stroke();g.shadowBlur=0}
+  g.fillStyle='#6d9282';g.font='10px ui-monospace,monospace';g.fillText('kinetics inset — ox ⇄ semi ⇄ red',x,y-6);
+}
+
+var last=performance.now();
+function frame(now){
+  var dt=Math.min(0.05,(now-last)/1000);last=now;S.t+=dt;
+  var p=P();
+  if(S.loop){var ph=S.t%12;holding=ph<2.2;el('vig').value=(ph<6?1:0.30).toFixed(2);p=P()}
+  var tg=holding?p.vig:0;
+  S.shaking+=(tg-S.shaking)*Math.min(1,dt*8);
+  if(holding&&!S._w)S.shakes++;S._w=holding;
+  S.sloshV+=(-S.slosh*44-S.sloshV*2.3)*dt+(S.shaking>0.04?Math.sin(S.t*21)*S.shaking*7*dt*30:0);
+  S.slosh+=S.sloshV*dt;S.slosh=Math.max(-1,Math.min(1,S.slosh));
+  step(S,p,dt,S.shaking);
+  if(S.shaking>0.15&&bub.length<150){var n=Math.round(S.shaking*4*(0.2+p.fO2*3.8));
+    for(var i=0;i<n;i++)bub.push({x:(Math.random()*2-1)*0.78,y:0.9,r:1+Math.random()*3.2,l:Math.random(),v:0.5+Math.random()})}
+  for(i=bub.length-1;i>=0;i--){var b=bub[i];b.y-=b.v*dt*0.9;b.l-=dt*0.26;if(b.y<-0.9||b.l<=0)bub.splice(i,1)}
+  hA.push(S.A);hB.push(S.B);hC.push(S.C);
+  if(hA.length>HN){hA.shift();hB.shift();hC.shift()}
+
+  g.fillStyle='#05070a';g.fillRect(0,0,W,H);
+  var col=mix(S);
+  var rg=g.createRadialGradient(W*0.62,H*0.5,8,W*0.62,H*0.5,Math.max(W,H)*0.68);
+  rg.addColorStop(0,css(col,0.20));rg.addColorStop(1,'rgba(5,7,10,0)');
+  g.fillStyle=rg;g.fillRect(0,0,W,H);
+  var s=Math.min(W,H);
+  drawFlask(W*0.62,H*0.55,s*0.30,s*0.34,col,S);
+  var lw=s*0.10,lh=lw*2.55;
+  drawLight(W*0.62+s*0.26,H*0.55-lh/2,lw,lh,S);
+  stacked(W*0.055,H*0.30,Math.max(96,W*0.11),H*0.36,S);
+  kinetics(W*0.055,H*0.76,Math.max(180,W*0.30),H*0.14);
+  // ladder marker
+  var ladder=S.A*1+S.B*0.5;
+  g.fillStyle='#6d9282';g.font='11px ui-monospace,monospace';
+  g.fillText('ladder position  yellow ── red ── green',W*0.055,H*0.24);
+  var lx=W*0.055,lwd=Math.max(180,W*0.30);
+  g.fillStyle='rgba(255,255,255,.07)';g.fillRect(lx,H*0.255,lwd,8);
+  g.fillStyle=css(col,1);g.shadowColor=css(col,1);g.shadowBlur=14;
+  g.fillRect(lx,H*0.255,lwd*ladder,8);g.shadowBlur=0;
+  if(p.fO2<0.005){g.fillStyle='rgba(255,160,160,.85)';g.font='12px ui-monospace,monospace';g.textAlign='center';
+    g.fillText('N₂-FLUSHED CONTROL — no oxygen up-chain: it parks at yellow no matter how hard you shake.',W*0.6,H*0.95);g.textAlign='left'}
+
+  el('vV').textContent=p.vig.toFixed(2);
+  el('vS').textContent=p.sug.toFixed(2);
+  el('vT').textContent=p.T.toFixed(0)+' °C';
+  el('vO').textContent=(p.fO2*100).toFixed(1)+' %';
+  el('rG').textContent=(S.A*100).toFixed(0)+'%';
+  el('rR').textContent=(S.B*100).toFixed(0)+'%';
+  el('rY').textContent=(S.C*100).toFixed(0)+'%';
+  el('rO').textContent=S.o2.toFixed(3);
+  el('rL').textContent=ladder.toFixed(3);
+  el('rSt').textContent=(S.A>=S.B&&S.A>=S.C)?'GREEN — oxidized':(S.B>=S.C?'RED — half-reduced':'YELLOW — reduced');
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+})();
+</script>

@@ -1,0 +1,340 @@
+<title>Chain Fountain</title>
+<style>
+html,body{margin:0;padding:0;background:#05040a;overflow:hidden;font-family:monospace}
+canvas{display:block}
+#ui{position:fixed;top:0;left:0;padding:10px 12px;color:#ffd9a8;background:rgba(8,4,14,.66);
+ font:11px/1.5 monospace;max-width:340px;border-right:1px solid #4a2a10;border-bottom:1px solid #4a2a10;z-index:10}
+#ui h1{font-size:13px;margin:0 0 4px;color:#ffb64d;letter-spacing:.09em;text-shadow:0 0 10px #f80}
+#ui .m{color:#f0dcc8;margin:0 0 5px}
+#ui .s{color:#c08f5a;margin:0 0 3px}
+#ui .lin{color:#96683e;font-size:10px;margin:0 0 6px}
+#ui .ctl{color:#7ff0c0;margin:6px 0 4px}
+#ui .rd{color:#9fe8ff}
+#ui a{color:#ff9de0;text-decoration:none}
+label{display:block;color:#d9a76b;margin:3px 0}
+input[type=range]{width:140px;vertical-align:middle;accent-color:#ff9d3d}
+button{background:#2a1608;color:#ffc46b;border:1px solid #7a4a18;font:11px monospace;padding:3px 7px;
+ margin:2px 3px 2px 0;cursor:pointer;border-radius:3px}
+button.on{background:#7a3a08;color:#fff;box-shadow:0 0 8px #f90a}
+b{color:#fff}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>CHAIN FOUNTAIN — Mould effect</h1>
+<p class="m">Each departing link levers against the pile it leaves, so the beaker KICKS the chain upward — the chain rises in an arch above its own container.</p>
+<p class="s">Steve Mould's viral demo · explained by Biggins &amp; Warner, Proc. Roy. Soc. A (2014)</p>
+<p class="lin">LINEAGE: 19th-c. falling-chain problems → Mould's beaker clip → Biggins &amp; Warner 2014.</p>
+<label>drop height <input id="sD" type="range" min="0.15" max="1" step="0.01" value="0.7"></label>
+<label>bead mass <input id="sM" type="range" min="0.4" max="2.2" step="0.01" value="1"></label>
+<label>link stiffness <input id="sK" type="range" min="0.3" max="1" step="0.01" value="0.85"></label>
+<p class="ctl">
+<button id="bRun">↻ restart pull</button>
+<button id="bKick" class="on">KICK: ON</button>
+<button id="bSlow">slow-mo</button>
+<button id="bZoom" class="on">pickup inset</button><br>
+Toggle KICK off = pure tension (Biggins–Warner ablated) ⇒ fountain dies.</p>
+<div class="rd">
+fountain height <b id="rF">0</b> px &nbsp; peak <b id="rP">0</b><br>
+drop height <b id="rD">0</b> px &nbsp; ratio H/D <b id="rR">–</b><br>
+chain speed v <b id="rV">0</b> &nbsp; links out <b id="rL">0</b><br>
+<span style="color:#ffb64d">plot: measured H vs D (right)</span>
+</div>
+<p><a href="index.html">← gallery</a></p>
+</div>
+<script>
+(function(){
+var c=document.getElementById('c'),g=c.getContext('2d'),W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;
+ c.width=W*DPR|0;c.height=H*DPR|0;c.style.width=W+'px';c.style.height=H+'px';g.setTransform(DPR,0,0,DPR,0,0);}
+addEventListener('resize',resize);resize();
+
+var sD=document.getElementById('sD'),sM=document.getElementById('sM'),sK=document.getElementById('sK');
+var bRun=document.getElementById('bRun'),bKick=document.getElementById('bKick'),
+    bSlow=document.getElementById('bSlow'),bZoom=document.getElementById('bZoom');
+var rF=document.getElementById('rF'),rP=document.getElementById('rP'),rD=document.getElementById('rD'),
+    rR=document.getElementById('rR'),rV=document.getElementById('rV'),rL=document.getElementById('rL');
+
+var KICK=true, SLOW=false, ZOOM=true;
+bKick.onclick=function(){KICK=!KICK;bKick.className=KICK?'on':'';bKick.textContent='KICK: '+(KICK?'ON':'OFF');reset();};
+bSlow.onclick=function(){SLOW=!SLOW;bSlow.className=SLOW?'on':'';};
+bZoom.onclick=function(){ZOOM=!ZOOM;bZoom.className=ZOOM?'on':'';};
+bRun.onclick=function(){reset();};
+
+// ---- geometry / world -------------------------------------------------
+var G=1400;                    // px/s^2
+var NLINK=260, SEG=6;
+var pts=[];                    // {x,y,px,py,pin}
+var beaker,rimX,rimY,floorY,pedX;
+var released=0;                // how many links have left the pile
+var peakH=0, samples=[];       // {D:dropPx, H:heightPx}
+var lastD=-1;
+var vAvg=0;
+
+function layout(){
+  beaker={x:W*0.30,y:H*0.30,w:Math.min(150,W*0.14),h:Math.min(160,H*0.20)};
+  rimX=beaker.x+beaker.w*0.5; rimY=beaker.y;
+  pedX=beaker.x;
+  floorY=H-40;
+}
+layout();
+
+function dropPx(){return (floorY-rimY)*(+sD.value);}
+function reset(){
+  layout();
+  pts.length=0;released=0;peakH=0;vAvg=0;
+  // start: a short tail already over the rim so it begins moving
+  for(var i=0;i<NLINK;i++){
+    var x,y;
+    if(i<10){ x=rimX+6+i*2; y=rimY+i*SEG*0.9; }
+    else { // coiled in the beaker
+      var k=i-10, row=Math.floor(k/12);
+      x=beaker.x+8+((k%12)/11)*(beaker.w-16)+ (row%2?3:-3);
+      y=beaker.y+beaker.h-6-row*3.0;
+      if(y<beaker.y+8)y=beaker.y+8+Math.random()*4;
+    }
+    pts.push({x:x,y:y,px:x,py:y,pile:i>=10});
+  }
+}
+reset();
+[sD,sM,sK].forEach(function(s){s.addEventListener('input',function(){reset();});});
+
+// pickup point = top of the pile inside the beaker
+function pileTop(){
+  var best=beaker.y+beaker.h, idx=-1;
+  for(var i=released;i<pts.length;i++){ if(pts[i].pile && pts[i].y<best){best=pts[i].y;idx=i;} }
+  return {y:best,idx:idx};
+}
+
+var kickVec={x:0,y:0,mag:0,px:0,py:0};
+
+function step(dt){
+  var mass=+sM.value, stiff=+sK.value;
+  var damp=0.997;
+  // integrate free (non-pile) links
+  for(var i=0;i<pts.length;i++){
+    var p=pts[i];
+    if(p.pile){ p.px=p.x;p.py=p.y; continue; }
+    var vx=(p.x-p.px)*damp, vy=(p.y-p.py)*damp;
+    p.px=p.x;p.py=p.y;
+    p.x+=vx; p.y+=vy+G*dt*dt;
+  }
+  // constraints
+  var iters=Math.round(6+10*stiff);
+  var dropTarget=rimY+dropPx();
+  for(var it=0;it<iters;it++){
+    for(var i=0;i<pts.length-1;i++){
+      var a=pts[i],b=pts[i+1];
+      if(a.pile&&b.pile)continue;
+      var dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy)||1e-6;
+      var diff=(d-SEG)/d*0.5;
+      var wa=a.pile?0:1, wb=b.pile?0:1, s=wa+wb; if(!s)continue;
+      var fa=(wa/s)*2, fb=(wb/s)*2;
+      a.x+=dx*diff*fa; a.y+=dy*diff*fa;
+      b.x-=dx*diff*fb; b.y-=dy*diff*fb;
+    }
+    // floor collision for the leading end
+    for(var i=0;i<pts.length;i++){
+      var p=pts[i]; if(p.pile)continue;
+      if(p.y>dropTarget){p.y=dropTarget; p.x+=(p.x-p.px)*0.6; p.py=p.y;}
+      // beaker walls (outside only, keeps arch from cutting through glass)
+      if(p.y<beaker.y+beaker.h && p.y>beaker.y && p.x>beaker.x && p.x<rimX-2 && i<released){
+        p.x=rimX+2;
+      }
+    }
+  }
+
+  // --- release / pickup dynamics ---------------------------------------
+  // speed of the moving chain measured near the rim
+  var lead=pts[Math.min(pts.length-1,released+4)];
+  var v=Math.hypot(lead.x-lead.px,lead.y-lead.py)/dt;
+  vAvg=vAvg*0.9+v*0.1;
+
+  var pt=pileTop();
+  // release rate proportional to chain speed
+  var releaseRate=vAvg/SEG;
+  releaseAcc+=releaseRate*dt;
+  while(releaseAcc>=1 && released<pts.length-2){
+    releaseAcc-=1;
+    var idx=released;
+    var p=pts[idx];
+    p.pile=false;
+    // place the newly released link at the pile top, moving toward the rim
+    p.x=pt.idx>=0?pts[pt.idx].x:beaker.x+beaker.w*0.5;
+    p.y=pt.y;
+    var dirx=rimX-p.x, diry=rimY-p.y, dl=Math.hypot(dirx,diry)||1; dirx/=dl;diry/=dl;
+    var sp=Math.max(60,vAvg);
+    var vx=dirx*sp, vy=diry*sp;
+    if(KICK){
+      // Biggins–Warner: the link levers on the pile; the pile pushes back UP.
+      // Reaction impulse ~ rho * v^2 * (lever factor), directed upward.
+      var kick=0.42*Math.sqrt(mass)*sp;          // px/s of extra upward velocity
+      vy-=kick;
+      kickVec.x=p.x;kickVec.y=p.y;kickVec.mag=kick;kickVec.px=0;kickVec.py=-kick;
+    } else {
+      kickVec.mag=0;kickVec.x=p.x;kickVec.y=p.y;
+    }
+    p.px=p.x-vx*dt; p.py=p.y-vy*dt;
+    released++;
+  }
+}
+var releaseAcc=0;
+
+function measure(){
+  var top=1e9;
+  for(var i=0;i<released;i++){ if(!pts[i].pile && pts[i].y<top) top=pts[i].y; }
+  if(top>1e8) return 0;
+  return Math.max(0,rimY-top);         // fountain height above the rim
+}
+
+// ---- render -----------------------------------------------------------
+var t=0;
+function draw(){
+  g.fillStyle='#05040a';g.fillRect(0,0,W,H);
+  // floor
+  var dropTarget=rimY+dropPx();
+  g.strokeStyle='rgba(120,80,50,.5)';g.lineWidth=2;
+  g.beginPath();g.moveTo(0,dropTarget);g.lineTo(W,dropTarget);g.stroke();
+  g.fillStyle='rgba(150,100,60,.35)';g.font='10px monospace';
+  g.fillText('floor / drop height D',12,dropTarget-6);
+  // drop-height ruler
+  g.strokeStyle='rgba(255,157,61,.45)';g.setLineDash([4,4]);
+  g.beginPath();g.moveTo(rimX-70,rimY);g.lineTo(rimX-70,dropTarget);g.stroke();g.setLineDash([]);
+  g.fillStyle='rgba(255,180,90,.8)';g.fillText('D',rimX-84,(rimY+dropTarget)/2);
+
+  // pedestal
+  g.fillStyle='rgba(60,40,30,.8)';
+  g.fillRect(beaker.x+beaker.w*0.25,beaker.y+beaker.h,beaker.w*0.5,H);
+  // beaker (back)
+  g.fillStyle='rgba(20,30,45,.55)';
+  g.fillRect(beaker.x,beaker.y,beaker.w,beaker.h);
+
+  // chain
+  g.lineJoin='round';
+  g.strokeStyle='rgba(255,190,110,.25)';g.lineWidth=6;g.shadowColor='#ffa53d';g.shadowBlur=16;
+  g.beginPath();
+  var started=false;
+  for(var i=0;i<pts.length;i++){var p=pts[i];if(p.pile)continue;
+    if(!started){g.moveTo(p.x,p.y);started=true;}else g.lineTo(p.x,p.y);}
+  g.stroke();g.shadowBlur=0;
+  g.strokeStyle='rgba(255,225,170,.95)';g.lineWidth=2;g.stroke();
+  // beads
+  for(var i=0;i<pts.length;i+=2){var p=pts[i];
+    g.fillStyle=p.pile?'rgba(150,120,90,.6)':'rgba(255,235,190,.9)';
+    g.beginPath();g.arc(p.x,p.y,p.pile?1.6:2.0,0,7);g.fill();}
+
+  // beaker (front rim)
+  g.strokeStyle='rgba(150,220,255,.8)';g.lineWidth=2.5;g.shadowColor='#6cf';g.shadowBlur=10;
+  g.beginPath();
+  g.moveTo(beaker.x,beaker.y);g.lineTo(beaker.x,beaker.y+beaker.h);
+  g.lineTo(beaker.x+beaker.w,beaker.y+beaker.h);g.lineTo(beaker.x+beaker.w,beaker.y);
+  g.stroke();g.shadowBlur=0;
+
+  // fountain height marker
+  var Hf=measure();
+  var top=rimY-Hf;
+  if(Hf>2){
+    g.strokeStyle='rgba(120,255,200,.75)';g.setLineDash([5,4]);
+    g.beginPath();g.moveTo(beaker.x-40,top);g.lineTo(W*0.72,top);g.stroke();
+    g.beginPath();g.moveTo(beaker.x-40,rimY);g.lineTo(W*0.72,rimY);g.stroke();g.setLineDash([]);
+    g.fillStyle='rgba(140,255,210,.95)';g.font='11px monospace';
+    g.fillText('fountain height H = '+Hf.toFixed(0)+' px  ('+(KICK?'kick ON':'KICK ABLATED')+')',beaker.x-38,top-6);
+  }
+
+  // pickup inset with force arrows
+  if(ZOOM){
+    var ix=W-235,iy=H-215,iw=210,ih=180;
+    g.fillStyle='rgba(4,2,10,.85)';g.fillRect(ix,iy,iw,ih);
+    g.strokeStyle='rgba(255,157,61,.55)';g.lineWidth=1;g.strokeRect(ix,iy,iw,ih);
+    g.fillStyle='rgba(255,190,110,.9)';g.font='10px monospace';
+    g.fillText('PICKUP ZOOM — the lever & its reaction',ix+8,iy+14);
+    var cx=ix+iw*0.5, cy=iy+ih*0.62, Z=5;
+    // pile surface
+    g.strokeStyle='rgba(150,120,90,.7)';g.lineWidth=2;
+    g.beginPath();g.moveTo(ix+16,cy+22);g.lineTo(ix+iw-16,cy+22);g.stroke();
+    // a rigid link levering
+    var ang=-0.9+0.35*Math.sin(t*4);
+    g.strokeStyle='rgba(255,235,190,.95)';g.lineWidth=4;
+    g.beginPath();g.moveTo(cx-26,cy+22);g.lineTo(cx-26+Math.cos(ang)*46,cy+22+Math.sin(ang)*46);g.stroke();
+    g.fillStyle='rgba(255,235,190,.95)';
+    g.beginPath();g.arc(cx-26,cy+22,4,0,7);g.fill();
+    // tension arrow (up-right)
+    arrow(cx-26+Math.cos(ang)*46,cy+22+Math.sin(ang)*46, 44,-26,'rgba(120,220,255,.95)','T tension');
+    if(KICK){
+      arrow(cx-26,cy+22, 0,-52,'rgba(255,120,120,.95)','R  pile reaction (the KICK)');
+      g.fillStyle='rgba(255,140,140,.9)';
+      g.fillText('R = '+kickVec.mag.toFixed(0),cx-70,cy+52);
+    } else {
+      g.fillStyle='rgba(255,120,120,.85)';
+      g.fillText('R = 0  (ablated → no fountain)',ix+12,cy+56);
+    }
+    g.fillStyle='rgba(180,210,230,.7)';
+    g.fillText('link pivots on the pile ⇒ pile pushes up',ix+10,iy+ih-10);
+  }
+
+  // H vs D plot
+  var px0=W-235,py0=24,pw=210,ph=140;
+  g.fillStyle='rgba(4,2,10,.8)';g.fillRect(px0,py0,pw,ph);
+  g.strokeStyle='rgba(255,157,61,.45)';g.strokeRect(px0,py0,pw,ph);
+  g.fillStyle='rgba(255,190,110,.9)';g.font='10px monospace';
+  g.fillText('measured  H  vs  drop height D',px0+8,py0+13);
+  g.strokeStyle='rgba(120,160,190,.35)';
+  g.beginPath();g.moveTo(px0+26,py0+ph-20);g.lineTo(px0+pw-8,py0+ph-20);
+  g.moveTo(px0+26,py0+ph-20);g.lineTo(px0+26,py0+22);g.stroke();
+  g.fillStyle='rgba(140,180,200,.7)';g.fillText('D →',px0+pw-30,py0+ph-7);
+  g.save();g.translate(px0+12,py0+70);g.rotate(-Math.PI/2);g.fillText('H',0,0);g.restore();
+  var maxD=(floorY-rimY), maxH=Math.max(60,peakH*1.15);
+  for(var i=0;i<samples.length;i++){
+    var s=samples[i];
+    var X=px0+26+(s.D/maxD)*(pw-40), Y=py0+ph-20-(s.H/maxH)*(ph-46);
+    g.fillStyle=s.k?'rgba(140,255,200,.95)':'rgba(255,110,110,.9)';
+    g.beginPath();g.arc(X,Y,2.6,0,7);g.fill();
+  }
+  // live point
+  var X=px0+26+(dropPx()/maxD)*(pw-40), Y=py0+ph-20-(Hf/maxH)*(ph-46);
+  g.strokeStyle='#fff';g.lineWidth=1.4;g.beginPath();g.arc(X,Y,5,0,7);g.stroke();
+  g.fillStyle='rgba(140,255,200,.7)';g.fillText('green = kick ON',px0+34,py0+26);
+  g.fillStyle='rgba(255,110,110,.7)';g.fillText('red = ablated',px0+34,py0+38);
+
+  function arrow(x,y,dx,dy,col,lab){
+    g.strokeStyle=col;g.lineWidth=2;g.shadowColor=col;g.shadowBlur=8;
+    g.beginPath();g.moveTo(x,y);g.lineTo(x+dx,y+dy);g.stroke();
+    var a=Math.atan2(dy,dx);
+    g.beginPath();g.moveTo(x+dx,y+dy);
+    g.lineTo(x+dx-8*Math.cos(a-0.4),y+dy-8*Math.sin(a-0.4));
+    g.lineTo(x+dx-8*Math.cos(a+0.4),y+dy-8*Math.sin(a+0.4));
+    g.closePath();g.fillStyle=col;g.fill();g.shadowBlur=0;
+    g.font='9px monospace';g.fillText(lab,x+dx+4,y+dy-2);
+  }
+  return Hf;
+}
+
+var last=performance.now(), sampleT=0;
+function frame(now){
+  var dt=Math.min(0.032,(now-last)/1000);last=now;
+  var scale=SLOW?0.25:1;
+  t+=dt*scale;
+  var sub=3;
+  for(var k=0;k<sub;k++) step(dt*scale/sub);
+  var Hf=draw();
+  if(Hf>peakH)peakH=Hf;
+  sampleT+=dt;
+  if(sampleT>0.35 && released>40){
+    sampleT=0;
+    samples.push({D:dropPx(),H:Hf,k:KICK});
+    if(samples.length>260)samples.shift();
+  }
+  rF.textContent=Hf.toFixed(0);rP.textContent=peakH.toFixed(0);
+  rD.textContent=dropPx().toFixed(0);
+  rR.textContent=dropPx()>0?(Hf/dropPx()).toFixed(3):'–';
+  rV.textContent=vAvg.toFixed(0)+' px/s';
+  rL.textContent=released;
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// expose reduced model for verification
+window.__chain={dropPx:dropPx,measure:measure,setKick:function(v){KICK=v;reset();},reset:reset};
+})();
+</script>

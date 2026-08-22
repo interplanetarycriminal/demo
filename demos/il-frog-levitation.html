@@ -1,0 +1,296 @@
+<title>The Levitating Frog</title>
+<style>
+html,body{margin:0;padding:0;background:#04060b;overflow:hidden;height:100%}
+canvas{display:block}
+#ui{position:fixed;top:0;left:0;padding:10px 12px;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;
+ color:#c9e6ff;background:rgba(3,7,14,.64);border-right:1px solid #16344c;border-bottom:1px solid #16344c;
+ max-width:340px;text-shadow:0 0 8px rgba(90,190,255,.4);z-index:10;backdrop-filter:blur(3px)}
+#ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.14em;color:#8ef0d8;text-transform:uppercase}
+#ui .m{color:#90b4cc;margin:0 0 5px}
+#ui .sci{color:#ffcf7a;margin:0 0 2px}
+#ui .lin{color:#7d92a8;margin:0 0 7px;font-size:10px}
+#ui .row{display:flex;align-items:center;gap:6px;margin:3px 0}
+#ui .row label{width:62px;color:#9fd8ee}
+#ui input[type=range]{flex:1;height:3px;-webkit-appearance:none;appearance:none;background:#1b4257;outline:none;border-radius:2px}
+#ui input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:#7df0d0;box-shadow:0 0 9px #3fe0b8;cursor:pointer}
+#ui .v{width:66px;text-align:right;color:#ffe7a8}
+#ui .out{margin-top:7px;border-top:1px solid #163a52;padding-top:6px;color:#9ae7c0;white-space:pre}
+#ui .eq{color:#ffb0d8;margin-top:4px}
+#ui .warn{color:#ff9a7a;margin-top:3px}
+#ui a{color:#68d0ff;text-decoration:none;display:inline-block;margin-top:7px}
+#ui button,#ui select{background:#0d2637;color:#9fe7ff;border:1px solid #1d5674;font:10px ui-monospace,monospace;padding:3px 6px;cursor:pointer;border-radius:3px;margin-right:4px}
+#ui button:hover{background:#14405c}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>The Levitating Frog</h1>
+<p class="m">Water is diamagnetic (χ=−9.0e−6), so in a 16 T Bitter solenoid the force χρ/μ₀·B·dB/dz on every molecule balances ρg — and a living frog floats.</p>
+<p class="sci">Andre Geim &amp; colleagues, 1997 · Ig Nobel 2000 · Nobel 2010 (graphene) — the only person with both</p>
+<p class="lin">LINEAGE: Faraday diamagnetism 1845 → Geim's frog 1997 → desktop graphite float</p>
+<div class="row"><label>B₀ peak</label><input id="sB" type="range" min="0" max="300" value="160"><span class="v" id="vB"></span></div>
+<div class="row"><label>object</label><select id="selObj">
+<option value="water">water drop</option><option value="frog" selected>frog</option>
+<option value="straw">strawberry</option><option value="human">human</option></select></div>
+<div><button id="bPerturb">perturb</button><button id="bDrop">release at top</button></div>
+<div style="color:#7d92a8;margin-top:4px">drag B₀ through ~16 T · click bore to nudge</div>
+<div class="eq" id="eq"></div>
+<div class="out" id="out"></div>
+<div class="warn" id="warn"></div>
+<a href="index.html">← gallery</a>
+</div>
+<script>
+(function(){
+"use strict";
+var c=document.getElementById('c'),g=c.getContext('2d');
+var W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
+ c.width=Math.floor(W*DPR);c.height=Math.floor(H*DPR);c.style.width=W+'px';c.style.height=H+'px';g.setTransform(DPR,0,0,DPR,0,0);}
+window.addEventListener('resize',resize);
+
+var MU0=4*Math.PI*1e-7, Gs=9.81;
+// on-axis profile of a solenoid of half-length a: B(z)=B0/(1+(z/a)^2)^(3/2)  (Lorentzian-cubed, standard analytic bore model)
+var A=0.10;           // 10 cm characteristic half-length of the 32 mm bore Bitter coil
+var B0=16.0;
+
+function Bz(z){var u=z/A;return B0/Math.pow(1+u*u,1.5);}
+function dBz(z){var u=z/A;return -3*B0*u/(A*Math.pow(1+u*u,2.5));}
+function BdB(z){return Bz(z)*dBz(z);}      // T^2/m
+// levitation condition (upward force): -chi/mu0 * B dB/dz = rho*g / rho  -> per unit mass:
+// a_mag(z) = (chi/(mu0*rho)) * rho * B dB/dz / rho  ... per-volume: F/V = chi/mu0 * B dB/dz
+// with chi<0 and dB/dz<0 above centre => F/V positive (upward). Balance: -chi/mu0*|B dB/dz| = rho g
+var OBJ={
+ water:{name:'water drop',chi:-9.0e-6,rho:1000,scale:.35,label:'pure water'},
+ frog:{name:'frog',chi:-8.8e-6,rho:1030,scale:1.0,label:'~2.5 g tree frog, 92% water'},
+ straw:{name:'strawberry',chi:-8.6e-6,rho:960,scale:.8,label:'the other Nijmegen classic'},
+ human:{name:'human',chi:-9.0e-6,rho:1010,scale:2.6,label:'~40 T and a very big bore — nobody has'}
+};
+var cur=OBJ.frog;
+
+// net vertical acceleration at height z (z>0 above coil centre, magnet field falls off)
+function accel(z){
+  return (cur.chi/(MU0*cur.rho))*BdB(z) - Gs;
+}
+// find equilibrium above centre by bisection on accel
+function findEq(){
+  var lo=0.0005,hi=0.35, alo=accel(lo),ahi=accel(hi);
+  if(!(alo>0&&ahi<0))return null;
+  for(var i=0;i<60;i++){var mid=.5*(lo+hi),am=accel(mid);if(am>0)lo=mid;else hi=mid;}
+  return .5*(lo+hi);
+}
+// threshold B0 that first makes levitation possible (max of magnetic accel term == g)
+function thresholdB0(){
+  // max of |B dB/dz| for B(z)=B0 f(z): scales as B0^2 -> find max of f*f' numerically at B0=1
+  var save=B0;B0=1;var mx=0;
+  for(var z=0.0005;z<0.4;z+=0.0005){var v=-BdB(z);if(v>mx)mx=v;}
+  B0=save;
+  // need -chi/mu0 * B0^2 * mx = rho g
+  return Math.sqrt(cur.rho*Gs*MU0/(-cur.chi*mx));
+}
+
+var body={z:0.06,v:0,ph:0,fallen:false};
+var eqZ=null;
+
+// ---------- view ----------
+function sy(z){return H*0.60 - z*(H*0.62/0.16);}
+function uz(py){return (H*0.60-py)/(H*0.62/0.16);}
+var boreCX=function(){return W*0.60;};
+var boreHW=function(){return Math.min(W*0.10,110);};
+
+function drawSolenoid(){
+  var cx=boreCX(),hw=boreHW(),top=sy(0.19),bot=sy(-0.13);
+  // bore glow
+  var grd=g.createLinearGradient(cx-hw,0,cx+hw,0);
+  grd.addColorStop(0,'rgba(20,60,90,.15)');grd.addColorStop(.5,'rgba(70,190,255,.10)');grd.addColorStop(1,'rgba(20,60,90,.15)');
+  g.fillStyle=grd;g.fillRect(cx-hw,top,hw*2,bot-top);
+  // Bitter plates: stacked copper discs, brightness ∝ local |B|
+  var n=42;
+  for(var i=0;i<n;i++){
+    var z=-0.115+ (0.30)*i/(n-1);
+    var y=sy(z),th=(bot-top)/n*0.72;
+    var t=Math.min(1,Bz(z)/Math.max(1e-6,B0));
+    // left and right plate cross-sections
+    for(var s=-1;s<=1;s+=2){
+      var x0=cx+s*hw, wdt=s*Math.min(W*0.07,72);
+      g.save();g.shadowBlur=10;g.shadowColor='rgba(255,150,60,'+(0.15+0.5*t)+')';
+      g.fillStyle='rgba('+Math.floor(150+90*t)+','+Math.floor(70+70*t)+','+Math.floor(40+30*t)+',.9)';
+      g.fillRect(Math.min(x0,x0+wdt),y-th/2,Math.abs(wdt),th);
+      g.restore();
+      g.strokeStyle='rgba(255,200,140,.18)';g.strokeRect(Math.min(x0,x0+wdt),y-th/2,Math.abs(wdt),th);
+    }
+  }
+  // bore wall
+  g.strokeStyle='rgba(150,220,255,.35)';g.lineWidth=1.5;
+  g.beginPath();g.moveTo(cx-hw,top);g.lineTo(cx-hw,bot);g.moveTo(cx+hw,top);g.lineTo(cx+hw,bot);g.stroke();
+  g.font='10px ui-monospace,monospace';g.fillStyle='rgba(255,190,120,.7)';g.textAlign='center';
+  g.fillText('BITTER SOLENOID · 32 mm bore · cutaway',cx,top-12);
+  g.fillStyle='rgba(140,200,230,.55)';
+  g.fillText('coil centre z = 0',cx,sy(0)+4);
+  g.textAlign='left';
+  g.save();g.setLineDash([3,5]);g.strokeStyle='rgba(140,200,230,.3)';
+  g.beginPath();g.moveTo(cx-hw,sy(0));g.lineTo(cx+hw,sy(0));g.stroke();g.restore();
+}
+
+function drawProfiles(){
+  var x0=W*0.05,x1=Math.min(W*0.30,320),top=sy(0.19),bot=sy(-0.13);
+  g.save();
+  g.fillStyle='rgba(5,10,18,.55)';g.fillRect(x0-14,top-26,(x1-x0)+28,(bot-top)+44);
+  g.strokeStyle='rgba(90,150,180,.4)';g.strokeRect(x0-14,top-26,(x1-x0)+28,(bot-top)+44);
+  g.font='10px ui-monospace,monospace';
+  g.fillStyle='#8ef0d8';g.fillText('B(z)  [T]',x0,top-12);
+  g.fillStyle='#ff9ad0';g.fillText('B·dB/dz  [T²/m]',x0+92,top-12);
+  var maxB=Math.max(1e-6,B0), maxG=1e-6;
+  for(var z=-0.13;z<0.19;z+=0.002){var v=Math.abs(BdB(z));if(v>maxG)maxG=v;}
+  // B(z)
+  g.beginPath();
+  for(var i=0;i<=160;i++){
+    var z=-0.13+(0.32)*i/160, py=sy(z), px=x0+Bz(z)/maxB*(x1-x0);
+    if(i===0)g.moveTo(px,py);else g.lineTo(px,py);
+  }
+  g.shadowBlur=10;g.shadowColor='#3fe0b8';g.strokeStyle='#8ef0d8';g.lineWidth=2;g.stroke();
+  // B dB/dz  (mirrored, positive = up-force)
+  g.beginPath();
+  for(var i2=0;i2<=160;i2++){
+    var z2=-0.13+(0.32)*i2/160, py2=sy(z2), px2=x0+(x1-x0)*0.5+(-BdB(z2))/maxG*(x1-x0)*0.45;
+    if(i2===0)g.moveTo(px2,py2);else g.lineTo(px2,py2);
+  }
+  g.shadowColor='#ff5fae';g.strokeStyle='#ff9ad0';g.stroke();g.shadowBlur=0;
+  g.setLineDash([2,4]);g.strokeStyle='rgba(140,180,210,.3)';
+  g.beginPath();g.moveTo(x0+(x1-x0)*0.5,top);g.lineTo(x0+(x1-x0)*0.5,bot);g.stroke();g.setLineDash([]);
+  // equilibrium marker
+  if(eqZ!==null){
+    var ey=sy(eqZ);
+    g.strokeStyle='rgba(255,215,120,.85)';g.beginPath();g.moveTo(x0-12,ey);g.lineTo(x1+12,ey);g.stroke();
+    g.fillStyle='#ffd778';g.fillText('z* = '+(eqZ*100).toFixed(1)+' cm',x0-10,ey-4);
+  }
+  g.restore();
+}
+
+function drawBody(){
+  var cx=boreCX(), y=sy(body.z), s=Math.min(W,H)*0.0009*36*cur.scale*0.5;
+  var wob=Math.sin(body.ph)*3;
+  g.save();g.translate(cx+wob,y);g.rotate(Math.sin(body.ph*0.7)*0.06);
+  g.shadowBlur=26;g.shadowColor='rgba(120,255,200,.55)';
+  var key=selObj.value;
+  if(key==='water'){
+    g.fillStyle='rgba(140,220,255,.85)';
+    g.beginPath();g.ellipse(0,0,s*0.5,s*0.58,0,0,6.284);g.fill();
+    g.strokeStyle='rgba(220,255,255,.8)';g.stroke();
+  }else if(key==='straw'){
+    g.fillStyle='#e0405f';g.beginPath();
+    g.moveTo(0,s*0.75);g.bezierCurveTo(-s*0.7,s*0.2,-s*0.55,-s*0.55,0,-s*0.5);
+    g.bezierCurveTo(s*0.55,-s*0.55,s*0.7,s*0.2,0,s*0.75);g.fill();
+    g.fillStyle='#4bd06a';g.beginPath();
+    for(var k=0;k<5;k++){var a=-Math.PI/2+k*0.6-1.2;g.moveTo(0,-s*0.5);g.lineTo(Math.cos(a)*s*0.45,-s*0.5+Math.sin(a)*s*0.35);}
+    g.lineWidth=3;g.strokeStyle='#4bd06a';g.stroke();
+  }else{
+    // frog / human silhouette (frog is charming; human is just bigger)
+    g.fillStyle=key==='human'?'rgba(200,220,255,.9)':'#8fe36a';
+    g.beginPath();g.ellipse(0,0,s*0.55,s*0.40,0,0,6.284);g.fill();      // body
+    g.beginPath();g.ellipse(0,-s*0.42,s*0.36,s*0.28,0,0,6.284);g.fill(); // head
+    if(key!=='human'){
+      // eyes
+      g.fillStyle='#f7ffd9';g.beginPath();g.arc(-s*0.19,-s*0.60,s*0.12,0,6.284);g.arc(s*0.19,-s*0.60,s*0.12,0,6.284);g.fill();
+      g.fillStyle='#12240c';g.beginPath();g.arc(-s*0.19,-s*0.60,s*0.055,0,6.284);g.arc(s*0.19,-s*0.60,s*0.055,0,6.284);g.fill();
+      // legs
+      g.strokeStyle='#8fe36a';g.lineWidth=s*0.13;g.lineCap='round';
+      g.beginPath();g.moveTo(-s*0.42,s*0.18);g.lineTo(-s*0.72,s*0.42);g.lineTo(-s*0.5,s*0.62);
+      g.moveTo(s*0.42,s*0.18);g.lineTo(s*0.72,s*0.42);g.lineTo(s*0.5,s*0.62);
+      g.moveTo(-s*0.34,-s*0.16);g.lineTo(-s*0.62,-s*0.05);
+      g.moveTo(s*0.34,-s*0.16);g.lineTo(s*0.62,-s*0.05);
+      g.stroke();
+    }else{
+      g.strokeStyle='rgba(200,220,255,.9)';g.lineWidth=s*0.14;g.lineCap='round';
+      g.beginPath();g.moveTo(-s*0.2,s*0.36);g.lineTo(-s*0.26,s*0.8);g.moveTo(s*0.2,s*0.36);g.lineTo(s*0.26,s*0.8);
+      g.moveTo(-s*0.5,-s*0.1);g.lineTo(-s*0.85,s*0.2);g.moveTo(s*0.5,-s*0.1);g.lineTo(s*0.85,s*0.2);g.stroke();
+    }
+  }
+  g.restore();
+  // force arrows
+  var aMag=(cur.chi/(MU0*cur.rho))*BdB(body.z);
+  var sc=Math.min(70,Math.abs(aMag)/Gs*40);
+  arrow(cx+38,y,0,-sc,'rgba(120,255,210,.9)','F_mag');
+  arrow(cx+70,y,0,40*Math.min(1.6,1),'rgba(255,140,140,.9)','mg');
+}
+function arrow(x,y,dx,dy,col,lab){
+  g.save();g.strokeStyle=col;g.fillStyle=col;g.lineWidth=2;g.shadowBlur=8;g.shadowColor=col;
+  g.beginPath();g.moveTo(x,y);g.lineTo(x+dx,y+dy);g.stroke();
+  var a=Math.atan2(dy,dx);
+  g.beginPath();g.moveTo(x+dx,y+dy);
+  g.lineTo(x+dx-8*Math.cos(a-0.4),y+dy-8*Math.sin(a-0.4));
+  g.lineTo(x+dx-8*Math.cos(a+0.4),y+dy-8*Math.sin(a+0.4));g.closePath();g.fill();
+  g.shadowBlur=0;g.font='10px ui-monospace,monospace';g.fillText(lab,x+dx+5,y+dy);
+  g.restore();
+}
+
+// ---------- UI ----------
+var sB=document.getElementById('sB'),vB=document.getElementById('vB'),selObj=document.getElementById('selObj');
+var out=document.getElementById('out'),eq=document.getElementById('eq'),warn=document.getElementById('warn');
+function sync(){
+  B0=sB.value/10;                      // 0 .. 30 T
+  vB.textContent=B0.toFixed(1)+' T';
+  cur=OBJ[selObj.value];
+  if(selObj.value==='human'){A=0.10;} else {A=0.10;}
+}
+sB.oninput=sync;selObj.onchange=function(){sync();body.z=0.06;body.v=0;body.fallen=false;};
+document.getElementById('bPerturb').onclick=function(){body.v+=(Math.random()-0.3)*0.35;};
+document.getElementById('bDrop').onclick=function(){body.z=0.16;body.v=0;body.fallen=false;};
+c.addEventListener('mousedown',function(e){
+  var r=c.getBoundingClientRect(),px=e.clientX-r.left,py=e.clientY-r.top;
+  if(Math.abs(px-boreCX())<boreHW()+40){body.z=Math.max(-0.10,Math.min(0.18,uz(py)));body.v=0;body.fallen=false;}
+});
+
+// ---------- loop ----------
+var last=performance.now();
+function frame(now){
+  var dt=Math.min(0.033,(now-last)/1000);last=now;
+  eqZ=findEq();
+  var sub=4,h=dt/sub;
+  for(var i=0;i<sub;i++){
+    var a=accel(body.z);
+    body.v+=a*h;
+    body.v*=Math.pow(0.35,h);           // viscous/eddy damping — weak well, slow wobble
+    body.z+=body.v*h;
+    if(body.z<-0.12){body.z=-0.12;body.v=0;body.fallen=true;}
+    if(body.z>0.30){body.z=0.30;body.v=0;}
+  }
+  body.ph+=dt*(2.2+Math.abs(body.v)*40);
+
+  g.fillStyle='#04060b';g.fillRect(0,0,W,H);
+  // vignette starfield-ish glow
+  var vg=g.createRadialGradient(W*0.6,H*0.5,10,W*0.6,H*0.5,Math.max(W,H)*0.75);
+  vg.addColorStop(0,'rgba(20,60,90,.30)');vg.addColorStop(1,'rgba(0,0,0,0)');
+  g.fillStyle=vg;g.fillRect(0,0,W,H);
+  drawSolenoid();drawProfiles();drawBody();
+
+  g.save();g.font='11px ui-monospace,monospace';g.textAlign='center';
+  g.fillStyle='rgba(150,200,225,.75)';
+  g.fillText('B(z) = B₀ / (1 + (z/a)²)^{3/2},  a = 10 cm  —  analytic on-axis solenoid profile',W/2,H-22);
+  g.fillStyle='rgba(255,190,120,.7)';
+  g.fillText('every water molecule feels the same pull — that is why the whole animal floats, unharmed',W/2,H-6);
+  g.restore();
+
+  var th=thresholdB0();
+  var Fm=(cur.chi/MU0)*BdB(body.z);     // N/m^3, positive = up
+  var Wt=cur.rho*Gs;
+  eq.innerHTML='χ·ρ/μ₀ · B·dB/dz = ρg &nbsp;→&nbsp; B₀* = '+th.toFixed(2)+' T';
+  out.textContent=
+   'object   : '+cur.name+'\n'+
+   '           '+cur.label+'\n'+
+   'χ        : '+(cur.chi*1e6).toFixed(1)+'e−6   ρ = '+cur.rho+' kg/m³\n'+
+   'B₀       : '+B0.toFixed(2)+' T\n'+
+   'B here   : '+Bz(body.z).toFixed(2)+' T\n'+
+   'B·dB/dz  : '+BdB(body.z).toFixed(1)+' T²/m\n'+
+   'F_mag    : '+(Fm/1000).toFixed(2)+' kN/m³  up\n'+
+   'weight   : '+(Wt/1000).toFixed(2)+' kN/m³  down\n'+
+   'height   : '+(body.z*100).toFixed(2)+' cm\n'+
+   'z*       : '+(eqZ!==null?(eqZ*100).toFixed(2)+' cm':'— none, it falls —');
+  if(B0<th*0.985)warn.textContent='Below threshold ('+th.toFixed(2)+' T): magnetic lift < weight. It sags and drops.';
+  else if(B0<th*1.02)warn.textContent='AT THRESHOLD — it just hangs. This is the 1997 photograph.';
+  else warn.textContent=selObj.value==='human'?'Levitates in the model — but a real human needs ~40 T and a metre-wide bore. Nobody has built one.':'Above threshold — equilibrium rides higher up the bore.';
+  requestAnimationFrame(frame);
+}
+resize();sync();requestAnimationFrame(frame);
+})();
+</script>

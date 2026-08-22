@@ -1,0 +1,349 @@
+<title>Green Flash</title>
+<style>
+html,body{margin:0;padding:0;height:100%;background:#04060e;overflow:hidden}
+canvas{display:block;position:fixed;inset:0}
+#ui{position:fixed;top:0;left:0;margin:12px;padding:10px 12px;max-width:350px;
+  background:rgba(5,9,18,.64);border:1px solid rgba(120,255,190,.25);border-radius:8px;
+  color:#d6f5e6;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;
+  text-shadow:0 0 8px rgba(90,255,180,.4);backdrop-filter:blur(4px);z-index:10}
+#ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.14em;color:#7dffb0;text-shadow:0 0 12px rgba(90,255,150,.8)}
+#ui .m{color:#eafff4;opacity:.92}
+#ui .s{color:#ffcf7d;opacity:.8}
+#ui .lin{color:#8fd0ff;opacity:.85;margin:5px 0}
+#ui hr{border:0;border-top:1px solid rgba(120,255,190,.18);margin:7px 0}
+#ui label{display:flex;align-items:center;gap:7px;margin:3px 0}
+#ui label span{min-width:84px;color:#8fe8c0}
+#ui input[type=range]{flex:1;height:3px;-webkit-appearance:none;appearance:none;
+  background:linear-gradient(90deg,#1c5f45,#7dffb0);border-radius:2px;outline:none}
+#ui input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:11px;border-radius:50%;
+  background:#7dffb0;box-shadow:0 0 9px #3fff9a;cursor:pointer}
+#ui input[type=range]::-moz-range-thumb{width:11px;height:11px;border:0;border-radius:50%;background:#7dffb0;box-shadow:0 0 9px #3fff9a}
+#ui b{color:#7dffb0;font-weight:600}
+#ui a{color:#8fd0ff;text-decoration:none;border-bottom:1px dotted #8fd0ff}
+#ui .k{color:#9fb}
+.btn{display:inline-block;margin:2px 3px 2px 0;padding:3px 7px;border:1px solid rgba(120,255,190,.4);
+  border-radius:4px;color:#7dffb0;cursor:pointer;user-select:none;background:rgba(30,120,80,.2)}
+.btn:hover{background:rgba(60,200,130,.32)}
+.btn.on{background:rgba(90,255,170,.4);color:#04140c}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>GREEN FLASH</h1>
+<div class="m">The atmosphere is a weak prism: it refracts blue light more than red, so the sun's red disc sets first and for a heartbeat only the green rim still clears the horizon.</div>
+<div class="s">Popularized by Jules Verne, "Le Rayon Vert" 1882; explained as atmospheric dispersion + mirage magnification</div>
+<div class="lin">LINEAGE: dispersion prism → inferior-mirage flash → mock-mirage flash</div>
+<hr>
+<div><span class="btn on" id="bAuto">auto sunset</span><span class="btn" id="bInv">inversion layer (mock-mirage)</span></div>
+<label><span>sun altitude</span><input id="sA" type="range" min="-120" max="400" value="220"><b id="vA">—</b></label>
+<label><span>dispersion</span><input id="sD" type="range" min="0" max="100" value="55"><b id="vD">55</b></label>
+<label><span>speed</span><input id="sS" type="range" min="1" max="100" value="26"><b id="vS">26</b></label>
+<div class="k">[Space] pause &nbsp;[I] inversion &nbsp;drag = scrub the sun</div>
+<hr>
+<div>true alt: <b id="rA">—</b> &nbsp; refracted: <b id="rR">—</b></div>
+<div>last λ clearing: <b id="rL">—</b></div>
+<div>red set at: <b id="rRed">—</b> &nbsp; green set at: <b id="rGrn">—</b></div>
+<div>Δ(green−red): <b id="rDel">—</b> &nbsp; <b id="rFlash">—</b></div>
+<div style="margin-top:5px"><a href="index.html">← gallery</a></div>
+</div>
+<script>
+"use strict";
+var c=document.getElementById('c'),g=c.getContext('2d');
+var W=0,H=0,DPR=1;
+function resize(){DPR=Math.min(2,devicePixelRatio||1);W=innerWidth;H=innerHeight;
+ c.width=Math.round(W*DPR);c.height=Math.round(H*DPR);c.style.width=W+'px';c.style.height=H+'px';
+ g.setTransform(DPR,0,0,DPR,0,0);}
+addEventListener('resize',resize);resize();
+var el=function(i){return document.getElementById(i)};
+var sA=el('sA'),sD=el('sD'),sS=el('sS');
+var auto=true,inv=false,paused=false,TT=0,t0=performance.now(),last=t0;
+
+el('bAuto').onclick=function(){auto=!auto;this.classList.toggle('on',auto)};
+el('bInv').onclick=function(){inv=!inv;this.classList.toggle('on',inv)};
+addEventListener('keydown',function(e){
+  if(e.code==='Space'){paused=!paused;e.preventDefault()}
+  if(e.key==='i'||e.key==='I'){inv=!inv;el('bInv').classList.toggle('on',inv)}
+});
+
+// ---------- physics ----------
+// altitude in ARCMINUTES (slider units = 0.1 arcmin? use: value/10 arcmin... )
+// We work in arcminutes directly: slider -12.0 .. +40.0 arcmin.
+function trueAlt(){ return +sA.value/10; }   // arcmin
+
+// Standard atmospheric refraction (Bennett) for apparent altitude h in degrees,
+// returns refraction R in arcminutes. Near the horizon R -> ~34'.
+function refractionArcmin(hDeg){
+  var h=hDeg;
+  var R=1/Math.tan((h+7.31/(h+4.4))*Math.PI/180);   // arcmin, Bennett
+  if(!isFinite(R)||R<0)R=34.5;
+  return Math.min(42,R);
+}
+// Dispersion: refraction scales roughly with the refractivity of air, which
+// varies with wavelength (Cauchy). Relative to 550 nm:
+//   n(λ)-1 ∝ 1 + 0.00593/λ² (λ in µm)  → blue refracted MORE than red.
+function dispFactor(lamNm){
+  var L=lamNm/1000;
+  var f=(1+0.00593/(L*L))/(1+0.00593/(0.55*0.55));
+  return f;
+}
+var STRENGTH=1; // set from slider
+// Apparent (refracted) altitude of a ray of wavelength λ whose GEOMETRIC
+// altitude is a (arcmin). Refraction lifts it: apparent = true + R(λ).
+function apparentAlt(aArcmin,lamNm){
+  var hDeg=aArcmin/60;
+  var R=refractionArcmin(hDeg);
+  var Rl=R*(1+ (dispFactor(lamNm)-1)*40*STRENGTH );  // amplify for visibility
+  if(inv){
+    // an inversion layer near the horizon adds an extra, strongly
+    // altitude-dependent lift + vertical magnification for the lowest rays:
+    // this is the "mock-mirage" flash — bigger, longer, easier to see.
+    var m=Math.exp(-Math.pow((aArcmin+2.0)/5.0,2));
+    Rl += m*7.5*(1+(dispFactor(lamNm)-1)*95*STRENGTH);
+  }
+  return aArcmin + Rl;
+}
+// The horizon cuts off at apparent altitude 0. A wavelength "still clears"
+// if apparentAlt(topOfDisc, λ) > 0 for some part of the disc.
+var SUNR=16.0; // solar semi-diameter, arcmin
+
+// The altitude at which the whole disc of wavelength λ has set:
+// solve apparentAlt(a + SUNR, λ) = 0  for a  (a = disc-centre true altitude)
+function setAltitude(lamNm){
+  var lo=-60,hi=40;
+  for(var i=0;i<48;i++){
+    var mid=(lo+hi)/2;
+    if(apparentAlt(mid+SUNR,lamNm)>0)hi=mid;else lo=mid;
+  }
+  return (lo+hi)/2;
+}
+
+var BANDS=[
+  {lam:660,col:[255,58,32],name:'red'},
+  {lam:610,col:[255,132,32],name:'orange'},
+  {lam:580,col:[255,214,60],name:'yellow'},
+  {lam:545,col:[110,255,110],name:'green'},
+  {lam:495,col:[70,235,235],name:'cyan'},
+  {lam:455,col:[110,150,255],name:'blue'}
+];
+
+// ---------- rendering ----------
+function horizonY(){return H*0.62}
+var PXPM; // px per arcmin
+
+function draw(){
+  var now=performance.now(),dt=Math.min(0.05,(now-last)/1000);last=now;
+  if(!paused)TT+=dt;
+  STRENGTH=+sD.value/100;
+  if(auto&&!paused){
+    var v=+sA.value - dt*(+sS.value)*2.4;
+    if(v<-120)v=400;
+    sA.value=v;
+  }
+  var a=trueAlt();
+  var hy=horizonY();
+  PXPM=H*0.0125;   // px per arcmin
+
+  // ---- sky: built from the refracted twilight ----
+  var sg=g.createLinearGradient(0,0,0,hy);
+  var dusk=Math.max(0,Math.min(1,(20-a)/44));
+  sg.addColorStop(0, mix([6,10,32],[3,4,16],dusk));
+  sg.addColorStop(.42, mix([28,60,120],[22,26,70],dusk));
+  sg.addColorStop(.76, mix([140,120,150],[150,72,72],dusk));
+  sg.addColorStop(.94, mix([255,190,120],[255,120,60],dusk));
+  sg.addColorStop(1,  mix([255,220,160],[255,150,80],dusk));
+  g.fillStyle=sg;g.fillRect(0,0,W,hy+2);
+
+  var cx=W*0.50;
+  drawSun(cx,hy,a,PXPM,1);
+
+  // ---- sea ----
+  var se=g.createLinearGradient(0,hy,0,H);
+  se.addColorStop(0, mix([70,90,120],[30,26,48],dusk));
+  se.addColorStop(.3,'#0d1830');se.addColorStop(1,'#03060f');
+  g.fillStyle=se;g.fillRect(0,hy,W,H-hy);
+
+  // glitter path: reflection of whatever colours remain
+  drawGlitter(cx,hy,a);
+
+  // horizon
+  g.save();g.strokeStyle='rgba(255,220,180,.30)';g.lineWidth=1;
+  g.beginPath();g.moveTo(0,hy);g.lineTo(W,hy);g.stroke();g.restore();
+
+  // ---- zoomed limb inset ----
+  drawInset(a);
+  // ---- spectrum bar ----
+  drawSpectrum(a);
+
+  // vignette
+  var vg=g.createRadialGradient(W/2,H/2,H*0.3,W/2,H/2,H);
+  vg.addColorStop(0,'rgba(0,0,0,0)');vg.addColorStop(1,'rgba(0,0,0,.6)');
+  g.fillStyle=vg;g.fillRect(0,0,W,H);
+
+  // readouts
+  var redSet=setAltitude(660), grnSet=setAltitude(545);
+  var anyGreen=apparentAlt(a+SUNR,545)>0;
+  var anyRed=apparentAlt(a+SUNR,660)>0;
+  var flash = anyGreen && !anyRed;
+  el('vA').textContent=a.toFixed(1)+"'";
+  el('vD').textContent=sD.value;el('vS').textContent=sS.value;
+  el('rA').textContent=a.toFixed(2)+"'";
+  el('rR').textContent=apparentAlt(a,545).toFixed(2)+"'";
+  var lastL='—';
+  for(var i=BANDS.length-1;i>=0;i--){ if(apparentAlt(a+SUNR,BANDS[i].lam)>0){lastL=BANDS[i].lam+' nm ('+BANDS[i].name+')';} }
+  // the SHORTEST wavelength still clearing is what survives; scan up from red
+  var surv=null;
+  for(var j=0;j<BANDS.length;j++) if(apparentAlt(a+SUNR,BANDS[j].lam)>0){surv=BANDS[j];break;}
+  el('rL').textContent = surv? (surv.lam+' nm '+surv.name) : 'none — sun has set';
+  el('rRed').textContent=redSet.toFixed(2)+"'";
+  el('rGrn').textContent=grnSet.toFixed(2)+"'";
+  el('rDel').textContent=(redSet-grnSet).toFixed(2)+"'";
+  el('rFlash').textContent=flash?'★ FLASH':'';
+  el('rFlash').style.color=flash?'#7dffb0':'#456';
+
+  requestAnimationFrame(draw);
+}
+
+function mix(A,B,t){
+  return 'rgb('+Math.round(A[0]+(B[0]-A[0])*t)+','+Math.round(A[1]+(B[1]-A[1])*t)+','+Math.round(A[2]+(B[2]-A[2])*t)+')';
+}
+
+// Render the sun as several wavelength-offset discs, each clipped at the horizon
+// and vertically squashed by the altitude-dependent refraction gradient.
+function drawSun(cx,hy,a,ppm,zoom){
+  g.save();
+  g.beginPath();g.rect(0,0,W,hy);g.clip();
+  g.globalCompositeOperation='lighter';
+  var Rpx=SUNR*ppm*zoom;
+  for(var b=0;b<BANDS.length;b++){
+    var B=BANDS[b];
+    // sample the disc in horizontal slabs so each slab gets its own refraction:
+    // this produces the real flattening + the mirage-magnified rim.
+    var NS=42;
+    for(var k=0;k<NS;k++){
+      var f0=-1+2*k/NS, f1=-1+2*(k+1)/NS;
+      var mid=(f0+f1)/2;
+      var halfW=Math.sqrt(Math.max(0,1-mid*mid));
+      if(halfW<=0.001)continue;
+      var aa0=a+f0*SUNR, aa1=a+f1*SUNR;
+      var y0=hy - apparentAlt(aa0,B.lam)*ppm*zoom;
+      var y1=hy - apparentAlt(aa1,B.lam)*ppm*zoom;
+      var top=Math.min(y0,y1), h=Math.abs(y1-y0)+0.9;
+      if(top>hy)continue;
+      g.fillStyle='rgba('+B.col[0]+','+B.col[1]+','+B.col[2]+',0.30)';
+      g.fillRect(cx-halfW*Rpx, top, halfW*Rpx*2, h);
+    }
+  }
+  // hot white core where all bands overlap
+  var cy=hy-apparentAlt(a,545)*ppm*zoom;
+  if(cy<hy+Rpx){
+    var gr=g.createRadialGradient(cx,cy,0,cx,cy,Rpx*0.85);
+    gr.addColorStop(0,'rgba(255,252,235,.85)');
+    gr.addColorStop(.55,'rgba(255,225,150,.30)');
+    gr.addColorStop(1,'rgba(255,200,120,0)');
+    g.fillStyle=gr;g.beginPath();g.arc(cx,cy,Rpx*0.85,0,6.2832);g.fill();
+  }
+  // outer halo
+  var hg=g.createRadialGradient(cx,cy,Rpx*0.6,cx,cy,Rpx*5);
+  hg.addColorStop(0,'rgba(255,190,110,.22)');hg.addColorStop(1,'rgba(255,140,60,0)');
+  g.fillStyle=hg;g.beginPath();g.arc(cx,cy,Rpx*5,0,6.2832);g.fill();
+  g.restore();
+}
+
+function drawGlitter(cx,hy,a){
+  g.save();g.globalCompositeOperation='lighter';
+  var surv=null;
+  for(var j=0;j<BANDS.length;j++) if(apparentAlt(a+SUNR,BANDS[j].lam)>0){surv=BANDS[j];break;}
+  var col=surv?surv.col:[60,80,120];
+  for(var i=0;i<90;i++){
+    var f=i/90;
+    var y=hy+Math.pow(f,1.9)*(H-hy);
+    var spread=(10+f*W*0.30);
+    var n=Math.sin(i*7.7+TT*2.3)*0.5+Math.sin(i*3.1-TT*1.4)*0.5;
+    var x=cx+n*spread;
+    var w=6+f*30, al=(1-f)*0.18;
+    g.fillStyle='rgba('+col[0]+','+col[1]+','+col[2]+','+al+')';
+    g.fillRect(x-w/2,y,w,1.5+f*2);
+  }
+  g.restore();
+}
+
+var IW,IH,IX,IY;
+function drawInset(a){
+  IW=Math.min(300,W*0.26);IH=IW*0.62;IX=W-IW-16;IY=16;
+  g.save();
+  g.fillStyle='rgba(3,6,14,.86)';g.strokeStyle='rgba(120,255,190,.28)';g.lineWidth=1;
+  g.beginPath();g.rect(IX,IY,IW,IH);g.fill();g.stroke();
+  g.font='10px ui-monospace,monospace';g.fillStyle='#8fe8c0';
+  g.fillText('upper limb ×14',IX+7,IY+13);
+  g.save();
+  g.beginPath();g.rect(IX+1,IY+18,IW-2,IH-20);g.clip();
+  // local zoom: put the horizon near the bottom of the inset
+  var zhy=IY+IH-10, zppm=IH*0.30;
+  // re-draw sun into the inset coordinate frame
+  var savedW=W;
+  g.translate(IX+IW/2-W*0.5,0);   // shift so cx lands in the inset centre
+  drawSunZoom(W*0.5,zhy,a,zppm);
+  g.restore();
+  g.strokeStyle='rgba(255,220,180,.4)';g.lineWidth=1;
+  g.beginPath();g.moveTo(IX+1,IY+IH-10);g.lineTo(IX+IW-1,IY+IH-10);g.stroke();
+  g.restore();
+}
+function drawSunZoom(cx,hy,a,ppm){
+  g.save();g.globalCompositeOperation='lighter';
+  var Rpx=SUNR*ppm;
+  for(var b=0;b<BANDS.length;b++){
+    var B=BANDS[b],NS=64;
+    for(var k=0;k<NS;k++){
+      var f0=-1+2*k/NS,f1=-1+2*(k+1)/NS,mid=(f0+f1)/2;
+      var halfW=Math.sqrt(Math.max(0,1-mid*mid));
+      if(halfW<=0.001)continue;
+      var y0=hy-apparentAlt(a+f0*SUNR,B.lam)*ppm;
+      var y1=hy-apparentAlt(a+f1*SUNR,B.lam)*ppm;
+      var top=Math.min(y0,y1),h=Math.abs(y1-y0)+0.9;
+      if(top>hy)continue;
+      g.fillStyle='rgba('+B.col[0]+','+B.col[1]+','+B.col[2]+',0.34)';
+      g.fillRect(cx-halfW*Rpx,top,halfW*Rpx*2,h);
+    }
+  }
+  g.restore();
+}
+
+function drawSpectrum(a){
+  var BW=Math.min(320,W*0.28),BH=86;
+  var BX=W-BW-16,BY=IY+IH+14;
+  g.save();
+  g.fillStyle='rgba(3,6,14,.84)';g.strokeStyle='rgba(120,255,190,.28)';g.lineWidth=1;
+  g.beginPath();g.rect(BX,BY,BW,BH);g.fill();g.stroke();
+  g.font='10px ui-monospace,monospace';g.fillStyle='#8fe8c0';
+  g.fillText('which λ still clears the horizon',BX+7,BY+13);
+  var cw=(BW-16)/BANDS.length;
+  for(var i=0;i<BANDS.length;i++){
+    var B=BANDS[i];
+    var top=apparentAlt(a+SUNR,B.lam);   // apparent alt of upper limb
+    var alive=top>0;
+    var x=BX+8+i*cw;
+    g.fillStyle='rgba('+B.col[0]+','+B.col[1]+','+B.col[2]+','+(alive?0.95:0.13)+')';
+    if(alive){g.shadowColor='rgb('+B.col+')';g.shadowBlur=12;}
+    g.fillRect(x+1,BY+22,cw-3,30);
+    g.shadowBlur=0;
+    g.fillStyle=alive?'#eafff4':'#3a4a52';
+    g.fillText(B.lam,x+2,BY+64);
+    g.fillStyle=alive?'rgba(190,255,225,.8)':'#2d3b42';
+    g.fillText(alive?(top.toFixed(1)+"'"):'set',x+2,BY+77);
+  }
+  g.restore();
+}
+
+// drag to scrub
+var drag=false;
+c.addEventListener('pointerdown',function(e){drag=true;auto=false;el('bAuto').classList.remove('on');scrub(e)});
+addEventListener('pointerup',function(){drag=false});
+addEventListener('pointermove',function(e){if(drag)scrub(e)});
+function scrub(e){
+  var f=1-Math.max(0,Math.min(1,e.clientY/H));
+  sA.value=Math.round(-120+f*520);
+}
+
+requestAnimationFrame(draw);
+</script>
