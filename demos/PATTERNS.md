@@ -129,6 +129,8 @@ addEventListener('resize',resize);resize();
 9. Layout: fixed-px labels/cards under the overlay panel; giant counters overprinting captions — the most common QA reject. Always offset/stagger canvas text.
 10. LFSR tap sets must be primitive polynomials or your "PRN" is degenerate (matched filter drops 20 dB). (`cc-matched-filter`)
 
+- **Rebound sign glued stone to waterline** (il-stone-skipping): post-bounce `vy=-vn·sin(a)` (downward) → re-impact next substep → machine-gun mm-bounces, no arcs; builder verify PASSED because bounce count still peaked at 20°. Rule: verify trajectories LEAVE the surface (vy_out>0), not just that scalar laws peak in the right place.
+
 ## 6 · VERIFICATION PLAYBOOK (what made quality possible)
 
 - **Extract the real code from the HTML** for node tests (regex the `<script>` body or mark `/*PHYS-START*/` blocks) — verify the shipped math, not a re-derivation.

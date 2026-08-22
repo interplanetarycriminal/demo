@@ -75,8 +75,8 @@ function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=inne
  else{var top=Math.min(H*0.45,340)+26;st={x:14,y:top,w:W-28,h:H-top-14};}}
 addEventListener('resize',resize);resize();
 
-function block(){var bh=Math.min(st.h*0.44,250),bw=Math.min(st.w*0.34,260);
- return{w:bw,h:bh,x:st.x+st.w*0.60-bw/2,y:st.y+st.h*0.45-bh/2};}
+function block(){var bh=Math.min(st.h*0.66,342),bw=Math.min(st.w*0.60,340);
+ return{w:bw,h:bh,x:st.x+st.w/2-bw/2,y:st.y+Math.max(62,st.h*0.12)};}
 
 function step(dt){
  t+=dt;
@@ -119,67 +119,66 @@ function draw(){
  for(var i=0;i<14;i++){var s=(i*97)%100/100,e=(i*53)%100/100;
   x.beginPath();x.moveTo(B.x+s*B.w,B.y);x.lineTo(B.x+e*B.w,B.y+B.h);x.stroke();}
  // refrozen scar above wire
- if(scar.length>1){x.strokeStyle='rgba(210,250,255,.72)';x.lineWidth=Math.max(2,P.d*2.2);
+ if(scar.length>1){x.strokeStyle='rgba(210,250,255,.72)';x.lineWidth=Math.max(3,P.d*4);
   x.beginPath();x.moveTo(B.x+B.w/2,B.y+scar[0]*mmPx);x.lineTo(B.x+B.w/2,wy);x.stroke();
   x.strokeStyle='rgba(255,255,255,.28)';x.lineWidth=1;x.stroke();
   for(var k=0;k<10;k++){var sy=B.y+(scar[0]+(wireMM-scar[0])*((k*0.17+t*0.09)%1))*mmPx;
    x.globalAlpha=.5+.5*Math.sin(t*4+k);x.drawImage(gD,B.x+B.w/2-9,sy-9,18,18);x.globalAlpha=1;}}
  // melt film below wire
- var pulse=1+0.14*Math.sin(t*7);
+ var pulse=1+0.14*Math.sin(t*7),fw=B.w*0.34;
  x.globalCompositeOperation='lighter';
- x.drawImage(gW,B.x+B.w/2-26*pulse,wy-14*pulse+7,52*pulse,28*pulse);
+ x.drawImage(gW,B.x+B.w/2-fw*pulse,wy-fw*0.52*pulse+10,2*fw*pulse,fw*1.05*pulse);
  x.globalCompositeOperation='source-over';
  x.fillStyle='rgba(235,255,255,.9)';x.beginPath();
- x.ellipse(B.x+B.w/2,wy+4,B.w*0.10,3.4*pulse,0,0,7);x.fill();
+ x.ellipse(B.x+B.w/2,wy+5,B.w*0.12,4.6*pulse,0,0,7);x.fill();
  // water creeping around the wire
- for(var d2=0;d2<drops.length;d2++){var D=drops[d2],a=Math.PI*D.ph,r=9+P.d*3;
+ for(var d2=0;d2<drops.length;d2++){var D=drops[d2],a=Math.PI*D.ph,r=16+P.d*6;
   var dx=D.side*Math.sin(a)*r,dy=Math.cos(a)*r*0.9;
   x.fillStyle='rgba(160,245,255,'+(0.9-0.3*D.ph)+')';
-  x.beginPath();x.arc(B.x+B.w/2+dx,wy+4-dy-4,2.2,0,7);x.fill();}
+  x.beginPath();x.arc(B.x+B.w/2+dx,wy+5-dy-5,3.1,0,7);x.fill();}
  for(var f=0;f<flash.length;f++){var F=flash[f];x.globalAlpha=F.l/0.55;
-  x.drawImage(gD,B.x+B.w/2+F.s*11-9,B.y+F.y*mmPx-16,18,18);x.globalAlpha=1;}
+  x.drawImage(gD,B.x+B.w/2+F.s*17-13,B.y+F.y*mmPx-20,26,26);x.globalAlpha=1;}
  x.restore();
  x.strokeStyle='rgba(180,240,255,.55)';x.lineWidth=1.5;
  x.beginPath();x.roundRect(B.x,B.y,B.w,B.h,10);x.stroke();
 
  // wire + weights
- var ext=Math.min(70,st.w*0.13),wx0=B.x-ext,wx1=B.x+B.w+ext;
- x.strokeStyle=P.copper?'#ffb570':'#e8e2cf';x.lineWidth=Math.max(1.4,P.d*2.6);
+ var ext=Math.min(70,st.w*0.14),wx0=B.x-ext,wx1=B.x+B.w+ext;
+ x.strokeStyle=P.copper?'#ffb570':'#e8e2cf';x.lineWidth=Math.max(2.2,P.d*4);
  x.beginPath();x.moveTo(wx0,wy);x.lineTo(wx1,wy);x.stroke();
- x.strokeStyle=P.copper?'rgba(255,170,90,.35)':'rgba(230,225,205,.3)';x.lineWidth=x.lineWidth+5;x.stroke();
- var hangY=B.y+B.h+Math.min(60,st.h*0.10);
+ x.strokeStyle=P.copper?'rgba(255,170,90,.35)':'rgba(230,225,205,.3)';x.lineWidth=x.lineWidth+7;x.stroke();
+ var hangY=B.y+B.h+24;
  [[wx0,-1],[wx1,1]].forEach(function(p){
-  x.strokeStyle='rgba(200,220,240,.6)';x.lineWidth=1.4;
+  x.strokeStyle='rgba(200,220,240,.6)';x.lineWidth=1.6;
   x.beginPath();x.moveTo(p[0],wy);x.lineTo(p[0],hangY);x.stroke();
-  x.globalCompositeOperation='lighter';x.drawImage(gH,p[0]-30,hangY+2,60,60);
+  x.globalCompositeOperation='lighter';x.drawImage(gH,p[0]-34,hangY,68,68);
   x.globalCompositeOperation='source-over';
-  x.fillStyle='#2a2213';x.strokeStyle='#ffd894';x.lineWidth=1.3;
-  x.beginPath();x.roundRect(p[0]-17,hangY,34,26,4);x.fill();x.stroke();
-  x.fillStyle='#ffe3a8';x.font='10px ui-monospace,monospace';x.textAlign='center';x.textBaseline='middle';
-  x.fillText((P.m/2).toFixed(1)+'kg',p[0],hangY+13);});
+  x.fillStyle='#2a2213';x.strokeStyle='#ffd894';x.lineWidth=1.4;
+  x.beginPath();x.roundRect(p[0]-22,hangY,44,30,5);x.fill();x.stroke();
+  x.fillStyle='#ffe3a8';x.font='11px ui-monospace,monospace';x.textAlign='center';x.textBaseline='middle';
+  x.fillText((P.m/2).toFixed(1)+'kg',p[0],hangY+15);});
 
  // arrows on the block: melt down, refreeze up
  x.strokeStyle='rgba(235,255,255,.9)';x.lineWidth=1.8;
- x.beginPath();x.moveTo(B.x+B.w*0.22,wy+8);x.lineTo(B.x+B.w*0.22,wy+26);x.stroke();
- x.beginPath();x.moveTo(B.x+B.w*0.22,wy+30);x.lineTo(B.x+B.w*0.22-4,wy+23);
- x.lineTo(B.x+B.w*0.22+4,wy+23);x.fillStyle='rgba(235,255,255,.9)';x.fill();
+ x.beginPath();x.moveTo(B.x+B.w*0.22,wy+8);x.lineTo(B.x+B.w*0.22,wy+34);x.stroke();
+ x.beginPath();x.moveTo(B.x+B.w*0.22,wy+40);x.lineTo(B.x+B.w*0.22-5,wy+31);
+ x.lineTo(B.x+B.w*0.22+5,wy+31);x.fillStyle='rgba(235,255,255,.9)';x.fill();
  x.strokeStyle='rgba(150,230,255,.9)';
- x.beginPath();x.moveTo(B.x+B.w*0.78,wy-8);x.lineTo(B.x+B.w*0.78,wy-26);x.stroke();
- x.beginPath();x.moveTo(B.x+B.w*0.78,wy-30);x.lineTo(B.x+B.w*0.78-4,wy-23);
- x.lineTo(B.x+B.w*0.78+4,wy-23);x.fillStyle='rgba(150,230,255,.9)';x.fill();
+ x.beginPath();x.moveTo(B.x+B.w*0.78,wy-8);x.lineTo(B.x+B.w*0.78,wy-34);x.stroke();
+ x.beginPath();x.moveTo(B.x+B.w*0.78,wy-40);x.lineTo(B.x+B.w*0.78-5,wy-31);
+ x.lineTo(B.x+B.w*0.78+5,wy-31);x.fillStyle='rgba(150,230,255,.9)';x.fill();
 
  // legend card (explicit bounds, top-left of stage)
  chip(st.x+6,st.y+6,['▼ MELT FILM · P↑ ⇒ T_melt↓',
    '▲ REFROZEN SCAR · latent heat out',
    'ΔT under wire '+regeDT(regePressure(P.m,P.d)).toFixed(3)+' K'],'#9fe8ff','l',10.5);
 
- // bottom chips, stacked upward, clear of edges
- var cy=st.y+st.h-6;
- function up(txt,col){var h=chipH(txt,10.5);cy-=h+5;chip(st.x+2,cy,txt,col,'l',10.5);}
- up('time-lapse ×'+TL+' — a real cut takes hours','#8fb6d8');
- up(P.copper?['HONEST: rate is set by heat conducted',' back through the wire — copper wins']
-   :['HONEST: a string cannot carry the latent',' heat — it stalls, as Bottomley found'],'#ffcf8a');
- up('Skating myth: friction melts ice, not P','#c9a6ff');
+ // bottom chips: two compact rows, clear of the weights and edges
+ var r1=st.y+st.h-6-chipH('x',10.5),r0=r1-chipH('x',10.5)-5;
+ chip(st.x+2,r0,P.copper?'HONEST: rate limited by heat flow in the wire'
+   :'HONEST: a string cannot carry the latent heat','#ffcf8a','l',10.5);
+ chip(st.x+2,r1,'time-lapse ×'+TL+' — a real cut takes hours','#8fb6d8','l',10.5);
+ chip(st.x+st.w-2,r1,'Skating: friction, not pressure','#c9a6ff','r',10.5);
  if(resetT>0)chip(st.x+st.w-6,st.y+6,'through — and the block is still whole','#9fffcf','r',10.5);
 }
 

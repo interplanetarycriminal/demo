@@ -88,7 +88,7 @@ function bedRun(gamma,freq,secs){
 //--/MODEL--
 (function(){
 var cv=document.getElementById('c'),x=cv.getContext('2d'),W=0,H=0,DPR=1,st={x:0,y:0,w:0,h:0};
-var B=bedMake({gamma:2.6,freq:32}),VE=2.0,TRAYMAG=6;
+var B=bedMake({gamma:2.6,freq:32}),VE=6.5,TRAYMAG=7;
 var N=2400,gu=new Float32Array(N),gs=new Float32Array(N),gj=new Float32Array(N),gp=new Float32Array(N);
 for(var i=0;i<N;i++){gu[i]=Math.random();gs[i]=Math.pow(Math.random(),0.75);
  gj[i]=Math.random()*6.28;gp[i]=Math.random();}
@@ -147,13 +147,14 @@ function chipH(txt,fs){var L=Array.isArray(txt)?txt:[txt];return L.length*((fs||
 function draw(){
  var g=x.createLinearGradient(0,0,0,H);g.addColorStop(0,'#0a0703');g.addColorStop(1,'#040308');
  x.fillStyle=g;x.fillRect(0,0,W,H);
- var trayW=Math.min(st.w*0.9,820),trayX=st.x+st.w/2-trayW/2,
-     baseY=st.y+st.h*0.70,pxmm=trayW/B.Lx,ty=baseY-B.trayY*pxmm*TRAYMAG;
+ var trayW=Math.min(st.w*0.94,900),trayX=st.x+st.w/2-trayW/2,
+     baseY=st.y+st.h*0.80,pxmm=trayW/B.Lx,ty=baseY-B.trayY*pxmm*TRAYMAG,
+     wall=Math.min(230,B.h0*pxmm*VE*1.18);
 
  // tray
  x.strokeStyle='#8a6a3a';x.lineWidth=3;
- x.beginPath();x.moveTo(trayX-10,ty-46);x.lineTo(trayX-10,ty);x.lineTo(trayX+trayW+10,ty);
- x.lineTo(trayX+trayW+10,ty-46);x.stroke();
+ x.beginPath();x.moveTo(trayX-10,ty-wall);x.lineTo(trayX-10,ty);x.lineTo(trayX+trayW+10,ty);
+ x.lineTo(trayX+trayW+10,ty-wall);x.stroke();
  x.strokeStyle='rgba(255,170,70,.22)';x.lineWidth=9;x.stroke();
 
  // grains
@@ -163,7 +164,7 @@ function draw(){
    var u=gu[k],hh=hAt(u),yy=gs[k]*hh;
    var hop=fly*Math.max(0,Math.sin(om*B.t*0.25+gj[k]))*gs[k]*gs[k];
    var px=trayX+u*trayW,py=ty-(yy+hop)*pxmm*VE-2;
-   var r=2.6+(gs[k]>0.8?0.7:0);
+   var r=3.0+(gs[k]>0.8?0.9:0);
    x.globalAlpha=0.55+0.45*gs[k];
    x.drawImage(sp,px-r,py-r,r*2,r*2);}
  x.globalAlpha=1;x.globalCompositeOperation='source-over';
@@ -178,11 +179,14 @@ function draw(){
   for(var i2=0;i2<B.NB;i2++){var l=B.h[(i2+B.NB-1)%B.NB],r2=B.h[(i2+1)%B.NB];
    if(B.h[i2]>l&&B.h[i2]>=r2&&B.h[i2]-mean>0.35*M.amp){
     var ux=(i2+0.5)/B.NB,ax=trayX+ux*trayW,ay=ty-B.h[i2]*pxmm*VE-10;
-    x.strokeStyle='rgba(120,235,255,.85)';x.lineWidth=1.6;
-    x.beginPath();x.moveTo(ax-16,ay+16);x.lineTo(ax-3,ay+2);x.stroke();
-    x.beginPath();x.moveTo(ax-3,ay+2);x.lineTo(ax-8,ay+3);x.lineTo(ax-5,ay+8);x.fill();
-    x.beginPath();x.moveTo(ax+16,ay+16);x.lineTo(ax+3,ay+2);x.stroke();
-    x.beginPath();x.moveTo(ax+3,ay+2);x.lineTo(ax+8,ay+3);x.lineTo(ax+5,ay+8);x.fill();}}}
+    x.strokeStyle='rgba(120,235,255,.95)';x.fillStyle='rgba(120,235,255,.95)';x.lineWidth=2.6;
+    x.beginPath();x.moveTo(ax-30,ay+34);x.lineTo(ax-5,ay+4);x.stroke();
+    x.beginPath();x.moveTo(ax-4,ay+1);x.lineTo(ax-15,ay+5);x.lineTo(ax-9,ay+13);x.fill();
+    x.beginPath();x.moveTo(ax+30,ay+34);x.lineTo(ax+5,ay+4);x.stroke();
+    x.beginPath();x.moveTo(ax+4,ay+1);x.lineTo(ax+15,ay+5);x.lineTo(ax+9,ay+13);x.fill();
+    x.strokeStyle='rgba(255,190,110,.9)';x.fillStyle='rgba(255,190,110,.9)';x.lineWidth=2.2;
+    x.beginPath();x.moveTo(ax,ay+16);x.lineTo(ax,ay+46);x.stroke();
+    x.beginPath();x.moveTo(ax,ay+54);x.lineTo(ax-6,ay+43);x.lineTo(ax+6,ay+43);x.fill();}}}
 
  // space-time inset card
  var cw=176,ch=112,cx0=st.x+st.w-cw-8,cy0=st.y+8;
@@ -202,7 +206,7 @@ function draw(){
  up(B.gamma<1?'Γ<1 — the bed never leaves the tray: flat'
    :(B.gamma>4?'Γ>4 — peaks flip each cycle: OSCILLONS'
    :'Γ>1.2 — convection rolls feed the heaps'),'#9fe8ff');
- chip(trayX+trayW/2,ty+18,'tray motion ×'+TRAYMAG+' · height ×'+VE.toFixed(1),'#b79a76','c',10);
+ chip(st.x+6,st.y+6,'tray motion ×'+TRAYMAG+' · height ×'+VE.toFixed(1),'#b79a76','l',10);
 }
 
 function hud(){

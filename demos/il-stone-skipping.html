@@ -61,9 +61,9 @@ function skipRun(theta,v0,spin){
 //--/MODEL--
 (function(){
 var cv=document.getElementById('c'),x=cv.getContext('2d'),W=0,H=0,DPR=1,st={x:0,y:0,w:0,h:0};
-var P={a:20,v:12,spin:6},G=9.81,VS=7,t=0;
+var P={a:20,v:12,spin:6},G=9.81,VS=22,t=0;
 var S={x:0,y:0.9,vx:0,vy:0,live:false,n:0,wait:0.25,scale:12,ox:0,R:10,best:0};
-var splash=[],drops=[];
+var splash=[],drops=[],trail=[];
 
 function glow(r,c){var s=document.createElement('canvas');s.width=s.height=r*2;var g=s.getContext('2d');
  var rg=g.createRadialGradient(r,r,0,r,r,r);rg.addColorStop(0,c);
@@ -78,27 +78,29 @@ function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=inne
  else{var top=Math.min(H*0.45,340)+26;st={x:14,y:top,w:W-28,h:H-top-14};}}
 addEventListener('resize',resize);resize();
 function waterY(){return st.y+st.h*0.60;}
-function outAng(){return Math.max(6,Math.min(26,P.a*0.7))*Math.PI/180;}
+function outAng(){return Math.max(6,Math.min(30,P.a))*Math.PI/180;}
 
 function launch(){
  var pr=skipRun(P.a,P.v,P.spin),a=outAng(),L=pr.loss;
  var hop=P.v*P.v*Math.sin(2*a)/G;
- S.R=Math.max(4,hop*(1-Math.pow(1-L,Math.max(1,pr.bounces)))/Math.max(0.05,L));
- S.scale=Math.max(4,Math.min(26,st.w*0.84/S.R));
+ var NW=Math.max(1,Math.min(10,pr.bounces));
+ S.R=Math.max(4,hop*(1-Math.pow(1-L,NW))/Math.max(0.05,L));
+ S.scale=Math.max(4,Math.min(40,st.w*0.84/S.R));
  S.ox=st.x+(st.w-S.R*S.scale)/2;
  S.x=0;S.y=0.85;S.vx=P.v*Math.cos(0.14);S.vy=-P.v*Math.sin(0.14);
- S.live=true;S.n=0;splash.length=0;drops.length=0;}
+ S.live=true;S.n=0;splash.length=0;drops.length=0;trail.length=0;}
 
 function step(dt){
  t+=dt;
+ if(!S.reset4&&t>=1.6){S.reset4=1;launch();}
  if(!S.live){S.wait-=dt;if(S.wait<=0)launch();}
  else{
   S.vy-=G*dt;S.x+=S.vx*dt;S.y+=S.vy*dt;
   if(S.y<=0&&S.vy<0){
    var v=Math.hypot(S.vx,S.vy),L=skipLoss(P.a,P.spin),vn=v*Math.sqrt(Math.max(0.02,1-L));
    S.n++;S.y=0;
-   splash.push({x:S.x,l:2.6,v:v});
-   for(var i=0;i<16;i++){var an=0.5+Math.random()*1.0;
+   splash.push({x:S.x,l:3.4,v:v});
+   for(var i=0;i<24;i++){var an=0.5+Math.random()*1.0;
     drops.push({x:S.x,y:0,vx:Math.cos(an)*v*(0.10+Math.random()*0.20)+v*0.06,
       vy:Math.sin(an)*v*(0.14+Math.random()*0.26),l:0.9+Math.random()*0.5});}
    if(vn<2.6||S.n>=80||(P.a>=41)){S.live=false;S.wait=1.0;
@@ -106,8 +108,10 @@ function step(dt){
     for(var j=0;j<26;j++){var a2=0.6+Math.random()*0.9;
      drops.push({x:S.x,y:0,vx:Math.cos(a2)*3*Math.random(),vy:Math.sin(a2)*6*Math.random()+1,
       l:1.1+Math.random()*0.6});}}
-   else{var a3=outAng();S.vx=vn*Math.cos(a3);S.vy=-vn*Math.sin(a3);}}
-  if(S.x>S.R*1.35){S.live=false;S.wait=1.0;if(S.n>S.best)S.best=S.n;}}
+   else{var a3=outAng();S.vx=vn*Math.cos(a3);S.vy=vn*Math.sin(a3);}}
+  if(S.x>S.R*1.03){S.live=false;S.wait=1.0;if(S.n>S.best)S.best=S.n;}
+  trail.push({x:S.x,y:Math.max(0,S.y),b:S.n,a:0});}
+ for(var w=trail.length-1;w>=0;w--){trail[w].a+=dt;if(trail[w].a>4.6)trail.splice(w,1);}
  for(var k=splash.length-1;k>=0;k--){splash[k].l-=dt;if(splash[k].l<=0)splash.splice(k,1);}
  for(var d=drops.length-1;d>=0;d--){var D=drops[d];D.vy-=G*dt;D.x+=D.vx*dt;D.y+=D.vy*dt;
   D.l-=dt;if(D.l<=0||D.y<-0.02)drops.splice(d,1);}
@@ -145,9 +149,17 @@ function draw(){
   x.globalAlpha=.10;x.drawImage(gS,rx-30,wy-8,60,16);}
  x.globalAlpha=1;x.globalCompositeOperation='source-over';
 
+ // ghost trail of past hop arcs (the decaying envelope)
+ var gi=0;x.lineWidth=1.5;x.strokeStyle='#7dfbe0';
+ while(gi<trail.length){var b0=trail[gi].b,ag=trail[gi].a;
+  x.beginPath();x.moveTo(WX(trail[gi].x),WY(trail[gi].y));
+  var gj=gi+1;while(gj<trail.length&&trail[gj].b===b0){x.lineTo(WX(trail[gj].x),WY(trail[gj].y));gj++;}
+  x.globalAlpha=Math.max(0,0.6-ag*0.115);x.stroke();gi=gj;}
+ x.globalAlpha=1;
+
  // splash rings + plumes
  x.globalCompositeOperation='lighter';
- for(var i=0;i<splash.length;i++){var Sp=splash[i],al=Math.max(0,Sp.l/2.6),rr=(2.6-Sp.l)*22+8;
+ for(var i=0;i<splash.length;i++){var Sp=splash[i],al=Math.max(0,Sp.l/3.4),rr=(3.4-Sp.l)*20+9;
   x.globalAlpha=al*0.85;x.strokeStyle='rgba(160,255,240,1)';x.lineWidth=1.6;
   x.beginPath();x.ellipse(WX(Sp.x),wy,rr,rr*0.22,0,0,7);x.stroke();
   x.globalAlpha=al*0.5;x.drawImage(gS,WX(Sp.x)-24,wy-24,48,48);}
