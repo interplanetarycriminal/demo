@@ -1,0 +1,228 @@
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bullwhip Sonic Boom</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#04050a;color:#e8f0ff;overflow:hidden;
+ font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+#c{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+#ui{position:fixed;top:10px;left:10px;width:min(340px,calc(100vw - 20px));max-height:45vh;overflow:auto;
+ background:rgba(5,8,15,.86);border:1px solid #26314c;border-radius:10px;padding:10px 11px;z-index:5}
+h1{font-size:14px;margin:0 0 4px;letter-spacing:.05em;color:#ffcf85}
+.mech{font-size:11.5px;color:#9db0cf;margin:0 0 8px}
+.rd{display:grid;grid-template-columns:1fr 1fr;gap:5px 7px;margin-bottom:8px}
+.rd div{background:#0c1120;border:1px solid #1d2740;border-radius:6px;padding:4px 6px}
+.rd b{display:block;font-size:9px;color:#7789a8;font-weight:400;letter-spacing:.09em}
+.rd span{font-size:13.5px;color:#8ff0ff}
+label{display:block;font-size:10.5px;color:#9db0cf;margin:7px 0 1px}
+input[type=range]{width:100%;accent-color:#ffb347;margin:0}
+.detail{font-size:10.5px;color:#7789a8;border-top:1px solid #1d2740;margin-top:8px;padding-top:6px}
+@media (max-width:640px){#ui{font-size:11px;max-height:38vh} #ui .detail{display:none}}
+</style>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>THE WHIP CRACK IS A SONIC BOOM</h1>
+<p class="mech">A wave running down a <b>tapering</b> whip keeps its energy while the mass per length collapses &mdash; so the loop must accelerate, and the hair-thin tip goes supersonic.</p>
+<div class="rd">
+<div><b>LOOP SPEED</b><span id="rv">&mdash;</span></div>
+<div><b>MACH</b><span id="rm">&mdash;</span></div>
+<div><b>TAPER RATIO</b><span id="rt">&mdash;</span></div>
+<div><b>WAVE ENERGY</b><span id="re">&mdash;</span></div>
+</div>
+<label>taper ratio (handle : tip diameter) &mdash; <span id="lt">30</span>:1</label>
+<input id="st" type="range" min="1" max="40" step="0.5" value="30">
+<label>flick strength &mdash; <span id="lv">18</span> m/s at handle</label>
+<input id="sv" type="range" min="8" max="28" step="0.5" value="18">
+<div class="detail">Set taper to 1:1 for a uniform rope: the tip never breaks Mach 1 and there is no crack.<br><br>
+<b>Lineage</b> &middot; Otto Lummer 1905 proposes the crack is a sonic boom &rarr; Carri&egrave;re's 1927 schlieren photographs catch the shock wave &rarr; Goriely &amp; McMillen 2002 derive the tapering acceleration law &rarr; the bullwhip is 30,000-year-old supersonic technology.</div>
+</div>
+<script>
+(function(){
+var cv=document.getElementById('c'),ctx=cv.getContext('2d'),W=0,H=0,DPR=1;
+
+/*PHYS*/
+var PH={
+ C:343, L:2.0, M:0.4, LAM:0.05,
+ mu0:function(T){var l=Math.log(T);return Math.abs(l)<1e-6?PH.M/PH.L:2*PH.M*l/(PH.L*(1-Math.pow(T,-2)));},
+ dia:function(f,T){return Math.pow(T,-f);},                 // local diameter / handle diameter
+ mu :function(f,T){return PH.mu0(T)*Math.pow(T,-2*f);},     // mass per length, mu ~ d^2
+ v  :function(f,T,v0){return v0*Math.pow(T,f);},            // energy conserved => v ~ mu^-1/2
+ E  :function(f,T,v0){return 0.5*PH.mu(f,T)*PH.LAM*Math.pow(PH.v(f,T,v0),2);},
+ mach:function(f,T,v0){return PH.v(f,T,v0)/PH.C;},
+ dtPhys:function(f,df,T,v0){return df*PH.L/PH.v(f,T,v0);},  // real seconds for a step df in f
+ tipMax:function(T,v0){return PH.v(1,T,v0);}
+};
+/*ENDPHYS*/
+
+var T=30,V0=18,N=80;
+var XH=0,CY=0,SPAN=0,PXM=0,AMP=0,HG=0,MAXW=0;
+var spW=null,spA=null;
+function sprite(r,g,b,rad){var c=document.createElement('canvas');c.width=c.height=rad*2;var q=c.getContext('2d');
+ var gr=q.createRadialGradient(rad,rad,0,rad,rad,rad);
+ gr.addColorStop(0,'rgba('+r+','+g+','+b+',1)');gr.addColorStop(.3,'rgba('+r+','+g+','+b+',.42)');
+ gr.addColorStop(1,'rgba('+r+','+g+','+b+',0)');q.fillStyle=gr;q.fillRect(0,0,rad*2,rad*2);return c;}
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;
+ cv.width=(W*DPR)|0;cv.height=(H*DPR)|0;ctx.setTransform(DPR,0,0,DPR,0,0);
+ SPAN=Math.max(280,W*0.55);XH=W*0.09;CY=H*0.46;AMP=H*0.05;PXM=SPAN/PH.L;
+ HG=Math.max(13,Math.min(32,SPAN*0.028));MAXW=Math.max(6,Math.min(15,Math.min(W,H)/58));
+ spW=sprite(255,255,255,64);spA=sprite(255,176,70,48);}
+addEventListener('resize',resize);resize();
+
+function spine(a){ // a in metres from handle; a<0 = whip still trailing behind
+ if(a>=0){var f=Math.min(1,a/PH.L);return [XH+a*PXM, CY-AMP*Math.sin(Math.PI*f)];}
+ var Rc=SPAN*0.16, th=Math.min(2.6,(-a/PH.L)*2.6);
+ return [XH-Rc*Math.sin(th), CY+Rc-Rc*Math.cos(th)];
+}
+
+var phase='wind',tP=0,p=0,tPhys=0,tSim=0,cracked=false,crackX=0,crackY=0,flash=0,rings=[],lastEmit=0,shock=[];
+var WIND=1.0,TRAV=3.2,AFT=1.4;
+function reset(){phase='wind';tP=0;p=0;tPhys=0;cracked=false;flash=0;rings.length=0;shock.length=0;lastEmit=0;}
+
+function step(dt){
+ tSim+=dt;tP+=dt;
+ if(phase==='wind'){ if(tP>=WIND){phase='travel';tP=0;} }
+ else if(phase==='travel'){
+   var dp=dt/TRAV, np=Math.min(1,p+dp);
+   var mid=(p+np)*0.5;
+   tPhys+=PH.dtPhys(mid,np-p,T,V0);
+   p=np;
+   var m=PH.mach(p,T,V0);
+   if(m>1){
+     if(!cracked){cracked=true;flash=1;var c=spine(p*PH.L);crackX=c[0];crackY=c[1]-HG;
+       for(var k=0;k<3;k++)shock.push({x:crackX,y:crackY,t:tPhys-k*0.00012});}
+     if(p-lastEmit>0.004){lastEmit=p;var s=spine(p*PH.L);rings.push({x:s[0],y:s[1]-HG,t:tPhys});}
+   }
+   if(p>=1){phase='after';tP=0;}
+ } else { tPhys+=dt*0.0009; if(tP>=AFT)reset(); }
+ flash*=Math.pow(0.16,dt);
+ if(rings.length>140)rings.splice(0,rings.length-140);
+}
+
+function rr(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);
+ ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+function chip(x,y,txt,col,align){ctx.font='11px ui-monospace,monospace';var w=ctx.measureText(txt).width+14;
+ if(align==='r')x-=w; ctx.fillStyle='rgba(4,7,14,.86)';ctx.strokeStyle='rgba(88,118,170,.55)';ctx.lineWidth=1;
+ rr(x,y,w,20,6);ctx.fill();ctx.stroke();ctx.fillStyle=col||'#cfe4ff';ctx.fillText(txt,x+7,y+14);return w;}
+
+function whipPath(){
+ var s=p*PH.L,pts=[],arc=Math.PI*HG,c=spine(s);
+ for(var i=0;i<=N;i++){
+  var f=i/N,u=f*PH.L,x,y;
+  if(u<=s){var sp=spine(u);x=sp[0];y=sp[1]-HG;}
+  else{var r=(u-s)*PXM;
+   if(r<arc){var th=r/HG;x=c[0]+HG*Math.sin(th);y=c[1]-HG*Math.cos(th);}
+   else{var b=(r-arc)/PXM;var q=spine(s-b);x=q[0];y=q[1]+HG;}}
+  pts.push(x,y,f);}
+ return pts;
+}
+
+function draw(){
+ var g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#070a14');g.addColorStop(1,'#03040a');
+ ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+ // ground haze
+ ctx.fillStyle='rgba(30,54,96,.20)';ctx.fillRect(0,H*0.83,W,H);
+ var m=PH.mach(p,T,V0),v=PH.v(p,T,V0);
+
+ // sound wavelets emitted while supersonic -> their envelope IS the Mach cone
+ if(cracked){
+  for(var i=0;i<rings.length;i++){var R=(tPhys-rings[i].t)*PH.C*PXM;if(R<=0)continue;
+   ctx.strokeStyle='rgba(120,200,255,'+(0.20*(1-i/rings.length)+0.05)+')';ctx.lineWidth=1;
+   ctx.beginPath();ctx.arc(rings[i].x,rings[i].y,R,0,6.2832);ctx.stroke();}
+  for(var j=0;j<shock.length;j++){var R2=(tPhys-shock[j].t)*PH.C*PXM*1.0;
+   ctx.strokeStyle='rgba(255,255,255,'+Math.max(0,0.5-R2/(SPAN*0.9))+')';ctx.lineWidth=3-j;
+   ctx.beginPath();ctx.arc(shock[j].x,shock[j].y,R2+6,0,6.2832);ctx.stroke();}
+ }
+ // Mach cone (only when supersonic)
+ if(m>1&&phase==='travel'){
+  var s2=spine(p*PH.L),lx=s2[0],ly=s2[1]-HG,mu=Math.asin(Math.min(1,1/m)),Ln=SPAN*0.55;
+  ctx.strokeStyle='rgba(150,225,255,.55)';ctx.lineWidth=1.5;ctx.beginPath();
+  ctx.moveTo(lx,ly);ctx.lineTo(lx-Ln*Math.cos(mu),ly-Ln*Math.sin(mu));
+  ctx.moveTo(lx,ly);ctx.lineTo(lx-Ln*Math.cos(mu),ly+Ln*Math.sin(mu));ctx.stroke();
+  ctx.fillStyle='rgba(120,200,255,.07)';ctx.beginPath();ctx.moveTo(lx,ly);
+  ctx.lineTo(lx-Ln*Math.cos(mu),ly-Ln*Math.sin(mu));ctx.lineTo(lx-Ln*Math.cos(mu),ly+Ln*Math.sin(mu));
+  ctx.closePath();ctx.fill();
+ }
+ // whip
+ var pts=whipPath();
+ ctx.lineCap='round';
+ for(var pass=0;pass<2;pass++){
+  for(var i=0;i<N;i++){
+   var x1=pts[i*3],y1=pts[i*3+1],f=pts[i*3+2],x2=pts[i*3+3],y2=pts[i*3+4];
+   var w=Math.max(0.9,MAXW*PH.dia(f,T));
+   var mm=PH.mach(f,T,V0),hot=Math.min(1,Math.max(0,(mm-0.55)/0.55));
+   if(pass===0){ctx.globalAlpha=0.10;ctx.lineWidth=w*4+7;ctx.strokeStyle=hot>0.4?'#9fe8ff':'#ff9a2e';}
+   else{ctx.globalAlpha=1;ctx.lineWidth=w;
+    ctx.strokeStyle='rgb('+Math.round(255)+','+Math.round(178+64*hot)+','+Math.round(96+150*hot)+')';}
+   ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+  }
+ }
+ ctx.globalAlpha=1;
+ // handle
+ var hx=XH+(phase==='wind'?Math.sin(tP*11)*SPAN*0.02:0);
+ ctx.strokeStyle='#c9a06a';ctx.lineWidth=MAXW*1.5;ctx.beginPath();
+ ctx.moveTo(hx-SPAN*0.055,CY+HG*0.6);ctx.lineTo(XH,CY-HG);ctx.stroke();
+ // loop glow + tip
+ var lp=spine(p*PH.L),gx=lp[0],gy=lp[1]-HG;
+ var gs=(60+220*Math.min(1,m))*(0.5+0.5*Math.min(1,m));
+ ctx.globalCompositeOperation='lighter';
+ ctx.drawImage(m>0.85?spW:spA,gx-gs/2,gy-gs/2,gs,gs);
+ if(flash>0.01){var fs=SPAN*0.62*flash+90;ctx.globalAlpha=Math.min(1,flash*1.5);
+  ctx.drawImage(spW,crackX-fs/2,crackY-fs/2,fs,fs);ctx.globalAlpha=1;}
+ ctx.globalCompositeOperation='source-over';
+ // tip dot
+ var tx=pts[N*3],ty=pts[N*3+1];
+ ctx.fillStyle=m>1?'#ffffff':'#ffd9a0';ctx.beginPath();ctx.arc(tx,ty,3,0,6.2832);ctx.fill();
+ chip(tx+8,ty-26,'tip',m>1?'#fff':'#ffcf85');
+
+ if(cracked&&flash>0.02)chip(crackX-30,crackY-64,'CRACK!  shock wave','#fff');
+ if(T<1.5)chip(W*0.5-90,H*0.14,'uniform rope: tip stays subsonic — no crack','#ff9a9a');
+ // labels on the whip
+ chip(XH-4,CY+HG+26,'thick butt — heavy','#ffcf85');
+ var thinX=XH+SPAN*0.80;chip(thinX,CY-HG-46,'thin fall — light → fast','#9fe8ff');
+
+ // speed-vs-position plot
+ var pw=Math.min(300,Math.max(150,W*0.30)),ph=Math.min(122,Math.max(88,H*0.20)),px=W-pw-12,py=H-ph-12;
+ ctx.fillStyle='rgba(4,7,14,.86)';ctx.strokeStyle='rgba(88,118,170,.5)';ctx.lineWidth=1;
+ rr(px,py,pw,ph,8);ctx.fill();ctx.stroke();
+ var ix=px+30,iy=py+18,iw=pw-40,ih=ph-34,vmax=Math.max(560,PH.tipMax(T,V0)*1.06);
+ ctx.font='9px ui-monospace,monospace';ctx.fillStyle='#7789a8';
+ ctx.fillText('speed',px+5,py+13);ctx.fillText('handle',ix,py+ph-4);ctx.fillText('tip',ix+iw-14,py+ph-4);
+ var y1=iy+ih*(1-PH.C/vmax);
+ ctx.strokeStyle='rgba(255,90,90,.85)';ctx.setLineDash([4,3]);ctx.beginPath();
+ ctx.moveTo(ix,y1);ctx.lineTo(ix+iw,y1);ctx.stroke();ctx.setLineDash([]);
+ ctx.fillStyle='#ff7a7a';ctx.fillText('Mach 1',ix+2,y1-3);
+ ctx.strokeStyle='rgba(120,150,200,.5)';ctx.beginPath();
+ for(var k=0;k<=40;k++){var f2=k/40,yy=iy+ih*(1-Math.min(1,PH.v(f2,1,V0)/vmax));
+  if(k===0)ctx.moveTo(ix+iw*f2,yy);else ctx.lineTo(ix+iw*f2,yy);}ctx.stroke();
+ ctx.strokeStyle='#ffb347';ctx.lineWidth=2;ctx.beginPath();
+ for(var k2=0;k2<=40;k2++){var f3=k2/40,y3=iy+ih*(1-Math.min(1,PH.v(f3,T,V0)/vmax));
+  if(k2===0)ctx.moveTo(ix+iw*f3,y3);else ctx.lineTo(ix+iw*f3,y3);}ctx.stroke();
+ var dx=ix+iw*p,dy=iy+ih*(1-Math.min(1,v/vmax));
+ ctx.fillStyle=m>1?'#fff':'#8ff0ff';ctx.beginPath();ctx.arc(dx,dy,4,0,6.2832);ctx.fill();
+
+ chip(12,H-30,'segment-chain toy · real whips also lose energy to air · adaptive slow-motion','#8ea4c6');
+ chip(W-12,12,'slow-motion ×'+Math.round(TRAV/Math.max(1e-6,totalPhys()))+'  ·  real crack lasts '+(totalPhys()*1000).toFixed(0)+' ms','#8ea4c6','r');
+
+ var el=document.getElementById('rv');el.textContent=v.toFixed(0)+' m/s';el.style.color=m>0.8?'#ff6b6b':'#8ff0ff';
+ var e2=document.getElementById('rm');e2.textContent='M '+m.toFixed(2);e2.style.color=m>0.8?'#ff6b6b':'#8ff0ff';
+ document.getElementById('rt').textContent=T.toFixed(0)+':1';
+ document.getElementById('re').textContent=PH.E(p,T,V0).toFixed(1)+' J';
+}
+function totalPhys(){var s=0,n=24;for(var i=0;i<n;i++)s+=PH.dtPhys((i+0.5)/n,1/n,T,V0);return s;}
+
+var last=performance.now(),acc=0;
+function frame(now){var rd=(now-last)/1000;last=now;if(rd>0.45)rd=0.45;acc+=rd;var n=0;
+ while(acc>=1/60&&n<40){step(1/60);acc-=1/60;n++;}draw();requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+
+var st=document.getElementById('st'),sv=document.getElementById('sv');
+st.addEventListener('input',function(){T=Math.max(1,+st.value);document.getElementById('lt').textContent=T.toFixed(0);reset();});
+sv.addEventListener('input',function(){V0=+sv.value;document.getElementById('lv').textContent=V0.toFixed(0);reset();});
+var drag=false,x0=0,t0=0;
+cv.addEventListener('pointerdown',function(e){drag=true;x0=e.clientX;t0=T;cv.setPointerCapture(e.pointerId);reset();});
+cv.addEventListener('pointermove',function(e){if(!drag)return;T=Math.max(1,Math.min(40,t0+(e.clientX-x0)/12));
+ st.value=T;document.getElementById('lt').textContent=T.toFixed(0);});
+cv.addEventListener('pointerup',function(e){drag=false;try{cv.releasePointerCapture(e.pointerId);}catch(_){}});
+cv.addEventListener('pointercancel',function(){drag=false;});
+})();
+</script>

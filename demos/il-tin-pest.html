@@ -1,0 +1,237 @@
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tin Pest</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#04050a;color:#e8f0ff;overflow:hidden;
+ font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+#c{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+#ui{position:fixed;top:10px;left:10px;width:min(340px,calc(100vw - 20px));max-height:45vh;overflow:auto;
+ background:rgba(5,8,15,.86);border:1px solid #26314c;border-radius:10px;padding:10px 11px;z-index:5}
+h1{font-size:14px;margin:0 0 4px;letter-spacing:.05em;color:#a9c6ff}
+.mech{font-size:11.5px;color:#9db0cf;margin:0 0 8px}
+.rd{display:grid;grid-template-columns:1fr 1fr;gap:5px 7px;margin-bottom:8px}
+.rd div{background:#0c1120;border:1px solid #1d2740;border-radius:6px;padding:4px 6px}
+.rd b{display:block;font-size:9px;color:#7789a8;font-weight:400;letter-spacing:.09em}
+.rd span{font-size:13.5px;color:#8ff0ff}
+.wide{grid-column:1/3}
+label{display:block;font-size:10.5px;color:#9db0cf;margin:7px 0 1px}
+input[type=range]{width:100%;accent-color:#7fa8ff;margin:0}
+button{margin-top:6px;background:#131c30;color:#cfe0ff;border:1px solid #2b3a5c;border-radius:6px;
+ padding:4px 9px;font:11px ui-monospace,monospace;cursor:pointer}
+.detail{font-size:10.5px;color:#7789a8;border-top:1px solid #1d2740;margin-top:8px;padding-top:6px}
+@media (max-width:640px){#ui{font-size:11px;max-height:38vh} #ui .detail{display:none}}
+</style>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+<h1>TIN PEST &mdash; METAL THAT ROTS</h1>
+<p class="mech">Below 13.2&nbsp;&deg;C white &beta;-tin is only metastable: grey &alpha;-tin nucleates at a scratch and spreads <b>autocatalytically</b>, and being 27% less dense it bursts the metal into powder.</p>
+<div class="rd">
+<div><b>TEMPERATURE</b><span id="rT">&mdash;</span></div>
+<div><b>TRANSFORMED</b><span id="rX">&mdash;</span></div>
+<div><b>NUCLEATION</b><span id="rN">&mdash;</span></div>
+<div><b>GROWTH</b><span id="rG">&mdash;</span></div>
+<div class="wide"><b>TTT POSITION</b><span id="rP" style="font-size:11.5px">&mdash;</span></div>
+</div>
+<label>temperature &mdash; <span id="lT">&minus;30</span> &deg;C</label>
+<input id="sT" type="range" min="-80" max="25" step="0.5" value="-30">
+<button id="bA">seasons dial: AUTO</button>
+<div class="detail">Cold speeds the rot until about &minus;30&nbsp;&deg;C, then diffusion dies and it slows again &mdash; the nose of a TTT curve. Warming back up stops it but never reverses it.<br><br>
+<b>Lineage</b> &middot; Aristotle-era reports of "tin plague" &rarr; the 1868 St&nbsp;Petersburg organ pipes crumbling in the cold &rarr; today's fear of tin whiskers and pest in lead-free solder.</div>
+</div>
+<script>
+(function(){
+var cv=document.getElementById('c'),ctx=cv.getContext('2d'),W=0,H=0,DPR=1;
+
+/*PHYS*/
+var PH={TEQ:286.35,QR:2737.4,TC:13.2,G0:1,N0:1,
+ drive:function(t){var k=t+273.15;return Math.max(0,(PH.TEQ-k)/PH.TEQ);},
+ mob:function(t){return Math.exp(-PH.QR/(t+273.15));},
+ g:function(t){if(t>=PH.TC)return 0;var d=PH.drive(t);return d*d*PH.mob(t)/PH.G0;},
+ n:function(t){if(t>=PH.TC)return 0;var d=PH.drive(t);return d*d*d*PH.mob(t)/PH.N0;},
+ rate:function(t){return 0.85*PH.g(t)+0.15*PH.n(t);},
+ stepX:function(x,t,dt){var r=PH.rate(t);return Math.min(1,x+dt*r*(0.02+3.0*x*(1-x)));}};
+PH.G0=Math.pow(PH.drive(-30),2)*PH.mob(-30);
+PH.N0=Math.pow(PH.drive(-30),3)*PH.mob(-30);
+/*ENDPHYS*/
+
+var PX=0,PY=0,PW=0,PHt=0,CS=6,GW=0,GH=0,st=null,nz=null,scr=null,inF=null,front=[],cnt=0,off=null,octx=null;
+var fresh=[],nuclei=[];
+function build(){
+ PW=Math.min(W*0.60,H*0.72);PHt=PW*0.62;
+ PX=Math.max(12,Math.min(W-PW-12,W*0.52-PW/2));PY=H*0.52-PHt/2;
+ CS=Math.max(4,Math.round(PW/108));
+ var ngw=Math.max(20,Math.floor(PW/CS)),ngh=Math.max(12,Math.floor(PHt/CS));
+ var old=st,ow=GW,oh=GH;
+ GW=ngw;GH=ngh;
+ st=new Uint8Array(GW*GH);nz=new Float32Array(GW*GH);scr=new Uint8Array(GW*GH);
+ inF=new Uint8Array(GW*GH);front=[];cnt=0;
+ for(var i=0;i<GW*GH;i++)nz[i]=0.45+Math.random()*1.1;
+ for(var s=0;s<3;s++){var sx=(0.2+0.3*s)*GW|0,sy=(0.25+0.25*s)*GH|0;
+  for(var k=0;k<18;k++){var xx=(sx+k*0.7)|0,yy=(sy+k*0.35)|0;if(xx<GW&&yy<GH)scr[yy*GW+xx]=1;}}
+ off=document.createElement('canvas');off.width=GW*CS;off.height=GH*CS;octx=off.getContext('2d');
+ if(old){ // repaint preserved fraction approximately
+  for(var y=0;y<GH;y++)for(var x=0;x<GW;x++){
+   var ox=Math.floor(x*ow/GW),oy=Math.floor(y*oh/GH);
+   if(old[oy*ow+ox]){var id=y*GW+x;st[id]=1;cnt++;paint(id);}}
+  rebuildFront();
+ }
+}
+function rebuildFront(){front=[];inF=new Uint8Array(GW*GH);
+ for(var i=0;i<GW*GH;i++)if(st[i])addN(i);}
+function addN(i){var x=i%GW,y=(i/GW)|0;
+ var n=[x>0?i-1:-1,x<GW-1?i+1:-1,y>0?i-GW:-1,y<GH-1?i+GW:-1];
+ for(var k=0;k<4;k++){var j=n[k];if(j>=0&&!st[j]&&!inF[j]){inF[j]=1;front.push(j);}}}
+function paint(i){
+ var x=(i%GW)*CS,y=((i/GW)|0)*CS,v=nz[i];
+ var b=Math.round(96+34*v);
+ octx.fillStyle='rgb('+(b-8)+','+(b-4)+','+(b+6)+')';octx.fillRect(x,y,CS,CS);
+ octx.fillStyle='rgba(215,225,240,'+(0.10+0.16*v)+')';octx.fillRect(x,y,CS,Math.max(1,CS*0.34));
+ octx.fillStyle='rgba(0,0,0,.30)';octx.fillRect(x,y+CS-Math.max(1,CS*0.3),CS,Math.max(1,CS*0.3));
+ if(v>1.36){octx.fillStyle='rgba(10,12,18,.75)';octx.fillRect(x+CS*0.3,y+CS*0.3,CS*0.45,CS*0.45);}
+ if(Math.random()<0.012){ // radiating crack
+  var a=Math.random()*6.2832,L=CS*(2+Math.random()*4);
+  octx.strokeStyle='rgba(6,8,14,.85)';octx.lineWidth=Math.max(1,CS*0.22);
+  octx.beginPath();octx.moveTo(x+CS/2,y+CS/2);octx.lineTo(x+CS/2+Math.cos(a)*L,y+CS/2+Math.sin(a)*L);octx.stroke();}
+}
+function convert(i){if(st[i])return;st[i]=1;cnt++;paint(i);addN(i);
+ fresh.push(i,0);if(fresh.length>1200)fresh.splice(0,400);}
+
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;
+ cv.width=(W*DPR)|0;cv.height=(H*DPR)|0;ctx.setTransform(DPR,0,0,DPR,0,0);build();}
+addEventListener('resize',resize);
+
+var Tc=20,auto=true,tSim=0,seeded=false,everCold=false,peakX=0,warmed=false;
+function schedule(t){
+ t=t%26;
+ if(t<0.4)return 20;
+ if(t<2.0)return 20-50*(t-0.4)/1.6;
+ if(t<14)return -30;
+ if(t<18)return -30+48*(t-14)/4;
+ if(t<24)return 18;
+ return 18-0*(t-24);
+}
+function step(dt){
+ tSim+=dt;
+ if(auto){var nt=schedule(tSim);if(tSim%26<0.05&&tSim>1){resetGrid();}Tc=nt;
+  document.getElementById('sT').value=Tc;document.getElementById('lT').textContent=Tc.toFixed(0);}
+ var G=PH.g(Tc),Nn=PH.n(Tc);
+ if(Tc<PH.TC){
+  if(!seeded){seeded=true;for(var s=0;s<3;s++){var idx=-1,tries=0;
+    while(tries++<400){var j=(Math.random()*GW*GH)|0;if(scr[j]){idx=j;break;}}
+    if(idx<0)idx=((GH*0.5)|0)*GW+((GW*(0.25+0.25*s))|0);
+    nuclei.push(idx);convert(idx);}}
+  everCold=true;
+  // stochastic nucleation, scratch-biased
+  var lam=Nn*2.2*dt;
+  if(Math.random()<lam){var j2=(Math.random()*GW*GH)|0;
+   if(!st[j2]&&(scr[j2]||Math.random()<0.25)){nuclei.push(j2);convert(j2);}}
+  // autocatalytic growth along the front
+  var pg=9*G*dt,nf=[],ln=front.length;
+  for(var k=0;k<ln;k++){var i=front[k];
+   if(st[i]){inF[i]=0;continue;}
+   if(Math.random()<pg*nz[i]){convert(i);inF[i]=0;}
+   else nf.push(i);}
+  front=nf;
+ }
+ for(var f=1;f<fresh.length;f+=2)fresh[f]+=dt;
+ var x=cnt/(GW*GH);if(x>peakX)peakX=x;
+ if(Tc>PH.TC&&peakX>0.05)warmed=true;
+}
+function resetGrid(){st.fill(0);inF.fill(0);front=[];cnt=0;nuclei=[];fresh=[];seeded=false;warmed=false;peakX=0;
+ octx.clearRect(0,0,off.width,off.height);}
+
+function rr(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);
+ ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+function chip(x,y,txt,col,align){ctx.font='11px ui-monospace,monospace';var w=ctx.measureText(txt).width+14;
+ if(align==='r')x-=w;ctx.fillStyle='rgba(4,7,14,.86)';ctx.strokeStyle='rgba(88,118,170,.55)';ctx.lineWidth=1;
+ rr(x,y,w,20,6);ctx.fill();ctx.stroke();ctx.fillStyle=col||'#cfe4ff';ctx.fillText(txt,x+7,y+14);return w;}
+
+function draw(){
+ var cold=Math.max(0,Math.min(1,(13.2-Tc)/50));
+ var g=ctx.createLinearGradient(0,0,0,H);
+ g.addColorStop(0,'rgb('+(6+2*cold)+','+(9)+','+(16+14*cold)+')');g.addColorStop(1,'#03040a');
+ ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+ // frost vignette when cold
+ if(cold>0){ctx.strokeStyle='rgba(120,180,255,'+(0.05+0.10*cold)+')';ctx.lineWidth=2;
+  for(var i=0;i<14;i++){var yy=(i/14)*H;ctx.beginPath();ctx.moveTo(0,yy);ctx.lineTo(W*0.06*cold,yy+8);ctx.stroke();
+   ctx.beginPath();ctx.moveTo(W,yy);ctx.lineTo(W-W*0.06*cold,yy+8);ctx.stroke();}}
+ // plaque body (white beta tin)
+ ctx.save();
+ var gg=ctx.createLinearGradient(PX,PY,PX+PW,PY+PHt);
+ gg.addColorStop(0,'#dfe9ff');gg.addColorStop(.45,'#9fb4d8');gg.addColorStop(.6,'#eef4ff');gg.addColorStop(1,'#8ea3c6');
+ ctx.shadowColor='rgba(150,190,255,.5)';ctx.shadowBlur=34;
+ ctx.fillStyle=gg;rr(PX,PY,PW,PHt,Math.min(28,PW*0.05));ctx.fill();ctx.shadowBlur=0;
+ rr(PX,PY,PW,PHt,Math.min(28,PW*0.05));ctx.clip();
+ ctx.drawImage(off,PX,PY,GW*CS*(PW/(GW*CS)),GH*CS*(PHt/(GH*CS)));
+ // growth-front shimmer
+ ctx.globalCompositeOperation='lighter';
+ var sx=PW/(GW*CS),sy=PHt/(GH*CS);
+ for(var k=0;k<fresh.length;k+=2){var age=fresh[k+1];if(age>1.2)continue;
+  var id=fresh[k],x=(id%GW)*CS*sx+PX,y=(((id/GW)|0))*CS*sy+PY;
+  ctx.fillStyle='rgba(150,220,255,'+(0.35*(1-age/1.2))+')';ctx.fillRect(x,y,CS*sx,CS*sy);}
+ ctx.globalCompositeOperation='source-over';
+ ctx.restore();
+ ctx.strokeStyle='rgba(190,215,255,.55)';ctx.lineWidth=1.5;rr(PX,PY,PW,PHt,Math.min(28,PW*0.05));ctx.stroke();
+ // labels
+ chip(PX,PY-26,'white β-tin — metal','#dfe9ff');
+ if(cnt>0)chip(PX+PW,PY+PHt+6,'grey α-tin — powder, +27% volume','#b9c4d6','r');
+
+ // TTT inset
+ var pw=Math.min(300,Math.max(160,W*0.30)),ph=Math.min(150,Math.max(104,H*0.24)),px=W-pw-12,py=H-ph-12;
+ ctx.fillStyle='rgba(4,7,14,.88)';ctx.strokeStyle='rgba(88,118,170,.5)';ctx.lineWidth=1;
+ rr(px,py,pw,ph,8);ctx.fill();ctx.stroke();
+ var ix=px+30,iy=py+16,iw=pw-40,ih=ph-32;
+ ctx.font='9px ui-monospace,monospace';ctx.fillStyle='#7789a8';
+ ctx.fillText('TTT curve',px+6,py+12);ctx.fillText('time →',ix+iw-32,py+ph-4);
+ var rmax=PH.rate(-33),T2Y=function(t){return iy+ih*(1-(t+80)/105);};
+ var LT=function(t){var r=PH.rate(t);if(r<=1e-6)return 3.2;return Math.max(0,Math.min(3.2,Math.log(rmax/r)/Math.LN10));};
+ var X2=function(l){return ix+iw*(l/3.2);};
+ ctx.strokeStyle='rgba(255,120,120,.75)';ctx.setLineDash([4,3]);ctx.beginPath();
+ ctx.moveTo(ix,T2Y(13.2));ctx.lineTo(ix+iw,T2Y(13.2));ctx.stroke();ctx.setLineDash([]);
+ ctx.fillStyle='#ff8a8a';ctx.fillText('13.2 °C  β stable above',ix+2,T2Y(13.2)-3);
+ ctx.strokeStyle='#8ff0ff';ctx.lineWidth=2;ctx.beginPath();
+ for(var t=12.5;t>=-80;t-=1.5){var xx=X2(LT(t)),yy=T2Y(t);if(t===12.5)ctx.moveTo(xx,yy);else ctx.lineTo(xx,yy);}
+ ctx.stroke();
+ ctx.fillStyle='#7789a8';ctx.fillText('−30 nose',ix-28,T2Y(-30)+3);
+ var dx=X2(LT(Tc)),dy=T2Y(Tc);
+ ctx.fillStyle=Tc>=13.2?'#8a97b0':'#ffe08a';ctx.beginPath();ctx.arc(dx,dy,4.5,0,6.2832);ctx.fill();
+
+ // chips
+ chip(12,H-30,'rates dramatized ~10⁶× — real tin pest takes months','#8ea4c6');
+ chip(12,H-56,'legends: Napoleon’s buttons 1812 & Scott 1912 — great stories, historians doubt both','#c9b48a');
+ if(warmed)chip(W-12,12,'warmed back up: it STOPS — but the powder never returns','#ffb0b0','r');
+ else if(Tc>=13.2)chip(W-12,12,'above 13.2 °C: β-tin is the stable phase','#9fe8ff','r');
+ else chip(W-12,12,'below 13.2 °C: β-tin is only metastable','#ffe08a','r');
+
+ var x=cnt/(GW*GH);
+ document.getElementById('rT').textContent=Tc.toFixed(1)+' °C';
+ var eX=document.getElementById('rX');eX.textContent=(x*100).toFixed(1)+' %';
+ eX.style.color=x>0.02?'#c9d4e6':'#8ff0ff';
+ document.getElementById('rN').textContent=(PH.n(Tc)).toFixed(2)+'×';
+ document.getElementById('rG').textContent=(PH.g(Tc)).toFixed(2)+'×';
+ document.getElementById('rP').textContent=Tc>=13.2?'off the diagram — β stable':
+  (Tc>-20?'above the nose — slow drive':(Tc>-45?'ON THE NOSE — fastest':'cold tail — diffusion dying'));
+}
+
+var last=performance.now(),acc=0;
+function frame(now){var rd=(now-last)/1000;last=now;if(rd>0.45)rd=0.45;acc+=rd;var n=0;
+ while(acc>=1/60&&n<40){step(1/60);acc-=1/60;n++;}draw();requestAnimationFrame(frame);}
+resize();requestAnimationFrame(frame);
+
+var sT=document.getElementById('sT'),bA=document.getElementById('bA');
+sT.addEventListener('input',function(){auto=false;bA.textContent='seasons dial: MANUAL';
+ Tc=+sT.value;document.getElementById('lT').textContent=Tc.toFixed(0);});
+bA.addEventListener('click',function(){auto=!auto;bA.textContent='seasons dial: '+(auto?'AUTO':'MANUAL');});
+var drag=false;
+cv.addEventListener('pointerdown',function(e){drag=true;cv.setPointerCapture(e.pointerId);pick(e);});
+cv.addEventListener('pointermove',function(e){if(drag)pick(e);});
+cv.addEventListener('pointerup',function(e){drag=false;try{cv.releasePointerCapture(e.pointerId);}catch(_){}});
+cv.addEventListener('pointercancel',function(){drag=false;});
+function pick(e){ // scratch the plaque -> new nucleation sites
+ var x=e.clientX-PX,y=e.clientY-PY;if(x<0||y<0||x>PW||y>PHt)return;
+ var gx=(x/PW*GW)|0,gy=(y/PHt*GH)|0,id=gy*GW+gx;
+ if(id>=0&&id<GW*GH){scr[id]=1;if(Tc<PH.TC&&!st[id]){nuclei.push(id);convert(id);}}
+}
+})();
+</script>
