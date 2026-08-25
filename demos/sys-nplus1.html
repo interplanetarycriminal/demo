@@ -181,7 +181,9 @@ function drawFall(x,y,w,h,pr,t){
     g.fillStyle=col;g.globalAlpha=done?0.85:1;g.fillRect(bx,byy,Math.max(1.5,bwq),Math.max(1.4,rowH-1.6));g.globalAlpha=1;
     if(rowH>9&&q<5){
       var lbl=q===0?'SELECT posts':(mode==='lazy'?'SELECT author id='+q:(mode==='batch'?'SELECT authors id IN (…)':''));
-      if(lbl)txt(lbl,Math.min(bx+bwq+6,px+pw-152),byy+rowH/2-0.5,'#9fb8dc',9);
+      if(lbl){g.font='9px ui-monospace,Menlo,monospace';
+        var lx2=bx+bwq+7,lw2=g.measureText(lbl).width;
+        if(lx2+lw2<=px+pw-4)txt(lbl,lx2,byy+rowH/2-0.5,'#9fb8dc',9);}
     }
   }
   if(mode==='lazy'&&qn>3&&rowH>4)txt('… one round trip per row, ×'+N,px+2,py+Math.min(ph-6,qn*rowH+10),'#ff9d92',9.2);

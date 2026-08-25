@@ -35,10 +35,9 @@ input[type=range]{width:100%;accent-color:#4fe3ff;height:16px}
 <canvas id="c"></canvas>
 <div id="ui">
   <h1>THE BLOOM FILTER</h1>
-  <div class="mech">A bit array plus k hashes answers "seen this?" in O(k) with <i>no false negatives</i> and a tunable false-positive rate &mdash; membership without the items.</div>
+  <div class="mech">A bit array + k hashes: <i>no false negatives</i>, tunable false positives, items never stored.</div>
   <div class="row"><span class="k">items n / bits m</span><span class="v"><b id="rN">0</b> / <b id="rM">256</b> &middot; fill <b id="rFill">0%</b></span></div>
-  <div class="row"><span class="k">false positives</span><span class="v"><b id="rFP" class="hot">0</b> of <b id="rQ">0</b> absent = <b id="rFPR">0.0%</b></span></div>
-  <div class="row"><span class="k">theory (1&minus;e^&minus;kn/m)^k</span><span class="v"><b id="rTh">0.0%</b></span></div>
+  <div class="row"><span class="k">false pos <b id="rFP" class="hot">0</b>/<b id="rQ">0</b> absent</span><span class="v"><b id="rFPR">0.0%</b> vs theory <b id="rTh">0.0%</b></span></div>
   <div class="row"><span class="k">false negatives</span><span class="v"><b id="rFN" class="ok">0</b> &mdash; impossible &middot; <b id="rBPI">–</b></span></div>
   <div class="ctl">
     <button id="bD">TRY TO DELETE</button>
@@ -116,7 +115,7 @@ function fire(kind){
   var s,idx;
   if(kind==='ins'){idx=n;s=word(idx);}
   else if(kind==='hit'){if(!words.length)return;idx=Math.floor(Math.random()*words.length);s=words[idx];}
-  else{s='ghost-'+Math.floor(Math.random()*99999);}
+  else{s=WORDS[Math.floor(Math.random()*WORDS.length)]+'-'+(700+Math.floor(Math.random()*250));}
   var h=MODEL.hashes(s,K,m),all=true,j;
   for(j=0;j<K;j++)if(!bits[h[j]])all=false;
   var res;
@@ -133,11 +132,11 @@ function fire(kind){
 var acc2=0;
 function step(dt){
   simT+=dt;
-  var mixed=simT>3.0;
+  var mixed=simT>3.6;
   acc2+=dt*rate;
   while(acc2>=1){acc2-=1;
     if(!mixed)fire('ins');
-    else{var r=Math.random();if(r<0.42)fire('ins');else if(r<0.66)fire('hit');else fire('miss');}
+    else{var r=Math.random();if(r<0.55)fire('ins');else if(r<0.74)fire('hit');else fire('miss');}
   }
   var i2;
   for(i2=evs.length-1;i2>=0;i2--){evs[i2].t+=dt;if(evs[i2].t>1.5)evs.splice(i2,1);}

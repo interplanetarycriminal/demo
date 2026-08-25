@@ -159,7 +159,7 @@ function drawMain(y0,hh,t){
     txt('doctors row #'+(d+1),cx+38,cy+42,'#6d87ac',9.5);
     var pw=Math.min(86,cw*0.42);
     chip(cx+cw-pw-9,cy+ch-28,pw,21,isOn?'ON CALL':'OFF CALL',isOn?'#5af0a0':'#ff6d5e','rgba(4,8,14,.85)');
-    txt(isOn?'has not written':'txn '+(d===0?'T1':'T2')+' flipped it',cx+11,cy+ch-18,'#55708f',9);
+    txt(isOn?'no write yet':'flipped by '+(d===0?'T1':'T2'),cx+11,cy+ch-18,'#55708f',9);
   }
   // lanes
   var cols=['#ffc45a','#4fe3ff'],sps=[GOLD,CYAN];
