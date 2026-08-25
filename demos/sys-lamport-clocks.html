@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Logical Clocks</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:#04060c;overflow:hidden;color:#d5e6ff;
+  font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+#c{position:fixed;inset:0;display:block;touch-action:none}
+#ui{position:fixed;top:10px;left:10px;width:min(340px,calc(100vw - 20px));max-height:45vh;overflow:auto;
+  background:rgba(6,11,22,.87);border:1px solid #1d3560;border-radius:11px;padding:9px 11px 10px;z-index:5;
+  box-shadow:0 0 24px #000a}
+h1{font-size:12.5px;letter-spacing:.6px;color:#eaf4ff;text-shadow:0 0 10px #6ab6ff55}
+.mech{font-size:10.5px;color:#8ba6ce;margin:4px 0 7px}
+.row{display:flex;justify-content:space-between;gap:8px;font-size:11px;line-height:1.35}
+.k{color:#7e96bb}.v{color:#eaf4ff}.v b{color:#6ab6ff;font-weight:600}.v i{color:#ff6d5e;font-style:normal;font-weight:600}
+.ctl{margin-top:7px;display:flex;flex-wrap:wrap;gap:5px}
+button{flex:1 1 30%;font:600 10.5px/1.25 inherit;color:#8fa8cc;background:#0b162b;
+  border:1px solid #22406e;border-radius:6px;padding:5px 4px;cursor:pointer}
+button.on{color:#04121a;background:#6ab6ff;border-color:#a8d8ff;box-shadow:0 0 14px #6ab6ff88}
+label{display:block;margin-top:6px;font-size:9.5px;color:#7e96bb}
+label b{color:#eaf4ff}
+input[type=range]{width:100%;height:15px;accent-color:#6ab6ff;background:transparent;cursor:pointer;display:block}
+.hint{margin-top:6px;font-size:9.5px;color:#7d93b6}
+.hon{margin-top:8px;font-size:9.5px;color:#6d84a6;border-top:1px solid #14243f;padding-top:6px}
+.detail{margin-top:6px;font-size:9.5px;color:#63799a}
+.detail b{color:#8fb6e8}
+@media (max-width:640px){#ui{font-size:11px;max-height:38vh}#ui .detail{display:none}}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>LOGICAL CLOCKS</h1>
+  <div class="mech">Wall clocks skew, so ordering needs causality: <b>max(local, received)+1</b> stamps every event. Lamport counters preserve cause→effect; vector clocks also reveal what is truly independent.</div>
+  <div class="row"><span class="k">paradoxes seen</span><span class="v"><i id="rP">0</i></span></div>
+  <div class="row"><span class="k">events</span><span class="v"><b id="rE">0</b></span></div>
+  <div class="row"><span class="k">concurrent pairs (window)</span><span class="v"><b id="rC">0</b></span></div>
+  <div class="ctl">
+    <button id="mW">WALL</button><button id="mL" class="on">LAMPORT</button><button id="mV">VECTOR</button>
+  </div>
+  <div class="ctl"><button id="bP">pause</button><button id="bClr">clear selection</button></div>
+  <label>clock skew between machines <b id="lS">1.20</b> s<input id="sS" type="range" min="0" max="250" value="120"></label>
+  <label>message rate <b id="lR">0.75</b> /s<input id="sR" type="range" min="15" max="200" value="75"></label>
+  <div class="hint">Tap a bead to light its causal past. In VECTOR mode tap two beads for a verdict.</div>
+  <div class="hon">Honesty: 3 processes, instantaneous local events, and no clock drift correction — real deployments run NTP/PTP and still cannot order two events closer together than their uncertainty.</div>
+  <div class="detail"><b>Lineage.</b> <b>Lamport 1978, "Time, Clocks, and the Ordering of Events in a Distributed System"</b> — the most cited paper in distributed computing — defined <b>happened-before</b> and the counter that respects it. <b>Fidge</b> and <b>Mattern</b> (1988) added <b>vector clocks</b>, which also <i>detect</i> concurrency. Their descendants are <b>version vectors</b> in Dynamo, <b>dotted version vectors</b> in Riak, and the causal metadata inside every <b>CRDT</b>.</div>
+</div>
+<script>
+(function(){
+var cv=document.getElementById('c'),ctx=cv.getContext('2d'),ui=document.getElementById('ui');
+var W=0,H=0,DPR=1,S={x:0,y:0,w:0,h:0},G={};
+function $(i){return document.getElementById(i)}
+//--CORE--
+var CORE=(function(){
+var NP=3;
+function rnd(s){s.seed=(Math.imul(s.seed,1664525)+1013904223)>>>0;return s.seed/4294967296}
+function create(seed){return{t:0,seed:(seed>>>0)||1,ev:[],msg:[],lam:[0,0,0],
+  vec:[[0,0,0],[0,0,0],[0,0,0]],nextL:[0.62,1.35,0.48],nextS:[99,99,99],
+  skew:1.2,rate:0.75,paradox:0,id:0,si:0,paused:false,sel:[],flash:0,pFlash:null,mode:'L'}}
+function addEv(st,p,t,kind,rl,rv){
+  var i;
+  if(rv)for(i=0;i<NP;i++)if(rv[i]>st.vec[p][i])st.vec[p][i]=rv[i];
+  if(rl!==undefined&&rl>st.lam[p])st.lam[p]=rl;
+  st.lam[p]++;st.vec[p][p]++;
+  var e={p:p,t:t,lam:st.lam[p],vec:[st.vec[p][0],st.vec[p][1],st.vec[p][2]],k:kind,id:st.id++};
+  st.ev.push(e);if(st.ev.length>420)st.ev.splice(0,st.ev.length-420);return e}
+function hb(a,b){var i,le=true,eq=true;
+  for(i=0;i<NP;i++){if(a.vec[i]>b.vec[i])le=false;if(a.vec[i]!==b.vec[i])eq=false}
+  return le&&!eq}
+function rel(a,b){if(hb(a,b))return 1;if(hb(b,a))return -1;return 0}
+function past(st,b){var r={},i;for(i=0;i<st.ev.length;i++){var e=st.ev[i];if(hb(e,b))r[e.id]=1}return r}
+function wall(st,p,t){return t+(p===1?st.skew:(p===2?-st.skew:0))}
+function sendMsg(st,p,q,t,tr){
+  var e=addEv(st,p,t,'S'),m={f:p,q:q,tS:t,tR:t+tr,lam:e.lam,vec:e.vec,se:e,re:null,par:false,id:st.id};
+  st.msg.push(m);if(st.msg.length>90)st.msg.splice(0,st.msg.length-90);return m}
+var SCR=[{t:0.62,p:0,k:'l'},{t:1.10,p:0,q:1,tr:0.46},{t:2.10,p:1,k:'l'},{t:3.00,p:1,q:2,tr:0.50}];
+function step(st,dt){
+  if(st.paused)return;
+  var pt=st.t;st.t+=dt;var i,p;
+  if(st.flash>0)st.flash-=dt;
+  while(st.si<SCR.length&&SCR[st.si].t<=st.t){var s=SCR[st.si++];
+    if(s.k==='l')addEv(st,s.p,s.t,'L');else sendMsg(st,s.p,s.q,s.t,s.tr)}
+  for(p=0;p<NP;p++){
+    if(st.t>=st.nextL[p]){addEv(st,p,st.nextL[p],'L');st.nextL[p]+=0.7+1.5*rnd(st)}
+    if(st.nextS[p]>90)st.nextS[p]=3.3+rnd(st)*1.5+p*0.4;
+    if(st.t>=st.nextS[p]){var q=(p+1+((rnd(st)*2)|0))%NP;
+      sendMsg(st,p,q,st.nextS[p],0.34+rnd(st)*0.42);
+      st.nextS[p]+=Math.max(0.35,(1/Math.max(0.05,st.rate))*(0.6+1.1*rnd(st)))}}
+  for(i=0;i<st.msg.length;i++){var m=st.msg[i];
+    if(!m.re&&m.tR<=st.t){m.re=addEv(st,m.q,m.tR,'R',m.lam,m.vec);
+      var ws=wall(st,m.f,m.tS),wr=wall(st,m.q,m.tR);
+      if(wr<ws){m.par=true;st.paradox++;st.flash=1.9;st.pFlash={ws:ws,wr:wr,m:m};
+        st.sel=[m.re]}}}
+  return pt}
+function concurrentPairs(st,n){var e=st.ev.slice(-n),c=0,i,j;
+  for(i=0;i<e.length;i++)for(j=i+1;j<e.length;j++)if(rel(e[i],e[j])===0)c++;
+  return c}
+return{create:create,step:step,addEv:addEv,sendMsg:sendMsg,hb:hb,rel:rel,past:past,wall:wall,
+  concurrentPairs:concurrentPairs,NP:NP}})();
+//--ENDCORE--
+var st=CORE.create(0xc10c4b),SUB=1/60,WIN=7.0;
+var PC=['#6ab6ff','#4dffa8','#ffc454'];
+function spr(r,g,b,sz){var q=document.createElement('canvas');q.width=q.height=sz;var x=q.getContext('2d'),c=sz/2,
+  gr=x.createRadialGradient(c,c,0,c,c,c);gr.addColorStop(0,'rgba('+r+','+g+','+b+',1)');
+  gr.addColorStop(.3,'rgba('+r+','+g+','+b+',.55)');gr.addColorStop(.62,'rgba('+r+','+g+','+b+',.16)');
+  gr.addColorStop(1,'rgba('+r+','+g+','+b+',0)');x.fillStyle=gr;x.fillRect(0,0,sz,sz);return q}
+var SP=[spr(106,182,255,40),spr(77,255,168,40),spr(255,196,84,40)],
+  SPR=spr(255,109,94,44),SPG=spr(255,224,150,44),SPW=spr(230,242,255,44);
+function glow(s,x,y,sz,al){ctx.globalAlpha=al==null?1:al;ctx.drawImage(s,x-sz/2,y-sz/2,sz,sz);ctx.globalAlpha=1}
+function rr(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath()}
+function chip(x,y,txt,c2,fs,al){var f=fs||10;ctx.font='600 '+f+'px ui-monospace,monospace';
+  var w=ctx.measureText(txt).width+14,h=f+9,bx=al==='r'?x-w:(al==='c'?x-w/2:x);
+  bx=Math.max(S.x+2,Math.min(bx,S.x+S.w-w-2));
+  ctx.fillStyle='rgba(5,10,20,.94)';rr(bx,y,w,h,5);ctx.fill();ctx.strokeStyle=c2;ctx.lineWidth=1;ctx.stroke();
+  ctx.fillStyle=c2;ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillText(txt,bx+7,y+h/2+.5);return w}
+function layout(){
+  G.x0=S.x+62;G.x1=S.x+S.w-14;
+  G.top=S.y+52;G.bot=S.y+S.h-30;
+  G.lh=(G.bot-G.top)/3;
+  G.ly=[G.top+G.lh*0.5,G.top+G.lh*1.5,G.top+G.lh*2.5];
+  G.capY=S.y+S.h-24}
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
+  cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);cv.style.width=W+'px';cv.style.height=H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);var r=ui.getBoundingClientRect();
+  if(W-(r.right+16)>=380)S={x:r.right+16,y:12,w:W-(r.right+16)-12,h:H-24};
+  else S={x:12,y:r.bottom+12,w:W-24,h:H-(r.bottom+12)-12};
+  if(S.h<200){S.y=12;S.h=H-24}layout()}
+function T0(){return Math.max(0,st.t-WIN)}
+function X(t){return G.x0+(t-T0())/WIN*(G.x1-G.x0)}
+function stamp(e){
+  if(st.mode==='W')return CORE.wall(st,e.p,e.t).toFixed(2)+'s';
+  if(st.mode==='L')return 'L'+e.lam;
+  return '['+e.vec[0]+','+e.vec[1]+','+e.vec[2]+']'}
+function drawStage(){
+  ctx.fillStyle='#04060c';ctx.fillRect(0,0,W,H);
+  var i,p,sel=st.sel.length?st.sel[st.sel.length-1]:null,PAST=sel?CORE.past(st,sel):null;
+  for(p=0;p<3;p++){
+    var y=G.ly[p];
+    ctx.strokeStyle='rgba(26,52,96,.9)';ctx.lineWidth=1.4;
+    ctx.beginPath();ctx.moveTo(G.x0,y);ctx.lineTo(G.x1,y);ctx.stroke();
+    ctx.fillStyle=PC[p];ctx.font='700 12px ui-monospace,monospace';ctx.textAlign='left';ctx.textBaseline='bottom';
+    ctx.fillText('P'+p,S.x+4,y-3);
+    var sk=p===1?st.skew:(p===2?-st.skew:0);
+    ctx.fillStyle='#6d84a6';ctx.font='9px ui-monospace,monospace';ctx.textBaseline='top';
+    ctx.fillText('clk '+(sk>=0?'+':'')+sk.toFixed(2)+'s',S.x+4,y+3)}
+  ctx.strokeStyle='rgba(120,170,240,.35)';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(G.x1,G.top);ctx.lineTo(G.x1,G.bot);ctx.stroke();
+  for(i=0;i<st.msg.length;i++){var m=st.msg[i];
+    if(m.tR<T0())continue;
+    var xa=X(m.tS),ya=G.ly[m.f],xb=X(m.tR),yb=G.ly[m.q],inp=PAST&&m.re&&(PAST[m.re.id]||m.re===sel),
+      done=m.re!=null,u=done?1:Math.max(0,Math.min(1,(st.t-m.tS)/(m.tR-m.tS)));
+    ctx.strokeStyle=m.par?'rgba(255,109,94,'+(inp?0.95:0.55)+')':(inp?'rgba(255,224,150,.95)':'rgba(90,130,190,'+(PAST?0.16:0.4)+')');
+    ctx.lineWidth=m.par?2:(inp?2:1.1);
+    ctx.beginPath();ctx.moveTo(xa,ya);ctx.lineTo(xa+(xb-xa)*u,ya+(yb-ya)*u);ctx.stroke();
+    if(!done){var hx=xa+(xb-xa)*u,hy=ya+(yb-ya)*u;
+      for(var q2=0;q2<5;q2++){var uu=u-q2*0.045;if(uu<0)break;
+        glow(m.par?SPR:SP[m.f],xa+(xb-xa)*uu,ya+(yb-ya)*uu,16-q2*1.9,(q2?0.3:0.95)*(1-q2/6))}}}
+  var lastX=[-1e9,-1e9,-1e9];
+  for(i=0;i<st.ev.length;i++){var e=st.ev[i];
+    if(e.t<T0()-0.1)continue;
+    var x=X(e.t),y=G.ly[e.p],inP=PAST&&(PAST[e.id]||e===sel),isSel=st.sel.indexOf(e)>=0,
+      al=PAST?(inP?1:0.20):1,c=PC[e.p];
+    if(isSel)glow(SPW,x,y,34,.95);
+    else if(inP)glow(SPG,x,y,24,.8);
+    glow(SP[e.p],x,y,e.k==='R'?20:15,al*.9);
+    ctx.fillStyle=isSel?'#eaf4ff':c;ctx.globalAlpha=al;
+    ctx.beginPath();ctx.arc(x,y,e.k==='L'?3.2:4.4,0,6.3);ctx.fill();
+    if(e.k==='R'){ctx.strokeStyle=isSel?'#eaf4ff':c;ctx.lineWidth=1.4;ctx.beginPath();ctx.arc(x,y,7.5,0,6.3);ctx.stroke()}
+    var s2=stamp(e);ctx.font='700 9.5px ui-monospace,monospace';var w2=ctx.measureText(s2).width;
+    if(x-lastX[e.p]>=w2+10&&x+w2/2<G.x1){lastX[e.p]=x;
+      ctx.textAlign='center';ctx.textBaseline='bottom';
+      ctx.fillStyle=isSel?'#ffffff':(inP?'#ffe096':(st.mode==='W'?'#9fb6d8':'#cfe4ff'));
+      ctx.fillText(s2,x,y-11)}
+    ctx.globalAlpha=1}
+  chip(S.x+2,S.y,'HAPPENS-BEFORE · P0 P1 P2 · '+(st.mode==='W'?'WALL CLOCK':(st.mode==='L'?'LAMPORT COUNTER':'VECTOR CLOCK'))+' stamps','#6ab6ff',10.5);
+  chip(S.x+S.w-2,S.y,'paradoxes '+st.paradox,st.paradox?'#ff6d5e':'#8fb6e8',10.5,'r');
+  if(st.flash>0&&st.pFlash){
+    chip(S.x+2,S.y+26,'EFFECT BEFORE CAUSE?  sent '+st.pFlash.ws.toFixed(2)+'s → received '+st.pFlash.wr.toFixed(2)+'s','#ff6d5e',10.5);
+    ctx.fillStyle='rgba(255,60,50,'+(0.10*Math.max(0,st.flash))+')';ctx.fillRect(S.x,S.y,S.w,S.h)}
+  else chip(S.x+2,S.y+26,'wall clocks lie across machines — causality does not','#8fb6e8',9.5);
+  var cap='Lamport orders causality; vectors also see independence',cc='#b98cff';
+  if(sel&&st.mode!=='V'){cap='causal past of the tapped event is lit — the rest is dimmed';cc='#ffe096'}
+  if(st.mode==='V'&&st.sel.length===2){var r2=CORE.rel(st.sel[0],st.sel[1]),
+    A=st.sel[0],B=st.sel[1],
+    va='['+A.vec.join(',')+']',vb='['+B.vec.join(',')+']';
+    cap=(r2===1?('A → B    '+va+' ≤ '+vb):(r2===-1?('B → A    '+vb+' ≤ '+va):
+      ('CONCURRENT — no one can say which was first    '+va+' ∥ '+vb)));
+    cc=r2===0?'#ff6eb4':'#4dffa8'}
+  chip(S.x+2,G.capY,cap,cc,9.5)}
+function sync(){$('rP').textContent=st.paradox;$('rE').textContent=st.ev.length;
+  $('rC').textContent=CORE.concurrentPairs(st,12)}
+function setMode(m){st.mode=m;$('mW').className=m==='W'?'on':'';$('mL').className=m==='L'?'on':'';
+  $('mV').className=m==='V'?'on':'';if(m!=='V'&&st.sel.length>1)st.sel=[st.sel[st.sel.length-1]]}
+$('mW').onclick=function(){setMode('W')};$('mL').onclick=function(){setMode('L')};$('mV').onclick=function(){setMode('V')};
+$('bP').onclick=function(){st.paused=!st.paused;this.className=st.paused?'on':'';this.textContent=st.paused?'resume':'pause'};
+$('bClr').onclick=function(){st.sel=[]};
+$('sS').oninput=function(){st.skew=+this.value/100;$('lS').textContent=st.skew.toFixed(2)};
+$('sR').oninput=function(){st.rate=+this.value/100;$('lR').textContent=st.rate.toFixed(2)};
+cv.addEventListener('pointerdown',function(e){cv.setPointerCapture(e.pointerId);
+  var best=null,bd=1e9;
+  for(var i=0;i<st.ev.length;i++){var ev=st.ev[i];if(ev.t<T0()-0.1)continue;
+    var dx=e.clientX-X(ev.t),dy=e.clientY-G.ly[ev.p],d=dx*dx+dy*dy;
+    if(d<bd&&d<400){bd=d;best=ev}}
+  if(!best){st.sel=[];return}
+  if(st.mode==='V'){if(st.sel.indexOf(best)>=0)return;st.sel.push(best);if(st.sel.length>2)st.sel.shift()}
+  else st.sel=[best]});
+window.addEventListener('resize',resize);
+var lastT=performance.now()/1000;
+function frame(now){now/=1000;var rdt=now-lastT;lastT=now;if(rdt>0.45)rdt=0.45;if(rdt<0)rdt=0;
+  var n=Math.max(1,Math.round(rdt/SUB));for(var i=0;i<n;i++)CORE.step(st,SUB);
+  drawStage();sync();requestAnimationFrame(frame)}
+resize();sync();requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

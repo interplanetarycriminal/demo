@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Consistent Hashing</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:#04060c;overflow:hidden;color:#d5e6ff;
+  font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+#c{position:fixed;inset:0;display:block;touch-action:none}
+#ui{position:fixed;top:10px;left:10px;width:min(340px,calc(100vw - 20px));max-height:45vh;overflow:auto;
+  background:rgba(6,11,22,.87);border:1px solid #1d3560;border-radius:11px;padding:9px 11px 10px;z-index:5;
+  box-shadow:0 0 24px #000a}
+h1{font-size:12.5px;letter-spacing:.6px;color:#eaf4ff;text-shadow:0 0 10px #4dffa855}
+.mech{font-size:10.5px;color:#8ba6ce;margin:4px 0 7px}
+.row{display:flex;justify-content:space-between;gap:8px;font-size:11px;line-height:1.35}
+.k{color:#7e96bb}.v{color:#eaf4ff}.v b{color:#4dffa8;font-weight:600}.v i{color:#ff6d5e;font-style:normal;font-weight:600}
+.bars{margin:5px 0 2px}
+.bar{display:flex;align-items:center;gap:5px;font-size:9.5px;margin-top:2px}
+.bar span{width:11px;font-weight:700}
+.bar i{flex:1;height:6px;background:#0e1b30;border-radius:3px;overflow:hidden;display:block}
+.bar u{display:block;height:100%;border-radius:3px;text-decoration:none;transition:width .18s}
+.bar em{width:20px;text-align:right;font-style:normal;color:#8fa8cc}
+.ctl{margin-top:7px;display:flex;flex-wrap:wrap;gap:5px}
+button{flex:1 1 46%;font:600 10.5px/1.25 inherit;color:#8fa8cc;background:#0b162b;
+  border:1px solid #22406e;border-radius:6px;padding:5px 4px;cursor:pointer}
+label{display:block;margin-top:6px;font-size:9.5px;color:#7e96bb}
+label b{color:#eaf4ff}
+input[type=range]{width:100%;height:15px;accent-color:#4dffa8;background:transparent;cursor:pointer;display:block}
+.hint{margin-top:6px;font-size:9.5px;color:#7d93b6}
+.hon{margin-top:8px;font-size:9.5px;color:#6d84a6;border-top:1px solid #14243f;padding-top:6px}
+.detail{margin-top:6px;font-size:9.5px;color:#63799a}
+.detail b{color:#8fb6e8}
+@media (max-width:640px){#ui{font-size:11px;max-height:38vh}#ui .detail{display:none}}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>CONSISTENT HASHING</h1>
+  <div class="mech">Hash servers <b>and</b> keys onto one ring; a key belongs to the next server clockwise — so a new server steals only the arc behind it.</div>
+  <div class="row"><span class="k">servers</span><span class="v"><b id="rN">4</b></span></div>
+  <div class="row"><span class="k">keys moved · last change</span><span class="v"><b id="rMv">—</b></span></div>
+  <div class="row"><span class="k">mod-N would have moved</span><span class="v"><i id="rMod">—</i></span></div>
+  <div class="row"><span class="k">load stddev</span><span class="v"><b id="rSd">0.0</b></span></div>
+  <div class="bars" id="bars"></div>
+  <div class="ctl"><button id="bAdd">+ add server</button><button id="bDel">&minus; remove server</button></div>
+  <label>virtual nodes per server <b id="lVN">6</b><input id="sVN" type="range" min="1" max="32" value="6"></label>
+  <label>keys <b id="lK">80</b><input id="sK" type="range" min="40" max="160" value="80"></label>
+  <div class="hint">Tap the ring to drop a key at that spot.</div>
+  <div class="hon">Honesty: hash = 32-bit FNV-1a over label strings, so positions are deterministic but not cryptographic; real rings hash 128-bit MD5/Murmur and store replicas on the next R distinct servers.</div>
+  <div class="detail"><b>Lineage.</b> <b>Karger et al. 1997</b> invented consistent hashing for <b>web caching</b> — relocating clients without a global rehash. <b>Amazon Dynamo (2007)</b> put it under a database, adding virtual nodes for load smoothing. Today it is <b>memcached</b> clients, <b>Cassandra</b> and <b>Riak</b> token rings, and every <b>CDN</b> deciding which edge holds your object.</div>
+</div>
+<script>
+(function(){
+var cv=document.getElementById('c'),ctx=cv.getContext('2d'),ui=document.getElementById('ui');
+var W=0,H=0,DPR=1,UIB=0,S={x:0,y:0,w:0,h:0},G={};
+function $(i){return document.getElementById(i)}
+//--CORE--
+var CORE=(function(){
+function fnv(s){var h=2166136261>>>0;for(var i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)>>>0}return h>>>0}
+function pos(s){return fnv(s)/4294967296}
+function mkRing(sv,vn){var p=[],i,v;
+  for(i=0;i<sv.length;i++)for(v=0;v<vn;v++)p.push({p:pos(sv[i]+'#'+v),s:i});
+  p.sort(function(a,b){return a.p-b.p});return p}
+function owner(pts,q){if(!pts.length)return -1;
+  var lo=0,hi=pts.length-1,r=-1;
+  while(lo<=hi){var m=(lo+hi)>>1;if(pts[m].p>=q){r=m;hi=m-1}else lo=m+1}
+  return pts[r<0?0:r].s}
+function mkKeys(n){var k=[],i;for(i=0;i<n;i++){var h=fnv('key/'+i);k.push({h:h,p:h/4294967296})}return k}
+function loads(pts,keys,n){var c=[],i;for(i=0;i<n;i++)c.push(0);
+  for(i=0;i<keys.length;i++){var o=owner(pts,keys[i].p);if(o>=0)c[o]++}return c}
+function stddev(a){var n=a.length,m=0,i,s=0;if(!n)return 0;
+  for(i=0;i<n;i++)m+=a[i];m/=n;for(i=0;i<n;i++)s+=(a[i]-m)*(a[i]-m);return Math.sqrt(s/n)}
+function movedRing(keys,svA,svB,vn){var A=mkRing(svA,vn),B=mkRing(svB,vn),n=0,i;
+  for(i=0;i<keys.length;i++){var a=owner(A,keys[i].p),b=owner(B,keys[i].p);
+    if(a<0||b<0||svA[a]!==svB[b])n++}return n}
+function movedMod(keys,na,nb){var n=0,i;for(i=0;i<keys.length;i++)if(keys[i].h%na!==keys[i].h%nb)n++;return n}
+return{fnv:fnv,pos:pos,mkRing:mkRing,owner:owner,mkKeys:mkKeys,loads:loads,stddev:stddev,
+  movedRing:movedRing,movedMod:movedMod}})();
+//--ENDCORE--
+var LET='ABCDEFGH',COLS=['#4dffa8','#ffc454','#6ab6ff','#ff6eb4','#b98cff','#ff8a5e','#5effe0','#ffe066'];
+function col(n){var i=LET.indexOf(n);return COLS[i<0?0:i]}
+var st={servers:['A','B','C','D'],vn:6,keys:CORE.mkKeys(80),pts:null,t:0,auto:true,
+  moved:0,modMoved:0,fly:[],flash:0,drops:[],modPhase:-99,modFrom:4,modTo:5};
+function ownName(p){var o=CORE.owner(st.pts,p);return o<0?'A':st.servers[o]}
+st.pts=CORE.mkRing(st.servers,st.vn);
+for(var i=0;i<st.keys.length;i++)st.keys[i].own=ownName(st.keys[i].p);
+function apply(sv,vn,anim){
+  var old=st.keys.map(function(k){return k.own});
+  st.servers=sv;st.vn=vn;st.pts=CORE.mkRing(sv,vn);
+  var moved=0,i,d=0;
+  for(i=0;i<st.keys.length;i++){var nn=ownName(st.keys[i].p),k=st.keys[i];
+    if(nn!==old[i]){moved++;
+      if(anim){st.fly.push({from:old[i],to:nn,key:k,d:d,t:-d,dur:1.25});d+=0.055}
+      else k.own=nn}
+    else k.own=nn}
+  if(anim){st.moved=moved;st.flash=1;
+    st.modMoved=CORE.movedMod(st.keys,Math.max(1,old.length?st.servers.length-(sv.length>old.length?1:-1):1),st.servers.length)}
+  return moved}
+function change(sv){
+  var prev=st.servers.length,ns=sv.length;
+  st.modFrom=prev;st.modTo=ns;
+  var old=st.servers;
+  var moved=apply(sv,st.vn,true);
+  st.moved=moved;st.modMoved=CORE.movedMod(st.keys,Math.max(1,prev),Math.max(1,ns));
+  st.modPhase=0;st.auto=false;return old}
+//--fx--
+function spr(r,g,b,sz){var q=document.createElement('canvas');q.width=q.height=sz;var x=q.getContext('2d'),c=sz/2,
+  gr=x.createRadialGradient(c,c,0,c,c,c);gr.addColorStop(0,'rgba('+r+','+g+','+b+',1)');
+  gr.addColorStop(.3,'rgba('+r+','+g+','+b+',.55)');gr.addColorStop(.62,'rgba('+r+','+g+','+b+',.16)');
+  gr.addColorStop(1,'rgba('+r+','+g+','+b+',0)');x.fillStyle=gr;x.fillRect(0,0,sz,sz);return q}
+var SP={};for(var ci=0;ci<COLS.length;ci++){var hx=COLS[ci];
+  SP[hx]=spr(parseInt(hx.substr(1,2),16),parseInt(hx.substr(3,2),16),parseInt(hx.substr(5,2),16),40)}
+var SPW=spr(200,225,255,40);
+function glow(s,x,y,sz,al){ctx.globalAlpha=al==null?1:al;ctx.drawImage(s,x-sz/2,y-sz/2,sz,sz);ctx.globalAlpha=1}
+function rr(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath()}
+function chip(x,y,txt,c2,fs,al){var f=fs||10;ctx.font='600 '+f+'px ui-monospace,monospace';
+  var w=ctx.measureText(txt).width+14,h=f+9,bx=al==='r'?x-w:(al==='c'?x-w/2:x);
+  bx=Math.max(S.x+2,Math.min(bx,S.x+S.w-w-2));
+  ctx.fillStyle='rgba(5,10,20,.93)';rr(bx,y,w,h,5);ctx.fill();ctx.strokeStyle=c2;ctx.lineWidth=1;ctx.stroke();
+  ctx.fillStyle=c2;ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillText(txt,bx+7,y+h/2+.5);return w}
+function ringXY(p,r){var a=-Math.PI/2+p*Math.PI*2;return[G.cx+Math.cos(a)*r,G.cy+Math.sin(a)*r]}
+function svXY(n,r){return ringXY(CORE.pos(n+'#0'),r==null?G.R:r)}
+//--layout--
+function layout(){
+  G.strip={x:S.x+4,y:S.y+S.h-76,w:S.w-8,h:74};
+  G.capY=G.strip.y-25;
+  var top=S.y+52,bot=G.capY-8;
+  G.cx=S.x+S.w/2;G.cy=(top+bot)/2;
+  G.R=Math.max(52,Math.min(S.w*0.45,(bot-top)*0.45));
+  G.bw=Math.max(12,G.R*0.13)}
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
+  cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);cv.style.width=W+'px';cv.style.height=H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);var r=ui.getBoundingClientRect();UIB=r.bottom;
+  if(W-(r.right+16)>=380)S={x:r.right+16,y:12,w:W-(r.right+16)-12,h:H-24};
+  else S={x:12,y:r.bottom+12,w:W-24,h:H-(r.bottom+12)-12};
+  if(S.h<200){S.y=12;S.h=H-24}layout()}
+//--draw--
+function drawRing(){
+  var i,a0,a1,p0,p1,pts=st.pts;
+  ctx.lineCap='butt';
+  ctx.strokeStyle='rgba(24,50,92,.9)';ctx.lineWidth=G.bw+8;
+  ctx.beginPath();ctx.arc(G.cx,G.cy,G.R,0,Math.PI*2);ctx.stroke();
+  for(i=0;i<pts.length;i++){
+    p0=pts[(i-1+pts.length)%pts.length].p;p1=pts[i].p;
+    a0=-Math.PI/2+p0*Math.PI*2;a1=-Math.PI/2+p1*Math.PI*2;
+    if(a1<a0)a1+=Math.PI*2;
+    ctx.strokeStyle=col(st.servers[pts[i].s]);ctx.globalAlpha=.30;ctx.lineWidth=G.bw;
+    ctx.beginPath();ctx.arc(G.cx,G.cy,G.R,a0,a1);ctx.stroke();ctx.globalAlpha=1}
+  for(i=0;i<pts.length;i++){var c=col(st.servers[pts[i].s]),A=ringXY(pts[i].p,G.R-G.bw/2-3),B=ringXY(pts[i].p,G.R+G.bw/2+3);
+    ctx.strokeStyle=c;ctx.globalAlpha=.85;ctx.lineWidth=1.6;
+    ctx.beginPath();ctx.moveTo(A[0],A[1]);ctx.lineTo(B[0],B[1]);ctx.stroke();ctx.globalAlpha=1}
+  for(i=0;i<st.keys.length;i++){var k=st.keys[i];if(k.flying)continue;
+    var P=ringXY(k.p,G.R),cc=col(k.own);
+    glow(SP[cc],P[0],P[1],13,.85);ctx.fillStyle=cc;ctx.beginPath();ctx.arc(P[0],P[1],2.4,0,6.3);ctx.fill()}
+  for(i=0;i<st.servers.length;i++){var n=st.servers[i],P=svXY(n),c3=col(n);
+    var pulse=(n===st.servers[st.servers.length-1]&&st.flash>0)?1+st.flash*.5:1;
+    glow(SP[c3],P[0],P[1],46*pulse,.85);
+    ctx.fillStyle='#050a14';ctx.beginPath();ctx.arc(P[0],P[1],11.5,0,6.3);ctx.fill();
+    ctx.strokeStyle=c3;ctx.lineWidth=2;ctx.stroke();
+    ctx.fillStyle=c3;ctx.font='700 12px ui-monospace,monospace';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(n,P[0],P[1]+.5)}
+  for(i=0;i<st.fly.length;i++){var f=st.fly[i];if(f.t<=0)continue;
+    var u=Math.min(1,f.t/f.dur),A2=svXY(f.from),B2=svXY(f.to),K=ringXY(f.key.p,G.R),c4=col(f.to);
+    for(var j=0;j<7;j++){var uu=u-j*0.035;if(uu<0)break;
+      var x=bez(A2[0],G.cx*.5+K[0]*.5,B2[0],uu),y=bez(A2[1],G.cy*.5+K[1]*.5,B2[1],uu);
+      glow(SP[c4],x,y,j===0?17:12,(j===0?.95:.42)*(1-j/8))}}
+}
+function bez(a,b,c,u){var v=1-u;return v*v*a+2*v*u*b+u*u*c}
+function drawStrip(){
+  var g=G.strip;
+  ctx.fillStyle='rgba(8,13,26,.82)';rr(g.x,g.y,g.w,g.h,8);ctx.fill();
+  ctx.strokeStyle=st.modPhase>=0&&st.modPhase<1.6?'rgba(255,109,94,'+(0.35+0.5*(1-st.modPhase/1.6))+')':'rgba(40,70,120,.7)';
+  ctx.lineWidth=1;ctx.stroke();
+  var ph=st.modPhase,mix=ph>=0?Math.min(1,ph/0.55):0,chaos=ph>=0&&ph<1.6?(1-ph/1.6):0;
+  chip(g.x+6,g.y+4,'ABLATION · mod-N rehash',"#ff9a8a",9.5);
+  chip(g.x+g.w-6,g.y+4,'keys moved '+st.modMoved+'/'+st.keys.length+'  ('+Math.round(100*st.modMoved/st.keys.length)+'%)','#ff6d5e',9.5,'r');
+  var n=Math.min(80,st.keys.length),per=40,sp=(g.w-18)/per,x0=g.x+9+sp/2;
+  for(var i=0;i<n;i++){var k=st.keys[i],r=(i/per)|0,c1=k.h%st.modFrom,c2=k.h%st.modTo,
+    jump=(c1!==c2)?1:0,cc=col(LET[mix>0.5?c2:c1]),
+    x=x0+(i%per)*sp,y=g.y+38+r*17,
+    dy=jump*chaos*Math.sin(ph*22+i*1.7)*5.5;
+    if(jump&&chaos>0){glow(SP['#ff6eb4'],x,y+dy,12,chaos*.5)}
+    glow(SP[cc],x,y+dy,9,.8);ctx.fillStyle=cc;ctx.beginPath();ctx.arc(x,y+dy,2.1,0,6.3);ctx.fill()}
+}
+function drawStage(){
+  ctx.fillStyle='#04060c';ctx.fillRect(0,0,W,H);
+  drawRing();
+  chip(S.x+2,S.y,'CONSISTENT HASH RING · '+st.servers.length+' servers × '+st.vn+' vnodes','#6ab6ff',10.5);
+  chip(S.x+S.w-2,S.y,'keys moved '+st.moved+'/'+st.keys.length+'  ('+Math.round(100*st.moved/st.keys.length)+'%)','#4dffa8',10.5,'r');
+  chip(S.x+2,S.y+26,'only the arc between you and your predecessor changes hands','#8fb6e8',9.5);
+  chip(S.x+2,G.capY,'virtual nodes: many small arcs average out the luck','#b98cff',9.5);
+  drawStrip()}
+//--ui sync--
+function buildBars(){var h='',i;
+  for(i=0;i<st.servers.length;i++){var n=st.servers[i];
+    h+='<div class="bar"><span style="color:'+col(n)+'">'+n+'</span><i><u id="bar'+i+'" style="background:'+col(n)+'"></u></i><em id="bv'+i+'">0</em></div>'}
+  $('bars').innerHTML=h}
+function sync(){
+  var L=CORE.loads(st.pts,st.keys,st.servers.length),i,mx=1;
+  for(i=0;i<L.length;i++)if(L[i]>mx)mx=L[i];
+  for(i=0;i<L.length;i++){var b=$('bar'+i),v=$('bv'+i);if(b){b.style.width=(100*L[i]/mx)+'%';v.textContent=L[i]}}
+  $('rN').textContent=st.servers.length;
+  $('rMv').textContent=st.moved?(st.moved+'/'+st.keys.length+'  ('+Math.round(100*st.moved/st.keys.length)+'%)'):'—';
+  $('rMod').textContent=st.moved?(st.modMoved+'/'+st.keys.length+'  ('+Math.round(100*st.modMoved/st.keys.length)+'%)'):'—';
+  $('rSd').textContent=CORE.stddev(L).toFixed(1)+' keys'}
+//--sim--
+var SUB=1/60;
+function step(dt){st.t+=dt;if(st.flash>0)st.flash-=dt*1.3;
+  if(st.modPhase>=0)st.modPhase+=dt;
+  if(st.modPhase>6.5)st.modPhase=0;
+  if(st.auto&&st.t>=2.5){st.auto=false;change(st.servers.concat(['E']))}
+  for(var i=st.fly.length-1;i>=0;i--){var f=st.fly[i];f.t+=dt;
+    if(f.t>0)f.key.flying=true;
+    if(f.t>=f.dur){f.key.flying=false;f.key.own=f.to;st.fly.splice(i,1)}}}
+//--controls--
+$('bAdd').onclick=function(){if(st.servers.length>=8)return;change(st.servers.concat([LET[st.servers.length]]));buildBars();sync()};
+$('bDel').onclick=function(){if(st.servers.length<=2)return;change(st.servers.slice(0,-1));buildBars();sync()};
+$('sVN').oninput=function(){st.vn=+this.value;$('lVN').textContent=st.vn;st.auto=false;apply(st.servers,st.vn,false);sync()};
+$('sK').oninput=function(){var n=+this.value;$('lK').textContent=n;st.auto=false;
+  st.keys=CORE.mkKeys(n);for(var i=0;i<st.keys.length;i++)st.keys[i].own=ownName(st.keys[i].p);
+  st.fly.length=0;st.moved=0;sync()};
+cv.addEventListener('pointerdown',function(e){cv.setPointerCapture(e.pointerId);
+  var dx=e.clientX-G.cx,dy=e.clientY-G.cy,r=Math.sqrt(dx*dx+dy*dy);
+  if(r<G.R*0.6||r>G.R*1.5)return;
+  var a=Math.atan2(dy,dx)+Math.PI/2,p=((a/(Math.PI*2))%1+1)%1;
+  var h=(p*4294967296)>>>0;st.keys.push({h:h,p:p,own:ownName(p)});
+  $('lK').textContent=st.keys.length;$('sK').value=Math.min(160,st.keys.length);sync()});
+window.addEventListener('resize',resize);
+var lastT=performance.now()/1000;
+function frame(now){now/=1000;var rdt=now-lastT;lastT=now;if(rdt>0.45)rdt=0.45;if(rdt<0)rdt=0;
+  var n=Math.max(1,Math.round(rdt/SUB));for(var i=0;i<n;i++)step(SUB);
+  drawStage();sync();requestAnimationFrame(frame)}
+resize();buildBars();sync();requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

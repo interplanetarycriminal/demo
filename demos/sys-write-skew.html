@@ -14,11 +14,11 @@ html,body{height:100%;background:#04060c;overflow:hidden;color:#d5e6ff;
   box-shadow:0 0 24px #000a}
 h1{font-size:12.5px;letter-spacing:.6px;color:#eaf4ff;text-shadow:0 0 10px #2f7fff88}
 .mech{font-size:10.5px;color:#8ba6ce;margin:4px 0 7px}
-.row{display:flex;justify-content:space-between;gap:8px;font-size:11px;line-height:1.45}
+.row{display:flex;justify-content:space-between;gap:8px;font-size:10.5px;line-height:1.38}
 .k{color:#7e96bb}.v{color:#eaf4ff}.v b{color:#ffd489;font-weight:600}
 .v b.hot{color:#ff6d5e}.v b.ok{color:#5af0a0}
 .ctl{margin-top:8px;display:flex;flex-wrap:wrap;gap:5px}
-button{flex:1 1 46%;font:600 10.5px/1.25 inherit;color:#8fa8cc;background:#0b162b;border:1px solid #22406e;
+button{flex:1 1 30%;font:600 10.5px/1.25 inherit;color:#8fa8cc;background:#0b162b;border:1px solid #22406e;
   border-radius:6px;padding:5px 4px;cursor:pointer}
 button.on{color:#04121a;background:#4fe3ff;border-color:#8ff2ff;box-shadow:0 0 14px #4fe3ff88}
 label{display:block;font-size:10.5px;margin:7px 0 1px;color:#96afd2}
@@ -35,18 +35,17 @@ input[type=range]{width:100%;accent-color:#4fe3ff;height:16px}
 <canvas id="c"></canvas>
 <div id="ui">
   <h1>WRITE SKEW</h1>
-  <div class="mech">Two transactions read the same rows, each writes a <i>different</i> row — no write ever collides, both commit, and together they break an invariant neither broke alone.</div>
+  <div class="mech">Both read the same rows, each writes a <i>different</i> row: no write collides, both commit, and together they break an invariant neither broke alone.</div>
   <div class="row"><span class="k">doctors on call</span><span class="v"><b id="rOn" class="ok">2</b> / rule &ge; 1</span></div>
-  <div class="row"><span class="k">committed txns</span><span class="v"><b id="rC">0</b></span></div>
-  <div class="row"><span class="k">aborts (SSI)</span><span class="v"><b id="rA">0</b></span></div>
+  <div class="row"><span class="k">committed / aborted</span><span class="v"><b id="rC">0</b> / <b id="rA">0</b></span></div>
   <div class="row"><span class="k">write&ndash;write conflicts</span><span class="v"><b id="rW">0</b> &mdash; none, ever</span></div>
   <div class="row"><span class="k">anomalies seen</span><span class="v"><b id="rX" class="hot">0</b></span></div>
   <div class="ctl">
     <button id="bS" class="on">SNAPSHOT</button>
-    <button id="bR">SERIALIZABLE</button>
+    <button id="bR">SERIALIZ.</button>
     <button id="bP">REPLAY</button>
   </div>
-  <label>timing overlap <span id="lO">100%</span> &mdash; 0% = strictly serial, no race window</label>
+  <label>timing overlap <span id="lO">100%</span> &mdash; 0% = strictly serial</label>
   <input id="sO" type="range" min="0" max="100" step="1" value="100">
   <div class="hon">honesty: a two-transaction toy of Cahill's SSI &mdash; real detectors track SIREAD locks over many txns and can abort false positives.</div>
   <div class="detail">lineage: <b>Berenson et al., anomaly zoo, SIGMOD 1995</b> &rarr; <b>Cahill, Serializable Snapshot Isolation, 2008</b> &rarr; Postgres SERIALIZABLE 9.1.</div>
@@ -129,7 +128,7 @@ function step(dt){
   var T=SCH.txns,j;
   for(j=0;j<2;j++){var x=T[j];
     if(simT>x.start&&simT<x.readEnd&&Math.random()<0.55)parts.push({k:'r',t:0,d:0.45,i:j});
-    if(simT>x.writeAt-0.25&&simT<x.commitAt&&x.outcome==='commit'&&Math.random()<0.5)parts.push({k:'w',t:0,d:0.5,i:j});
+    if(simT>x.writeAt-0.25&&simT<x.commitAt+0.75&&x.outcome==='commit'&&Math.random()<0.5)parts.push({k:'w',t:0,d:0.5,i:j});
   }
   var v=SCH.violAt(simT);
   if(v>=0&&!anomLatch){anomLatch=true;anom++;flash=1;}
@@ -144,22 +143,23 @@ function drawMain(y0,hh,t){
   var T=SCH.txns,on=SCH.onCallAt(t);
   // roster board
   card(bx,y0,bw,hh,'#26467a','rgba(7,13,25,.8)');
-  txt('ON-CALL ROSTER  ·  table: doctors',bx+9,y0+13,'#7fa2d6',10);
+  txt('ON-CALL ROSTER · doctors',bx+9,y0+14,'#7fa2d6',10.5);
   g.strokeStyle='#12233d';g.beginPath();g.moveTo(bx+8,y0+22);g.lineTo(bx+bw-8,y0+22);g.stroke();
-  var names=['Alice','Bob'],ch=Math.min(52,(hh-34)/2-6);
+  var names=['Alice','Bob'],ch=Math.min(124,(hh-36)/2-7);
   for(var d=0;d<2;d++){
     var cy=y0+30+d*(ch+8),cx=bx+9,cw=bw-18;
     var offT=(T[d].outcome==='commit')?T[d].commitAt:1e9;
     var isOn=t<offT,fu=isOn?0:Math.min(1,(t-offT)/0.45);
-    DOC[names[d]]={x:cx+cw*0.72,y:cy+ch/2};
+    DOC[names[d]]={xL:cx-2,xR:cx+cw+2,y:cy+ch*0.42};
     card(cx,cy,cw,ch,isOn?'#2c6f4e':'#5a2430',isOn?'rgba(10,26,20,.85)':'rgba(30,10,14,.8)');
-    if(isOn)glow(GRN,cx+16,cy+ch/2,ch*0.8,0.30+0.12*Math.sin(t*3+d));
-    else glow(RED,cx+16,cy+ch/2,ch*0.7,0.16*fu);
-    g.fillStyle=isOn?'#5af0a0':'#ff6d5e';g.beginPath();g.arc(cx+16,cy+ch/2,5.5,0,6.284);g.fill();
-    txt(names[d],cx+30,cy+ch/2-7,'#e7f2ff',11.5);
-    txt('doctor #'+(d+1)+' · row '+(d+1),cx+30,cy+ch/2+7,'#6d87ac',9);
-    var pw=Math.min(70,cw*0.34);
-    chip(cx+cw-pw-7,cy+ch/2-9,pw,18,isOn?'ON CALL':'OFF CALL',isOn?'#5af0a0':'#ff6d5e','rgba(4,8,14,.8)');
+    if(isOn)glow(GRN,cx+22,cy+28,ch*0.7,0.30+0.12*Math.sin(t*3+d));
+    else glow(RED,cx+22,cy+28,ch*0.6,0.18*fu);
+    g.fillStyle=isOn?'#5af0a0':'#ff6d5e';g.beginPath();g.arc(cx+22,cy+28,7,0,6.284);g.fill();
+    txt(names[d],cx+38,cy+23,'#e7f2ff',14);
+    txt('doctors row #'+(d+1),cx+38,cy+42,'#6d87ac',9.5);
+    var pw=Math.min(86,cw*0.42);
+    chip(cx+cw-pw-9,cy+ch-28,pw,21,isOn?'ON CALL':'OFF CALL',isOn?'#5af0a0':'#ff6d5e','rgba(4,8,14,.85)');
+    txt(isOn?'has not written':'txn '+(d===0?'T1':'T2')+' flipped it',cx+11,cy+ch-18,'#55708f',9);
   }
   // lanes
   var cols=['#ffc45a','#4fe3ff'],sps=[GOLD,CYAN];
@@ -167,17 +167,17 @@ function drawMain(y0,hh,t){
     var lx=i2===0?S.x:S.x+S.w-lw,x=T[i2],col=cols[i2];
     LANE[i2]={x:lx,w:lw};
     card(lx,y0,lw,hh,col+'55','rgba(7,12,22,.72)');
-    txt(x.name+'  ('+x.row+')',lx+8,y0+13,col,10.5);
+    txt(x.name+'  ('+x.row+')',lx+9,y0+14,col,11.5);
     var steps=['READ','THINK','WRITE','COMMIT'],
         bnd=[[x.start,x.readEnd],[x.readEnd,x.thinkEnd],[x.thinkEnd,x.writeEnd],[x.writeEnd,x.commitAt]];
-    var sh=Math.min(23,(hh-84)/4),sy=y0+24;
+    var sh=Math.min(42,(hh-96)/4),sy=y0+26;
     for(var s2=0;s2<4;s2++){
       var a=bnd[s2][0],b=bnd[s2][1],act=t>=a&&t<b,done=t>=b,u=act?(t-a)/(b-a):(done?1:0);
-      var yy=sy+s2*(sh+4);LANE[i2]['s'+s2]={y:yy+sh/2};
+      var yy=sy+s2*(sh+5);LANE[i2]['s'+s2]={y:yy+sh/2};
       card(lx+7,yy,lw-14,sh,act?col:'#1b2c48',act?'rgba(16,26,44,.9)':'rgba(8,13,24,.6)');
       if(act)glow(sps[i2],lx+lw/2,yy+sh/2,sh*1.3,0.22);
       g.fillStyle=col+'33';g.fillRect(lx+8,yy+sh-3,(lw-16)*u,2);
-      txt(steps[s2],lx+13,yy+sh/2,done||act?'#eaf4ff':'#4c6284',9.5);
+      txt(steps[s2],lx+13,yy+sh/2,done||act?'#eaf4ff':'#4c6284',10.5);
       if(s2===0&&(act||done))txt('snap '+x.snap,lx+lw-13,yy+sh/2,col,9,'right');
       if(s2===1&&(act||done))txt(x.wants?'safe→off':'unsafe',lx+lw-13,yy+sh/2,x.wants?col:'#5af0a0',9,'right');
       if(s2===2&&(act||done))txt(x.wants?x.row+'=off':'no write',lx+lw-13,yy+sh/2,col,9,'right');
@@ -187,12 +187,12 @@ function drawMain(y0,hh,t){
       }
     }
     // snapshot photo card
-    var py=sy+4*(sh+4)+4,ph=Math.max(26,Math.min(34,y0+hh-py-24));
+    var py=sy+4*(sh+5)+7,ph=Math.max(28,Math.min(62,y0+hh-py-20));
     var shot=t>=x.readEnd;
     card(lx+7,py,lw-14,ph,shot?col+'88':'#182a46','rgba(6,11,20,.8)');
     if(t>x.start&&t<x.readEnd+0.35){var fu2=1-Math.min(1,Math.abs(t-x.readEnd)/0.3);glow(WHT,lx+lw/2,py+ph/2,ph*1.5,0.5*fu2);}
-    txt('SNAPSHOT',lx+13,py+11,'#87a3c9',8.5);
-    txt(shot?x.snap+' ON CALL':'…',lx+13,py+ph-11,shot?col:'#3d5474',11);
+    txt('SNAPSHOT',lx+13,py+13,'#87a3c9',9);
+    txt(shot?x.snap+' ON CALL':'…',lx+13,py+ph-13,shot?col:'#3d5474',12.5);
     if(shot)txt('frozen',lx+lw-13,py+ph-11,'#5d7699',8.5,'right');
     // retry
     if(x.outcome==='abort'&&t>=x.retryAt){
@@ -204,7 +204,7 @@ function drawMain(y0,hh,t){
   for(var p=0;p<parts.length;p++){var q=parts[p],u2=q.t/q.d,li=LANE[q.i];if(!li)continue;
     var sx,sy2,ex,ey;
     if(q.k==='r'){sx=bx+bw*0.5;sy2=y0+hh*0.5;ex=li.x+li.w/2;ey=li.s0?li.s0.y:y0+40;}
-    else{sx=li.x+li.w/2;sy2=li.s2?li.s2.y:y0+80;var dd=DOC[SCH.txns[q.i].row]||{x:bx+bw/2,y:y0+hh/2};ex=dd.x;ey=dd.y;}
+    else{sx=li.x+li.w/2;sy2=li.s2?li.s2.y:y0+80;var dd=DOC[SCH.txns[q.i].row]||{xL:bx,xR:bx+bw,y:y0+hh/2};ex=q.i===0?dd.xL:dd.xR;ey=dd.y;}
     var px=sx+(ex-sx)*u2,py2=sy2+(ey-sy2)*u2-Math.sin(u2*3.14)*12;
     glow(q.i===0?GOLD:CYAN,px,py2,7,0.55*(1-Math.abs(u2-0.5)*1.2));
     g.fillStyle=q.i===0?'#ffe3a8':'#c8f6ff';g.beginPath();g.arc(px,py2,1.8,0,6.284);g.fill();
@@ -213,17 +213,17 @@ function drawMain(y0,hh,t){
 function drawGraph(x,y,w,h,t){
   card(x,y,w,h,'#1f3557','rgba(7,12,24,.78)');
   txt('DEPENDENCY GRAPH',x+9,y+13,'#7fa2d6',10);
-  var cy=y+h*0.52,ax=x+w*0.28,bx2=x+w*0.72,r=15,T=SCH.txns;
+  var cy=y+h*0.53,ax=x+w*0.27,bx2=x+w*0.73,r=18,T=SCH.txns;
   var cyc=SCH.cycle&&t>=Math.max(T[0].readEnd,T[1].readEnd);
   var col=cyc?'#ff6d5e':'#31537f';
   for(var e=0;e<2;e++){
-    var up=e===0,sx=up?ax:bx2,ex=up?bx2:ax,off=up?-20:20;
+    var up=e===0,sx=up?ax:bx2,ex=up?bx2:ax,off=up?-27:27;
     if(!cyc&&e===1)continue;
     g.strokeStyle=col;g.lineWidth=cyc?2:1.2;
     if(cyc){g.setLineDash([5,4]);g.lineDashOffset=-t*24*(up?1:-1);}
     g.beginPath();g.moveTo(sx+(up?r:-r),cy);g.quadraticCurveTo((sx+ex)/2,cy+off*1.6,ex-(up?r:-r),cy);g.stroke();g.setLineDash([]);
-    var mx=(sx+ex)/2,my=cy+off*0.85;
-    txt('rw',mx,my+(up?-1:1),col,9,'center');
+    var mx=(sx+ex)/2,my=cy+off*0.92;
+    txt('rw',mx,my+(up?-3:3),col,10,'center');
   }
   var names=['T1','T2'],cls=['#ffc45a','#4fe3ff'];
   for(var n=0;n<2;n++){
@@ -231,8 +231,8 @@ function drawGraph(x,y,w,h,t){
     glow(ab?RED:(n===0?GOLD:CYAN),nx,cy,r*1.8,0.28);
     g.fillStyle='rgba(6,12,22,.95)';g.beginPath();g.arc(nx,cy,r,0,6.284);g.fill();
     g.strokeStyle=ab?'#ff6d5e':cls[n];g.lineWidth=1.6;g.stroke();
-    txt(names[n],nx,cy,ab?'#ff6d5e':cls[n],11,'center');
-    if(ab){g.strokeStyle='#ff6d5e';g.beginPath();g.moveTo(nx-9,cy-9);g.lineTo(nx+9,cy+9);g.moveTo(nx+9,cy-9);g.lineTo(nx-9,cy+9);g.stroke();}
+    txt(names[n],nx,cy,ab?'#ff6d5e':cls[n],12.5,'center');
+    if(ab){g.strokeStyle='#ff6d5e';g.beginPath();g.moveTo(nx-11,cy-11);g.lineTo(nx+11,cy+11);g.moveTo(nx+11,cy-11);g.lineTo(nx-11,cy+11);g.stroke();}
   }
   var cap=cyc?(mode==='ser'?'cycle FOUND → abort one, retry':'rw-cycle T1→T2→T1 — invisible to SI'):'no cycle — they ran serially';
   txt(cap,x+9,y+h-11,cyc?(mode==='ser'?'#5af0a0':'#ff6d5e'):'#6d87ac',9);

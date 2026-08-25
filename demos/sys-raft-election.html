@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Raft Leader Election</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:#04060c;overflow:hidden;color:#d5e6ff;
+  font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+#c{position:fixed;inset:0;display:block;touch-action:none}
+#ui{position:fixed;top:10px;left:10px;width:min(340px,calc(100vw - 20px));max-height:45vh;overflow:auto;
+  background:rgba(6,11,22,.87);border:1px solid #1d3560;border-radius:11px;padding:9px 11px 10px;z-index:5;
+  box-shadow:0 0 24px #000a}
+h1{font-size:12.5px;letter-spacing:.6px;color:#eaf4ff;text-shadow:0 0 10px #ffc45455}
+.mech{font-size:10.5px;color:#8ba6ce;margin:4px 0 7px}
+.row{display:flex;justify-content:space-between;gap:8px;font-size:11px;line-height:1.35}
+.k{color:#7e96bb}.v{color:#eaf4ff}.v b{color:#ffc454;font-weight:600}.v i{color:#ff6d5e;font-style:normal;font-weight:600}
+#rSt{font-weight:700;letter-spacing:.5px;padding:0 6px;border-radius:4px;background:#0c2a1c;color:#57ffab}
+#rSt.warn{background:#33240a;color:#ffc44d;box-shadow:0 0 10px #ffc44d55}
+#rSt.bad{background:#3a0d10;color:#ff6d5e;box-shadow:0 0 10px #ff3b2a66}
+.ctl{margin-top:7px;display:flex;flex-wrap:wrap;gap:5px}
+button{flex:1 1 21%;font:600 10.5px/1.25 inherit;color:#8fa8cc;background:#0b162b;
+  border:1px solid #22406e;border-radius:6px;padding:5px 3px;cursor:pointer}
+button.wide{flex:1 1 100%}
+button.on{color:#04121a;background:#ffc454;border-color:#ffe0a0;box-shadow:0 0 14px #ffc45488}
+button.dan{color:#ffb0a6;border-color:#5a2028}
+label{display:block;margin-top:6px;font-size:9.5px;color:#7e96bb}
+label b{color:#eaf4ff}
+input[type=range]{width:100%;height:15px;accent-color:#ffc454;background:transparent;cursor:pointer;display:block}
+.hint{margin-top:6px;font-size:9.5px;color:#7d93b6}
+.hon{margin-top:8px;font-size:9.5px;color:#6d84a6;border-top:1px solid #14243f;padding-top:6px}
+.detail{margin-top:6px;font-size:9.5px;color:#63799a}
+.detail b{color:#8fb6e8}
+@media (max-width:640px){#ui{font-size:11px;max-height:38vh}#ui .detail{display:none}}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>RAFT LEADER ELECTION</h1>
+  <div class="mech">Followers expect heartbeats. Whoever's <b>randomized</b> timer expires first becomes a candidate in a new term and wins on a majority — the randomness is what stops two starting at once.</div>
+  <div class="row"><span class="k">term</span><span class="v"><b id="rT">1</b></span></div>
+  <div class="row"><span class="k">leader</span><span class="v"><b id="rL">n0</b></span></div>
+  <div class="row"><span class="k">votes for candidate</span><span class="v"><b id="rV">—</b></span></div>
+  <div class="row"><span class="k">elections · split votes</span><span class="v"><b id="rE">0</b> · <i id="rS">0</i></span></div>
+  <div class="row"><span class="k">state</span><span id="rSt">STABLE</span></div>
+  <div class="ctl">
+    <button id="bC" class="dan">crash leader</button><button id="bR">revive</button><button id="bP">pause</button><button id="bS">step</button>
+  </div>
+  <div class="ctl"><button id="bRand" class="on wide">randomized timeouts: ON</button></div>
+  <label>network delay <b id="lD">0.30</b> s<input id="sD" type="range" min="8" max="90" value="30"></label>
+  <div class="hint">Turn randomization OFF to watch every timer fire together and split the vote forever.</div>
+  <div class="hon">Honesty: this is the election subset only — log replication, the up-to-date-log restriction on voting, and persistence are not modelled, so any node here may win.</div>
+  <div class="detail"><b>Lineage.</b> <b>Paxos</b> (Lamport 1989/1998) was correct and famously opaque. <b>Ongaro &amp; Ousterhout, "In Search of an Understandable Consensus Algorithm" (2014)</b> rebuilt consensus around a strong leader, terms as logical time, and <b>randomized</b> election timeouts — designed to be <i>teachable</i>. It now runs <b>etcd</b> (so Kubernetes), <b>Consul</b>, <b>TiKV</b>, <b>CockroachDB</b>, and most modern coordination layers.</div>
+</div>
+<script>
+(function(){
+var cv=document.getElementById('c'),ctx=cv.getContext('2d'),ui=document.getElementById('ui');
+var W=0,H=0,DPR=1,S={x:0,y:0,w:0,h:0},G={};
+function $(i){return document.getElementById(i)}
+//--CORE--
+var CORE=(function(){
+var N=5,HB=0.34,TMIN=1.5,TSPR=3.5;
+var MUL=[[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0],[0,0,0,0,0]];
+for(var a=0;a<N;a++)for(var b=0;b<N;b++)MUL[a][b]=0.85+0.35*(((a*7+b*13)%8)/7);
+var SCR={'2-0':0.19,'2-1':0.33,'2-3':0.27,'2-4':0.57,'0-2':0.30,'1-2':0.78,'3-2':0.09,'4-2':0.48};
+function rnd(s){s.seed=(Math.imul(s.seed,1664525)+1013904223)>>>0;return s.seed/4294967296}
+function create(seed,scripted){
+  var st={t:0,seed:seed>>>0,nodes:[],msgs:[],delay:0.30,rand:true,term:1,elections:0,splits:0,
+    scr:scripted?SCR:null,auto:!!scripted,paused:false,evts:[],lastSplitTerm:0,stale:0,splitChip:0,N:N},i;
+  for(i=0;i<N;i++)st.nodes.push({i:i,alive:true,role:i===0?'L':'F',term:1,timer:1.5,to:1.5,
+    votedFor:i===0?0:null,votes:0,pulse:0,hbAcc:0});
+  return st}
+function reset(st,i){var n=st.nodes[i];n.to=st.rand?TMIN+TSPR*rnd(st):TMIN+TSPR*0.5;n.timer=n.to}
+function dur(st,i,j){var k=i+'-'+j;if(st.scr&&st.scr[k]!==undefined)return st.scr[k];return st.delay*MUL[i][j]}
+function send(st,i,j,type,term,g){if(!st.nodes[i].alive)return;
+  st.msgs.push({f:i,to:j,type:type,term:term,g:!!g,t:0,d:dur(st,i,j)})}
+function bcast(st,i,type,term){for(var j=0;j<N;j++)if(j!==i)send(st,i,j,type,term)}
+function candidate(st,i){var n=st.nodes[i];
+  n.term++;n.role='C';n.votedFor=i;n.votes=1;n.pulse=1;reset(st,i);
+  if(n.term>st.term){st.term=n.term;st.evts.push({t:st.t,term:n.term,k:'E'})}
+  bcast(st,i,'RV',n.term)}
+function win(st,i){var n=st.nodes[i];n.role='L';n.pulse=1;st.elections++;
+  st.evts.push({t:st.t,term:n.term,k:'W'});
+  for(var j=0;j<N;j++)if(j!==i)send(st,i,j,'HB',n.term);
+  n.hbAcc=0;if(st.scr)st.scr=null}
+function deliver(st,m){var n=st.nodes[m.to];
+  if(!n.alive)return;
+  if(m.type==='HB'){
+    if(m.term<n.term){st.stale=1.4;return}
+    n.term=m.term;n.role='F';n.votedFor=null;n.leaderOf=m.f;reset(st,m.to);
+    if(m.term>st.term)st.term=m.term;return}
+  if(m.type==='RV'){
+    if(m.term>n.term){n.term=m.term;n.role='F';n.votedFor=null;if(m.term>st.term)st.term=m.term}
+    else if(m.term<n.term){send(st,m.to,m.f,'VOTE',n.term,false);st.stale=1.4;return}
+    if(n.votedFor===null){n.votedFor=m.f;reset(st,m.to);send(st,m.to,m.f,'VOTE',m.term,true)}
+    else send(st,m.to,m.f,'VOTE',n.term,false);
+    return}
+  if(m.type==='VOTE'){
+    if(m.term>n.term){n.term=m.term;n.role='F';n.votedFor=null;return}
+    if(n.role!=='C'||m.term!==n.term)return;
+    if(m.g){n.votes++;if(n.votes*2>N)win(st,m.to)}}}
+function crash(st,i){var n=st.nodes[i];n.alive=false;n.pulse=0;
+  for(var k=st.msgs.length-1;k>=0;k--)if(st.msgs[k].f===i)st.msgs.splice(k,1)}
+function revive(st,i){st.nodes[i].alive=true;st.nodes[i].pulse=1}
+function leader(st){var b=-1,bt=-1;
+  for(var i=0;i<N;i++){var n=st.nodes[i];if(n.alive&&n.role==='L'&&n.term>bt){bt=n.term;b=i}}return b}
+function cand(st){for(var i=0;i<N;i++)if(st.nodes[i].alive&&st.nodes[i].role==='C')return i;return -1}
+function step(st,dt){
+  if(st.paused)return;
+  st.t+=dt;if(st.stale>0)st.stale-=dt;if(st.splitChip>0)st.splitChip-=dt;
+  var i,n;
+  if(st.auto&&st.t>=2.2&&st.nodes[0].alive&&st.nodes[0].role==='L'){
+    crash(st,0);st.auto=false;
+    st.nodes[1].timer=2.05;st.nodes[2].timer=1.35;st.nodes[3].timer=2.35;st.nodes[4].timer=2.75;
+    st.nodes[1].to=2.05;st.nodes[2].to=1.35;st.nodes[3].to=2.35;st.nodes[4].to=2.75}
+  for(i=0;i<N;i++){n=st.nodes[i];if(n.pulse>0)n.pulse-=dt*2.2;
+    if(!n.alive)continue;
+    if(n.role==='L'){n.hbAcc+=dt;
+      while(n.hbAcc>=HB){n.hbAcc-=HB;bcast(st,i,'HB',n.term)}
+      continue}
+    n.timer-=dt;
+    if(n.timer<=0){
+      var c=0;for(var q=0;q<N;q++)if(st.nodes[q].alive&&st.nodes[q].role==='C')c++;
+      candidate(st,i);
+      if(c>=1&&st.lastSplitTerm!==n.term){st.splits++;st.lastSplitTerm=n.term;st.splitChip=2.4}}}
+  for(i=st.msgs.length-1;i>=0;i--){var m=st.msgs[i];m.t+=dt;
+    if(m.t>=m.d){st.msgs.splice(i,1);deliver(st,m)}}
+  if(st.evts.length>140)st.evts.splice(0,st.evts.length-140)}
+return{create:create,step:step,crash:crash,revive:revive,leader:leader,cand:cand,
+  candidate:candidate,reset:reset,N:N,HB:HB,TMIN:TMIN,TSPR:TSPR}})();
+//--ENDCORE--
+var st=CORE.create(0x5eed1234,true),SUB=1/60;
+var NC=['#6ab6ff','#4dffa8','#ffc454','#ff6eb4','#b98cff'];
+function spr(r,g,b,sz){var q=document.createElement('canvas');q.width=q.height=sz;var x=q.getContext('2d'),c=sz/2,
+  gr=x.createRadialGradient(c,c,0,c,c,c);gr.addColorStop(0,'rgba('+r+','+g+','+b+',1)');
+  gr.addColorStop(.3,'rgba('+r+','+g+','+b+',.55)');gr.addColorStop(.62,'rgba('+r+','+g+','+b+',.16)');
+  gr.addColorStop(1,'rgba('+r+','+g+','+b+',0)');x.fillStyle=gr;x.fillRect(0,0,sz,sz);return q}
+var SP={hb:spr(120,190,255,40),rv:spr(255,196,84,40),vote:spr(77,255,168,40),no:spr(255,109,94,40),
+  lead:spr(255,224,150,48),cnd:spr(255,196,84,48),dead:spr(90,110,140,40)};
+function glow(s,x,y,sz,al){ctx.globalAlpha=al==null?1:al;ctx.drawImage(s,x-sz/2,y-sz/2,sz,sz);ctx.globalAlpha=1}
+function rr(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath()}
+function chip(x,y,txt,c2,fs,al){var f=fs||10;ctx.font='600 '+f+'px ui-monospace,monospace';
+  var w=ctx.measureText(txt).width+14,h=f+9,bx=al==='r'?x-w:(al==='c'?x-w/2:x);
+  bx=Math.max(S.x+2,Math.min(bx,S.x+S.w-w-2));
+  ctx.fillStyle='rgba(5,10,20,.93)';rr(bx,y,w,h,5);ctx.fill();ctx.strokeStyle=c2;ctx.lineWidth=1;ctx.stroke();
+  ctx.fillStyle=c2;ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillText(txt,bx+7,y+h/2+.5);return w}
+function layout(){
+  G.plot={x:S.x+4,y:S.y+S.h-90,w:S.w-8,h:88};
+  G.capY=G.plot.y-25;
+  var top=S.y+52,bot=G.capY-8;
+  G.cx=S.x+S.w/2;G.cy=(top+bot)/2;
+  G.R=Math.max(60,Math.min(S.w*0.34,(bot-top)/2-40));
+  G.nr=Math.max(14,Math.min(23,G.R*0.20));
+  G.pos=[];for(var i=0;i<5;i++){var a=-Math.PI/2+i*Math.PI*2/5;
+    G.pos.push([G.cx+Math.cos(a)*G.R,G.cy+Math.sin(a)*G.R])}}
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
+  cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);cv.style.width=W+'px';cv.style.height=H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);var r=ui.getBoundingClientRect();
+  if(W-(r.right+16)>=380)S={x:r.right+16,y:12,w:W-(r.right+16)-12,h:H-24};
+  else S={x:12,y:r.bottom+12,w:W-24,h:H-(r.bottom+12)-12};
+  if(S.h<200){S.y=12;S.h=H-24}layout()}
+function drawNodes(){
+  var i,j;
+  ctx.strokeStyle='rgba(26,52,96,.85)';ctx.lineWidth=1;
+  for(i=0;i<5;i++)for(j=i+1;j<5;j++){ctx.beginPath();ctx.moveTo(G.pos[i][0],G.pos[i][1]);ctx.lineTo(G.pos[j][0],G.pos[j][1]);ctx.stroke()}
+  for(i=0;i<5;i++){
+    var n=st.nodes[i],P=G.pos[i],c=NC[i],r=G.nr,dr=r+9;
+    if(n.alive&&n.role!=='L'){
+      ctx.strokeStyle='rgba(30,58,104,.9)';ctx.lineWidth=5;
+      ctx.beginPath();ctx.arc(P[0],P[1],dr,0,Math.PI*2);ctx.stroke();
+      var f=Math.max(0,Math.min(1,n.timer/n.to));
+      ctx.strokeStyle=f<0.28?'#ff6d5e':(n.role==='C'?'#ffc454':'#57c9ff');
+      ctx.lineWidth=5;ctx.lineCap='round';
+      ctx.beginPath();ctx.arc(P[0],P[1],dr,-Math.PI/2,-Math.PI/2+f*Math.PI*2);ctx.stroke();ctx.lineCap='butt'}
+    if(n.role==='L'&&n.alive)glow(SP.lead,P[0],P[1],r*4.4,.75+0.25*Math.max(0,n.pulse));
+    else if(n.role==='C'&&n.alive)glow(SP.cnd,P[0],P[1],r*4.2,.8);
+    else if(!n.alive)glow(SP.dead,P[0],P[1],r*2.6,.5);
+    ctx.fillStyle=n.alive?'#071120':'#0a0d14';ctx.beginPath();ctx.arc(P[0],P[1],r,0,6.3);ctx.fill();
+    ctx.strokeStyle=n.alive?(n.role==='L'?'#ffe096':(n.role==='C'?'#ffc454':c)):'#3a465e';
+    ctx.lineWidth=n.role==='L'?2.4:1.6;ctx.beginPath();ctx.arc(P[0],P[1],r,0,6.3);ctx.stroke();
+    ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillStyle=n.alive?'#eaf4ff':'#5a6a84';ctx.font='700 12px ui-monospace,monospace';
+    ctx.fillText('n'+i,P[0],P[1]-4);
+    ctx.fillStyle=n.alive?(n.role==='L'?'#ffe096':(n.role==='C'?'#ffc454':'#7e96bb')):'#4a5a74';
+    ctx.font='700 9.5px ui-monospace,monospace';
+    ctx.fillText(!n.alive?'DOWN':(n.role==='L'?'LEADER':(n.role==='C'?'CAND':'foll')),P[0],P[1]+7);
+    var tb='T'+n.term,tw=ctx.measureText(tb).width+8,bx=P[0]-tw/2,by=P[1]+r+5;
+    ctx.fillStyle='rgba(6,12,24,.95)';rr(bx,by,tw,13,4);ctx.fill();
+    ctx.strokeStyle=n.alive?'#2a4c86':'#26303f';ctx.lineWidth=1;ctx.stroke();
+    ctx.fillStyle=n.alive?'#9fc4f0':'#4a5a74';ctx.font='700 9px ui-monospace,monospace';
+    ctx.fillText(tb,P[0],by+7);
+    if(n.role==='C'&&n.alive){
+      ctx.fillStyle='#ffc454';ctx.font='700 10px ui-monospace,monospace';
+      ctx.fillText(n.votes+'/3 votes',P[0],P[1]-r-10)}}
+  for(var m2=0;m2<st.msgs.length;m2++){var m=st.msgs[m2],A=G.pos[m.f],B=G.pos[m.to],u=Math.min(1,m.t/m.d),
+    x=A[0]+(B[0]-A[0])*u,y=A[1]+(B[1]-A[1])*u,
+    s=m.type==='HB'?SP.hb:(m.type==='RV'?SP.rv:(m.g?SP.vote:SP.no));
+    for(var q=0;q<4;q++){var uu=u-q*0.05;if(uu<0)break;
+      glow(s,A[0]+(B[0]-A[0])*uu,A[1]+(B[1]-A[1])*uu,(m.type==='HB'?11:17)-q*1.6,(q?0.30:0.95)*(1-q/5))}
+    if(m.type!=='HB'){ctx.fillStyle=m.type==='RV'?'#ffdc9a':(m.g?'#9dffcd':'#ffb0a6');
+      ctx.font='700 8.5px ui-monospace,monospace';ctx.textAlign='center';ctx.textBaseline='bottom';
+      ctx.fillText(m.type==='RV'?'vote?':(m.g?'YES':'no'),x,y-8)}}}
+function drawPlot(){
+  var g=G.plot;
+  ctx.fillStyle='rgba(8,13,26,.82)';rr(g.x,g.y,g.w,g.h,8);ctx.fill();
+  ctx.strokeStyle='rgba(40,70,120,.7)';ctx.lineWidth=1;ctx.stroke();
+  chip(g.x+6,g.y+4,'TERM vs TIME · ● election started  ★ leader won','#8fb6e8',9.5);
+  var px=g.x+34,py=g.y+g.h-16,pw=g.w-46,ph=g.h-40;
+  ctx.strokeStyle='rgba(60,95,150,.8)';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(px,g.y+24);ctx.lineTo(px,py);ctx.lineTo(px+pw,py);ctx.stroke();
+  var T0=Math.max(0,st.t-16),span=Math.max(4,st.t-T0),tmax=Math.max(3,st.term);
+  ctx.fillStyle='#6d84a6';ctx.font='9px ui-monospace,monospace';ctx.textAlign='right';ctx.textBaseline='middle';
+  ctx.fillText('T'+tmax,px-4,g.y+27);ctx.fillText('T1',px-4,py-2);
+  ctx.textAlign='left';ctx.fillText('t−16s',px+2,py+9);ctx.textAlign='right';ctx.fillText('now',px+pw,py+9);
+  function X(t){return px+(t-T0)/span*pw}
+  function Y(tm){return py-(tm-1)/Math.max(1,tmax-1)*ph}
+  ctx.strokeStyle='#ffc454';ctx.lineWidth=2;ctx.beginPath();
+  var cur=1,started=false;
+  for(var i=0;i<st.evts.length;i++){var e=st.evts[i];if(e.t<T0)  {cur=e.term;continue}
+    if(!started){ctx.moveTo(px,Y(cur));started=true}
+    ctx.lineTo(X(e.t),Y(cur));ctx.lineTo(X(e.t),Y(e.term));cur=e.term}
+  if(!started)ctx.moveTo(px,Y(cur));
+  ctx.lineTo(X(st.t),Y(cur));ctx.stroke();
+  for(var j=0;j<st.evts.length;j++){var ev=st.evts[j];if(ev.t<T0)continue;
+    var x=X(ev.t),y=Y(ev.term);
+    if(ev.k==='E'){glow(SP.rv,x,y,14,.9);ctx.fillStyle='#ffc454';ctx.beginPath();ctx.arc(x,y,2.6,0,6.3);ctx.fill()}
+    else{glow(SP.vote,x,y,18,.95);ctx.fillStyle='#9dffcd';ctx.font='700 11px ui-monospace,monospace';
+      ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('★',x,y)}}}
+function drawStage(){
+  ctx.fillStyle='#04060c';ctx.fillRect(0,0,W,H);
+  drawNodes();
+  var L=CORE.leader(st),C=CORE.cand(st);
+  chip(S.x+2,S.y,'RAFT · 5 NODES · term '+st.term,'#6ab6ff',10.5);
+  chip(S.x+S.w-2,S.y,L>=0?('leader n'+L+' · heartbeats'):(C>=0?('ELECTION IN FLIGHT · n'+C+' has '+st.nodes[C].votes+'/3'):'NO LEADER'),
+    L>=0?'#4dffa8':'#ffc454',10.5,'r');
+  chip(S.x+2,S.y+26,'the dial you can’t see on real servers','#8fb6e8',9.5);
+  var cap='an old leader with an old term is politely ignored',cc='#8fb6e8';
+  if(!st.rand&&st.splitChip>0){cap='same timeout, same instant, split vote — randomness is the fix';cc='#ff6d5e'}
+  else if(st.stale>0){cap='an old leader with an old term is politely ignored';cc='#ff9a8a'}
+  else if(C>=0)cap='randomized timers: one dial expires first, and that is the whole trick';
+  chip(S.x+2,G.capY,cap,cc,9.5);
+  drawPlot()}
+function sync(){var L=CORE.leader(st),C=CORE.cand(st);
+  $('rT').textContent=st.term;$('rL').textContent=L>=0?'n'+L:'—';
+  $('rV').textContent=C>=0?(st.nodes[C].votes+' / 3 needed'):'—';
+  $('rE').textContent=st.elections;$('rS').textContent=st.splits;
+  var s='STABLE',c='';
+  if(!st.rand&&st.splits>0&&L<0){s='SPLIT VOTE LOOP';c='bad'}
+  else if(C>=0){s='ELECTING';c='warn'}
+  else if(L<0){s='NO LEADER';c='bad'}
+  else if(!st.nodes[0].alive){s='STABLE · 1 DOWN';c=''}
+  $('rSt').textContent=s;$('rSt').className=c}
+$('bC').onclick=function(){var L=CORE.leader(st);if(L>=0){CORE.crash(st,L);st.auto=false}};
+$('bR').onclick=function(){for(var i=0;i<5;i++)if(!st.nodes[i].alive)CORE.revive(st,i);st.auto=false};
+$('bP').onclick=function(){st.paused=!st.paused;this.className=st.paused?'on':'';this.textContent=st.paused?'step':'pause';
+  if(st.paused)this.onclick=null};
+$('bP').addEventListener('click',function(){if(st.paused)for(var i=0;i<8;i++)CORE.step(st,SUB)});
+$('bRand').onclick=function(){st.rand=!st.rand;st.auto=false;
+  this.className=st.rand?'on':'';this.textContent='randomized timeouts: '+(st.rand?'ON':'OFF');
+  for(var i=0;i<5;i++)CORE.reset(st,i)};
+$('sD').oninput=function(){st.delay=+this.value/100;$('lD').textContent=st.delay.toFixed(2);st.scr=null};
+cv.addEventListener('pointerdown',function(e){cv.setPointerCapture(e.pointerId);
+  for(var i=0;i<5;i++){var P=G.pos[i],dx=e.clientX-P[0],dy=e.clientY-P[1];
+    if(dx*dx+dy*dy<(G.nr+10)*(G.nr+10)){st.auto=false;
+      if(st.nodes[i].alive)CORE.crash(st,i);else CORE.revive(st,i);return}}});
+window.addEventListener('resize',resize);
+var lastT=performance.now()/1000;
+function frame(now){now/=1000;var rdt=now-lastT;lastT=now;if(rdt>0.45)rdt=0.45;if(rdt<0)rdt=0;
+  var n=Math.max(1,Math.round(rdt/SUB));for(var i=0;i<n;i++)CORE.step(st,SUB);
+  drawStage();sync();requestAnimationFrame(frame)}
+resize();sync();requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

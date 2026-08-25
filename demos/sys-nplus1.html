@@ -14,7 +14,7 @@ html,body{height:100%;background:#04060c;overflow:hidden;color:#d5e6ff;
   box-shadow:0 0 24px #000a}
 h1{font-size:12.5px;letter-spacing:.6px;color:#eaf4ff;text-shadow:0 0 10px #2f7fff88}
 .mech{font-size:10.5px;color:#8ba6ce;margin:4px 0 7px}
-.row{display:flex;justify-content:space-between;gap:8px;font-size:11px;line-height:1.45}
+.row{display:flex;justify-content:space-between;gap:8px;font-size:10.5px;line-height:1.34}
 .k{color:#7e96bb}.v{color:#eaf4ff}.v b{color:#ffd489;font-weight:600}
 .v b.hot{color:#ff6d5e}.v b.ok{color:#5af0a0}
 .ctl{margin-top:8px;display:flex;flex-wrap:wrap;gap:5px}
@@ -35,10 +35,9 @@ input[type=range]{width:100%;accent-color:#4fe3ff;height:16px}
 <canvas id="c"></canvas>
 <div id="ui">
   <h1>THE N+1 QUERY</h1>
-  <div class="mech">One query fetches the list, then the ORM lazily fetches each row's relation &mdash; 1+N round trips, each paying full network latency. One JOIN collapses them.</div>
+  <div class="mech">Fetch the list, then lazily fetch each row's relation: 1+N round trips. One JOIN collapses them.</div>
   <div class="row"><span class="k">queries issued</span><span class="v"><b id="rQ">0</b> of <b id="rQT">11</b></span></div>
-  <div class="row"><span class="k">total time</span><span class="v"><b id="rT" class="hot">0</b> ms</span></div>
-  <div class="row"><span class="k">cost model</span><span class="v"><b id="rF">(1+N)·RTT</b></span></div>
+  <div class="row"><span class="k">total time</span><span class="v"><b id="rT" class="hot">0</b> ms = <b id="rF">(1+N)·RTT</b></span></div>
   <div class="row"><span class="k">page complete</span><span class="v"><b id="rP">0%</b></span></div>
   <div class="row"><span class="k">join would cost</span><span class="v"><b id="rJ" class="ok">0</b> ms &mdash; <b id="rS">1×</b> faster</span></div>
   <div class="ctl">
@@ -48,7 +47,7 @@ input[type=range]{width:100%;accent-color:#4fe3ff;height:16px}
   </div>
   <label>N rows <span id="lN">10</span></label>
   <input id="sN" type="range" min="10" max="100" step="1" value="10">
-  <label>RTT <span id="lR">25</span> ms &mdash; same-rack &rarr; cross-region</label>
+  <label>RTT <span id="lR">25</span> ms &mdash; rack &rarr; region</label>
   <input id="sR" type="range" min="1" max="100" step="1" value="25">
   <div class="hon">honesty: uniform RTT toy, no connection pooling or pipelining; a real JOIN costs the database something too, so the join line slopes slightly.</div>
   <div class="detail">lineage: <b>ORM lazy-loading era</b> &rarr; the browser/APM <b>request-waterfall</b> view made round-trips visible &rarr; <b>DataLoader</b>-style batching.</div>
@@ -140,7 +139,7 @@ function drawApp(x,y,w,h,pr){
   txt(pct+'% rendered',x+w-9,y+h-11,pct===100?'#5af0a0':'#ffc45a',9,'right');
 }
 function drawDB(x,y,w,h,pr,t){
-  var cx=x+w/2,cy=y+h*0.45,rx=w*0.42,ry=w*0.17,bodyH=Math.min(h*0.42,80);
+  var cx=x+w/2,cy=y+h*0.24,rx=w*0.44,ry=w*0.19,bodyH=Math.min(h*0.46,150);
   var busy=pr.done<pr.q&&pr.done>=0&&simT>0.3;
   glow(VIO,cx,cy+bodyH/2,w*0.85,busy?0.22+0.10*Math.sin(t*9):0.10);
   g.fillStyle='rgba(24,16,48,.9)';g.beginPath();
@@ -151,9 +150,9 @@ function drawDB(x,y,w,h,pr,t){
   g.beginPath();g.ellipse(cx,cy,rx,ry,0,0,6.284);g.stroke();
   g.beginPath();g.moveTo(cx-rx,cy);g.lineTo(cx-rx,cy+bodyH);g.moveTo(cx+rx,cy);g.lineTo(cx+rx,cy+bodyH);g.stroke();
   g.beginPath();g.ellipse(cx,cy+bodyH,rx,ry,0,3.14,6.284);g.stroke();
-  txt('DB',cx,cy+bodyH*0.55,'#c9b6ff',11,'center');
-  txt('postgres',cx,y+h-24,'#6d5aa8',9,'center');
-  txt(busy?'serving q'+pr.done:'idle',cx,y+h-11,busy?'#a884ff':'#4b5c80',9,'center');
+  txt('DB',cx,cy+bodyH*0.5,'#c9b6ff',14,'center');
+  txt('postgres',cx,cy+bodyH+ry+16,'#6d5aa8',9.5,'center');
+  txt(busy?'serving q'+pr.done:'idle',cx,cy+bodyH+ry+30,busy?'#a884ff':'#4b5c80',9.5,'center');
 }
 function drawFall(x,y,w,h,pr,t){
   card(x,y,w,h,'#1f3557','rgba(6,11,22,.8)');
@@ -163,14 +162,14 @@ function drawFall(x,y,w,h,pr,t){
   var qMax=MODEL.timings(N,RTT,'lazy').queries;
   var gTot=ghost?(1+ghost.N)*ghost.RTT:0;
   var tot=Math.max(MODEL.timings(N,RTT,mode).totalMs,(mode!=='lazy'&&ghost)?gTot:0,1);
-  var rowH=Math.min(11,ph/Math.max(qMax,4)),bw=pw*(RTT/tot);
+  var rowH=Math.min(24,ph/Math.max(qMax,4)),bw=pw*(RTT/tot);
   if(mode!=='lazy'&&ghost){
-    var grow=Math.min(11,ph/Math.max(1+ghost.N,4)),gbw=pw*(ghost.RTT/gTot);
+    var grow=Math.min(24,ph/Math.max(1+ghost.N,4)),gbw=pw*(ghost.RTT/gTot);
     for(var q2=0;q2<=ghost.N;q2++){
       var gy2=py+q2*grow,gx2=px+pw*((q2===0?0:(1.0+ (q2-1))*ghost.RTT)/gTot);
       g.fillStyle='rgba(255,109,94,.18)';g.fillRect(gx2,gy2,q2===0?gbw*1.0:gbw,Math.max(1.2,grow-1.6));
     }
-    txt('ghost: the lazy waterfall',px+2,py+Math.min(ph-8,(1+ghost.N)*Math.min(11,ph/Math.max(1+ghost.N,4))+7),'rgba(255,109,94,.6)',8.6);
+    txt('ghost: the lazy waterfall it replaces',px+2,py+Math.min(ph-8,(1+ghost.N)*grow+9),'rgba(255,109,94,.75)',9);
   }
   var qn=MODEL.timings(N,RTT,mode).queries,unit=(mode==='lazy'?RTT:(mode==='batch'?RTT:MODEL.timings(N,RTT,mode).totalMs));
   for(var q=0;q<qn;q++){
@@ -180,12 +179,12 @@ function drawFall(x,y,w,h,pr,t){
     var col=q===0?'#4fe3ff':(mode==='lazy'?'#ff6d5e':'#5af0a0');
     if(active)glow(q===0?CYAN:(mode==='lazy'?RED:GRN),bx+bwq,byy+rowH/2,rowH*2.2,0.4);
     g.fillStyle=col;g.globalAlpha=done?0.85:1;g.fillRect(bx,byy,Math.max(1.5,bwq),Math.max(1.4,rowH-1.6));g.globalAlpha=1;
-    if(rowH>8&&q<3){
-      var lbl=q===0?'SELECT posts':(mode==='lazy'?'SELECT author id='+q:(mode==='batch'?'SELECT authors IN (…)':''));
-      if(lbl)txt(lbl,bx+bwq+5,byy+rowH/2-0.5,'#9fb8dc',8.4);
+    if(rowH>9&&q<5){
+      var lbl=q===0?'SELECT posts':(mode==='lazy'?'SELECT author id='+q:(mode==='batch'?'SELECT authors id IN (…)':''));
+      if(lbl)txt(lbl,Math.min(bx+bwq+6,px+pw-152),byy+rowH/2-0.5,'#9fb8dc',9);
     }
   }
-  if(mode==='lazy'&&qn>3&&rowH>4)txt('… ×'+(N)+' author queries, one per row',px+2,py+Math.min(ph-6,qn*rowH+8),'#ff9d92',8.6);
+  if(mode==='lazy'&&qn>3&&rowH>4)txt('… one round trip per row, ×'+N,px+2,py+Math.min(ph-6,qn*rowH+10),'#ff9d92',9.2);
   g.strokeStyle='#213a60';g.beginPath();g.moveTo(px,y+h-14);g.lineTo(px+pw,y+h-14);g.stroke();
   txt('time →',px+2,y+h-7,'#5d7699',8.6);
   txt(Math.round(tot)+' ms',px+pw,y+h-7,'#8fa8cc',8.6,'right');
@@ -193,6 +192,7 @@ function drawFall(x,y,w,h,pr,t){
 function drawPlot(x,y,w,h){
   card(x,y,w,h,'#1f3557','rgba(6,11,22,.8)');
   txt('TOTAL TIME vs N',x+9,y+13,'#7fa2d6',10);
+  txt('N='+N+' → '+Math.round(MODEL.timings(N,RTT,mode).totalMs)+' ms',x+w-9,y+13,mode==='lazy'?'#ff6d5e':'#5af0a0',10,'right');
   var lx=x+9,ly=y+25;
   txt('■ lazy (1+N)·RTT',lx,ly,'#ff6d5e',8.8);
   txt('■ join ~1·RTT',lx+110,ly,'#5af0a0',8.8);
@@ -210,12 +210,10 @@ function drawPlot(x,y,w,h){
     g.stroke();
   }
   var cv=MODEL.timings(N,RTT,mode).totalMs,dx=X(N),dy=Y(cv);
-  glow(mode==='lazy'?RED:GRN,dx,dy,11,0.6);
-  g.fillStyle='#fff';g.beginPath();g.arc(dx,dy,3,0,6.284);g.fill();
-  txt('N='+N,px+4,py+10,'#5d7699',8.6);
-  txt(Math.round(maxT)+' ms',px+4,py+ph-9,'#5d7699',8.6);
+  glow(mode==='lazy'?RED:GRN,dx,dy,12,0.65);
+  g.fillStyle='#fff';g.beginPath();g.arc(dx,dy,3.2,0,6.284);g.fill();
+  txt(Math.round(maxT)+' ms',px+4,py+9,'#5d7699',8.6);
   txt('N →',px+pw-4,py+ph-9,'#5d7699',8.6,'right');
-  txt(Math.round(cv)+' ms',Math.min(px+pw-4,dx+8),Math.max(py+9,dy-9),'#eaf4ff',9,dx>px+pw*0.7?'right':'left');
 }
 function draw(){
   g.setTransform(DPR,0,0,DPR,0,0);g.fillStyle='#04060c';g.fillRect(0,0,W,H);
@@ -232,17 +230,10 @@ function draw(){
   chip(S.x,y,S.w,19,'the code looked innocent — the loop was inside the ORM','#ffc45a');y+=23;
   var plotH=Math.max(96,Math.min(126,S.h*0.24)),chipsH=44;
   var mainH=Math.max(140,S.h-(y-S.y)-plotH-chipsH-14);
-  var appW=Math.max(112,Math.min(168,S.w*0.30)),dbW=Math.max(64,Math.min(88,S.w*0.16));
+  var appW=Math.max(112,Math.min(168,S.w*0.29)),dbW=Math.max(78,Math.min(116,S.w*0.19));
   drawApp(S.x,y,appW,mainH,pr);
   drawFall(S.x+appW+8,y,S.w-appW-dbW-16,mainH,pr,t);
   drawDB(S.x+S.w-dbW,y,dbW,mainH,pr,t);
-  // in-flight packet app<->db
-  if(pr.done<pr.q&&t>0.30){
-    var a=S.x+appW,b=S.x+S.w-dbW,u=pr.frac<0.5?pr.frac*2:(1-pr.frac)*2,px2=a+(b-a)*(pr.frac<0.5?pr.frac*2:1-(pr.frac-0.5)*2);
-    var py2=y+mainH-12;
-    glow(pr.done===0?CYAN:(mode==='lazy'?RED:GRN),px2,py2,9,0.55);
-    g.fillStyle='#eaf4ff';g.beginPath();g.arc(px2,py2,2.2,0,6.284);g.fill();
-  }
   y+=mainH+7;
   drawPlot(S.x,y,S.w,plotH);y+=plotH+6;
   chip(S.x,y,S.w,19,'N+1 at 0.5 ms hides in dev — at 50 ms it is an outage','#4fe3ff');y+=22;
