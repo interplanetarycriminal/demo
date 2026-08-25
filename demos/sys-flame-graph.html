@@ -12,19 +12,19 @@ html,body{height:100%;background:#07050c;overflow:hidden;color:#ffe9d5;
 #ui{position:fixed;top:10px;left:10px;width:min(340px,calc(100vw - 20px));max-height:45vh;overflow:auto;
   background:rgba(14,8,16,.9);border:1px solid #4a2a20;border-radius:11px;padding:9px 11px 10px;z-index:5;
   box-shadow:0 0 24px #000a}
-h1{font-size:12.5px;letter-spacing:.6px;color:#fff3e6;text-shadow:0 0 10px #ff8a3c99}
-.mech{font-size:10.5px;color:#b09182;margin:4px 0 7px}
-.row{display:flex;justify-content:space-between;gap:8px;font-size:11px;line-height:1.42}
+h1{font-size:12px;letter-spacing:.6px;color:#fff3e6;text-shadow:0 0 10px #ff8a3c99}
+.mech{font-size:10.5px;color:#b09182;margin:3px 0 4px}
+.row{display:flex;justify-content:space-between;gap:8px;font-size:11px;line-height:1.3}
 .k{color:#9c8071}.v{color:#fff3e6}.v b{font-weight:600}
 .g b{color:#ffc85e}.cy b{color:#4fe3ff}.rd b{color:#ff6d5e}.gn b{color:#7fffb0}
-.ctl{margin-top:8px;display:flex;flex-wrap:wrap;gap:5px}
+.ctl{margin-top:6px;display:flex;flex-wrap:wrap;gap:5px}
 button{flex:1 1 30%;font:600 10px/1.25 inherit;color:#c09a80;background:#1e1018;border:1px solid #5a3122;
-  border-radius:6px;padding:5px 3px;cursor:pointer}
+  border-radius:6px;padding:4px 3px;cursor:pointer}
 button.on{color:#1a0a04;background:#ffa03c;border-color:#ffd0a0;box-shadow:0 0 14px #ffa03c88}
 button.q{color:#04121a;background:#7fffb0;border-color:#b6ffd4;box-shadow:0 0 14px #7fffb088}
-label{display:block;font-size:10.5px;margin:7px 0 1px;color:#b09182}
+label{display:block;font-size:10.5px;margin:3px 0 0;color:#b09182}
 label span{color:#ffc85e}
-input[type=range]{width:100%;accent-color:#ffa03c;height:16px}
+input[type=range]{width:100%;accent-color:#ffa03c;height:14px}
 .hon{margin-top:8px;font-size:9.5px;color:#8a7161;border-top:1px solid #3a2018;padding-top:6px}
 .detail{margin-top:6px;font-size:9.5px;color:#82695c}
 .detail b{color:#ffb37a}
@@ -36,7 +36,7 @@ input[type=range]{width:100%;accent-color:#ffa03c;height:16px}
 <canvas id="c"></canvas>
 <div id="ui">
   <h1>THE FLAME GRAPH, BUILT LIVE</h1>
-  <div class="mech">A sampling profiler interrupts the running program ~99&times;/s and writes down the current stack; stack identical frames and sort by count, and thousands of interrupts collapse into one picture where <b>width = time</b>.</div>
+  <div class="mech">A profiler interrupts the program ~99&times;/s and writes down the current stack; stack identical frames, sort by count, and <b>width becomes time</b>.</div>
   <div class="row g"><span class="k">samples in window</span><span class="v"><b id="rS">0</b> @ <b id="rR">99</b> Hz</span></div>
   <div class="row"><span class="k">hottest path</span><span class="v"><b id="rH">&mdash;</b></span></div>
   <div class="row cy"><span class="k">its share of samples</span><span class="v"><b id="rP">0.0</b>% <span style="color:#7a6558">true <b id="rTr" style="color:#9c8071">0</b>%</span></span></div>
@@ -46,8 +46,8 @@ input[type=range]{width:100%;accent-color:#ffa03c;height:16px}
     <button id="bA" class="on">I/O-BOUND</button>
     <button id="bB">CPU-BOUND</button>
     <button id="bC">LOCK</button>
-    <button id="bO">OPTIMIZE: MEMOIZE HOT PATH</button>
-    <button id="bR">NEW WINDOW</button>
+    <button id="bO">MEMOIZE HOT PATH</button>
+    <button id="bR">NEW WIN</button>
   </div>
   <label>sample rate <span id="lR">99</span> Hz &mdash; low rates lie</label>
   <input id="sR" type="range" min="5" max="400" step="1" value="99">
@@ -153,30 +153,32 @@ function drawTree(){var x=ST.x,y=ST.y,w=ST.w,h=ST.h;
   g.strokeStyle=on?'rgba(255,180,90,'+(0.55+0.45*flash)+')':'rgba(120,86,70,.35)';
   g.lineWidth=on?2.1:1;g.beginPath();g.moveTo(a.x+bw,a.y+bh/2);
   g.bezierCurveTo(a.x+bw+gapx*0.4,a.y+bh/2,b.x-gapx*0.4,b.y+bh/2,b.x,b.y+bh/2);g.stroke()}
+ var leaf=visPath?visPath[visPath.length-1]:-1;
+ if(flash>0.02){g.globalAlpha=flash*0.22;g.fillStyle='#fff6e6';g.fillRect(x,y+64,w,h-74);g.globalAlpha=1;
+  if(pos[leaf]){g.globalCompositeOperation='lighter';
+   blit(GW,pos[leaf].x+bw/2,pos[leaf].y+bh/2,Math.min(0.9,flash*0.95));
+   g.globalCompositeOperation='source-over'}}
  for(i=0;i<FG_N;i++){if(!vis(i))continue;var p=pos[i],on=act[i],hot=(i===fgHot(S)),off=(i===FG_OFF);
-  if(on){g.globalCompositeOperation='lighter';blit(off?GC2:GA,p.x+bw/2,p.y+bh/2,(bw/44)*(0.9+flash*0.5));
+  if(on){g.globalCompositeOperation='lighter';blit(off?GC2:GA,p.x+bw/2,p.y+bh/2,(bw/62)*(0.8+flash*0.32));
    g.globalCompositeOperation='source-over'}
-  g.fillStyle=on?(off?'rgba(28,44,86,.95)':'rgba(74,32,8,.95)'):'rgba(22,14,22,.9)';
+  g.fillStyle=on?(off?'rgba(20,34,72,.97)':'rgba(58,24,4,.97)'):'rgba(22,14,22,.9)';
   rr(p.x,p.y,bw,bh,5);g.fill();
-  g.strokeStyle=inSel(i)?'#ff6ae0':on?(off?'#8ab4ff':'#ffc85e'):hot?'rgba(255,160,60,.55)':'rgba(110,78,62,.5)';
-  g.lineWidth=inSel(i)?2:on?1.7:1;g.stroke();
+  g.strokeStyle=inSel(i)?'#ff6ae0':(i===leaf&&flash>0.25)?'#fff6e6':
+    on?(off?'#8ab4ff':'#ffc85e'):hot?'rgba(255,160,60,.55)':'rgba(110,78,62,.5)';
+  g.lineWidth=inSel(i)?2:(i===leaf&&flash>0.25)?2.2:on?1.7:1;g.stroke();
   tx(FG_NM[i],p.x+bw/2,p.y+bh/2,on?(off?'#cfe2ff':'#fff3e6'):'#a98a78',Math.min(10,bw/7.6),'center',on?1:0)}
- if(flash>0.02){g.globalAlpha=flash*0.26;g.fillStyle='#fff6e6';g.fillRect(x,y+64,w,h-74);g.globalAlpha=1;
-  if(visPath){var lp=pos[visPath[visPath.length-1]];
-   if(lp){g.globalCompositeOperation='lighter';blit(GW,lp.x+bw/2,lp.y+bh/2,flash*1.5);
-    g.globalCompositeOperation='source-over'}}}
  g.save();g.beginPath();g.rect(x,y+h-16,w,14);g.clip();
  tx('every flash = one interrupt · the picture below is just how often each box appeared',
    x+3,y+h-9,'#8a7161',9);g.restore()}
 function drawStrobe(bx,by,bw,bh){
  g.fillStyle='rgba(255,255,255,.03)';rr(bx,by,bw,bh,5);g.fill();
- var win=6,t0=T-win,i;
+ var win=4,t0=T-win,i;
  for(i=0;i<strobe.length;i++){var s2=strobe[i];if(s2.t<t0)continue;
   var X=bx+(s2.t-t0)/win*bw,dep=DEP[s2.leaf];
   g.strokeStyle=s2.leaf===FG_OFF?'rgba(138,180,255,.75)':CLR[Math.min(3,dep)];
   g.globalAlpha=0.35+0.65*((s2.t-t0)/win);g.lineWidth=1.2;
   g.beginPath();g.moveTo(X,by+bh-2);g.lineTo(X,by+bh-2-(2+dep*(bh-6)/3.2));g.stroke();g.globalAlpha=1}
- tx('samples arriving',bx+4,by+7,'#8a7161',8.5)}
+ }
 function drawFlame(){var x=FL.x,y=FL.y,w=FL.w,h=FL.h;
  g.fillStyle='rgba(12,7,14,.86)';rr(x,y,w,h,10);g.fill();
  g.strokeStyle='#3a2018';g.lineWidth=1;g.stroke();
@@ -184,8 +186,9 @@ function drawFlame(){var x=FL.x,y=FL.y,w=FL.w,h=FL.h;
  tx(S.tot+' samples · '+(S.tot<TARGET?'window '+Math.round(S.tot/TARGET*100)+'% full':'width = share'),
    x+w-9,y+12,'#9c8071',9.5,'right');
  var sbY=y+22,sbH=Math.max(16,Math.min(30,h*0.11));
- drawStrobe(x+9,sbY,w-18,sbH);
- var px0=x+10,px1=x+w-10,base=y+h-24,rowH=Math.max(16,Math.min(40,(h-sbH-56)/4));
+ tx('samples →',x+9,sbY+sbH*0.5,'#8a7161',8.5);
+ drawStrobe(x+66,sbY,w-76,sbH);
+ var px0=x+10,px1=x+w-10,base=y+h-24,rowH=Math.max(16,Math.min(54,(h-sbH-56)/4));
  var denom=Math.max(S.tot,TARGET),pw=px1-px0;
  FR=[];
  var hot=fgHot(S),hotPath={};var hp=fgPath(hot);for(var q=0;q<hp.length;q++)hotPath[hp[q]]=1;
@@ -227,7 +230,7 @@ function card(C,title,right,rcol){g.fillStyle='rgba(12,7,14,.86)';rr(C.x,C.y,C.w
  g.strokeStyle='#3a2018';g.lineWidth=1;g.stroke();
  tx(title,C.x+9,C.y+12,'#c9a690',10,'left',1);
  if(right)tx(right,C.x+C.w-9,C.y+12,rcol||'#ffc85e','10','right',1)}
-function drawCap(){card(CA,'captured stack','#'+S.tot,'#9c8071');
+function drawCap(){card(CA,'captured stack','sample #'+S.tot,'#9c8071');
  var yy=CA.y+28,lh=Math.min(15,(CA.h-34)/4.4);
  if(!cap.length){tx('waiting for first interrupt…',CA.x+9,yy,'#8a7161',9.5);return}
  var p=cap[0].p,i;
@@ -245,11 +248,11 @@ function drawConv(){var tr=fgTrue(S),e=fgErr(S)*100;
  tx('max |measured − true| vs samples',CB.x+9,CB.y+25,'#8a7161',9);
  var px0=CB.x+12,px1=CB.x+CB.w-30,py0=CB.y+33,py1=CB.y+CB.h-12;
  if(px1<=px0+10||py1<=py0+6)return;
- var nx=Math.max(2000,S.tot),i;
+ var nx=Math.max(650,S.tot*1.15),i;
  g.setLineDash([2,3]);g.strokeStyle='rgba(127,255,176,.5)';g.lineWidth=1;
  var gy=py1-(10/40)*(py1-py0);g.beginPath();g.moveTo(px0,gy);g.lineTo(px1,gy);g.stroke();g.setLineDash([]);
  tx('10%',px1+3,gy,'#7fffb0',8.5);
- tx('0',px0,py1+7,'#8a7161',8.5);tx(nx+' samples',px1,py1+7,'#8a7161',8.5,'right');
+ tx('0',px0,py1+7,'#8a7161',8.5);tx(Math.round(nx)+' samples',px1,py1+7,'#8a7161',8.5,'right');
  g.strokeStyle='#4fe3ff';g.lineWidth=1.7;g.lineJoin='round';g.beginPath();
  for(i=0;i<conv.length;i++){var X=px0+conv[i].n/nx*(px1-px0),
    Y=py1-Math.min(1,conv[i].e*100/40)*(py1-py0);
@@ -292,7 +295,7 @@ function setMode(m,btn){var gh=snapGhost();fgMode(S,m);S.ghost=gh;conv=[];strobe
 sR.oninput=function(){S.rate=+sR.value;document.getElementById('lR').textContent=sR.value};
 bA.onclick=function(){setMode('io')};bB.onclick=function(){setMode('cpu')};bC.onclick=function(){setMode('lock')};
 bO.onclick=function(){S.opt=!S.opt;var gh=snapGhost();fgMode(S,S.mode);S.ghost=gh;conv=[];strobe=[];cap=[];T=0;
- bO.className=S.opt?'q':'';bO.textContent=S.opt?'MEMOIZED — REVERT':'OPTIMIZE: MEMOIZE HOT PATH'};
+ bO.className=S.opt?'q':'';bO.textContent=S.opt?'MEMOIZED — REVERT':'MEMOIZE HOT PATH'};
 bR.onclick=function(){newWindow()};
 c.addEventListener('pointerdown',function(e){c.setPointerCapture(e.pointerId);
  var mx=e.clientX,my=e.clientY,i,hit=-1;

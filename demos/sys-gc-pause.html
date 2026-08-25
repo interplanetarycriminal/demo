@@ -12,18 +12,18 @@ html,body{height:100%;background:#04060c;overflow:hidden;color:#d8ecff;
 #ui{position:fixed;top:10px;left:10px;width:min(340px,calc(100vw - 20px));max-height:45vh;overflow:auto;
   background:rgba(6,10,20,.9);border:1px solid #1f3358;border-radius:11px;padding:9px 11px 10px;z-index:5;
   box-shadow:0 0 24px #000a}
-h1{font-size:12.5px;letter-spacing:.6px;color:#eaf4ff;text-shadow:0 0 10px #4fe3ff88}
-.mech{font-size:10.5px;color:#8b9ec2;margin:4px 0 7px}
-.row{display:flex;justify-content:space-between;gap:8px;font-size:11px;line-height:1.42}
+h1{font-size:12px;letter-spacing:.6px;color:#eaf4ff;text-shadow:0 0 10px #4fe3ff88}
+.mech{font-size:10.5px;color:#8b9ec2;margin:3px 0 4px}
+.row{display:flex;justify-content:space-between;gap:8px;font-size:11px;line-height:1.28}
 .k{color:#7c8dab}.v{color:#eaf4ff}.v b{font-weight:600}
 .cy b{color:#4fe3ff}.rd b{color:#ff6d5e}.gn b{color:#7fffb0}.vi b{color:#b39aea}
-.ctl{margin-top:8px;display:flex;flex-wrap:wrap;gap:5px}
+.ctl{margin-top:6px;display:flex;flex-wrap:wrap;gap:5px}
 button{flex:1 1 30%;font:600 10px/1.25 inherit;color:#8ea4c8;background:#0d1526;border:1px solid #263c66;
-  border-radius:6px;padding:5px 3px;cursor:pointer}
+  border-radius:6px;padding:4px 3px;cursor:pointer}
 button.on{color:#04121a;background:#4fe3ff;border-color:#a8f0ff;box-shadow:0 0 14px #4fe3ff88}
-label{display:block;font-size:10.5px;margin:7px 0 1px;color:#8b9ec2}
+label{display:block;font-size:10.5px;margin:3px 0 0;color:#8b9ec2}
 label span{color:#4fe3ff}
-input[type=range]{width:100%;accent-color:#4fe3ff;height:16px}
+input[type=range]{width:100%;accent-color:#4fe3ff;height:14px}
 .hon{margin-top:8px;font-size:9.5px;color:#6d7d9a;border-top:1px solid #1b2b4a;padding-top:6px}
 .detail{margin-top:6px;font-size:9.5px;color:#68789a}
 .detail b{color:#b39aea}
@@ -35,7 +35,7 @@ input[type=range]{width:100%;accent-color:#4fe3ff;height:16px}
 <canvas id="c"></canvas>
 <div id="ui">
   <h1>GC PAUSES &amp; THE GENERATIONAL BARGAIN</h1>
-  <div class="mech">A managed runtime must find the dead objects; a stop-the-world collector freezes the program to do it &mdash; and the freeze lands exactly when allocation was fastest, because allocation is what filled the heap.</div>
+  <div class="mech">A runtime must find its dead objects; a stop-the-world collector freezes the program to do it.</div>
   <div class="row cy"><span class="k">heap fill</span><span class="v"><b id="rH">0%</b></span></div>
   <div class="row rd"><span class="k">pause now / p99 latency</span><span class="v"><b id="rP">0</b> / <b id="rQ">0</b> ms</span></div>
   <div class="row"><span class="k">pauses per minute</span><span class="v"><b id="rF">0</b></span></div>
@@ -106,6 +106,7 @@ function gcStep(S,dt){S.t+=dt;S.wall+=dt;
  return S}
 function gcPct(S,q,win){var v=[],i,t0=S.t-(win||20);
  for(i=0;i<S.lat.length;i++)if(S.lat[i].t>=t0)v.push(S.lat[i].l);
+ for(i=0;i<S.q.length;i++)v.push(S.t-S.q[i]+SVC);
  if(!v.length)return 0;v.sort(function(a,b){return a-b});
  return v[Math.max(0,Math.min(v.length-1,Math.floor(q*v.length)))]}
 function gcFreq(S,win){win=win||30;var n=0,i,t0=Math.max(0,S.t-win);
@@ -134,9 +135,9 @@ function layout(){var r=ui.getBoundingClientRect(),wide=W>=760;
   var cy=r.bottom+12,av=H-cy-12,ch=Math.max(76,Math.min(150,(av-10)/2));
   CA={x:12,y:cy,w:r.width,h:ch};CB={x:12,y:cy+ch+10,w:r.width,h:ch}}
  else{var top=r.bottom+8,av2=Math.max(250,H-top-10);
-  ST={x:10,y:top,w:W-20,h:Math.max(190,av2*0.50)};
-  CA={x:10,y:top+ST.h+8,w:W-20,h:Math.max(72,av2*0.24)};
-  CB={x:10,y:top+ST.h+CA.h+14,w:W-20,h:Math.max(72,av2*0.24)}}}
+  ST={x:10,y:top,w:W-20,h:Math.max(190,av2*0.56)};
+  CA={x:10,y:top+ST.h+8,w:W-20,h:Math.max(72,av2*0.21)};
+  CB={x:10,y:top+ST.h+CA.h+14,w:W-20,h:Math.max(72,av2*0.21)}}}
 function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;
  c.width=W*DPR|0;c.height=H*DPR|0;c.style.width=W+'px';c.style.height=H+'px';
  g.setTransform(DPR,0,0,DPR,0,0);layout()}
@@ -147,7 +148,7 @@ function step(dt){T+=dt;gcStep(S,dt);
  if(T-rT>0.028){rT=T;ribbon.push({t:T,v:S.pause>0?0:Math.sin(rp)*(0.55+0.45*Math.sin(rp*0.37)),
    p:S.pause>0?1:0});if(ribbon.length>460)ribbon.shift()}
  dwell+=dt;
- if(dwell>6){var key=S.mode==='stw'?'stw':S.mode==='gen'?'gen':'conc';
+ if(dwell>2.5){var key=S.mode==='stw'?'stw':S.mode==='gen'?'gen':'conc';
   BARS[key]={p99:gcPct(S,0.99,20),p50:gcPct(S,0.5,20),thr:S.thr,f:gcFreq(S)}}}
 function bandGrid(x,y,w,h,slots){var cols=Math.max(4,Math.ceil(Math.sqrt(slots*w/Math.max(1,h))));
  var cell=Math.min(w/cols,h/Math.ceil(slots/cols));
@@ -157,6 +158,10 @@ function drawBand(x,y,w,h,slots,list,label,col){
  g.strokeStyle='rgba(120,150,200,.22)';g.lineWidth=1;g.stroke();
  var G0=bandGrid(x+3,y+3,w-6,h-6,slots),cell=G0.cell,cols=G0.cols,i,s=Math.max(1.4,cell-1.6);
  var sweepX=x+3+S.sweep*(w-6),paused=S.pause>0;
+ g.fillStyle='rgba(180,205,255,.055)';g.beginPath();
+ for(i=0;i<slots;i++){var lx=x+3+(i%cols)*cell,ly=y+3+((i/cols)|0)*cell;
+  if(ly>y+h-cell*0.6)break;g.rect(lx,ly,s,s)}
+ g.fill();
  var A=[],B=[],C2=[];
  for(i=0;i<list.length;i++){var o=list[i],cx=x+3+(i%cols)*cell,cy=y+3+((i/cols)|0)*cell;
   if(cy>y+h-cell*0.6)break;
@@ -220,15 +225,19 @@ function drawStage(){var x=ST.x,y=ST.y,w=ST.w,h=ST.h,paused=S.pause>0,C=gcCounts
   drawBand(x+3,ay+8,w-6,nh-8,S.ncap,lists[0],'nursery — '+C.ny+' / '+S.ncap+' (collected often, cheaply)','#4fe3ff');
   drawBand(x+3,ay+nh+16,w-6,ah-nh-16,S.ocap,lists[1],
     'old generation — '+C.ol+' / '+S.ocap+' (survivors promoted here)','#b39aea')}
- if(paused){var bw=Math.min(w-40,320),bx=x+w/2-bw/2,by=ay+ah*0.5;
-  g.fillStyle='rgba(58,4,4,.92)';rr(bx,by-20,bw,40,9);g.fill();
+ if(paused){var bw=Math.min(w-40,320),bh2=Math.min(40,Math.max(26,ah*0.34)),
+   bx=x+w/2-bw/2,by=ay+ah*0.5;
+  g.fillStyle='rgba(58,4,4,.92)';rr(bx,by-bh2/2,bw,bh2,9);g.fill();
   g.strokeStyle='#ff6d5e';g.lineWidth=2;g.stroke();
-  tx('STOP THE WORLD — '+Math.round(S.pdur*1000)+' ms',bx+bw/2,by-7,'#ffd9d2',13,'center',1);
-  g.fillStyle='rgba(255,109,94,.25)';rr(bx+10,by+6,bw-20,7,4);g.fill();
-  g.fillStyle='#ff6d5e';rr(bx+10,by+6,(bw-20)*S.sweep,7,4);g.fill();
-  tx(Math.round(S.pause*1000)+' ms left',bx+bw-14,by+9.5,'#ffb0a6',9,'right')}
+  tx('STOP THE WORLD — '+Math.round(S.pdur*1000)+' ms',bx+bw/2,by-bh2/2+11,'#ffd9d2',
+    Math.min(13,bw/22),'center',1);
+  g.fillStyle='rgba(255,109,94,.25)';rr(bx+10,by+bh2/2-11,bw-20,7,4);g.fill();
+  g.fillStyle='#ff6d5e';rr(bx+10,by+bh2/2-11,(bw-20)*S.sweep,7,4);g.fill();
+  tx(Math.round(S.pause*1000)+' ms left',bx+bw-14,by+bh2/2-7.5,'#ffb0a6',9,'right')}
  drawRibbon(x+3,y+h-rh-4,w-6,rh);
- tx('cyan = young live · violet = promoted · grey = garbage awaiting sweep',
+ tx(w<420?(S.mode==='stw'?'cyan = live · grey = garbage':'cyan = young · violet = old · grey = garbage'):
+   S.mode==='stw'?'cyan = live objects · grey = garbage · the red sweep line reclaims it':
+   'cyan = young live · violet = promoted survivors · grey = garbage awaiting sweep',
    x+3,y+h-rh-12,'#6d7d9a',9)}
 function card(C,title,right,rcol){g.fillStyle='rgba(6,10,20,.86)';rr(C.x,C.y,C.w,C.h,9);g.fill();
  g.strokeStyle='#1f3358';g.lineWidth=1;g.stroke();
@@ -236,25 +245,33 @@ function card(C,title,right,rcol){g.fillStyle='rgba(6,10,20,.86)';rr(C.x,C.y,C.w
  if(right)tx(right,C.x+C.w-9,C.y+12,rcol||'#4fe3ff',10,'right',1)}
 function drawLat(){var p99=gcPct(S,0.99,20)*1000,p50=gcPct(S,0.5,20)*1000;
  card(CA,'service latency','p99 '+p99.toFixed(0)+' ms',p99>60?'#ff6d5e':'#7fffb0');
- tx('per-request · GC spikes are the red needles',CA.x+9,CA.y+25,'#6d7d9a',9);
+ tx('per-request · GC spikes are the red needles',CA.x+9,CA.y+24,'#6d7d9a',9);
  var px0=CA.x+12,px1=CA.x+CA.w-30,py0=CA.y+33,py1=CA.y+CA.h-11,i;
  if(px1<=px0+10||py1<=py0+6)return;
- var win=10,t0=T-win,mx=Math.max(0.05,p99/1000*1.35);
- for(i=0;i<S.lat.length;i++)if(S.lat[i].t>=t0)mx=Math.max(mx,S.lat[i].l);
+ var win=10,t0=T-win,LO=0.002,HI=1.6,lg=Math.log(HI/LO);
+ function ly(v){return py1-Math.min(1,Math.max(0,Math.log(Math.max(LO,v)/LO)/lg))*(py1-py0)}
+ var dec=[0.01,0.1,1];
+ for(i=0;i<dec.length;i++){var gy=ly(dec[i]);
+  g.strokeStyle='rgba(160,180,220,.13)';g.lineWidth=1;
+  g.beginPath();g.moveTo(px0,gy);g.lineTo(px1,gy);g.stroke();
+  tx(dec[i]<1?(dec[i]*1000)+'ms':'1s',px1+3,gy,'#5d6d8a',8)}
  g.save();g.beginPath();g.rect(px0,py0-1,px1-px0,py1-py0+2);g.clip();
  for(i=0;i<S.lat.length;i++){var L=S.lat[i];if(L.t<t0)continue;
-  var X=px0+(L.t-t0)/win*(px1-px0),Y=py1-Math.min(1,L.l/mx)*(py1-py0);
+  var X=px0+(L.t-t0)/win*(px1-px0),Y=ly(L.l);
   g.strokeStyle=L.l>0.05?'rgba(255,109,94,.85)':'rgba(79,227,255,.55)';
   g.lineWidth=L.l>0.05?1.5:1;g.beginPath();g.moveTo(X,py1);g.lineTo(X,Y);g.stroke()}
  g.restore();
- var yq=py1-Math.min(1,p99/1000/mx)*(py1-py0);
+ if(S.q.length){var wait=S.t-S.q[0],Yb=ly(wait);
+  g.strokeStyle='#ff6d5e';g.lineWidth=2.4;g.beginPath();g.moveTo(px1-1,py1);g.lineTo(px1-1,Yb);g.stroke();
+  g.globalCompositeOperation='lighter';blit(GR,px1-1,Yb,0.55);g.globalCompositeOperation='source-over';
+  tx(S.q.length+' waiting · '+Math.round(wait*1000)+' ms',px0+2,py0+4,'#ff6d5e',8.5,'left',1)}
+ var yq=ly(p99/1000);
  g.setLineDash([3,3]);g.strokeStyle='rgba(255,200,94,.6)';g.lineWidth=1;
  g.beginPath();g.moveTo(px0,yq);g.lineTo(px1,yq);g.stroke();g.setLineDash([]);
- tx('p99',px1+3,yq,'#ffc85e',8.5);
- tx((mx*1000).toFixed(0)+'ms',px1+3,py0+4,'#6d7d9a',8.5);
- tx('now',px1,py1+7,'#6d7d9a',8.5,'right');tx('−10 s',px0,py1+7,'#6d7d9a',8.5)}
+ tx('now',px1,py1+7,'#6d7d9a',8.5,'right');tx('−10 s',px0,py1+7,'#6d7d9a',8.5);
+ tx('log scale · dashed = p99',px0+(px1-px0)*0.5,py1+7,'#5d6d8a',8.5,'center')}
 function drawBars(){card(CB,'measured p99 vs collector','log scale','#7c8dab');
- tx('run each collector ≥6 s to fill a bar',CB.x+9,CB.y+25,'#6d7d9a',9);
+ tx('run each collector ≥3 s to fill a bar',CB.x+9,CB.y+25,'#6d7d9a',9);
  var names=[['stw','STOP-THE-WORLD','#ff6d5e'],['gen','GENERATIONAL','#4fe3ff'],['conc','CONCURRENT','#7fffb0']];
  var bx0=CB.x+96,bx1=CB.x+CB.w-58,top=CB.y+34,rowH=Math.max(11,(CB.h-42)/3),i;
  for(i=0;i<3;i++){var k=names[i][0],B=BARS[k],yy=top+rowH*i+rowH*0.5;
