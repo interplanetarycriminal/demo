@@ -1,0 +1,252 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Streaming vs Spinner</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#07060f}
+canvas{display:block;position:fixed;inset:0;touch-action:none}
+#ui{position:fixed;top:10px;left:10px;z-index:10;font:12px/1.5 ui-monospace,Menlo,monospace;color:#e6e0ff;
+ background:rgba(13,9,26,.74);padding:9px 12px;border:1px solid rgba(120,235,255,.30);border-radius:11px;
+ backdrop-filter:blur(6px);width:min(340px,calc(100vw - 20px));max-height:45vh;overflow:auto}
+@media (max-width:640px){#ui{font-size:11px;max-height:38vh}#ui .detail{display:none}}
+.t{color:#7ce7ff;letter-spacing:.13em;font-weight:700}
+.m{color:#a0aec9;margin:1px 0 4px;font-size:11px;line-height:1.42}
+.ro{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 8px;margin:4px 0;
+ background:rgba(120,235,255,.07);border:1px solid rgba(120,235,255,.20);border-radius:7px;padding:3px 7px;line-height:1.3}
+.ro i{font-style:normal;color:#8fa0bd;font-size:9.5px}
+.ro s{text-decoration:none;color:#d8f4ff;font-size:12px}
+.chips{display:flex;flex-wrap:wrap;gap:4px;margin:4px 0}
+.ch{cursor:pointer;color:#a8cfe0;background:rgba(120,235,255,.10);border:1px solid rgba(120,235,255,.28);
+ border-radius:6px;padding:2px 7px;font-size:10.5px;user-select:none}
+.ch.on{color:#04121a;background:#7ce7ff;border-color:#7ce7ff;font-weight:700}
+.row{display:flex;align-items:center;gap:6px;margin:1px 0}
+.row label{width:62px;color:#8fa0bd;font-size:11px}
+input[type=range]{flex:1;min-width:60px;accent-color:#7ce7ff;height:15px}
+.hon{color:#8de8b6;background:rgba(70,220,150,.08);border:1px solid rgba(70,220,150,.22);border-radius:6px;padding:3px 6px;margin-top:5px;font-size:10.5px;line-height:1.42}
+.detail{color:#8fa0bd;margin-top:6px;border-top:1px solid rgba(120,235,255,.16);padding-top:5px;font-size:10.5px;line-height:1.5}
+a{color:#9df;text-decoration:none}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div id="ui">
+ <div class="t">STREAMING TOKENS vs THE SPINNER</div>
+ <div class="m">Perceived speed is <b>time to first signal</b>, not total time.</div>
+ <div class="ro">
+  <div><i>TTFT</i><br><s id="rF">—</s></div>
+  <div><i>generate</i><br><s id="rG">—</s></div>
+  <div><i>read (full)</i><br><s id="rR">—</s></div>
+  <div><i>wait·stream</i><br><s id="rWs">—</s></div>
+  <div><i>wait·spinner</i><br><s id="rWp">—</s></div>
+  <div><i>bottleneck</i><br><s id="rB">—</s></div>
+ </div>
+ <div class="chips" id="len">
+  <span class="ch" data-n="60">short</span><span class="ch on" data-n="140">medium</span><span class="ch" data-n="240">long</span>
+  <span class="ch on" id="tSw">sweep</span><span class="ch" id="tRp">replay</span>
+ </div>
+ <div class="row"><label>TTFT</label><input id="sF" type="range" min="100" max="3000" value="300"></div>
+ <div class="row"><label>tokens/s</label><input id="sT" type="range" min="6" max="60" value="20"></div>
+ <div class="row"><label>read w/s</label><input id="sR" type="range" min="2" max="9" value="4"></div>
+ <div class="hon">Honest: canned answer text, Poisson token timing — no model runs here.</div>
+ <div class="detail">Lineage: Doherty's 400 ms threshold (1982) → progressive rendering and the progressive JPEG on the early web → LLM token streaming, the same trick applied to text. <a href="index.html">← gallery</a></div>
+</div>
+<canvas id="c"></canvas>
+<script>
+/*MODEL_START*/
+var WPT=0.75; // words per token
+function genT(n,rate){return n/rate;}
+function readT(n,rr){return n*WPT/rr;}
+function pwStream(ttft,n,rate,rr){return ttft+Math.max(0,genT(n,rate)-readT(n,rr));}
+function pwSpin(ttft,n,rate,rr){return ttft+genT(n,rate)+readT(n,rr);}
+function ttrStream(ttft,n,rate,rr){return ttft+Math.max(genT(n,rate),readT(n,rr));}
+function ttrSpin(ttft,n,rate,rr){return ttft+genT(n,rate)+readT(n,rr);}
+function arrivals(n,ttft,rate,seed){var s=(seed||1)>>>0,g=[],i,sum=0,t=0,o=[];
+ for(i=0;i<n;i++){s=(s*1664525+1013904223)>>>0;var u=(s/4294967296)*0.97+0.015;var x=-Math.log(u);g.push(x);sum+=x;}
+ var sc=genT(n,rate)/sum;for(i=0;i<n;i++){t+=g[i]*sc;o.push(ttft+t);}return o;}
+function arrivedBy(arr,t){var lo=0,hi=arr.length;while(lo<hi){var m=(lo+hi)>>1;if(arr[m]<=t)lo=m+1;else hi=m;}return lo;}
+/*MODEL_END*/
+var cv=document.getElementById('c'),ctx=cv.getContext('2d'),ui=document.getElementById('ui');
+function $(i){return document.getElementById(i)}
+var W=1,H=1,DPR=1,A={x:0,y:0,w:1,h:1},B=A,UIB={r:0,b:0},wide=true;
+var CY='rgb(120,235,255)',AM='rgb(255,178,92)',GD='rgb(255,225,140)',VI='rgb(199,156,255)',RD='rgb(255,110,110)';
+function rr_(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+function al(c,a){return c.replace(')',','+a+')').replace('rgb','rgba');}
+function sprite(r,g,b){var Z=96,cn=document.createElement('canvas');cn.width=cn.height=Z;var x=cn.getContext('2d');
+ var gr=x.createRadialGradient(Z/2,Z/2,0,Z/2,Z/2,Z/2);
+ gr.addColorStop(0,'rgba('+r+','+g+','+b+',.92)');gr.addColorStop(.26,'rgba('+r+','+g+','+b+',.40)');
+ gr.addColorStop(.6,'rgba('+r+','+g+','+b+',.10)');gr.addColorStop(1,'rgba('+r+','+g+','+b+',0)');
+ x.fillStyle=gr;x.fillRect(0,0,Z,Z);return cn;}
+var SPc=sprite(120,235,255),SPa=sprite(255,178,92),SPg=sprite(255,225,140);
+function blit(s,x,y,r,a){ctx.save();ctx.globalAlpha=a;ctx.globalCompositeOperation='lighter';ctx.drawImage(s,x-r,y-r,r*2,r*2);ctx.restore();}
+function chip(x,y,txt,col,fs){fs=fs||10;ctx.font=fs+'px ui-monospace,Menlo,monospace';var w=ctx.measureText(txt).width+13,h=fs+8;
+ ctx.fillStyle='rgba(7,6,16,.90)';ctx.strokeStyle=al(col,.40);ctx.lineWidth=1;rr_(x,y,w,h,5);ctx.fill();ctx.stroke();
+ ctx.fillStyle=col;ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillText(txt,x+6.5,y+h/2+.5);return h+3;}
+function card(r,ttl,col){ctx.fillStyle='rgba(14,11,28,.60)';ctx.strokeStyle=al(col,.22);ctx.lineWidth=1;rr_(r.x,r.y,r.w,r.h,10);ctx.fill();ctx.stroke();
+ ctx.font='bold 10.5px ui-monospace,Menlo,monospace';ctx.fillStyle=col;ctx.textAlign='left';ctx.textBaseline='alphabetic';ctx.fillText(ttl,r.x+10,r.y+15);}
+function layout(){var M=10,r=ui.getBoundingClientRect();UIB={r:r.right,b:r.bottom};wide=W>=720;
+ if(wide){A={x:UIB.r+10,y:M,w:W-M-(UIB.r+10),h:H-2*M};B={x:M,y:UIB.b+10,w:UIB.r-M,h:H-M-(UIB.b+10)};}
+ else{var top=UIB.b+8,av=Math.max(220,H-M-top);A={x:M,y:top,w:W-2*M,h:av*.62};B={x:M,y:A.y+A.h+6,w:W-2*M,h:av*.38-6};}}
+function resize(){DPR=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);layout();}
+addEventListener('resize',resize);
+var TXT=("An index is a separate sorted structure that maps column values to row locations, so the engine can jump straight to the rows it needs instead of scanning every page of the table. Most engines use a B-tree: a shallow wide tree where each node holds many keys, so even a billion-row table is only three or four hops deep. The trade-off is write cost: every insert, update and delete must maintain the index too, and each extra index makes writes slower and the table larger on disk. Indexes also help sorting and grouping, because rows already arrive in key order and the planner can skip an expensive sort. A composite index only helps when the predicate uses a leading prefix of its columns, which is why column order matters so much. If a query touches most of the rows anyway, the planner ignores the index and picks a sequential scan, because random page lookups cost more than reading the whole table in order.").split(' ');
+var QN='Q  how does a database index actually speed up a query?';
+var ST={n:140,ttft:.3,rate:20,rr:4,sw:true,run0:0,cyc:0,arr:null,key:'',ghosts:[],hist:[]};
+var SWEEP=[300,1400,700,2600,300,1900];
+var T0=performance.now(),LAST=T0;
+Array.prototype.forEach.call(document.querySelectorAll('#len .ch[data-n]'),function(el){el.addEventListener('click',function(){
+ Array.prototype.forEach.call(document.querySelectorAll('#len .ch[data-n]'),function(e){e.classList.remove('on')});
+ el.classList.add('on');ST.n=+el.getAttribute('data-n');ST.run0=-1;});});
+$('tSw').addEventListener('click',function(){ST.sw=!ST.sw;this.classList.toggle('on',ST.sw)});
+$('tRp').addEventListener('click',function(){ST.run0=-1;});
+$('sF').addEventListener('input',function(){ST.sw=false;$('tSw').classList.remove('on');});
+var LAY=null,LKEY='';
+function wrap(nw,w){ctx.font='10px ui-monospace,Menlo,monospace';var out=[],x=0,ln=0,sp=ctx.measureText(' ').width,ext=[];
+ for(var i=0;i<nw;i++){var t=TXT[i%TXT.length],ww=ctx.measureText(t).width;
+  if(x+ww>w&&x>0){ln++;x=0;}out.push({x:x,l:ln,w:ww,t:t});ext[ln]=x+ww;x+=ww+sp;}
+ out.ext=ext;return out;}
+function wrapPlain(txt,w,fs){ctx.font=fs+'px ui-monospace,Menlo,monospace';var ws=txt.split(' '),ls=[],cur='';
+ for(var i=0;i<ws.length;i++){var tst=cur?cur+' '+ws[i]:ws[i];if(ctx.measureText(tst).width>w&&cur){ls.push(cur);cur=ws[i];}else cur=tst;}
+ if(cur)ls.push(cur);return ls;}
+function frame(now){
+ var el=(now-T0)/1000,dt=Math.min(.45,(now-LAST)/1000);LAST=now;
+ ST.ttft=+$('sF').value/1000;ST.rate=+$('sT').value;ST.rr=+$('sR').value;
+ var n=ST.n,g=genT(n,ST.rate),rd=readT(n,ST.rr),dump=ST.ttft+g;
+ var cyc=Math.min(dump+4.5,14);
+ if(ST.run0<0||el-ST.run0>cyc){
+  if(ST.run0>=0){ST.hist.push({f:ST.ttft,g:g,s:pwStream(ST.ttft,n,ST.rate,ST.rr),p:pwSpin(ST.ttft,n,ST.rate,ST.rr),a:1});if(ST.hist.length>26)ST.hist.shift();}
+  ST.run0=el;ST.cyc++;ST.ghosts=[];
+  if(ST.sw){ST.ttft=SWEEP[ST.cyc%SWEEP.length]/1000;$('sF').value=ST.ttft*1000;}
+  ST.key='';}
+ var t=el-ST.run0;
+ var k=n+'|'+ST.rate+'|'+ST.ttft;
+ if(k!==ST.key){ST.key=k;ST.arr=arrivals(n,ST.ttft,ST.rate,1337+n);}
+ for(var i=ST.hist.length-1;i>=0;i--){ST.hist[i].a-=dt*.06;if(ST.hist[i].a<=0)ST.hist.splice(i,1);}
+ ST.gt=(ST.gt||0)+dt;
+ if(t>1.0&&t<dump&&ST.gt>1.0){ST.gt=0;ST.ghosts.push({y:0,j:(ST.ghosts.length%2)?18:-18,a:1});}
+ for(i=ST.ghosts.length-1;i>=0;i--){var gh=ST.ghosts[i];gh.y+=26*dt;gh.a-=dt*.30;if(gh.a<=0)ST.ghosts.splice(i,1);}
+ draw(t,n,g,rd,dump);
+ $('rF').textContent=Math.round(ST.ttft*1000)+' ms';
+ $('rG').textContent=g.toFixed(1)+' s';
+ $('rR').textContent=rd.toFixed(1)+' s';
+ $('rWs').textContent=pwStream(ST.ttft,n,ST.rate,ST.rr).toFixed(2)+' s';
+ $('rWp').textContent=pwSpin(ST.ttft,n,ST.rate,ST.rr).toFixed(1)+' s';
+ $('rB').textContent=(ST.rate*WPT>ST.rr)?'the reader':'the model';
+ requestAnimationFrame(frame);}
+function bar(x,y,w,h,f,col,lab,val){ctx.fillStyle='rgba(255,255,255,.06)';rr_(x,y,w,h,h/2);ctx.fill();
+ ctx.fillStyle=al(col,.85);rr_(x,y,Math.max(2,w*Math.max(0,Math.min(1,f))),h,h/2);ctx.fill();
+ ctx.font='9.5px ui-monospace,Menlo,monospace';ctx.textBaseline='alphabetic';ctx.textAlign='left';ctx.fillStyle='#8fa0bd';ctx.fillText(lab,x,y-4);
+ ctx.textAlign='right';ctx.fillStyle=col;ctx.fillText(val,x+w,y-4);ctx.textAlign='left';}
+function drawPane(r,mode,t,n,g,rd,dump){
+ var col=mode==='s'?CY:AM,nw=Math.round(n*WPT);
+ card(r,mode==='s'?(wide?'STREAM · first token now':'STREAM'):(wide?'SPINNER · nothing until done':'SPINNER'),col);
+ var qls=wrapPlain(QN,r.w-40,9.5),qy=r.y+24,qh=qls.length*12+8;
+ ctx.fillStyle='rgba(199,156,255,.12)';ctx.strokeStyle='rgba(199,156,255,.26)';rr_(r.x+10,qy,r.w-20,qh,7);ctx.fill();ctx.stroke();
+ ctx.font='9.5px ui-monospace,Menlo,monospace';ctx.fillStyle='#c9b6ef';ctx.textAlign='left';ctx.textBaseline='top';
+ for(var q=0;q<qls.length;q++)ctx.fillText(qls[q],r.x+16,qy+5+q*12);
+ var ax=r.x+12,ay=qy+qh+10,aw=r.w-24,LH=13.2;
+ var lk=Math.round(aw)+'|'+nw;if(lk!==LKEY){LKEY=lk;LAY=wrap(nw,aw);}
+ var shownTok=mode==='s'?arrivedBy(ST.arr,t):(t>=dump?n:0);
+ var shownW=Math.min(nw,Math.floor(shownTok*WPT));
+ var gz=0,idle=0;
+ if(mode==='s'){gz=Math.max(0,Math.min(shownW,(t-ST.ttft)*ST.rr));idle=Math.min(t,ST.ttft);}
+ else{gz=t>dump?Math.min(nw,(t-dump)*ST.rr):0;idle=Math.min(t,dump)+Math.max(0,t-dump);}
+ // answer text
+ ctx.font='10px ui-monospace,Menlo,monospace';ctx.textBaseline='top';
+ for(var i=0;i<shownW;i++){var wd=LAY[i];var yy=ay+wd.l*LH;if(yy>r.y+r.h-80)break;
+  if(i<gz-1)ctx.fillStyle='rgba(150,162,190,.62)';
+  else if(i<gz+1){ctx.fillStyle=al(GD,.16);rr_(ax+wd.x-2,yy-1,wd.w+4,LH-1,3);ctx.fill();ctx.fillStyle='#ffe89a';}
+  else ctx.fillStyle=mode==='s'?'#d8f4ff':'#ffd7a8';
+  ctx.fillText(wd.t,ax+wd.x,yy);}
+ // skeleton of what is still coming (streaming reserves the space)
+ if(mode==='s'&&shownW<nw){var cl0=LAY[Math.min(nw-1,shownW)].l;
+  for(var L=cl0+1;L<LAY.ext.length;L++){var syy=ay+L*LH;if(syy>r.y+r.h-80)break;
+   ctx.fillStyle='rgba(200,220,255,.055)';rr_(ax,syy+1.5,LAY.ext[L],LH-5,3);ctx.fill();}}
+ // token cursor
+ if(mode==='s'&&shownW<nw&&shownW>=0){var cw=LAY[Math.min(nw-1,shownW)],cyy=ay+cw.l*LH;
+  if(cyy<r.y+r.h-80){blit(SPc,ax+cw.x+3,cyy+6,15,.9);ctx.fillStyle='#bff4ff';ctx.fillRect(ax+cw.x,cyy,5.5,LH-2);}}
+ // gaze caret
+ if(gz>0.4&&gz<nw){var gw=LAY[Math.min(nw-1,Math.floor(gz))],gyy=ay+gw.l*LH;
+  if(gyy<r.y+r.h-80){blit(SPg,ax+gw.x+gw.w/2,gyy+LH*.5,13,.55);
+   ctx.strokeStyle=al(GD,.9);ctx.lineWidth=1.6;ctx.beginPath();ctx.moveTo(ax+gw.x-1,gyy+LH-1);ctx.lineTo(ax+gw.x+gw.w+1,gyy+LH-1);ctx.stroke();ctx.lineWidth=1;}}
+ // spinner state
+ if(mode!=='s'&&t<dump){
+  var abot=r.y+r.h-80,cx=r.x+r.w/2,cy=Math.min(ay+62,Math.max(ay+34,(ay+abot)/2-26));
+  ctx.strokeStyle='rgba(255,178,92,.18)';ctx.lineWidth=4;ctx.beginPath();ctx.arc(cx,cy,22,0,7);ctx.stroke();
+  ctx.strokeStyle=AM;ctx.lineWidth=4;ctx.beginPath();ctx.arc(cx,cy,22,t*4.4,t*4.4+1.5);ctx.stroke();ctx.lineWidth=1;
+  blit(SPa,cx,cy,34,.5);
+  ctx.font='bold 20px ui-monospace,Menlo,monospace';ctx.fillStyle='#ffcf95';ctx.textAlign='center';ctx.textBaseline='top';
+  ctx.fillText(t.toFixed(1)+' s',cx,cy+30);
+  ctx.font='9.5px ui-monospace,Menlo,monospace';ctx.fillStyle='#a08a6e';ctx.fillText('nothing to read yet',cx,cy+54);
+  var att=Math.exp(-Math.max(0,t-.9)/5.5);
+  ctx.textAlign='left';var aby=Math.min(cy+80,abot-16);bar(r.x+14,aby,r.w-28,7,att,RD,'attention',Math.round(att*100)+'%');
+  var gb=Math.min(cy+188,abot-4);
+  for(var q2=0;q2<ST.ghosts.length;q2++){var gh=ST.ghosts[q2],gy2=gb-gh.y;
+   if(gy2<aby+24)continue;
+   ctx.globalAlpha=Math.max(0,gh.a)*.8;ctx.font='9px ui-monospace,Menlo,monospace';ctx.fillStyle='#c9a2ff';ctx.textAlign='center';
+   ctx.fillText('mind wanders…',cx+gh.j,gy2);ctx.globalAlpha=1;ctx.textAlign='left';}}
+ if(mode!=='s'&&t>=dump&&t<dump+.45){ctx.fillStyle='rgba(255,178,92,'+(0.30*(1-(t-dump)/.45))+')';rr_(r.x+2,r.y+2,r.w-4,r.h-4,10);ctx.fill();}
+ // footers
+ var fy=r.y+r.h-62;
+ ctx.font='9.5px ui-monospace,Menlo,monospace';ctx.fillStyle='#7d8aa5';ctx.textAlign='left';ctx.textBaseline='alphabetic';
+ ctx.fillText('tokens '+Math.min(n,Math.round(shownTok))+'/'+n+'  ·  read '+Math.floor(gz)+'/'+nw+' w',r.x+14,fy);
+ var pw=mode==='s'?pwStream(ST.ttft,n,ST.rate,ST.rr):pwSpin(ST.ttft,n,ST.rate,ST.rr);
+ var mx=pwSpin(ST.ttft,n,ST.rate,ST.rr);
+ bar(r.x+14,fy+20,r.w-28,9,idle/Math.max(.001,mx),col,'dead time now',idle.toFixed(1)+' s');
+ ctx.fillStyle='rgba(255,255,255,.34)';ctx.fillRect(r.x+14+(r.w-28)*Math.min(1,pw/mx)-1,fy+17,2,15);
+ ctx.font='9.5px ui-monospace,Menlo,monospace';ctx.fillStyle=col;ctx.textAlign='left';
+ ctx.fillText('perceived wait '+pw.toFixed(pw<10?2:1)+' s',r.x+14,fy+44);
+ ctx.font='9px ui-monospace,Menlo,monospace';ctx.fillStyle='#7d8aa5';
+ ctx.fillText('done-and-read '+(mode==='s'?ttrStream(ST.ttft,n,ST.rate,ST.rr):ttrSpin(ST.ttft,n,ST.rate,ST.rr)).toFixed(1)+' s',r.x+14,fy+57);}
+function plot(p,xs,ys,xlab,mode,n,g,rd){
+ ctx.fillStyle='rgba(255,255,255,.028)';ctx.strokeStyle='rgba(120,235,255,.16)';rr_(p.x,p.y,p.w,p.h,7);ctx.fill();ctx.stroke();
+ ctx.font='9.5px ui-monospace,Menlo,monospace';ctx.fillStyle='#9fb2cc';ctx.textAlign='left';ctx.textBaseline='top';
+ ctx.fillText(mode==='f'?'perceived wait vs TTFT — linear, brutal':'perceived wait vs generation time',p.x+7,p.y+5);
+ var bx=p.x+8,by=p.y+20,bw=p.w-16,bh=p.h-42,i;
+ var ymax=ys;
+ function X(v){return bx+bw*Math.max(0,Math.min(1,v/xs));}
+ function Y(v){return by+bh-bh*Math.max(0,Math.min(1,v/ymax));}
+ ctx.strokeStyle='rgba(255,255,255,.10)';ctx.beginPath();ctx.moveTo(bx,by+bh);ctx.lineTo(bx+bw,by+bh);ctx.stroke();
+ var S=[],P=[];
+ for(i=0;i<=48;i++){var v=xs*i/48;
+  if(mode==='f'){S.push([v,pwStream(v,n,ST.rate,ST.rr)]);P.push([v,pwSpin(v,n,ST.rate,ST.rr)]);}
+  else{S.push([v,ST.ttft+Math.max(0,v-rd)]);P.push([v,ST.ttft+v+rd]);}}
+ function line(arr,col){ctx.strokeStyle=col;ctx.lineWidth=1.8;ctx.beginPath();
+  for(var j=0;j<arr.length;j++){var xx=X(arr[j][0]),yy=Y(arr[j][1]);if(j===0)ctx.moveTo(xx,yy);else ctx.lineTo(xx,yy);}ctx.stroke();ctx.lineWidth=1;}
+ line(P,al(AM,.85));line(S,al(CY,.95));
+ for(i=0;i<ST.hist.length;i++){var h=ST.hist[i],hx=mode==='f'?h.f:h.g;
+  ctx.globalAlpha=h.a*.5;ctx.fillStyle=CY;ctx.beginPath();ctx.arc(X(hx),Y(h.s),2,0,7);ctx.fill();
+  ctx.fillStyle=AM;ctx.beginPath();ctx.arc(X(hx),Y(h.p),2,0,7);ctx.fill();ctx.globalAlpha=1;}
+ var cx=mode==='f'?ST.ttft:g;
+ var sy=mode==='f'?pwStream(ST.ttft,n,ST.rate,ST.rr):ST.ttft+Math.max(0,g-rd);
+ var py=mode==='f'?pwSpin(ST.ttft,n,ST.rate,ST.rr):ST.ttft+g+rd;
+ blit(SPa,X(cx),Y(py),11,.85);ctx.fillStyle=AM;ctx.beginPath();ctx.arc(X(cx),Y(py),3.4,0,7);ctx.fill();
+ blit(SPc,X(cx),Y(sy),11,.9);ctx.fillStyle='#bff4ff';ctx.beginPath();ctx.arc(X(cx),Y(sy),3.4,0,7);ctx.fill();
+ if(mode==='g'&&rd<xs){ctx.strokeStyle='rgba(255,225,140,.35)';ctx.setLineDash([3,3]);ctx.beginPath();ctx.moveTo(X(rd),by);ctx.lineTo(X(rd),by+bh);ctx.stroke();ctx.setLineDash([]);}
+ ctx.font='9px ui-monospace,Menlo,monospace';ctx.fillStyle='#7d8aa5';ctx.textAlign='left';ctx.textBaseline='alphabetic';
+ ctx.fillText(xlab,p.x+7,p.y+p.h-6);
+ ctx.textAlign='right';ctx.fillStyle='#7d8aa5';ctx.fillText('0 → '+ymax.toFixed(0)+' s wait',p.x+p.w-7,p.y+p.h-6);ctx.textAlign='left';}
+function draw(t,n,g,rd,dump){
+ ctx.fillStyle='#07060f';ctx.fillRect(0,0,W,H);
+ var bgg=ctx.createRadialGradient(W*.62,H*.42,0,W*.62,H*.42,W*.75);
+ bgg.addColorStop(0,'rgba(30,60,110,.30)');bgg.addColorStop(1,'rgba(7,6,15,0)');ctx.fillStyle=bgg;ctx.fillRect(0,0,W,H);
+ var pad=9,fh=wide?70:52,ph=A.h-fh,pw=(A.w-pad*3)/2;
+ drawPane({x:A.x+pad,y:A.y,w:pw,h:ph},'s',t,n,g,rd,dump);
+ drawPane({x:A.x+pad*2+pw,y:A.y,w:pw,h:ph},'p',t,n,g,rd,dump);
+ var cy=A.y+ph+3;
+ cy+=chip(A.x+pad,cy,'stream · ship the first word, buy the rest of the sentence',CY,wide?10:9);
+ cy+=chip(A.x+pad,cy,'spinner · a promise with no evidence',AM,wide?10:9);
+ if(wide)chip(A.x+pad,cy,ST.rate*WPT>ST.rr?('past ~'+(ST.rr/WPT).toFixed(1)+' tok/s the reader, not the model, is the bottleneck'):'model slower than the reader — the stream stutters and waiting returns',GD,10);
+ // ---- B: plots
+ card(B,'THE TWO LEVERS — ONE MATTERS',VI);
+ var ly=B.y+22;
+ ctx.font='9.5px ui-monospace,Menlo,monospace';ctx.textBaseline='middle';ctx.textAlign='left';
+ ctx.fillStyle=CY;ctx.fillRect(B.x+10,ly+5,10,2.5);ctx.fillText('stream',B.x+24,ly+6);
+ ctx.fillStyle=AM;ctx.fillRect(B.x+86,ly+5,10,2.5);ctx.fillText('spinner',B.x+100,ly+6);
+ ctx.fillStyle='#7d8aa5';ctx.fillText('· dots = past runs',B.x+166,ly+6);
+ var pv=B.y+36,pa=(B.h-46)/2-5;
+ var ym=Math.max(4,pwSpin(3,n,ST.rate,ST.rr));
+ plot({x:B.x+10,y:pv,w:B.w-20,h:pa},3,ym,'TTFT  0 → 3 s','f',n,g,rd);
+ plot({x:B.x+10,y:pv+pa+10,w:B.w-20,h:pa},Math.max(2*rd,g*1.3),ym,'generation time →','g',n,g,rd);}
+cv.addEventListener('pointerdown',function(e){cv.setPointerCapture(e.pointerId);ST.run0=-1;e.preventDefault();});
+cv.addEventListener('pointerup',function(e){try{cv.releasePointerCapture(e.pointerId)}catch(x){}});
+resize();requestAnimationFrame(frame);
+</script>
