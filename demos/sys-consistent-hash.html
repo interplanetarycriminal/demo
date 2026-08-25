@@ -14,20 +14,18 @@ html,body{height:100%;background:#04060c;overflow:hidden;color:#d5e6ff;
   box-shadow:0 0 24px #000a}
 h1{font-size:12.5px;letter-spacing:.6px;color:#eaf4ff;text-shadow:0 0 10px #4dffa855}
 .mech{font-size:10.5px;line-height:1.32;color:#8ba6ce;margin:3px 0 6px}
-.row{display:flex;justify-content:space-between;gap:8px;font-size:11px;line-height:1.28}
+.row{display:flex;justify-content:space-between;gap:8px;font-size:11px;line-height:1.2}
 .k{color:#7e96bb}.v{color:#eaf4ff}.v b{color:#4dffa8;font-weight:600}.v i{color:#ff6d5e;font-style:normal;font-weight:600}
-.bars{margin:4px 0 1px}
-.bar{display:flex;align-items:center;gap:5px;font-size:9.5px;margin-top:1px}
-.bar span{width:11px;font-weight:700}
-.bar i{flex:1;height:6px;background:#0e1b30;border-radius:3px;overflow:hidden;display:block}
-.bar u{display:block;height:100%;border-radius:3px;text-decoration:none;transition:width .18s}
-.bar em{width:20px;text-align:right;font-style:normal;color:#8fa8cc}
+.bars{display:flex;height:16px;border-radius:4px;overflow:hidden;margin:5px 0 1px;background:#0e1b30;gap:1px}
+.bars span{display:flex;align-items:center;justify-content:center;font:700 9px ui-monospace,monospace;
+  color:#04121a;overflow:hidden;white-space:nowrap;transition:width .2s}
 .ctl{margin-top:7px;display:flex;flex-wrap:wrap;gap:5px}
 button{flex:1 1 46%;font:600 10.5px/1.25 inherit;color:#8fa8cc;background:#0b162b;
   border:1px solid #22406e;border-radius:6px;padding:5px 4px;cursor:pointer}
-label{display:block;margin-top:6px;font-size:9.5px;color:#7e96bb}
+label{display:flex;align-items:center;gap:6px;margin-top:5px;font-size:9.5px;color:#7e96bb;white-space:nowrap}
 label b{color:#eaf4ff}
-input[type=range]{width:100%;height:15px;accent-color:#4dffa8;background:transparent;cursor:pointer;display:block}
+label input{flex:1;min-width:60px}
+input[type=range]{height:15px;accent-color:#4dffa8;background:transparent;cursor:pointer;display:block}
 .hint{margin-top:6px;font-size:9.5px;color:#7d93b6}
 .hon{margin-top:8px;font-size:9.5px;color:#6d84a6;border-top:1px solid #14243f;padding-top:6px}
 .detail{margin-top:6px;font-size:9.5px;color:#63799a}
@@ -40,14 +38,14 @@ input[type=range]{width:100%;height:15px;accent-color:#4dffa8;background:transpa
 <canvas id="c"></canvas>
 <div id="ui">
   <h1>CONSISTENT HASHING</h1>
-  <div class="mech">Hash servers <b>and</b> keys onto one ring; a key belongs to the next server clockwise, so a new server steals only the arc behind it.</div>
+  <div class="mech">Hash servers <b>and</b> keys onto one ring; a key belongs to the next server clockwise, so a joiner steals only the arc behind it.</div>
   <div class="row"><span class="k">servers</span><span class="v"><b id="rN">4</b></span></div>
   <div class="row"><span class="k">keys moved · last change</span><span class="v"><b id="rMv">—</b></span></div>
   <div class="row"><span class="k">mod-N would have moved</span><span class="v"><i id="rMod">—</i></span></div>
-  <div class="row"><span class="k">load stddev</span><span class="v"><b id="rSd">0.0</b></span></div>
+  <div class="row"><span class="k">load per server · stddev</span><span class="v"><b id="rSd">0.0</b></span></div>
   <div class="bars" id="bars"></div>
   <div class="ctl"><button id="bAdd">+ add server</button><button id="bDel">&minus; remove server</button></div>
-  <label>virtual nodes per server <b id="lVN">6</b><input id="sVN" type="range" min="1" max="32" value="6"></label>
+  <label>vnodes/server <b id="lVN">6</b><input id="sVN" type="range" min="1" max="32" value="6"></label>
   <label>keys <b id="lK">80</b><input id="sK" type="range" min="40" max="160" value="80"></label>
   <div class="hint">Tap the ring to drop a key at that spot.</div>
   <div class="hon">Honesty: hash = 32-bit FNV-1a over label strings plus an avalanche mix (raw FNV puts <b>A#0</b> and <b>A#1</b> almost on top of each other). Real rings use 128-bit MD5/Murmur and place replicas on the next R <i>distinct</i> servers.</div>
@@ -98,7 +96,7 @@ function apply(sv,vn,anim){
   var moved=0,i,d=0;
   for(i=0;i<st.keys.length;i++){var nn=ownName(st.keys[i].p),k=st.keys[i];
     if(nn!==old[i]){moved++;
-      if(anim){st.fly.push({from:old[i],to:nn,key:k,d:d,t:-d,dur:1.25});d+=0.055}
+      if(anim){st.fly.push({from:old[i],to:nn,key:k,d:d,t:-d,dur:2.2});d+=0.10}
       else k.own=nn}
     else k.own=nn}
   if(anim)st.flash=1;
@@ -160,6 +158,12 @@ function drawRing(){
   for(i=0;i<st.keys.length;i++){var k=st.keys[i];if(k.flying)continue;
     var P=ringXY(k.p,G.R),cc=col(k.own);
     glow(SP[cc],P[0],P[1],13,.85);ctx.fillStyle=cc;ctx.beginPath();ctx.arc(P[0],P[1],2.4,0,6.3);ctx.fill()}
+  for(i=0;i<st.fly.length;i++){var f=st.fly[i];if(f.t<=0)continue;
+    var u=Math.min(1,f.t/f.dur),A2=svXY(f.from),B2=svXY(f.to),K=ringXY(f.key.p,G.R),c4=col(f.to);
+    for(var j=0;j<7;j++){var uu=u-j*0.035;if(uu<0)break;
+      var x=bez(A2[0],G.cx*.5+K[0]*.5,B2[0],uu),y=bez(A2[1],G.cy*.5+K[1]*.5,B2[1],uu);
+      glow(SP[c4],x,y,j===0?21:15,(j===0?1:.5)*(1-j/8));
+      if(j===0){ctx.fillStyle=c4;ctx.beginPath();ctx.arc(x,y,2.6,0,6.3);ctx.fill()}}}
   for(i=0;i<st.servers.length;i++){var n=st.servers[i],P=svXY(n),c3=col(n);
     var pulse=(n===st.servers[st.servers.length-1]&&st.flash>0)?1+st.flash*.5:1;
     glow(SP[c3],P[0],P[1],46*pulse,.85);
@@ -167,12 +171,6 @@ function drawRing(){
     ctx.strokeStyle=c3;ctx.lineWidth=2;ctx.stroke();
     ctx.fillStyle=c3;ctx.font='700 12px ui-monospace,monospace';ctx.textAlign='center';ctx.textBaseline='middle';
     ctx.fillText(n,P[0],P[1]+.5)}
-  for(i=0;i<st.fly.length;i++){var f=st.fly[i];if(f.t<=0)continue;
-    var u=Math.min(1,f.t/f.dur),A2=svXY(f.from),B2=svXY(f.to),K=ringXY(f.key.p,G.R),c4=col(f.to);
-    for(var j=0;j<7;j++){var uu=u-j*0.035;if(uu<0)break;
-      var x=bez(A2[0],G.cx*.5+K[0]*.5,B2[0],uu),y=bez(A2[1],G.cy*.5+K[1]*.5,B2[1],uu);
-      glow(SP[c4],x,y,j===0?24:16,(j===0?1:.5)*(1-j/8));
-      if(j===0){ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(x,y,2,0,6.3);ctx.fill()}}}
 }
 function bez(a,b,c,u){var v=1-u;return v*v*a+2*v*u*b+u*u*c}
 function drawStrip(){
@@ -200,14 +198,13 @@ function drawStage(){
   chip(S.x+2,G.capY,'virtual nodes: many small arcs average out the luck','#b98cff',9.5);
   drawStrip()}
 //--ui sync--
-function buildBars(){var h='',i;
-  for(i=0;i<st.servers.length;i++){var n=st.servers[i];
-    h+='<div class="bar"><span style="color:'+col(n)+'">'+n+'</span><i><u id="bar'+i+'" style="background:'+col(n)+'"></u></i><em id="bv'+i+'">0</em></div>'}
-  $('bars').innerHTML=h}
+function buildBars(){}
 function sync(){
-  var L=CORE.loads(st.pts,st.keys,st.servers.length),i,mx=1;
-  for(i=0;i<L.length;i++)if(L[i]>mx)mx=L[i];
-  for(i=0;i<L.length;i++){var b=$('bar'+i),v=$('bv'+i);if(b){b.style.width=(100*L[i]/mx)+'%';v.textContent=L[i]}}
+  var L=CORE.loads(st.pts,st.keys,st.servers.length),i,tot=0,h='';
+  for(i=0;i<L.length;i++)tot+=L[i];if(!tot)tot=1;
+  for(i=0;i<L.length;i++){var pc=100*L[i]/tot,n=st.servers[i];
+    h+='<span style="width:'+pc+'%;background:'+col(n)+'">'+(pc>9?(n+' '+L[i]):'')+'</span>'}
+  $('bars').innerHTML=h;
   $('rN').textContent=st.servers.length;
   $('rMv').textContent=st.moved?(st.moved+'/'+st.keys.length+'  ('+Math.round(100*st.moved/st.keys.length)+'%)'):'—';
   $('rMod').textContent=st.moved?(st.modMoved+'/'+st.keys.length+'  ('+Math.round(100*st.modMoved/st.keys.length)+'%)'):'—';

@@ -14,15 +14,16 @@ html,body{height:100%;background:#04060c;overflow:hidden;color:#d5e6ff;
   box-shadow:0 0 24px #000a}
 h1{font-size:12.5px;letter-spacing:.6px;color:#eaf4ff;text-shadow:0 0 10px #6ab6ff55}
 .mech{font-size:10.5px;line-height:1.3;color:#8ba6ce;margin:3px 0 6px}
-.row{display:flex;justify-content:space-between;gap:8px;font-size:11px;line-height:1.28}
+.row{display:flex;justify-content:space-between;gap:8px;font-size:11px;line-height:1.2}
 .k{color:#7e96bb}.v{color:#eaf4ff}.v b{color:#6ab6ff;font-weight:600}.v i{color:#ff6d5e;font-style:normal;font-weight:600}
 .ctl{margin-top:6px;display:flex;flex-wrap:wrap;gap:4px}
 button{flex:1 1 30%;font:600 10.5px/1.25 inherit;color:#8fa8cc;background:#0b162b;
   border:1px solid #22406e;border-radius:6px;padding:5px 4px;cursor:pointer}
 button.on{color:#04121a;background:#6ab6ff;border-color:#a8d8ff;box-shadow:0 0 14px #6ab6ff88}
-label{display:block;margin-top:6px;font-size:9.5px;color:#7e96bb}
+label{display:flex;align-items:center;gap:6px;margin-top:5px;font-size:9.5px;color:#7e96bb;white-space:nowrap}
 label b{color:#eaf4ff}
-input[type=range]{width:100%;height:15px;accent-color:#6ab6ff;background:transparent;cursor:pointer;display:block}
+label input{flex:1;min-width:60px}
+input[type=range]{height:15px;accent-color:#6ab6ff;background:transparent;cursor:pointer;display:block}
 .hint{margin-top:6px;font-size:9.5px;color:#7d93b6}
 .hon{margin-top:8px;font-size:9.5px;color:#6d84a6;border-top:1px solid #14243f;padding-top:6px}
 .detail{margin-top:6px;font-size:9.5px;color:#63799a}
@@ -43,8 +44,8 @@ input[type=range]{width:100%;height:15px;accent-color:#6ab6ff;background:transpa
     <button id="mW">WALL</button><button id="mL" class="on">LAMPORT</button><button id="mV">VECTOR</button>
   </div>
   <div class="ctl"><button id="bP">pause</button><button id="bClr">clear selection</button></div>
-  <label>clock skew between machines <b id="lS">1.20</b> s<input id="sS" type="range" min="0" max="250" value="120"></label>
-  <label>message rate <b id="lR">0.75</b> /s<input id="sR" type="range" min="15" max="200" value="75"></label>
+  <label>clock skew <b id="lS">1.20</b> s<input id="sS" type="range" min="0" max="250" value="120"></label>
+  <label>msg rate <b id="lR">0.75</b>/s<input id="sR" type="range" min="15" max="200" value="75"></label>
   <div class="hint">Tap a bead to light its causal past. In VECTOR mode tap two beads for a verdict.</div>
   <div class="hon">Honesty: 3 processes, instantaneous local events, and no clock drift correction — real deployments run NTP/PTP and still cannot order two events closer together than their uncertainty.</div>
   <div class="detail"><b>Lineage.</b> <b>Lamport 1978, "Time, Clocks, and the Ordering of Events in a Distributed System"</b> — the most cited paper in distributed computing — defined <b>happened-before</b> and the counter that respects it. <b>Fidge</b> and <b>Mattern</b> (1988) added <b>vector clocks</b>, which also <i>detect</i> concurrency. Their descendants are <b>version vectors</b> in Dynamo, <b>dotted version vectors</b> in Riak, and the causal metadata inside every <b>CRDT</b>.</div>
@@ -85,8 +86,8 @@ function step(st,dt){
   while(st.si<SCR.length&&SCR[st.si].t<=st.t){var s=SCR[st.si++];
     if(s.k==='l')addEv(st,s.p,s.t,'L');else sendMsg(st,s.p,s.q,s.t,s.tr)}
   for(p=0;p<NP;p++){
-    if(st.t>=st.nextL[p]){addEv(st,p,st.nextL[p],'L');st.nextL[p]+=0.7+1.5*rnd(st)}
-    if(st.nextS[p]>90)st.nextS[p]=3.3+rnd(st)*1.5+p*0.4;
+    if(st.t>=st.nextL[p]){addEv(st,p,st.nextL[p],'L');st.nextL[p]+=0.5+1.05*rnd(st)}
+    if(st.nextS[p]>90)st.nextS[p]=2.15+rnd(st)*1.1+p*0.45;
     if(st.t>=st.nextS[p]){var q=(p+1+((rnd(st)*2)|0))%NP;
       sendMsg(st,p,q,st.nextS[p],0.34+rnd(st)*0.42);
       st.nextS[p]+=Math.max(0.35,(1/Math.max(0.05,st.rate))*(0.6+1.1*rnd(st)))}}
@@ -167,7 +168,7 @@ function drawStage(){
   for(i=0;i<st.ev.length;i++){var e=st.ev[i];
     if(e.t<T0()-0.1)continue;
     var x=X(e.t),y=G.ly[e.p],inP=PAST&&(PAST[e.id]||e===sel),isSel=st.sel.indexOf(e)>=0,
-      al=PAST?(inP?1:0.20):1,c=PC[e.p];
+      al=PAST?(inP?1:0.30):1,c=PC[e.p];
     if(isSel)glow(SPW,x,y,34,.95);
     else if(inP)glow(SPG,x,y,24,.8);
     glow(SP[e.p],x,y,e.k==='R'?20:15,al*.9);
