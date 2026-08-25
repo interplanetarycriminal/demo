@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Shuffle Sharding</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:#04060c;overflow:hidden;color:#d5e6ff;
+  font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+#c{position:fixed;inset:0;display:block;touch-action:none}
+#ui{position:fixed;top:10px;left:10px;width:min(340px,calc(100vw - 20px));max-height:45vh;overflow:auto;
+  background:rgba(6,11,22,.86);border:1px solid #1d3560;border-radius:11px;padding:9px 11px 10px;z-index:5;
+  box-shadow:0 0 24px #000a}
+h1{font-size:12.5px;letter-spacing:.6px;color:#eaf4ff;text-shadow:0 0 10px #2f7fff88}
+.mech{font-size:10.5px;color:#8ba6ce;margin:4px 0 7px}
+.row{display:flex;justify-content:space-between;gap:8px;font-size:11px;line-height:1.4}
+.k{color:#7e96bb}.v{color:#eaf4ff}.v b{color:#ffd489;font-weight:600}
+.v b.hot{color:#ff6d5e}
+.ctl{margin-top:8px;display:flex;flex-wrap:wrap;gap:5px}
+button{flex:1 1 30%;font:600 10px/1.25 inherit;color:#8fa8cc;background:#0b162b;border:1px solid #22406e;
+  border-radius:6px;padding:5px 3px;cursor:pointer}
+button.on{color:#04121a;background:#4fe3ff;border-color:#8ff2ff;box-shadow:0 0 14px #4fe3ff88}
+label{display:block;font-size:10.5px;margin:7px 0 1px;color:#96afd2}
+label span{color:#ffd489}
+input[type=range]{width:100%;accent-color:#4fe3ff;height:16px}
+.hon{margin-top:8px;font-size:9.5px;color:#6d84a6;border-top:1px solid #14243f;padding-top:6px}
+.detail{margin-top:6px;font-size:9.5px;color:#63799a}
+.detail b{color:#8fb6e8}
+@media (max-width:640px){#ui{font-size:11px;max-height:38vh}#ui .detail{display:none}}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>SHUFFLE SHARDING</h1>
+  <div class="mech">One shard per customer means a poison pill kills all its neighbours; give each customer a random <i>combination</i> of k shards and only the ones sharing all k go down — P = 1/C(M,k).</div>
+  <div class="row"><span class="k">mode</span><span class="v"><b id="rMode">REGULAR</b></span></div>
+  <div class="row"><span class="k">shards per customer k</span><span class="v"><b id="rK">1</b> of M=<b id="rM">8</b></span></div>
+  <div class="row"><span class="k">combinations C(M,k)</span><span class="v"><b id="rC">8</b></span></div>
+  <div class="row"><span class="k">customers fully down</span><span class="v"><b id="rDown" class="hot">0</b> / <b id="rN">48</b></span></div>
+  <div class="row"><span class="k">degraded (lost 1 of k)</span><span class="v"><b id="rDeg">0</b></span></div>
+  <div class="ctl">
+    <button id="b0" class="on">REGULAR</button>
+    <button id="b1">SHUFFLE</button>
+    <button id="b2">RE-ROLL</button>
+  </div>
+  <label>shards per customer k = <span id="lK">1</span> &nbsp;(tap a customer to poison it)</label>
+  <input id="sK" type="range" min="1" max="3" step="1" value="1">
+  <label>shards M = <span id="lM">8</span></label>
+  <input id="sM" type="range" min="4" max="12" step="1" value="8">
+  <div class="hon">honesty: retries and health-checks abstracted away; "degraded" = lost 1 of k shards, still serving.</div>
+  <div class="detail">lineage: <b>Colm MacCárthaigh's Route 53 design</b> → the AWS shuffle-sharding post, 2014 → cell-based architecture everywhere.</div>
+</div>
+<script>
+var c=document.getElementById('c'),g=c.getContext('2d'),ui=document.getElementById('ui');
+var W=0,H=0,DPR=1,ST={x:0,y:0,w:0,h:0},CA={x:0,y:0,w:0,h:0},CB={x:0,y:0,w:0,h:0};
+/*MODEL*/
+function comb(n,k){if(k>n)return 0;var r=1;for(var i=0;i<k;i++)r=r*(n-i)/(i+1);return Math.round(r)}
+function allCombos(M,k){var out=[],cur=[];(function go(s){if(cur.length===k){out.push(cur.slice());return}
+  for(var i=s;i<M;i++){cur.push(i);go(i+1);cur.pop()}})(0);return out}
+function assign(M,k,N,rnd){var deck=allCombos(M,k),a=[],i,j;
+  for(i=deck.length-1;i>0;i--){j=Math.floor(rnd()*(i+1));var t=deck[i];deck[i]=deck[j];deck[j]=t}
+  for(i=0;i<N;i++)a.push(deck[i%deck.length].slice());
+  for(i=a.length-1;i>0;i--){j=Math.floor(rnd()*(i+1));var u=a[i];a[i]=a[j];a[j]=u}return a}
+function blast(a,poison){var bad=a[poison],down=0,deg=0,st=[];
+  for(var i=0;i<a.length;i++){var hit=0;for(var j=0;j<a[i].length;j++)if(bad.indexOf(a[i][j])>=0)hit++;
+    var s=hit===a[i].length?2:(hit>0?1:0);st.push(s);if(s===2)down++;else if(s===1)deg++}
+  return{down:down,deg:deg,bad:bad,st:st}}
+/*ENDMODEL*/
+var M=8,K=1,NC=48,mode=0,asn=[],poison=-1,pT=-1,res=null,T=0,seed=7,cpos=[],trg=[];
+function rnd(){seed=(seed*1664525+1013904223)>>>0;return seed/4294967296}
+function reroll(){asn=assign(M,K,NC,rnd);trg=[];for(var i=0;i<NC;i++)trg.push(0.45+rnd()*1.7);
+  poison=-1;pT=-1;res=null}
+function firstUnique(){var cnt={},i,key;for(i=0;i<NC;i++){key=asn[i].join(',');cnt[key]=(cnt[key]||0)+1}
+  for(i=0;i<NC;i++)if(cnt[asn[i].join(',')]===1)return i;return Math.floor(NC/2)}
+function doPoison(i){poison=i;pT=T;res=blast(asn,i)}
+function mkGlow(r,gc,b,rad){var s=document.createElement('canvas');s.width=s.height=rad*2;var x=s.getContext('2d');
+  var q=x.createRadialGradient(rad,rad,0,rad,rad,rad);q.addColorStop(0,'rgba('+r+','+gc+','+b+',.95)');
+  q.addColorStop(.28,'rgba('+r+','+gc+','+b+',.42)');q.addColorStop(1,'rgba('+r+','+gc+','+b+',0)');
+  x.fillStyle=q;x.fillRect(0,0,rad*2,rad*2);return s}
+var GC=mkGlow(79,227,255,26),GR=mkGlow(255,72,58,26),GA=mkGlow(255,196,77,26),GG=mkGlow(87,255,171,26);
+function blit(s,x,y,sc){var d=s.width*sc;g.drawImage(s,x-d/2,y-d/2,d,d)}
+function rr(x,y,w,h,r){g.beginPath();g.moveTo(x+r,y);g.arcTo(x+w,y,x+w,y+h,r);g.arcTo(x+w,y+h,x,y+h,r);
+  g.arcTo(x,y+h,x,y,r);g.arcTo(x,y,x+w,y,r);g.closePath()}
+function layout(){var r=ui.getBoundingClientRect(),wide=W>=760;
+  if(wide){ST={x:r.right+14,y:14,w:W-r.right-28,h:H-28};
+    var ch=Math.min(150,(H-r.bottom-34)/2);CA={x:12,y:r.bottom+12,w:r.width,h:ch};
+    CB={x:12,y:r.bottom+22+ch,w:r.width,h:ch}}
+  else{var top=r.bottom+10,av=H-top-12,c2=Math.min(112,av*0.26);
+    ST={x:12,y:top,w:W-24,h:av-2*c2-16};CA={x:12,y:top+ST.h+8,w:W-24,h:c2};
+    CB={x:12,y:top+ST.h+16+c2,w:W-24,h:c2}}}
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;
+  c.width=W*DPR|0;c.height=H*DPR|0;c.style.width=W+'px';c.style.height=H+'px';g.setTransform(DPR,0,0,DPR,0,0);layout()}
+addEventListener('resize',resize);
+function step(dt){T+=dt;if(pT<0&&T>2.5)doPoison(firstUnique())}
+function card(r,t){g.fillStyle='rgba(7,13,26,.85)';g.strokeStyle='#172c50';g.lineWidth=1;rr(r.x,r.y,r.w,r.h,9);
+  g.fill();g.stroke();g.fillStyle='#9fc0ea';g.font='600 10px ui-monospace,monospace';g.textAlign='left';
+  g.fillText(t,r.x+10,r.y+14)}
+function drawBlastCard(){card(CA,'BLAST RADIUS  100 / C(M,k)  %');
+  var x0=CA.x+16,x1=CA.x+CA.w-16,y1=CA.y+CA.h-16,y0=CA.y+30,mxk=Math.min(3,M),
+    top=100/Math.max(1,comb(M,1));
+  g.strokeStyle='#163357';g.lineWidth=1;g.beginPath();g.moveTo(x0,y1);g.lineTo(x1,y1);g.stroke();
+  g.beginPath();for(var k=1;k<=mxk;k++){var X=x0+(k-1)/Math.max(1,mxk-1)*(x1-x0),
+    Y=y1-(100/comb(M,k))/top*(y1-y0);k===1?g.moveTo(X,Y):g.lineTo(X,Y)}
+  g.strokeStyle='#4fe3ff';g.lineWidth=2;g.stroke();
+  for(k=1;k<=mxk;k++){var X2=x0+(k-1)/Math.max(1,mxk-1)*(x1-x0),Y2=y1-(100/comb(M,k))/top*(y1-y0),
+    cur=(k===(mode?K:1));
+    if(cur)blit(GA,X2,Y2,0.62);g.fillStyle=cur?'#ffe08a':'#2f6f9c';g.beginPath();g.arc(X2,Y2,cur?4:2.6,0,6.2832);g.fill();
+    g.font='9px ui-monospace,monospace';g.textAlign='center';g.fillStyle=cur?'#ffe08a':'#5f77a0';
+    g.fillText((100/comb(M,k)).toFixed(1)+'%',X2,Y2-9);
+    g.fillStyle='#5f77a0';g.fillText('k='+k,X2,CA.y+CA.h-4)}
+  g.textAlign='right';g.font='9px ui-monospace,monospace';g.fillStyle='#8fb6e8';
+  g.fillText('falls combinatorially',CA.x+CA.w-10,CA.y+14)}
+function drawMatrix(){card(CB,'OVERLAP MATRIX  (customers × customers)');
+  var sz=Math.min(CB.h-34,CB.w*0.46),x0=CB.x+12,y0=CB.y+22,cs=sz/NC;
+  for(var i=0;i<NC;i++)for(var j=0;j<NC;j++){var sh=0;
+    for(var q=0;q<asn[i].length;q++)if(asn[j].indexOf(asn[i][q])>=0)sh++;
+    if(!sh)continue;var f=sh/Math.max(1,asn[i].length);
+    g.fillStyle=(i===j)?'rgba(120,220,255,.9)':(f>=1?'rgba(255,88,68,'+(0.85)+')':'rgba(79,227,255,'+(0.16+0.3*f)+')');
+    g.fillRect(x0+j*cs,y0+i*cs,Math.max(1,cs-0.4),Math.max(1,cs-0.4))}
+  var tx=x0+sz+12;g.font='9px ui-monospace,monospace';g.textAlign='left';
+  g.fillStyle='#ff8a76';g.fillText('■ share all k',tx,y0+14);
+  g.fillStyle='#4fe3ff';g.fillText('■ share some',tx,y0+28);
+  g.fillStyle='#7e96bb';g.fillText('pairs sharing',tx,y0+46);
+  g.fillStyle='#eaf4ff';g.fillText('all k: '+fullPairs(),tx,y0+58)}
+function fullPairs(){var n=0;for(var i=0;i<NC;i++)for(var j=i+1;j<NC;j++){var s=0;
+  for(var q=0;q<asn[i].length;q++)if(asn[j].indexOf(asn[i][q])>=0)s++;if(s===asn[i].length)n++}return n}
+function chip(cx,y,txt,col){g.font='600 10px ui-monospace,monospace';var w=g.measureText(txt).width+18;
+  g.fillStyle='rgba(8,16,30,.9)';g.strokeStyle=col;g.lineWidth=1;rr(cx-w/2,y-9,w,18,9);g.fill();g.stroke();
+  g.fillStyle=col;g.textAlign='center';g.fillText(txt,cx,y+3.5)}
+function draw(){g.fillStyle='#04060c';g.fillRect(0,0,W,H);
+  var sx=ST.x,sy=ST.y,sw=ST.w,sh=ST.h,cx=sx+sw/2,
+    tY=sy+sh*0.17,tH=sh*0.24,tW=Math.min(38,(sw-40)/M*0.7),tGap=(sw-46)/M,
+    cy0=sy+sh*0.60,cols=Math.min(16,Math.ceil(Math.sqrt(NC*2.6))),rows=Math.ceil(NC/cols),
+    rH=Math.min(20,sh*0.055),bt=pT<0?-1:T-pT;
+  g.textAlign='center';g.font='10px ui-monospace,monospace';g.fillStyle='#7e96bb';
+  g.fillText('M = '+M+' SHARDS      '+NC+' CUSTOMERS      '+(mode?'SHUFFLE — k='+K+' of '+M:
+    'REGULAR — 1 shard each'),cx,sy+13);
+  function tx(s){return sx+23+tGap*(s+0.5)}
+  var burn=res?res.bad:[];
+  cpos=[];
+  for(var i=0;i<NC;i++){var r=Math.floor(i/cols),k2=i%cols,cc=Math.min(cols,NC-r*cols);
+    cpos.push({x:cx-cc*(Math.min(26,(sw-30)/cols))/2+(k2+0.5)*Math.min(26,(sw-30)/cols),y:cy0+r*rH})}
+  for(i=0;i<NC;i++){var st=(res&&bt>trg[i])?res.st[i]:0,p=cpos[i];
+    for(var j=0;j<asn[i].length;j++){var s2=asn[i][j],bad=burn.indexOf(s2)>=0&&bt>0.25;
+      g.strokeStyle=bad?'rgba(255,80,60,'+(st===2?0.55:0.4)+')':(st>0?'rgba(87,255,171,.55)':'rgba(79,227,255,.13)');
+      g.lineWidth=bad?1.3:(st>0?1.3:0.6);
+      g.beginPath();g.moveTo(p.x,p.y-4);g.lineTo(tx(s2),tY+tH);g.stroke()}}
+  for(var s3=0;s3<M;s3++){var on=burn.indexOf(s3)>=0,ig=on?Math.min(1,Math.max(0,(bt-0.1)/0.5)):0;
+    if(ig>0)blit(GR,tx(s3),tY+tH*0.5,1.5*ig+0.6);
+    g.fillStyle=ig>0?'rgba(60,10,10,.95)':'rgba(10,22,40,.95)';
+    g.strokeStyle=ig>0?'rgba(255,'+(90-60*ig)+',70,1)':'#2a4d7f';g.lineWidth=1.6;
+    rr(tx(s3)-tW/2,tY,tW,tH,4);g.fill();g.stroke();
+    for(var b2=0;b2<4;b2++){g.fillStyle=ig>0?'rgba(255,'+(140-90*ig)+',80,'+(0.5+0.4*Math.sin(T*6+b2))+')':
+      'rgba(79,227,255,.30)';g.fillRect(tx(s3)-tW/2+4,tY+6+b2*(tH-12)/4,tW-8,3)}
+    g.fillStyle=ig>0?'#ffb0a4':'#7e96bb';g.font='9px ui-monospace,monospace';g.textAlign='center';
+    g.fillText('S'+s3,tx(s3),tY+tH+11)}
+  for(i=0;i<NC;i++){var p2=cpos[i],st2=(res&&bt>trg[i])?res.st[i]:0,isP=i===poison;
+    if(isP&&bt>0){blit(GR,p2.x,p2.y,0.95+0.2*Math.sin(T*7));g.fillStyle='#ff5a46';
+      g.beginPath();g.arc(p2.x,p2.y,6.5,0,6.2832);g.fill();
+      g.fillStyle='#1a0505';g.font='700 8px ui-monospace,monospace';g.textAlign='center';g.fillText('☠',p2.x,p2.y+3)}
+    else if(st2===2){var fl=0.6+0.4*Math.sin(T*11+i);blit(GR,p2.x,p2.y,0.55*fl+0.25);
+      g.fillStyle='rgba(255,90,72,'+(0.55+0.45*fl)+')';g.beginPath();g.arc(p2.x,p2.y,4.6,0,6.2832);g.fill()}
+    else if(st2===1){blit(GA,p2.x,p2.y,0.34);g.fillStyle='#ffc44d';g.beginPath();g.arc(p2.x,p2.y,4,0,6.2832);g.fill()}
+    else{if(res&&bt>trg[i]){blit(GG,p2.x,p2.y,0.28);g.fillStyle='#57ffab'}else g.fillStyle='#4fe3ff';
+      g.beginPath();g.arc(p2.x,p2.y,3.4,0,6.2832);g.fill()}}
+  var dn=res?res.down:0,dg=res?res.deg:0;
+  g.font='600 11px ui-monospace,monospace';g.textAlign='center';g.fillStyle=dn>1?'#ff8a76':'#7dffd0';
+  g.fillText('customers fully down: '+dn+' / '+NC+(dn>1?'   — a whole 1/'+M+' slice dies together':
+    '   — only the poisoner'),cx,sy+sh*0.855);
+  g.font='10px ui-monospace,monospace';g.fillStyle='#8ba6ce';
+  g.fillText('degraded (still serving on a healthy shard): '+dg,cx,sy+sh*0.905);
+  chip(cx,sy+sh-32,'with '+M+' choose '+(mode?K:1)+' = '+comb(M,mode?K:1)+
+    ' combinations, two customers rarely share their whole fate','#7dffd0');
+  chip(cx,sy+sh-12,'the poisoner hurts mostly itself','#ff8a76');
+  drawBlastCard();drawMatrix();
+  rMode.textContent=mode?'SHUFFLE':'REGULAR';rK.textContent=mode?K:1;rM.textContent=M;
+  rC.textContent=comb(M,mode?K:1);rDown.textContent=dn;rN.textContent=NC;rDeg.textContent=dg}
+var acc=0,last=performance.now()/1000;
+function frame(){var now=performance.now()/1000,rd=Math.min(0.45,now-last);last=now;acc+=rd;
+  while(acc>=1/60){step(1/60);acc-=1/60}draw();requestAnimationFrame(frame)}
+var rMode=document.getElementById('rMode'),rK=document.getElementById('rK'),rM=document.getElementById('rM'),
+  rC=document.getElementById('rC'),rDown=document.getElementById('rDown'),rN=document.getElementById('rN'),
+  rDeg=document.getElementById('rDeg'),sK=document.getElementById('sK'),sM=document.getElementById('sM'),
+  lK=document.getElementById('lK'),lM=document.getElementById('lM'),
+  bs=[document.getElementById('b0'),document.getElementById('b1'),document.getElementById('b2')];
+function setMode(m){mode=m;if(!m)K=1;else if(K<2)K=2;sK.value=K;lK.textContent=K;
+  bs[0].classList.toggle('on',!m);bs[1].classList.toggle('on',!!m);reroll();T=1.6}
+bs[0].addEventListener('pointerdown',function(e){e.preventDefault();setMode(0)});
+bs[1].addEventListener('pointerdown',function(e){e.preventDefault();setMode(1)});
+bs[2].addEventListener('pointerdown',function(e){e.preventDefault();reroll();T=1.6});
+sK.addEventListener('input',function(){K=+sK.value;lK.textContent=K;mode=K>1?1:0;
+  bs[0].classList.toggle('on',!mode);bs[1].classList.toggle('on',!!mode);reroll();T=1.6});
+sM.addEventListener('input',function(){M=+sM.value;lM.textContent=M;if(K>M)K=M;reroll();T=1.6});
+c.addEventListener('pointerdown',function(e){c.setPointerCapture(e.pointerId);
+  var bx=e.clientX,by=e.clientY,best=-1,bd=26*26;
+  for(var i=0;i<cpos.length;i++){var d=(cpos[i].x-bx)*(cpos[i].x-bx)+(cpos[i].y-by)*(cpos[i].y-by);
+    if(d<bd){bd=d;best=i}}
+  if(best>=0)doPoison(best)});
+reroll();resize();requestAnimationFrame(frame);
+</script>
+</body>
+</html>
