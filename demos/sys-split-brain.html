@@ -172,6 +172,8 @@ function drawStage(){
   if(st.part){for(i=0;i<2;i++){var is=st.isl[i];c=icenter(i);
     var off=G.R*0.92,u={x:Math.cos(st.cut),y:Math.sin(st.cut)},sgn=(i===0?1:-1),
       bx=c.x+u.x*off*sgn,by=c.y+u.y*off*sgn,ok=CORE.allowed(st,is);
+    var banY=G.cy+G.R+Math.min(40,Math.max(14,(G.capY-(G.cy+G.R))*0.5));
+    by=Math.max(S.y+34,Math.min(by,G.capY-26));if(Math.abs(by-banY)<34){by=banY-38;bx=Math.min(Math.max(bx+95,S.x+150),S.x+S.w-84);}
     chip(bx,by-9,lab[i]+' ('+is.mem.length+')  x='+CORE.val(st,i),ok?COL[i]:'#6d7f9b',11,'c');
     if(!ok)chip(bx,by+9,'no majority — READ-ONLY','#8ea6c6',9.5,'c');
     else if(is.leader<0)chip(bx,by+9,'electing… '+is.elect.toFixed(1)+'s','#9fb8dd',9.5,'c')}}

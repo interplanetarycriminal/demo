@@ -126,7 +126,7 @@ function chip(x,y,txt,col,fs,al){var f=fs||10;ctx.font='600 '+f+'px ui-monospace
 function layout(){
   var ch=Math.max(104,Math.min(134,H*0.22)),cy=S.y+S.h-ch,full=(cy>=UIB+10);
   G.card={x:full?12:S.x+6,y:cy,w:full?W-24:S.w-12,h:ch-2};
-  G.leafY=cy-30;G.lh=15;G.top=S.y+34;G.bot=G.leafY-16;
+  G.leafY=cy-36;G.lh=15;G.top=S.y+62;G.bot=G.leafY-38;
   G.gut=Math.min(120,Math.max(56,S.w*0.13));G.hw=(S.w-24-G.gut)/2;
   G.x0=[S.x+12,S.x+12+G.hw+G.gut];G.mid=S.x+12+G.hw+G.gut/2}
 function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
@@ -195,12 +195,12 @@ function drawStage(){
   ctx.globalCompositeOperation='source-over';
   var msg,col;
   if(!st.started){msg='root hashes about to compare…';col='#8ba6ce'}
-  else if(st.q.length){msg='descending — '+Object.keys(st.pruned).length+' subtrees pruned, '+st.q.length+' pairs queued';col='#ffb066'}
-  else{msg='sync complete — '+st.found.length+' differing keys repaired in '+st.cmp+' comparisons';col='#4dffa8'}
-  chip(G.mid,G.top-24,msg,col,10.5,'c');
-  chip(S.x+12,G.leafY-24,'equal hash = skip the whole subtree','#4dffa8',9.5,'l');
-  ctx.font='9.5px ui-monospace,monospace';ctx.textAlign='right';ctx.textBaseline='bottom';ctx.fillStyle='#6f86a8';
-  ctx.fillText('64 key tiles · differing ones glow red until repaired',S.x+S.w-12,G.leafY-10)}
+  else if(st.q.length){msg='descending — '+Object.keys(st.pruned).length+' pruned · '+st.q.length+' queued';col='#ffb066'}
+  else{msg='sync done — '+st.found.length+' keys repaired in '+st.cmp+' comparisons';col='#4dffa8'}
+  chip(G.mid,S.y+24,msg,col,10.5,'c');
+  chip(S.x+12,G.leafY-26,'equal hash = skip the whole subtree','#4dffa8',9.5,'l');
+  ctx.font='9.5px ui-monospace,monospace';ctx.textAlign='right';ctx.textBaseline='top';ctx.fillStyle='#6f86a8';
+  ctx.fillText('64 key tiles · differing ones glow red until repaired',S.x+S.w-12,G.leafY+G.lh+4)}
 function drawCard(){
   var P=G.card;ctx.fillStyle='rgba(7,12,23,.92)';rr(P.x,P.y,P.w,P.h,9);ctx.fill();
   ctx.strokeStyle='#1b3057';ctx.lineWidth=1;ctx.stroke();
