@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Head-of-Line Blocking</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:#05060e;overflow:hidden;color:#d5e6ff;
+  font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+#c{position:fixed;inset:0;display:block;touch-action:none}
+#ui{position:fixed;top:10px;left:10px;width:min(340px,calc(100vw - 20px));max-height:45vh;overflow:auto;
+  background:rgba(7,9,22,.88);border:1px solid #2a2350;border-radius:11px;padding:9px 11px 10px;z-index:5;
+  box-shadow:0 0 24px #000a}
+h1{font-size:12.5px;letter-spacing:.6px;color:#eaf4ff;text-shadow:0 0 10px #ff6ae088}
+.mech{font-size:10.5px;color:#9a94c6;margin:4px 0 7px}
+.row{display:flex;justify-content:space-between;gap:8px;font-size:11px;line-height:1.42}
+.k{color:#8a86ac}.v{color:#eaf4ff}.v b{font-weight:600}
+.g b{color:#ffc85e}.cy b{color:#4fe3ff}.mg b{color:#ff6ae0}
+.v i{font-style:normal;color:#ff6d5e}
+.ctl{margin-top:8px;display:flex;flex-wrap:wrap;gap:5px}
+button{flex:1 1 30%;font:600 10px/1.25 inherit;color:#9a93c4;background:#120f28;border:1px solid #2f2760;
+  border-radius:6px;padding:5px 3px;cursor:pointer}
+button.on{color:#0b0518;background:#ff6ae0;border-color:#ffa8ef;box-shadow:0 0 14px #ff6ae088}
+button.q{color:#04121a;background:#7fffb0;border-color:#b6ffd4;box-shadow:0 0 14px #7fffb088}
+label{display:block;font-size:10.5px;margin:7px 0 1px;color:#a49dcc}
+label span{color:#ffc85e}
+input[type=range]{width:100%;accent-color:#ff6ae0;height:16px}
+.hon{margin-top:8px;font-size:9.5px;color:#7a749c;border-top:1px solid #241f45;padding-top:6px}
+.detail{margin-top:6px;font-size:9.5px;color:#6f6994}
+.detail b{color:#b39aea}
+@media (max-width:640px){#ui{font-size:11px;max-height:38vh}#ui .detail{display:none}}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>HEAD-OF-LINE BLOCKING</h1>
+  <div class="mech">TCP hands the app bytes strictly in order, so three independent streams sharing one connection all freeze behind a single lost packet &mdash; QUIC gives each stream its own order.</div>
+  <div class="row g"><span class="k">video &nbsp;delivered / stall</span><span class="v"><b id="d0">0</b> / <i id="s0">0.00</i> s</span></div>
+  <div class="row cy"><span class="k">html &nbsp;&nbsp;delivered / stall</span><span class="v"><b id="d1">0</b> / <i id="s1">0.00</i> s</span></div>
+  <div class="row mg"><span class="k">api &nbsp;&nbsp;&nbsp;delivered / stall</span><span class="v"><b id="d2">0</b> / <i id="s2">0.00</i> s</span></div>
+  <div class="row"><span class="k">retransmits / RTO</span><span class="v"><b id="rX" style="color:#ff6d5e">0</b> / <b id="rO" style="color:#4fe3ff">1.25</b> s</span></div>
+  <div class="ctl">
+    <button id="bM" class="on">MODE: TCP</button>
+    <button id="bN">NAGLE: OFF</button>
+    <button id="bR">REPLAY</button>
+  </div>
+  <label>random loss <span id="lL">0.0</span>%</label>
+  <input id="sL" type="range" min="0" max="40" step="1" value="0">
+  <label>RTT <span id="lR">240</span> ms &mdash; RTO scales with it</label>
+  <input id="sR" type="range" min="80" max="520" step="10" value="240">
+  <div class="hon">honesty: a toy reliable-delivery model &mdash; no handshake, no congestion control, RTO instead of real SACK/fast-retransmit.</div>
+  <div class="detail">lineage: <b>TCP's in-order byte stream</b> (RFC 793, 1981) &rarr; HTTP/2 multiplexes streams onto it (2015) and meets head-of-line blocking &rarr; <b>QUIC over UDP</b> gives per-stream ordering (RFC 9000 / HTTP&#8209;3, 2021), plus 0&#8209;RTT resumption. <a href="index.html" style="color:#b39aea;text-decoration:none">&larr; gallery</a></div>
+</div>
+<script>
+var c=document.getElementById('c'),g=c.getContext('2d'),ui=document.getElementById('ui');
+var W=0,H=0,DPR=1,ST={x:0,y:0,w:0,h:0},CA={x:0,y:0,w:0,h:0},CB={x:0,y:0,w:0,h:0};
+/*MODEL*/
+function holNew(o){o=o||{};
+ return{mode:o.mode||'TCP',rtt:o.rtt||0.24,loss:o.loss||0,nagle:!!o.nagle,rate:o.rate||7,
+  t:0,seq:1,lseq:[1,1,1],wire:[],rbuf:[],pend:[],exp:1,lexp:[1,1,1],
+  del:[0,0,0],lastDel:[0,0,0],maxGap:[0,0,0],stall:[0,0,0],rtx:0,lostN:0,
+  acc:[0,0,0],nq:[[],[],[]],lastSend:[0,0,0],out:[],bursts:[],
+  script:(o.script==null?3.15:o.script),period:(o.period==null?8:o.period),hole:0}}
+function holRTO(S){return Math.max(0.5,S.rtt*5.2)}
+function holSend(S,lane,forceLost){
+ var p={lane:lane,seq:S.seq++,ls:S.lseq[lane]++,t0:S.t,t1:S.t+S.rtt*0.5,lost:false,rtx:0};
+ if(forceLost||Math.random()<S.loss){p.lost=true;S.lostN++;
+  S.pend.push({t:S.t+holRTO(S),lane:lane,seq:p.seq,ls:p.ls})}
+ S.wire.push(p);return p}
+function holStep(S,dt){S.t+=dt;var i,L,RTO=holRTO(S);
+ for(L=0;L<3;L++){S.acc[L]+=S.rate*dt;
+  while(S.acc[L]>=1){S.acc[L]-=1;
+   var force=(L===0&&S.t>=S.script);if(force)S.script=S.t+S.period;
+   if(S.nagle&&!force){S.nq[L].push(1)}else{holSend(S,L,force);S.lastSend[L]=S.t}}
+  if(S.nagle&&S.nq[L].length&&(S.nq[L].length>=4||S.t-S.lastSend[L]>S.rtt)){
+   var n=S.nq[L].length;S.nq[L]=[];S.lastSend[L]=S.t;
+   for(i=0;i<n;i++)holSend(S,L,false)}}
+ for(i=0;i<S.pend.length;i++){var q=S.pend[i];
+  if(q.t<=S.t){S.rtx++;var r={lane:q.lane,seq:q.seq,ls:q.ls,t0:S.t,t1:S.t+S.rtt*0.5,lost:false,rtx:1};
+   S.wire.push(r);S.pend.splice(i,1);i--}}
+ var kw=[];
+ for(i=0;i<S.wire.length;i++){var p2=S.wire[i];
+  if(p2.lost){if(S.t-p2.t0>=(p2.t1-p2.t0)*0.62){S.bursts.push({lane:p2.lane,a:1,p:0.62})}else kw.push(p2);continue}
+  if(S.t>=p2.t1)S.rbuf.push(p2);else kw.push(p2)}
+ S.wire=kw;
+ var moved=true,k;
+ if(S.mode==='TCP'){while(moved){moved=false;
+   for(k=0;k<S.rbuf.length;k++){if(S.rbuf[k].seq===S.exp){var d=S.rbuf.splice(k,1)[0];
+     S.exp++;S.del[d.lane]++;S.lastDel[d.lane]=S.t;S.out.push({lane:d.lane,x:0,t:S.t});
+     moved=true;break}}}}
+ else{for(L=0;L<3;L++){moved=true;while(moved){moved=false;
+   for(k=0;k<S.rbuf.length;k++){var e=S.rbuf[k];
+    if(e.lane===L&&e.ls===S.lexp[L]){S.rbuf.splice(k,1);S.lexp[L]++;S.del[L]++;
+     S.lastDel[L]=S.t;S.out.push({lane:L,x:0,t:S.t});moved=true;break}}}}}
+ var blocked=0;
+ for(k=0;k<S.rbuf.length;k++){var b=S.rbuf[k];
+  if(S.mode==='TCP'){if(b.seq>S.exp)blocked=1}else if(b.ls>S.lexp[b.lane])blocked=1}
+ S.hole=blocked?(S.mode==='TCP'?S.exp:0):0;
+ for(L=0;L<3;L++){if(S.del[L]>0){S.stall[L]=S.t-S.lastDel[L];
+  if(S.stall[L]>S.maxGap[L])S.maxGap[L]=S.stall[L]}}
+ return S}
+/*ENDMODEL*/
+var LC=['#ffc85e','#4fe3ff','#ff6ae0'],LN=['video.mp4','index.html','api/v3'],
+  LRGB=[[255,200,94],[79,227,255],[255,106,224]];
+var S=holNew({}),T=0,hist=[],hT=0,banner=null;
+function mkGlow(r,gc,b,rad){var s=document.createElement('canvas');s.width=s.height=rad*2;var x=s.getContext('2d');
+ var q=x.createRadialGradient(rad,rad,0,rad,rad,rad);q.addColorStop(0,'rgba('+r+','+gc+','+b+',.95)');
+ q.addColorStop(.3,'rgba('+r+','+gc+','+b+',.4)');q.addColorStop(1,'rgba('+r+','+gc+','+b+',0)');
+ x.fillStyle=q;x.fillRect(0,0,rad*2,rad*2);return s}
+var GL=[mkGlow(255,200,94,20),mkGlow(79,227,255,20),mkGlow(255,106,224,20)],GR=mkGlow(255,80,64,28);
+function blit(s,x,y,sc){var d=s.width*sc;g.drawImage(s,x-d/2,y-d/2,d,d)}
+function rr(x,y,w,h,r){g.beginPath();g.moveTo(x+r,y);g.arcTo(x+w,y,x+w,y+h,r);g.arcTo(x+w,y+h,x,y+h,r);
+ g.arcTo(x,y+h,x,y,r);g.arcTo(x,y,x+w,y,r);g.closePath()}
+function tx(s,x,y,col,fs,al,bold){g.fillStyle=col;g.font=(bold?'600 ':'')+fs+'px ui-monospace,Menlo,monospace';
+ g.textAlign=al||'left';g.textBaseline='middle';g.fillText(s,x,y)}
+function chip(s,x,y,col,bg,fs){fs=fs||10;g.font='600 '+fs+'px ui-monospace,Menlo,monospace';
+ var w=g.measureText(s).width+14;g.fillStyle=bg||'rgba(10,10,26,.85)';rr(x,y-8,w,17,8);g.fill();
+ g.strokeStyle=col;g.lineWidth=1;g.stroke();tx(s,x+7,y+.5,col,fs,'left',1);return x+w+7}
+function layout(){var r=ui.getBoundingClientRect(),wide=W>=760;
+ if(wide){ST={x:r.right+14,y:14,w:Math.max(240,W-r.right-28),h:H-28};
+  var ch=Math.max(86,Math.min(150,(H-r.bottom-34)/2));
+  CA={x:12,y:r.bottom+12,w:r.width,h:ch};CB={x:12,y:r.bottom+22+ch,w:r.width,h:ch}}
+ else{var top=r.bottom+10,av=H-top-12,c2=Math.max(70,Math.min(108,av*0.23));
+  ST={x:12,y:top,w:W-24,h:Math.max(190,av-2*c2-16)};
+  CA={x:12,y:top+ST.h+8,w:W-24,h:c2};CB={x:12,y:top+ST.h+16+c2,w:W-24,h:c2}}}
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;
+ c.width=W*DPR|0;c.height=H*DPR|0;c.style.width=W+'px';c.style.height=H+'px';
+ g.setTransform(DPR,0,0,DPR,0,0);layout()}
+addEventListener('resize',resize);
+function step(dt){T+=dt;var lb=S.lostN;holStep(S,dt);
+ if(S.lostN>lb)banner={t:T};
+ for(var i=S.out.length-1;i>=0;i--){S.out[i].x+=dt*105;if(S.out[i].x>1400)S.out.splice(i,1)}
+ for(i=S.bursts.length-1;i>=0;i--){S.bursts[i].a-=dt*0.9;if(S.bursts[i].a<=0)S.bursts.splice(i,1)}
+ if(T-hT>0.06){hT=T;hist.push({t:T,d:[S.del[0],S.del[1],S.del[2]]});if(hist.length>420)hist.shift()}}
+function plotCard(C,title,right,rcol){g.fillStyle='rgba(9,9,24,.84)';rr(C.x,C.y,C.w,C.h,9);g.fill();
+ g.strokeStyle='#241f45';g.lineWidth=1;g.stroke();
+ tx(title,C.x+9,C.y+11,'#a79ed4',10,'left',1);
+ if(right)tx(right,C.x+C.w-9,C.y+11,rcol||'#ffc85e',10,'right',1)}
+function drawTimeline(){plotCard(CA,'delivery timeline',S.mode==='TCP'?'all lanes step together':'lanes independent',
+  S.mode==='TCP'?'#ff6d5e':'#7fffb0');
+ tx('cumulative tiles delivered · flat = stalled',CA.x+9,CA.y+25,'#6c669a',9);
+ var px0=CA.x+12,px1=CA.x+CA.w-9,py0=CA.y+34,py1=CA.y+CA.h-8;
+ if(px1<=px0+10||py1<=py0+8)return;
+ var win=11,t1=Math.max(win,T),t0=t1-win,i,L,base=[0,0,0],mx=1;
+ for(i=0;i<hist.length;i++)if(hist[i].t>=t0){base=hist[i].d;break}
+ for(i=0;i<hist.length;i++)if(hist[i].t>=t0)for(L=0;L<3;L++)mx=Math.max(mx,hist[i].d[L]-base[L]);
+ mx*=1.1;
+ g.save();g.beginPath();g.rect(px0,py0-2,px1-px0,py1-py0+4);g.clip();
+ for(L=0;L<3;L++){g.strokeStyle=LC[L];g.lineWidth=1.8;g.lineJoin='round';g.beginPath();var st=0;
+  for(i=0;i<hist.length;i++){var h=hist[i];if(h.t<t0)continue;
+   var X=px0+(h.t-t0)/win*(px1-px0),Y=py1-Math.min(1,(h.d[L]-base[L])/mx)*(py1-py0);
+   if(!st){g.moveTo(X,Y);st=1}else g.lineTo(X,Y)}
+  g.stroke()}
+ g.restore()}
+function drawBars(){plotCard(CB,'worst stall per lane','RTO '+holRTO(S).toFixed(2)+' s','#4fe3ff');
+ var bx0=CB.x+58,bx1=CB.x+CB.w-46,top=CB.y+26,rowH=Math.max(12,(CB.h-36)/3);
+ var mx=Math.max(holRTO(S)*1.25,S.maxGap[0],S.maxGap[1],S.maxGap[2])*1.05;
+ for(var L=0;L<3;L++){var yy=top+rowH*L+rowH*0.5;
+  tx(LN[L],CB.x+9,yy,LC[L],9);
+  g.fillStyle='rgba(30,28,56,.7)';rr(bx0,yy-5,bx1-bx0,10,4);g.fill();
+  var wv=Math.max(1,Math.min(1,S.maxGap[L]/mx)*(bx1-bx0));
+  g.fillStyle=LC[L];rr(bx0,yy-5,wv,10,4);g.fill();
+  tx(S.maxGap[L].toFixed(2)+'s',CB.x+CB.w-9,yy,S.maxGap[L]>=holRTO(S)*0.8?'#ff6d5e':'#9a94c6',9,'right')}
+ var rx=bx0+Math.min(1,holRTO(S)/mx)*(bx1-bx0);
+ g.setLineDash([2,3]);g.strokeStyle='#ff6d5e99';g.lineWidth=1;
+ g.beginPath();g.moveTo(rx,top+2);g.lineTo(rx,top+rowH*3-2);g.stroke();g.setLineDash([])}
+function drawStage(){var x=ST.x,y=ST.y,w=ST.w,h=ST.h;
+ var gr=g.createRadialGradient(x+w*0.5,y+h*0.55,10,x+w*0.5,y+h*0.55,w*0.85);
+ gr.addColorStop(0,'rgba(46,26,80,.30)');gr.addColorStop(1,'rgba(5,6,14,0)');
+ g.fillStyle=gr;g.fillRect(x,y,w,h);
+ tx('3 STREAMS · 1 CONNECTION',x+4,y+11,'#eaf4ff',12,'left',1);
+ tx('t '+T.toFixed(1)+' s',x+w-4,y+11,'#8a86ac',10,'right');
+ var q=S.mode==='QUIC';
+ var cx=chip(q?'MODE: QUIC — per-stream order':'MODE: TCP — one byte stream',x+4,y+33,
+   q?'#7fffb0':'#ff6ae0',q?'rgba(6,26,18,.85)':'rgba(30,6,26,.85)');
+ chip(q?'streams that don’t share a queue':'one hole dams every stream',cx,y+33,'#a79ed4','rgba(14,12,32,.85)');
+ var stalled=(S.stall[0]>0.25)+(S.stall[1]>0.25)+(S.stall[2]>0.25);
+ if(S.hole||stalled){var ms=Math.max(S.stall[0],S.stall[1],S.stall[2]);
+  chip((q?'GOLD LANE WAITING':'ALL LANES DAMMED')+' · missing tile · retransmit in '+
+   Math.max(0,holRTO(S)-ms).toFixed(2)+' s  (RTO '+holRTO(S).toFixed(2)+' s)',
+   x+4,y+55,'#ff6d5e','rgba(46,8,8,.9)',10.5)}
+ else if(banner&&T-banner.t<1.1)chip('PACKET LOST in flight',x+4,y+55,'#ff6d5e','rgba(46,8,8,.9)');
+ else chip(S.nagle?'Nagle ON: small tiles wait to batch — off for interactive traffic'
+   :'steady delivery — every lane conveyor moving',x+4,y+55,S.nagle?'#ffc85e':'#7fffb0',
+   S.nagle?'rgba(34,26,4,.85)':'rgba(6,22,16,.85)');
+ var top=y+76,bot=y+h-30,laneH=(bot-top)/3,gx=x+w*0.40,gw=Math.max(16,Math.min(26,w*0.035));
+ var sx=x+58,ox=gx+gw+8,rx=x+w-8;
+ for(var L=0;L<3;L++){var ly=top+laneH*(L+0.5),rgb=LRGB[L];
+  g.strokeStyle='rgba('+rgb[0]+','+rgb[1]+','+rgb[2]+',.14)';g.lineWidth=Math.max(10,Math.min(20,laneH*0.4));
+  g.lineCap='round';g.beginPath();g.moveTo(sx,ly);g.lineTo(rx-56,ly);g.stroke();
+  g.fillStyle='rgba(10,10,26,.92)';rr(x+4,ly-13,52,26,6);g.fill();
+  g.strokeStyle=LC[L];g.lineWidth=1.2;g.stroke();
+  tx(LN[L].slice(0,9),x+30,ly,LC[L],9,'center',1);
+  g.fillStyle='rgba(10,10,26,.92)';rr(rx-52,ly-13,52,26,6);g.fill();
+  g.strokeStyle=LC[L];g.lineWidth=1.2;g.stroke();
+  tx(''+S.del[L],rx-26,ly-3,LC[L],11,'center',1);tx('recv',rx-26,ly+8,'#8a86ac',8,'center')}
+ if(!q){g.fillStyle='rgba(255,106,224,.10)';rr(gx-2,top+4,gw+4,laneH*3-8,7);g.fill();
+  g.strokeStyle=S.hole?'#ff6d5e':'#ff6ae0';g.lineWidth=1.6;g.stroke();
+  g.save();g.translate(gx+gw*0.5,top+laneH*1.5);g.rotate(-Math.PI/2);
+  tx('ONE ORDERED QUEUE',0,0,S.hole?'#ff8a72':'#ff6ae0',9.5,'center',1);g.restore()}
+ else{for(L=0;L<3;L++){var gy=top+laneH*L+6,gh=laneH-12;
+   g.fillStyle='rgba(127,255,176,.09)';rr(gx-2,gy,gw+4,gh,6);g.fill();
+   var blk=(S.mode==='QUIC'&&S.stall[L]>0.25);
+   g.strokeStyle=blk?'#ff6d5e':'#7fffb0';g.lineWidth=1.4;g.stroke()}}
+ var i,p,pileN=[0,0,0];
+ for(i=0;i<S.rbuf.length;i++){var b=S.rbuf[i],L2=b.lane,ly2=top+laneH*(L2+0.5);
+  var bx=gx-10-pileN[L2]*11;pileN[L2]++;
+  if(bx<sx-6)continue;
+  g.fillStyle='rgba(10,10,26,.9)';rr(bx-4.5,ly2-7,9,14,2.5);g.fill();
+  g.strokeStyle=LC[L2];g.lineWidth=1;g.stroke()}
+ g.globalCompositeOperation='lighter';
+ for(i=0;i<S.wire.length;i++){p=S.wire[i];var pr=Math.min(1,(S.t-p.t0)/Math.max(1e-3,p.t1-p.t0));
+  blit(GL[p.lane],sx+(gx-sx)*pr,top+laneH*(p.lane+0.5),0.45)}
+ for(i=0;i<S.bursts.length;i++){var bu=S.bursts[i];g.globalAlpha=bu.a;
+  blit(GR,sx+(gx-sx)*bu.p,top+laneH*(bu.lane+0.5),1.2+(1-bu.a)*2.2);g.globalAlpha=1}
+ g.globalCompositeOperation='source-over';
+ for(i=0;i<S.wire.length;i++){p=S.wire[i];var pr2=Math.min(1,(S.t-p.t0)/Math.max(1e-3,p.t1-p.t0));
+  var px=sx+(gx-sx)*pr2,py=top+laneH*(p.lane+0.5);
+  g.fillStyle=p.rtx?'#ffffff':LC[p.lane];rr(px-4,py-6.5,8,13,2.5);g.fill();
+  if(p.rtx){g.strokeStyle=LC[p.lane];g.lineWidth=1.4;g.stroke()}}
+ for(i=0;i<S.bursts.length;i++){var b2=S.bursts[i];if(b2.a>0.6)
+  tx('LOST',sx+(gx-sx)*b2.p,top+laneH*(b2.lane+0.5)-18,'#ff6d5e',9.5,'center',1)}
+ for(i=0;i<S.out.length;i++){var o=S.out[i],oxp=ox+o.x,oy=top+laneH*(o.lane+0.5);
+  if(oxp>rx-58)continue;
+  var fade=Math.min(1,(rx-58-oxp)/40);
+  g.globalAlpha=fade;g.fillStyle=LC[o.lane];rr(oxp-4,oy-6.5,8,13,2.5);g.fill();g.globalAlpha=1}
+ if(S.hole||stalled){var hy=top+laneH*(q?0.5:1.5);
+  g.setLineDash([3,3]);g.strokeStyle='#ff6d5e';g.lineWidth=1.8;
+  rr(gx-1,hy-11,gw+2,22,4);g.stroke();g.setLineDash([]);
+  g.globalCompositeOperation='lighter';blit(GR,gx+gw*0.5,hy,1.5);g.globalCompositeOperation='source-over'}
+ tx(q?'independent gates: only the lossy stream waits'
+   :'in-order gate: nothing passes until the missing tile arrives',
+   ox,y+h-14,'#6c669a',9);
+ tx('senders',x+30,top-8,'#6c669a',9,'center');
+ tx('receiver',rx-26,top-8,'#6c669a',9,'center')}
+function frame(){g.setTransform(DPR,0,0,DPR,0,0);g.fillStyle='#05060e';g.fillRect(0,0,W,H);
+ drawStage();drawTimeline();drawBars();
+ for(var L=0;L<3;L++){document.getElementById('d'+L).textContent=S.del[L];
+  document.getElementById('s'+L).textContent=S.stall[L].toFixed(2)}
+ document.getElementById('rX').textContent=S.rtx;
+ document.getElementById('rO').textContent=holRTO(S).toFixed(2)}
+var last=performance.now(),acc=0,SUB=1/60;
+function loop(now){var rd=Math.min(0.45,(now-last)/1000);last=now;acc+=rd;
+ var n=0;while(acc>=SUB&&n<40){step(SUB);acc-=SUB;n++}
+ frame();requestAnimationFrame(loop)}
+var sL=document.getElementById('sL'),sR=document.getElementById('sR'),
+  bM=document.getElementById('bM'),bN=document.getElementById('bN'),bR=document.getElementById('bR');
+function restart(mode){var lo=(+sL.value)/1000,rt=(+sR.value)/1000,ng=S.nagle;
+ S=holNew({mode:mode||S.mode,loss:lo,rtt:rt,nagle:ng});T=0;hist=[];banner=null}
+sL.oninput=function(){S.loss=(+sL.value)/1000;document.getElementById('lL').textContent=((+sL.value)/10).toFixed(1)};
+sR.oninput=function(){S.rtt=(+sR.value)/1000;document.getElementById('lR').textContent=sR.value};
+bM.onclick=function(){var m=S.mode==='TCP'?'QUIC':'TCP';restart(m);
+ bM.textContent='MODE: '+m;bM.className=m==='TCP'?'on':'q'};
+bN.onclick=function(){S.nagle=!S.nagle;bN.textContent='NAGLE: '+(S.nagle?'ON':'OFF');
+ bN.className=S.nagle?'on':''};
+bR.onclick=function(){restart(S.mode)};
+c.addEventListener('pointerdown',function(e){if(e.clientX<ST.x-6&&W>=760)return;
+ c.setPointerCapture(e.pointerId);restart(S.mode==='TCP'?'QUIC':'TCP');
+ bM.textContent='MODE: '+S.mode;bM.className=S.mode==='TCP'?'on':'q';e.preventDefault()});
+c.addEventListener('pointerup',function(e){try{c.releasePointerCapture(e.pointerId)}catch(_){}});
+resize();requestAnimationFrame(loop);
+</script>
+</body>
+</html>
