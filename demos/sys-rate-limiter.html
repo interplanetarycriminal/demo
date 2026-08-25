@@ -131,7 +131,10 @@ function step(dt){T+=dt;var ph=T%PER,inB=(ph>=BS&&ph<BE),prevOut=S.out.length;
   if(S.out.length>3000)S.out.splice(0,S.out.length-3000)}
 function card(b,t){g.fillStyle='rgba(7,13,26,.85)';g.strokeStyle='#172c50';g.lineWidth=1;rr(b.x,b.y,b.w,b.h,9);
   g.fill();g.stroke();g.fillStyle='#9fc0ea';g.font='600 10px ui-monospace,monospace';g.textAlign='left';g.fillText(t,b.x+10,b.y+14)}
-function chip(cx,y,txt,col){g.font='600 10px ui-monospace,monospace';var w=g.measureText(txt).width+18;
+function fit(t,max,base,bold){var f=base,pre=bold?'600 ':'';
+  g.font=pre+f+'px ui-monospace,monospace';
+  while(g.measureText(t).width>max&&f>6.5){f-=0.5;g.font=pre+f+'px ui-monospace,monospace'}return f}
+function chip(cx,y,txt,col){fit(txt,ST.w-24,10,1);var w=g.measureText(txt).width+18;
   cx=Math.max(ST.x+w/2+10,Math.min(ST.x+ST.w-w/2-10,cx));
   g.fillStyle='rgba(8,16,30,.92)';g.strokeStyle=col;g.lineWidth=1;rr(cx-w/2,y-9,w,18,9);g.fill();g.stroke();
   g.fillStyle=col;g.textAlign='center';g.fillText(txt,cx,y+3.5)}
@@ -217,7 +220,8 @@ function drawPlot(){card(CA,'ADMITTED / s  vs  TIME');
 function draw(){g.fillStyle='#04060c';g.fillRect(0,0,W,H);
   var sx=ST.x,sy=ST.y,sw=ST.w,sh=ST.h,A=ALG[ai],recent=limCount(S.out,S.t-1,S.t+1);
   var laneY=sy+Math.max(58,sh*0.15),srcX=sx+28,gx=sx+sw*0.44,sinkX=sx+sw-34;
-  g.font='10px ui-monospace,monospace';g.textAlign='center';g.fillStyle='#7e96bb';
+  g.textAlign='center';g.fillStyle='#7e96bb';
+  fit('BURSTY CLIENT  →  LIMITER GATE  →  SERVICE',sw-24,10);
   g.fillText('BURSTY CLIENT  →  LIMITER GATE  →  SERVICE',sx+sw/2,sy+13);
   g.strokeStyle='#12233c';g.lineWidth=1;g.beginPath();g.moveTo(srcX,laneY);g.lineTo(sinkX,laneY);g.stroke();
   blit(GC,srcX,laneY,0.6);g.fillStyle='#bfe9ff';g.beginPath();g.arc(srcX,laneY,7,0,6.2832);g.fill();
@@ -241,26 +245,24 @@ function draw(){g.fillStyle='#04060c';g.fillRect(0,0,W,H);
     else if(p.ok>0){X=gx+(sinkX-gx)*p.u;blit(GG,X,Y,0.24);g.fillStyle='#c8ffe6';
       g.beginPath();g.arc(X,Y,2.5,0,6.2832);g.fill()}
     else{X=gx-(gx-srcX)*0.8*p.u;Y=laneY-Math.sin(p.u*3.14159)*Math.max(20,sh*0.055)-p.u*4;
-      Y=Math.max(sy+34,Y);var al=1-p.u;
+      Y=Math.max(sy+52,Y);var al=1-p.u;
       g.globalAlpha=al;blit(GR,X,Y,0.26);g.fillStyle='#ffb0a4';
       g.beginPath();g.arc(X,Y,2.6,0,6.2832);g.fill();g.globalAlpha=1;
       if(p.u<0.3&&lab<2){g.globalAlpha=al;g.fillStyle='#ff8a76';g.font='600 9px ui-monospace,monospace';
-        g.textAlign='center';g.fillText('429',X,Y-9-lab*16);g.globalAlpha=1;lab++}}}
-  var iy=sy+Math.max(96,sh*0.28),ih=Math.max(120,sh*0.50);
+        g.textAlign='center';g.fillText('429',X,Y-9-lab*14);g.globalAlpha=1;lab++}}}
+  var iy=sy+Math.max(106,sh*0.28),exY=sy+sh-58,balY=exY-24,ih=Math.max(110,balY-16-iy);
   drawInternals(sx+18,iy,sw-36,ih);
   var gp=(T-TT+PER)%PER,offer=(gp>=BS&&gp<BE)?burstN/(BE-BS):3;
   g.font='9.5px ui-monospace,monospace';g.textAlign='center';
-  g.fillStyle='#7ea3cc';g.fillText('offered '+offer.toFixed(0)+'/s',sx+sw*0.28,iy+ih+16);
-  g.fillStyle='#7dffd0';g.fillText('admitted '+recent+'/s',sx+sw*0.50,iy+ih+16);
-  g.fillStyle='#ff8a76';g.fillText('rejected '+Math.max(0,Math.round(offer-recent))+'/s',sx+sw*0.72,iy+ih+16);
+  g.fillStyle='#7ea3cc';g.fillText('offered '+offer.toFixed(0)+'/s',sx+sw*0.28,balY);
+  g.fillStyle='#7dffd0';g.fillText('admitted '+recent+'/s',sx+sw*0.50,balY);
+  g.fillStyle='#ff8a76';g.fillText('rejected '+Math.max(0,Math.round(offer-recent))+'/s',sx+sw*0.72,balY);
   g.textAlign='center';g.fillStyle='#8ba6ce';
   var ex=['B credits bank up while idle — a burst of B clears at once, then the door opens at r/s',
     'arrivals QUEUE and dribble out at r/s — smooth downstream, but the burst waits',
     'the counter zeroes at the seam: save your quota, fire 2× quota in one second',
     'the window follows the clock — ANY 1.0 s span holds at most the quota'][ai];
-  var fs=10;g.font=fs+'px ui-monospace,monospace';
-  while(g.measureText(ex).width>sw-30&&fs>7.5){fs-=0.5;g.font=fs+'px ui-monospace,monospace'}
-  g.fillText(ex,sx+sw/2,sy+sh-58);
+  fit(ex,sw-24,10);g.fillText(ex,sx+sw/2,exY);
   chip(sx+sw*0.30,sy+sh-34,'token buckets forgive bursts; leaky buckets flatten them','#ffd489');
   chip(sx+sw*0.70,sy+sh-12,'fixed windows let 2× through at the seam','#ff6d5e');
   drawPlot();

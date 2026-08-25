@@ -115,7 +115,10 @@ function step(dt,quiet){T+=quiet?0:dt;
   hAcc+=dt;if(hAcc>=0.05){hAcc-=0.05;hist.push({m:stat.max,s:si});if(hist.length>HN)hist.shift()}}
 function card(b,t){g.fillStyle='rgba(7,13,26,.85)';g.strokeStyle='#172c50';g.lineWidth=1;rr2(b.x,b.y,b.w,b.h,9);
   g.fill();g.stroke();g.fillStyle='#9fc0ea';g.font='600 10px ui-monospace,monospace';g.textAlign='left';g.fillText(t,b.x+10,b.y+14)}
-function chip(cx,y,txt,col){g.font='600 10px ui-monospace,monospace';var w=g.measureText(txt).width+18;
+function fit(t,max,base,bold){var f=base,pre=bold?'600 ':'';
+  g.font=pre+f+'px ui-monospace,monospace';
+  while(g.measureText(t).width>max&&f>6.5){f-=0.5;g.font=pre+f+'px ui-monospace,monospace'}return f}
+function chip(cx,y,txt,col){fit(txt,ST.w-24,10,1);var w=g.measureText(txt).width+18;
   cx=Math.max(ST.x+w/2+10,Math.min(ST.x+ST.w-w/2-10,cx));
   g.fillStyle='rgba(8,16,30,.92)';g.strokeStyle=col;g.lineWidth=1;rr2(cx-w/2,y-9,w,18,9);g.fill();g.stroke();
   g.fillStyle=col;g.textAlign='center';g.fillText(txt,cx,y+3.5)}
@@ -135,9 +138,10 @@ function drawPlot(){card(CA,'MAX LOAD vs TIME  (trace colours = strategy)');
   g.textAlign='right';g.fillText('now',x1,y1+12)}
 function draw(){g.fillStyle='#04060c';g.fillRect(0,0,W,H);
   var sx=ST.x,sy=ST.y,sw=ST.w,sh=ST.h,A=STR[si];
-  var baseY=sy+sh*0.78,topY=sy+42,cw=(sw-40)/N,scale=Math.max(8,Math.ceil(peak*1.12));
-  g.font='10px ui-monospace,monospace';g.textAlign='center';g.fillStyle='#7e96bb';
-  g.fillText('JOB RAIN  →  '+N+' SERVERS   ·   '+A.n+'  ('+balSamples(S)+' sample'+(balSamples(S)===1?'':'s')+' per job)',sx+sw/2,sy+13);
+  var exY=sy+sh-58,baseY=Math.min(sy+sh*0.78,exY-46),topY=sy+42,cw=(sw-40)/N,
+    scale=Math.max(8,Math.ceil(peak*1.12));
+  var hdr='JOB RAIN  →  '+N+' SERVERS   ·   '+A.n+'  ('+balSamples(S)+' sample'+(balSamples(S)===1?'':'s')+' per job)';
+  g.textAlign='center';g.fillStyle='#7e96bb';fit(hdr,sw-24,10);g.fillText(hdr,sx+sw/2,sy+13);
   g.strokeStyle='#16294a';g.lineWidth=1;g.beginPath();g.moveTo(sx+18,baseY);g.lineTo(sx+sw-18,baseY);g.stroke();
   var colX=function(i){return sx+20+(i+0.5)*cw},colT=function(i){return baseY-Math.min(1,S.q[i]/scale)*(baseY-topY)};
   for(var i=0;i<N;i++){var X=colX(i),hh=baseY-colT(i),f=S.q[i]/scale,
@@ -164,17 +168,16 @@ function draw(){g.fillStyle='#04060c';g.fillRect(0,0,W,H);
   for(i=0;i<drops.length;i++){var d=drops[i],DX=colX(d.i),DY=sy+26+(colT(d.i)-6-(sy+26))*d.u;
     blit(GC,DX,DY,0.22);g.fillStyle='#cdefff';g.beginPath();g.arc(DX,DY,2.4,0,6.2832);g.fill()}
   g.fillStyle='#5f77a0';g.font='9px ui-monospace,monospace';g.textAlign='left';
+  fit('queue depth per server (bar scale 0…'+scale+')',sw*0.55,9);
   g.fillText('queue depth per server (bar scale 0…'+scale+')',sx+20,baseY+26);
   g.textAlign='right';g.fillStyle=hetero?'#ffd489':'#5f77a0';
   g.fillText(hetero?'job sizes: EXPONENTIAL (heterogeneous)':'job sizes: EQUAL',sx+sw-20,baseY+26);
   g.textAlign='center';g.fillStyle='#8ba6ce';
   var ex=['one blind throw — some bin gets lucky-unlucky and towers over the rest',
-    'perfect counts, but a long job parks in one queue and the count says nothing about work',
-    'two blind throws, keep the lighter — the loser of each race is what flattens the skyline',
-    'ask all 12 every time: near-perfect, at 12× the sampling cost (and it herds when stale)'][si];
-  var fs=10;g.font=fs+'px ui-monospace,monospace';
-  while(g.measureText(ex).width>sw-30&&fs>7.5){fs-=0.5;g.font=fs+'px ui-monospace,monospace'}
-  g.fillText(ex,sx+sw/2,sy+sh-58);
+    'perfect counts — but one long job parks in a queue and counts hide work',
+    'two blind throws, keep the lighter — the loser of each race flattens the skyline',
+    'ask all 12 every time: near-perfect, at 12× the cost — and it herds when stale'][si];
+  fit(ex,sw-24,10);g.fillText(ex,sx+sw/2,exY);
   chip(sx+sw*0.31,sy+sh-34,'d=2 buys almost everything d=n buys, for one extra peek','#7dffd0');
   chip(sx+sw*0.69,sy+sh-12,'herding: stale least-conn data makes mobs — two random choices dodge it','#ff9c8b');
   drawPlot();
