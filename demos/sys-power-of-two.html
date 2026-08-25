@@ -152,11 +152,14 @@ function draw(){g.fillStyle='#04060c';g.fillRect(0,0,W,H);
   if(S.q[hot]>0){var ty=Math.max(sy+32,colT(hot)-10);
     g.fillStyle='#ff9c8b';g.font='600 10px ui-monospace,monospace';g.textAlign='center';
     g.fillText('MAX '+S.q[hot],Math.max(sx+30,Math.min(sx+sw-30,colX(hot))),ty)}
-  for(i=0;i<arcs.length;i++){var a=arcs[i],al=1-a.t/0.40,ay=topY-14;
-    g.globalAlpha=al*0.85;
+  for(i=0;i<arcs.length;i++){var a=arcs[i],al=1-a.t/0.40,
+      ay=Math.max(sy+34,Math.min(colT(a.a),colT(a.b),colT(a.w))-26);
+    g.globalAlpha=al*0.9;
     [[a.a,a.a===a.w],[a.b,a.b===a.w]].forEach(function(p){
-      g.strokeStyle=p[1]?'#7dffd0':'#44618c';g.lineWidth=p[1]?1.8:1;
-      g.beginPath();g.moveTo(colX(a.w),ay);g.quadraticCurveTo((colX(a.w)+colX(p[0]))/2,ay-16,colX(p[0]),colT(p[0])-4);g.stroke()});
+      g.strokeStyle=p[1]?'#7dffd0':'#5b7ba8';g.lineWidth=p[1]?2:1;
+      g.beginPath();g.moveTo(colX(a.w),ay);
+      g.quadraticCurveTo((colX(a.w)+colX(p[0]))/2,ay-13,colX(p[0]),colT(p[0])-3);g.stroke();
+      g.beginPath();g.arc(colX(p[0]),colT(p[0])-3,p[1]?5:3.4,0,6.2832);g.stroke()});
     g.globalAlpha=1}
   for(i=0;i<drops.length;i++){var d=drops[i],DX=colX(d.i),DY=sy+26+(colT(d.i)-6-(sy+26))*d.u;
     blit(GC,DX,DY,0.22);g.fillStyle='#cdefff';g.beginPath();g.arc(DX,DY,2.4,0,6.2832);g.fill()}
@@ -164,11 +167,13 @@ function draw(){g.fillStyle='#04060c';g.fillRect(0,0,W,H);
   g.fillText('queue depth per server (bar scale 0…'+scale+')',sx+20,baseY+26);
   g.textAlign='right';g.fillStyle=hetero?'#ffd489':'#5f77a0';
   g.fillText(hetero?'job sizes: EXPONENTIAL (heterogeneous)':'job sizes: EQUAL',sx+sw-20,baseY+26);
-  g.font='10px ui-monospace,monospace';g.textAlign='center';g.fillStyle='#8ba6ce';
+  g.textAlign='center';g.fillStyle='#8ba6ce';
   var ex=['one blind throw — some bin gets lucky-unlucky and towers over the rest',
     'perfect counts, but a long job parks in one queue and the count says nothing about work',
     'two blind throws, keep the lighter — the loser of each race is what flattens the skyline',
     'ask all 12 every time: near-perfect, at 12× the sampling cost (and it herds when stale)'][si];
+  var fs=10;g.font=fs+'px ui-monospace,monospace';
+  while(g.measureText(ex).width>sw-30&&fs>7.5){fs-=0.5;g.font=fs+'px ui-monospace,monospace'}
   g.fillText(ex,sx+sw/2,sy+sh-58);
   chip(sx+sw*0.31,sy+sh-34,'d=2 buys almost everything d=n buys, for one extra peek','#7dffd0');
   chip(sx+sw*0.69,sy+sh-12,'herding: stale least-conn data makes mobs — two random choices dodge it','#ff9c8b');

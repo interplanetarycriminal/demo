@@ -264,7 +264,11 @@ function drawLat(){var p99=gcPct(S,0.99,20)*1000,p50=gcPct(S,0.5,20)*1000;
  if(S.q.length){var wait=S.t-S.q[0],Yb=ly(wait);
   g.strokeStyle='#ff6d5e';g.lineWidth=2.4;g.beginPath();g.moveTo(px1-1,py1);g.lineTo(px1-1,Yb);g.stroke();
   g.globalCompositeOperation='lighter';blit(GR,px1-1,Yb,0.55);g.globalCompositeOperation='source-over';
-  tx(S.q.length+' waiting · '+Math.round(wait*1000)+' ms',px0+2,py0+4,'#ff6d5e',8.5,'left',1)}
+  var lb2=S.q.length+' waiting · '+Math.round(wait*1000)+' ms';
+  g.font='600 8.5px ui-monospace,Menlo,monospace';
+  var lw2=g.measureText(lb2).width;
+  g.fillStyle='rgba(4,6,12,.92)';rr(px0,py0-4,lw2+8,16,7);g.fill();
+  tx(lb2,px0+4,py0+4,'#ff6d5e',8.5,'left',1)}
  var yq=ly(p99/1000);
  g.setLineDash([3,3]);g.strokeStyle='rgba(255,200,94,.6)';g.lineWidth=1;
  g.beginPath();g.moveTo(px0,yq);g.lineTo(px1,yq);g.stroke();g.setLineDash([]);
