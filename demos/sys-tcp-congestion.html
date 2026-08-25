@@ -38,7 +38,7 @@ input[type=range]{width:100%;accent-color:#ffb35e;height:16px}
   <div class="mech">The sender cannot see the bottleneck, so it probes it: double the window every RTT until something drops, then add one per RTT and halve on loss &mdash; forever.</div>
   <div class="row"><span class="k">cwnd</span><span class="v"><b id="rC">1.0</b> pkt <span id="rPh" style="color:#7fffb0">slow start</span></span></div>
   <div class="row"><span class="k">ssthresh</span><span class="v"><b class="cool" id="rS">&infin;</b></span></div>
-  <div class="row"><span class="k">RTT base+queue</span><span class="v">0.50 + <b class="hot" id="rQ">0.00</b> s</span></div>
+  <div class="row"><span class="k">RTT base+queue</span><span class="v">0.46 + <b class="hot" id="rQ">0.00</b> s</span></div>
   <div class="row"><span class="k">throughput</span><span class="v"><b id="rT">0</b>% of link</span></div>
   <div class="row"><span class="k">losses / ECN marks</span><span class="v"><b class="hot" id="rL">0</b> / <b id="rM">0</b></span></div>
   <div class="ctl">
@@ -57,7 +57,7 @@ input[type=range]{width:100%;accent-color:#ffb35e;height:16px}
 var c=document.getElementById('c'),g=c.getContext('2d'),ui=document.getElementById('ui');
 var W=0,H=0,DPR=1,ST={x:0,y:0,w:0,h:0},CA={x:0,y:0,w:0,h:0},CB={x:0,y:0,w:0,h:0};
 /*MODEL*/
-function tcpNew(o){o=o||{};var r=o.rtt0||0.5;
+function tcpNew(o){o=o||{};var r=o.rtt0||0.46;
  return{C:o.C||50,buf:(o.buf==null?16:o.buf),rtt0:r,pLoss:o.pLoss||0,ecn:!!o.ecn,K:o.K||5,
   cwnd:1,ssth:(o.ssth==null?1e4:o.ssth),inflight:0,t:0,fwd:[],que:[],bwd:[],ack:[],
   sacc:0,seq:1,delivered:0,_ld:0,lost:0,marks:0,ecnCuts:0,pend:[],drops:[],

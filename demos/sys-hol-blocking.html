@@ -233,7 +233,7 @@ function drawStage(){var x=ST.x,y=ST.y,w=ST.w,h=ST.h;
   g.globalCompositeOperation='lighter';blit(GR,gx+gw*0.5,hy,1.5);g.globalCompositeOperation='source-over'}
  tx(q?'independent gates: only the lossy stream waits'
    :'in-order gate: nothing passes until the missing tile arrives',
-   ox,y+h-14,'#6c669a',9);
+   rx+24,y+h-14,'#6c669a',9,'right');
  tx('senders',x+30,top-8,'#6c669a',9,'center');
  tx('receiver',rx-26,top-8,'#6c669a',9,'center')}
 function frame(){g.setTransform(DPR,0,0,DPR,0,0);g.fillStyle='#05060e';g.fillRect(0,0,W,H);
