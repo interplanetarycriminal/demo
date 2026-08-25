@@ -67,7 +67,7 @@ function spr(r,g,b,sz){var q=document.createElement('canvas');q.width=q.height=s
 var SP={req:spr(79,227,255,32),retry:spr(255,92,70,32),ok:spr(77,255,168,32),dead:spr(150,160,180,32),warn:spr(255,196,84,32)};
 function glow(s,x,y,sz,a){ctx.globalAlpha=a==null?1:a;ctx.drawImage(s,x-sz/2,y-sz/2,sz,sz);ctx.globalAlpha=1}
 // ---------- sim constants ----------
-var N=80,CAP0=70,THINK=0.9,TIMEOUT=0.6,FLY=0.22,MAXQ=140,SUB=1/60;
+var N=80,CAP0=70,THINK=1.15,TIMEOUT=0.6,FLY=0.22,MAXQ=140,SUB=1/60;
 var cfg={backoff:false,budget:1};
 var clients=[],reqs=[],queue=[],credit=0,tokens=0,t=0,dips=[],manual=false;
 var ampS=1,ampO=1,loadEma=0,goodEma=0,servEma=0,hist=[],sampAcc=0;

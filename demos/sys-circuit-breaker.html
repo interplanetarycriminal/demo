@@ -64,16 +64,16 @@ function spr(r,g,b,sz){var q=document.createElement('canvas');q.width=q.height=s
 var SP={in:spr(90,170,255,32),b:spr(77,255,168,32),c:spr(255,92,70,32),ff:spr(255,196,84,32),dim:spr(140,155,180,32)};
 function glow(s,x,y,sz,a){ctx.globalAlpha=a==null?1:a;ctx.drawImage(s,x-sz/2,y-sz/2,sz,sz);ctx.globalAlpha=1}
 // ---------- constants ----------
-var POOL=24,RB=26,RC=26,LATB=0.09,LATC=0.10,TOC=2.0,WAITT=0.6,SUB=1/60;
+var POOL=24,RB=26,RC=26,LATB=0.09,LATC=0.10,TOC=4.0,WAITT=0.6,SUB=1/60;
 var BH_B=16,BH_C=8,OPEN_T=2.0,FAIL_N=4,PROBES=2;
 var cfg={brk:false,bulk:false,health:1};
 var slots=[],calls=[],waiters=[],t=0,hist=[],sampAcc=0,G={};
-var emitB=0,emitC=0,bOk=0,bBad=0,cOk=0,cBad=0;
+var emitA=0,bOk=0,bBad=0,cOk=0,cBad=0;
 var brk={st:0,since:0,fails:0,probes:0,inflight:0,log:[]}; // 0 closed 1 open 2 half-open
 var autoDone=false;
 function reset(){
   slots.length=0;calls.length=0;waiters.length=0;t=0;hist.length=0;
-  emitB=0;emitC=0;bOk=0;bBad=0;cOk=0;cBad=0;
+  emitA=0;bOk=0;bBad=0;cOk=0;cBad=0;
   brk={st:0,since:0,fails:0,probes:0,inflight:0,log:[]};autoDone=false;cfg.health=1;
   $('sH').value=100;$('vH').textContent='100%';
   for(var i=0;i<POOL;i++)slots.push(null);
@@ -150,8 +150,8 @@ function step(dt){
   t+=dt;var i;
   if(!autoDone&&t>=1.0){autoDone=true;cfg.health=0;$('sH').value=0;$('vH').textContent='0% — C is dead'}
   if(cfg.brk&&brk.st===1&&t-brk.since>=OPEN_T)setBrk(2);
-  emitB+=RB*dt;while(emitB>=1){emitB-=1;calls.push({dep:0,ph:-1,p:0,y:Math.random()})}
-  emitC+=RC*dt;while(emitC>=1){emitC-=1;calls.push({dep:1,ph:-1,p:0,y:Math.random()})}
+  emitA+=(RB+RC)*dt;
+  while(emitA>=1){emitA-=1;calls.push({dep:Math.random()<RB/(RB+RC)?0:1,ph:-1,p:0,y:Math.random()})}
   for(i=waiters.length-1;i>=0;i--){var w=waiters[i];w.wait+=dt;
     if(w.wait>=WAITT){waiters.splice(i,1);
       if(w.dep===0)bBad++;else{cBad++;onCFail(w.probe)}
@@ -252,7 +252,7 @@ function drawDep(dep,name,col,alive){
   ctx.font='600 10px ui-monospace,monospace';ctx.textAlign='center';ctx.textBaseline='top';
   ctx.fillStyle=col;ctx.fillText(name,G.dx+G.dw/2,y+8);
   ctx.font='9.5px ui-monospace,monospace';ctx.fillStyle='#9fb6d8';
-  ctx.fillText(alive?('healthy · '+n+' in flight'):('timing out '+TOC+'s'),G.dx+G.dw/2,y+G.dh-16);
+  ctx.fillText(alive?('healthy · '+n+' in flight'):('hanging '+TOC.toFixed(1)+'s to timeout'),G.dx+G.dw/2,y+G.dh-16);
 }
 function drawPlot(){
   var P=G.plot;
