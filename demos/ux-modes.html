@@ -1,0 +1,210 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Mode Error Machine</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#06070f}
+canvas{display:block;position:fixed;inset:0;touch-action:none}
+#ui{position:fixed;top:10px;left:10px;z-index:10;font:12px/1.5 ui-monospace,Menlo,monospace;color:#dfe7ff;
+ background:rgba(9,11,24,.70);padding:9px 12px;border:1px solid rgba(255,120,140,.30);border-radius:11px;
+ backdrop-filter:blur(6px);width:min(340px,calc(100vw - 20px));max-height:45vh;overflow:auto}
+@media (max-width:640px){#ui{font-size:11px;max-height:38vh}#ui .detail{display:none}}
+.t{color:#ff8ea0;letter-spacing:.13em;font-weight:700}
+.m{color:#9fb0d8;margin:2px 0 5px;font-size:11px}
+.ro{display:grid;grid-template-columns:1fr 1fr;gap:3px 8px;margin:5px 0;
+ background:rgba(255,120,140,.07);border:1px solid rgba(255,120,140,.18);border-radius:7px;padding:5px 7px}
+.ro i{font-style:normal;color:#8fa2cc;font-size:10px}
+.ro s{text-decoration:none;color:#ffd0d8;font-size:13px}
+.row{display:flex;align-items:center;gap:6px;margin:3px 0}
+.row label{width:78px;color:#9fb0d8;font-size:11px}
+input[type=range]{flex:1;min-width:60px;accent-color:#ff7a90;height:15px}
+button{font:11px ui-monospace,Menlo,monospace;color:#cfe0ff;background:rgba(120,150,255,.10);
+ border:1px solid rgba(140,170,255,.30);border-radius:6px;padding:4px 8px;cursor:pointer}
+button.on{color:#190a0e;background:#ff7a90;border-color:#ff7a90;font-weight:700}
+.dial{color:#ffd0d8;font-size:11px;margin:1px 0 3px 84px}
+.hon{color:#8de8b6;background:rgba(70,220,150,.08);border:1px solid rgba(70,220,150,.22);border-radius:6px;padding:3px 6px;margin-top:5px;font-size:10.5px;line-height:1.45}
+.detail{color:#8fa2cc;margin-top:6px;border-top:1px solid rgba(140,170,255,.16);padding-top:5px;font-size:10.5px;line-height:1.5}
+a{color:#8cf;text-decoration:none}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div id="ui">
+ <div class="t">THE MODE ERROR MACHINE</div>
+ <div class="m">The same gesture means different things in different modes — so when the mode isn't visible <b>where the hand is</b>, a right action in the believed mode is a wrong action in the real one.</div>
+ <div class="ro">
+  <div><i>mode (real)</i><br><s id="rR">DRAW</s></div>
+  <div><i>mode (believed)</i><br><s id="rB">DRAW</s></div>
+  <div><i>mode errors</i><br><s id="rE">0</s></div>
+  <div><i>errors / min</i><br><s id="rM">0.0</s></div>
+ </div>
+ <div class="row"><label>visibility</label><input id="vis" type="range" min="0" max="2" step="1" value="0"></div>
+ <div class="dial" id="dl">HIDDEN — the mode lives only in the machine</div>
+ <div class="row"><label>ghost speed</label><input id="spd" type="range" min="6" max="40" value="18"></div>
+ <div class="row"><label>auto-switch</label><button id="bA" class="on">ON — “smart” switch after autosave</button></div>
+ <div class="hon">Honest: the ghost's belief is a model — last-seen indicator plus attention decay (P(see) = 2% / 55% / 97% per action), corrected the moment an error shows on screen.</div>
+ <div class="detail">Lineage: Norman 1981 mode-error taxonomy → Tesler's modeless Gypsy 1975 and “don't mode me in” → caps-lock, vim, and every AI tool with an agent/ask toggle. <a href="index.html">← gallery</a></div>
+</div>
+<canvas id="c"></canvas>
+<script>
+/*MODEL_START*/
+function lcg3(s){s=s>>>0;return function(){s=(s*1664525+1013904223)>>>0;return s/4294967296;};}
+var PSEE=[0.02,0.55,0.97];
+function modeRun(vis,steps,seed,autoEvery){
+ var rnd=lcg3(seed),P=PSEE[vis],real=0,bel=0,err=0,acts=0;
+ for(var s=0;s<steps;s++){
+  if(rnd()<0.10){real=Math.floor(rnd()*3);bel=real;}
+  if(autoEvery>0&&s>0&&s%autoEvery===0)real=(real+1+Math.floor(rnd()*2))%3;
+  acts++;
+  if(rnd()<P)bel=real;
+  if(bel!==real){err++;bel=real;}}
+ return{acts:acts,errors:err,rate:err/acts};}
+/*MODEL_END*/
+var cv=document.getElementById('c'),ctx=cv.getContext('2d'),ui=document.getElementById('ui');
+function $(i){return document.getElementById(i);}
+var W=1,H=1,DPR=1,UIB={r:0,b:0},wide=true,F={x:0,y:0,w:1,h:1},BAR=F,CH=F;
+function rr(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+function sprite(c){var Z=112,cn=document.createElement('canvas');cn.width=cn.height=Z;var x=cn.getContext('2d');
+ var gr=x.createRadialGradient(Z/2,Z/2,0,Z/2,Z/2,Z/2);gr.addColorStop(0,c+'f0');gr.addColorStop(.20,c+'80');
+ gr.addColorStop(.52,c+'22');gr.addColorStop(1,c+'00');x.fillStyle=gr;x.fillRect(0,0,Z,Z);return cn;}
+var MODE=[{n:'DRAW',c:'#6effb4',g:'✎'},{n:'ERASE',c:'#ff7a90',g:'⌫'},{n:'SELECT',c:'#7cc4ff',g:'▧'}];
+var SPM=[sprite('#6effb4'),sprite('#ff7a90'),sprite('#7cc4ff')],SPE=sprite('#ff3f5c'),SPW=sprite('#ffe9a8');
+function blit(sp,x,y,rad,al){ctx.save();ctx.globalAlpha=al;ctx.globalCompositeOperation='lighter';ctx.drawImage(sp,x-rad,y-rad,rad*2,rad*2);ctx.restore();}
+function chip(x,y,txt,col,fs){fs=fs||11;ctx.font=fs+'px ui-monospace,Menlo,monospace';
+ var w=ctx.measureText(txt).width+14,h=fs+8;ctx.fillStyle='rgba(6,8,18,.90)';ctx.strokeStyle=col+'66';ctx.lineWidth=1;
+ rr(x,y,w,h,6);ctx.fill();ctx.stroke();ctx.fillStyle=col;ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillText(txt,x+7,y+h/2+.5);return w;}
+var GW=18,GHh=10,cell=20,gx=0,gy=0,cells=[];
+function layout(){var M=14,r=ui.getBoundingClientRect();UIB={r:r.right,b:r.bottom};
+ wide=(W-UIB.r)>300&&W>=760;var chH=44;
+ if(wide){BAR={x:W-M-200,y:12,w:200,h:Math.min(158,Math.max(120,UIB.b-24))};
+  var fy=Math.max(UIB.b+14,BAR.y+BAR.h+12);F={x:M,y:fy,w:W-2*M,h:Math.max(120,H-fy-chH-10-M)};}
+ else{BAR={x:M,y:UIB.b+8,w:W-2*M,h:74};F={x:M,y:UIB.b+90,w:W-2*M,h:Math.max(110,H-(UIB.b+90)-chH-10-M)};}
+ CH={x:M,y:F.y+F.h+8,w:W-2*M,h:chH};
+ GW=Math.max(8,Math.min(22,Math.floor(F.w/44)));GHh=Math.max(5,Math.min(12,Math.floor(F.h/40)));
+ cell=Math.min((F.w-16)/GW,(F.h-42)/GHh);
+ gx=F.x+(F.w-cell*GW)/2;gy=F.y+32+(F.h-32-cell*GHh)/2;
+ if(cells.length!==GW*GHh){cells=[];for(var i=0;i<GW*GHh;i++)cells.push({v:0,scar:0,fl:0,fc:0});}
+ buildPath();}
+function resize(){DPR=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);layout();}
+addEventListener('resize',resize);
+var rnd=lcg3(90210);
+var S={real:0,bel:0,err:0,acts:0,t:0,nextAct:.55,nextAuto:3.05,cx:3,cy:3,px:0,py:0,tx:0,ty:0,
+ flash:0,fmsg:'',note:'',noteT:-9,noteC:'#ff8ea0',stat:[{e:0,t:0},{e:0,t:0},{e:0,t:0}],lastSw:-9,step:0};
+var PATH=[];
+function buildPath(){PATH=[];var w=Math.max(5,Math.min(9,GW-4)),h=Math.max(3,Math.min(6,GHh-3));
+ var ox=2,oy=Math.max(1,Math.floor((GHh-h)/2));
+ for(var i=0;i<w;i++)PATH.push([ox+i,oy]);
+ for(var j=1;j<h;j++)PATH.push([ox+w-1,oy+j]);
+ for(var i=w-2;i>=0;i--)PATH.push([ox+i,oy+h-1]);
+ for(var j=h-2;j>0;j--)PATH.push([ox,oy+j]);
+ var bx=ox+w+3;
+ for(var j=0;j<h;j++)for(var i=0;i<3&&bx+i<GW;i++)PATH.push([bx+i,oy+j]);}
+function vis(){return +$('vis').value;}
+function cc(i,j){return cells[j*GW+i];}
+function act(){var v=vis(),P=PSEE[v];
+ if(rnd()<P)S.bel=S.real;
+ var p=PATH[S.step%PATH.length];S.step++;
+ var c=cc(p[0],p[1]);if(!c)return;
+ var wrong=S.bel!==S.real;
+ S.acts++;S.stat[v].e+=wrong?1:0;
+ if(wrong){S.err++;S.flash=1.5;S.fmsg='MODE ERROR: '+MODE[S.bel].n+' intended · '+MODE[S.real].n+' happened';
+  c.fl=1.5;c.fc=1;c.scar=1;c.v=S.real===1?0:1;S.bel=S.real;
+  S.note='right action, wrong mode — the design hid the mode';S.noteC='#ff8ea0';S.noteT=S.t;}
+ else{c.fl=.55;c.fc=0;if(S.real===0)c.v=1;else if(S.real===1)c.v=0;else c.v=c.v?2:c.v;}
+ S.tx=p[0];S.ty=p[1];
+ if(rnd()<.12){S.real=(S.real+1+(rnd()*2|0))%3;S.bel=S.real;}}
+function step(dt){S.t+=dt;var v=vis();S.stat[v].t+=dt;
+ for(var i=0;i<cells.length;i++){if(cells[i].fl>0)cells[i].fl-=dt;if(cells[i].scar>0)cells[i].scar-=dt*.06;}
+ if(S.flash>0)S.flash-=dt;
+ if($('bA').className==='on'&&S.t>=S.nextAuto){S.real=(S.real+1+(rnd()*2|0))%3;S.lastSw=S.t;
+  S.nextAuto=S.t+2.1+rnd()*1.1;S.note='autosave finished — the tool switched itself';S.noteC='#ffd27a';S.noteT=S.t;}
+ if(S.t>=S.nextAct){act();S.nextAct=S.t+1/(+$('spd').value/10);}
+ var p=PATH[S.step%PATH.length];var tx=gx+(p[0]+.5)*cell,ty=gy+(p[1]+.5)*cell;
+ S.px+=(tx-S.px)*Math.min(1,dt*7);S.py+=(ty-S.py)*Math.min(1,dt*7);}
+function drawGrid(){
+ ctx.fillStyle='rgba(10,13,26,.55)';ctx.strokeStyle='rgba(140,170,255,.16)';ctx.lineWidth=1;
+ rr(F.x,F.y,F.w,F.h,12);ctx.fill();ctx.stroke();
+ for(var j=0;j<GHh;j++)for(var i=0;i<GW;i++){var c=cc(i,j),x=gx+i*cell,y=gy+j*cell;
+  ctx.fillStyle=c.v===1?'rgba(120,180,255,.30)':(c.v===2?'rgba(124,196,255,.16)':'rgba(24,30,52,.55)');
+  ctx.strokeStyle='rgba(140,170,255,.10)';rr(x+1,y+1,cell-2,cell-2,3);ctx.fill();ctx.stroke();
+  if(c.scar>0){ctx.strokeStyle='rgba(255,70,95,'+(.20+.5*Math.min(1,c.scar))+')';ctx.lineWidth=1.6;
+   ctx.beginPath();ctx.moveTo(x+5,y+5);ctx.lineTo(x+cell-5,y+cell-5);ctx.moveTo(x+cell-5,y+5);ctx.lineTo(x+5,y+cell-5);ctx.stroke();ctx.lineWidth=1;}
+  if(c.fl>0){blit(c.fc?SPE:SPM[S.real],x+cell/2,y+cell/2,cell*(c.fc?1.5:.85),Math.min(.85,c.fl*.7));
+   ctx.strokeStyle=c.fc?'#ff3f5c':MODE[S.real].c;ctx.lineWidth=c.fc?3:1.6;rr(x+1,y+1,cell-2,cell-2,3);ctx.stroke();ctx.lineWidth=1;}}}
+function drawGhost(){var v=vis(),m=MODE[S.real],b=MODE[S.bel];
+ if(v===1){blit(SPW,S.px,S.py,cell*3.1,.16);
+  ctx.setLineDash([4,4]);ctx.strokeStyle='rgba(255,233,168,.35)';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(S.px,S.py);ctx.lineTo(F.x+96,F.y+F.h-16);ctx.stroke();ctx.setLineDash([]);}
+ blit(SPM[v===2?S.real:S.bel],S.px,S.py,26,.5);
+ if(S.flash>0){blit(SPE,S.px,S.py,cell*2.6*(1+(1.5-S.flash)*.2),Math.min(.75,S.flash*.6));
+  ctx.strokeStyle='#ff3f5c';ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(S.px,S.py,cell*(1.3+(1.5-S.flash)*.7),0,6.2832);ctx.stroke();}
+ ctx.beginPath();ctx.moveTo(S.px,S.py);ctx.lineTo(S.px,S.py+17);ctx.lineTo(S.px+4.7,S.py+12.8);ctx.lineTo(S.px+7.9,S.py+19.2);
+ ctx.lineTo(S.px+11.1,S.py+17.7);ctx.lineTo(S.px+7.9,S.py+11.3);ctx.lineTo(S.px+13.2,S.py+10.9);ctx.closePath();
+ ctx.fillStyle=v===2?m.c:'#dfe7ff';ctx.fill();ctx.strokeStyle='#05070f';ctx.lineWidth=1;ctx.stroke();
+ if(v===2){ctx.font='700 13px ui-monospace,Menlo,monospace';ctx.textAlign='left';ctx.textBaseline='middle';
+  var lb=m.g+' '+m.n,w=ctx.measureText(lb).width+12;ctx.fillStyle=m.c;rr(S.px+13,S.py+16,w,17,5);ctx.fill();
+  ctx.fillStyle='#0a0d16';ctx.fillText(lb,S.px+19,S.py+25);}
+ if(v===1){ctx.font='700 12px ui-monospace,Menlo,monospace';var t='MODE: '+m.n,w2=ctx.measureText(t).width+14;
+  ctx.fillStyle='rgba(6,8,18,.9)';ctx.strokeStyle=m.c+'88';rr(F.x+12,F.y+F.h-28,w2,19,5);ctx.fill();ctx.stroke();
+  ctx.fillStyle=m.c;ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillText(t,F.x+19,F.y+F.h-18.5);}}
+function drawBanner(){if(S.flash<=0)return;var a=Math.min(1,S.flash*1.4);
+ var fs=Math.max(13,Math.min(26,F.w/34));
+ ctx.textAlign='center';ctx.textBaseline='middle';
+ var cx=F.x+F.w/2,cy=F.y+17;
+ ctx.globalAlpha=a;ctx.fillStyle='rgba(40,6,14,.86)';ctx.strokeStyle='#ff3f5c';ctx.lineWidth=1.5;
+ ctx.font='700 '+fs+'px ui-monospace,Menlo,monospace';var w=ctx.measureText(S.fmsg).width+26;
+ rr(cx-w/2,cy-fs*.85,w,fs*1.7,8);ctx.fill();ctx.stroke();
+ ctx.fillStyle='#ff8ea0';ctx.fillText(S.fmsg,cx,cy+1);ctx.globalAlpha=1;ctx.textAlign='left';}
+function drawBar(){var Z=BAR,hh=Z.h<90;
+ ctx.fillStyle='rgba(10,13,26,.78)';ctx.strokeStyle='rgba(140,170,255,.20)';ctx.lineWidth=1;
+ rr(Z.x,Z.y,Z.w,Z.h,10);ctx.fill();ctx.stroke();
+ ctx.font='9px ui-monospace,Menlo,monospace';ctx.fillStyle='#7d8db4';ctx.textAlign='left';ctx.textBaseline='top';
+ ctx.fillText('ERRORS / MIN BY VISIBILITY',Z.x+9,Z.y+7);
+ var lab=['HIDDEN','STATUS','AT-POINT'],v=vis(),mx=.1;
+ var rate=[];for(var i=0;i<3;i++){var r=S.stat[i].t>.8?S.stat[i].e/(S.stat[i].t/60):-1;rate.push(r);if(r>mx)mx=r;}
+ if(hh){var bw=(Z.w-24)/3;
+  for(var i=0;i<3;i++){var x=Z.x+10+i*bw,hgt=rate[i]<0?0:(Z.h-40)*Math.min(1,rate[i]/mx);
+   ctx.fillStyle=i===v?'#ff7a90':'rgba(255,122,144,.32)';ctx.fillRect(x,Z.y+Z.h-14-hgt,bw-8,hgt);
+   ctx.fillStyle=i===v?'#ffd0d8':'#7d8db4';ctx.font='8px ui-monospace,Menlo,monospace';ctx.textBaseline='top';
+   ctx.fillText(lab[i],x,Z.y+Z.h-12);ctx.fillText(rate[i]<0?'—':rate[i].toFixed(0),x,Z.y+Z.h-24-hgt);}}
+ else{var rowh=(Z.h-30)/3;
+  for(var i=0;i<3;i++){var y=Z.y+24+i*rowh;
+   ctx.font='9px ui-monospace,Menlo,monospace';ctx.fillStyle=i===v?'#ffd0d8':'#7d8db4';ctx.textBaseline='middle';
+   ctx.fillText(lab[i],Z.x+10,y+rowh*.34);
+   var bx=Z.x+66,bwmax=Z.w-104,ww=rate[i]<0?0:bwmax*Math.min(1,rate[i]/mx);
+   ctx.fillStyle='rgba(255,122,144,.12)';rr(bx,y+rowh*.14,bwmax,rowh*.42,3);ctx.fill();
+   ctx.fillStyle=i===v?'#ff7a90':'rgba(255,122,144,.42)';rr(bx,y+rowh*.14,Math.max(2,ww),rowh*.42,3);ctx.fill();
+   ctx.fillStyle=i===v?'#ffd0d8':'#7d8db4';ctx.textAlign='right';
+   ctx.fillText(rate[i]<0?'—':rate[i].toFixed(0),Z.x+Z.w-9,y+rowh*.34);ctx.textAlign='left';}}}
+function drawChips(){
+ chip(CH.x,CH.y,'the error is the design’s, not the user’s — Norman','#9fb0d8',10);
+ var t=(S.t-S.noteT<2.6&&S.note)?S.note:'vi has two modes and forty years of jokes';
+ var c=(S.t-S.noteT<2.6&&S.note)?S.noteC:'#9fb0d8';
+ chip(CH.x,CH.y+21,t,c,10);
+ if(vis()===1)chip(F.x+F.w*.5,F.y+F.h-30,'attention is on the work — the indicator is in the corner','#ffe9a8',10);}
+var acc=0,prev=0;
+function frame(now){var t=now/1000;if(!prev)prev=t;var rd=Math.min(.45,t-prev);prev=t;acc+=rd;
+ var g=0;while(acc>=1/60&&g<40){step(1/60);acc-=1/60;g++;}
+ ctx.clearRect(0,0,W,H);var grd=ctx.createLinearGradient(0,0,0,H);
+ grd.addColorStop(0,'#0a0810');grd.addColorStop(1,'#05060d');ctx.fillStyle=grd;ctx.fillRect(0,0,W,H);
+ drawGrid();drawGhost();drawBanner();drawBar();drawChips();
+ var mis=S.bel!==S.real;
+ $('rR').textContent=MODE[S.real].n;$('rR').style.color=MODE[S.real].c;
+ $('rB').textContent=MODE[S.bel].n+(mis?'  ✕':'');$('rB').style.color=mis?'#ff5a6e':MODE[S.bel].c;
+ $('rE').textContent=S.err;$('rE').style.color=S.err>0?'#ff8ea0':'#ffd0d8';
+ var v=vis(),r=S.stat[v].t>.8?S.stat[v].e/(S.stat[v].t/60):0;
+ $('rM').textContent=r.toFixed(1);
+ requestAnimationFrame(frame);}
+var DL=['HIDDEN — the mode lives only in the machine','STATUS BAR — a small label in the corner','AT-POINT — the cursor carries the mode'];
+$('vis').oninput=function(){$('dl').textContent=DL[vis()];
+ S.note=['no indicator — every auto-switch is a trap','corner label — only helps when you look at it','mode rides the cursor — the trap closes'][vis()];
+ S.noteC=['#ff8ea0','#ffd27a','#6effb4'][vis()];S.noteT=S.t;};
+$('bA').onclick=function(){var on=this.className==='on';this.className=on?'':'on';
+ this.textContent=on?'OFF — only the ghost switches':'ON — “smart” switch after autosave';
+ if(!on)S.nextAuto=S.t+1.6;else S.nextAuto=1e9;};
+cv.addEventListener('pointerdown',function(e){cv.setPointerCapture(e.pointerId);paint(e);});
+cv.addEventListener('pointermove',function(e){if(e.buttons)paint(e);});
+function paint(e){var i=Math.floor((e.clientX-gx)/cell),j=Math.floor((e.clientY-gy)/cell);
+ if(i<0||j<0||i>=GW||j>=GHh)return;var c=cc(i,j);if(!c)return;
+ if(S.real===0)c.v=1;else if(S.real===1)c.v=0;else c.v=c.v?2:0;c.fl=.5;c.fc=0;}
+resize();requestAnimationFrame(frame);
+</script>
