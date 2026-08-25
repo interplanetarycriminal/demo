@@ -55,7 +55,7 @@ input[type=range]{width:100%;accent-color:#4dffa8;height:16px}
 <script>
 (function(){
 var cv=document.getElementById('c'),ctx=cv.getContext('2d'),ui=document.getElementById('ui');
-var W=0,H=0,DPR=1,S={x:0,y:0,w:0,h:0};
+var W=0,H=0,DPR=1,UIB=0,S={x:0,y:0,w:0,h:0};
 function $(i){return document.getElementById(i)}
 function spr(r,g,b,sz){var q=document.createElement('canvas');q.width=q.height=sz;var x=q.getContext('2d'),c=sz/2,
   gr=x.createRadialGradient(c,c,0,c,c,c);gr.addColorStop(0,'rgba('+r+','+g+','+b+',1)');
@@ -80,9 +80,10 @@ function reset(){
   layout();
 }
 function layout(){
-  var plotH=Math.max(80,Math.min(108,S.h*0.21));
-  G.plot={x:S.x+6,y:S.y+S.h-plotH,w:S.w-12,h:plotH-2};
-  var simY=S.y+26,simH=S.h-26-plotH-10;G.simY=simY;G.simH=simH;
+  var plotH=Math.max(92,Math.min(120,H*0.19));
+  var py=S.y+S.h-plotH,full=(py>=UIB+10);
+  G.plot={x:full?12:S.x+6,y:py,w:full?W-24:S.w-12,h:plotH-2};
+  var simY=S.y+26,simH=Math.max(130,(py-10)-simY);G.simY=simY;G.simH=simH;
   G.inx=S.x+14;
   G.aw=Math.max(140,Math.min(226,S.w*0.40));G.ax=S.x+Math.max(46,S.w*0.14);
   G.ah=Math.max(120,simH*0.62);G.ay=simY+(simH-G.ah)/2;
@@ -96,7 +97,7 @@ function resize(){
   DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
   cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);cv.style.width=W+'px';cv.style.height=H+'px';
   ctx.setTransform(DPR,0,0,DPR,0,0);
-  var r=ui.getBoundingClientRect();
+  var r=ui.getBoundingClientRect();UIB=r.bottom;
   if(W-(r.right+16)>=370){S={x:r.right+16,y:12,w:W-(r.right+16)-12,h:H-24}}
   else {S={x:12,y:r.bottom+12,w:W-24,h:H-(r.bottom+12)-12}}
   if(S.h<170){S.y=12;S.h=H-24}
@@ -209,7 +210,7 @@ function draw(){
     for(var q=0;q<wn;q++){var wy=G.ay+10+(q%20)/19*(G.ah-20),wx=G.ax-14-Math.floor(q/20)*9;
       glow(waiters[q].dep===0?SP.b:SP.c,wx,wy,8,.8)}
     ctx.globalCompositeOperation='source-over';
-    chip(G.ax-8,G.ay-19,'blocked on a slot ×'+waiters.length,'#ffc44d',9.5,'r')}
+    chip(S.x+4,G.ay-19,'blocked on a slot ×'+waiters.length,'#ffc44d',9.5)}
   // inlet
   ctx.fillStyle='#6f86a8';ctx.font='600 9.5px ui-monospace,monospace';ctx.textAlign='left';
   ctx.save();ctx.translate(G.inx-2,G.ay+G.ah/2);ctx.rotate(-Math.PI/2);ctx.textAlign='center';
@@ -258,7 +259,7 @@ function drawPlot(){
   var P=G.plot;
   ctx.fillStyle='rgba(7,12,23,.92)';rr(P.x,P.y,P.w,P.h,9);ctx.fill();
   ctx.strokeStyle='#1b3057';ctx.lineWidth=1;ctx.stroke();
-  var ix=P.x+8,iy=P.y+20,iw=P.w-16,ih=P.h-30,t1=Math.max(6,t),t0=t1-16;
+  var ix=P.x+8,iy=P.y+24,iw=P.w-16,ih=P.h-24-17,t1=Math.max(6,t),t0=t1-16;
   function X(tt){return ix+iw*Math.max(0,Math.min(1,(tt-t0)/(t1-t0)))}
   function Y(v){return iy+ih-ih*Math.max(0,Math.min(1,v/100))}
   ctx.setLineDash([4,4]);ctx.strokeStyle='rgba(255,212,137,.5)';ctx.beginPath();
@@ -272,10 +273,10 @@ function drawPlot(){
     if(!st){ctx.moveTo(xx,yy);st=true}else ctx.lineTo(xx,yy)}
   ctx.strokeStyle='rgba(255,92,70,.75)';ctx.lineWidth=1.4;ctx.stroke();
   ctx.font='600 9.5px ui-monospace,monospace';ctx.textAlign='left';ctx.textBaseline='middle';
-  ctx.fillStyle='#4dffa8';ctx.fillText('B goodput %',P.x+9,P.y+10);
-  ctx.fillStyle='#ff8a72';ctx.fillText('pool held by C',P.x+92,P.y+10);
+  ctx.fillStyle='#4dffa8';ctx.fillText('B goodput %',P.x+9,P.y+12);
+  ctx.fillStyle='#ff8a72';ctx.fillText('pool held by C',P.x+92,P.y+12);
   ctx.textAlign='right';ctx.fillStyle='#6f86a8';
-  ctx.fillText('breaker + bulkhead lift the green line back',P.x+P.w-9,P.y+10);ctx.textAlign='left';
+  ctx.fillText('breaker + bulkhead lift the green line back',P.x+P.w-9,P.y+P.h-9);ctx.textAlign='left';
 }
 // ---------- ui ----------
 var el={p:$('rPool'),b:$('rB'),c:$('rC'),brk:$('rBrk'),tis:$('rTis')};

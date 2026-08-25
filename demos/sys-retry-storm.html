@@ -57,7 +57,7 @@ input[type=range]{width:100%;accent-color:#4fe3ff;height:16px}
 <script>
 (function(){
 var cv=document.getElementById('c'),ctx=cv.getContext('2d'),ui=document.getElementById('ui');
-var W=0,H=0,DPR=1,S={x:0,y:0,w:0,h:0};
+var W=0,H=0,DPR=1,UIB=0,S={x:0,y:0,w:0,h:0};
 function $(i){return document.getElementById(i)}
 // ---------- glow sprites ----------
 function spr(r,g,b,sz){var q=document.createElement('canvas');q.width=q.height=sz;var x=q.getContext('2d'),c=sz/2,
@@ -82,11 +82,12 @@ function inDip(){for(var i=0;i<dips.length;i++)if(t>=dips[i].a&&t<dips[i].b)retu
 // ---------- geometry ----------
 var G={};
 function layout(){
-  var padT=32,plotH=Math.max(86,Math.min(118,S.h*0.24));
-  G.simY=S.y+padT;G.simH=S.h-padT-plotH-10;
-  G.plot={x:S.x+6,y:S.y+S.h-plotH,w:S.w-12,h:plotH-2};
-  G.sw=Math.max(96,Math.min(168,S.w*0.29));
-  G.sx=S.x+S.w-8-G.sw;G.sy=G.simY+G.simH*0.16;G.sh=Math.max(90,G.simH*0.48);
+  var padT=32,plotH=Math.max(96,Math.min(130,H*0.20));
+  var py=S.y+S.h-plotH,full=(py>=UIB+10);
+  G.plot={x:full?12:S.x+6,y:py,w:full?W-24:S.w-12,h:plotH-2};
+  G.simY=S.y+padT;G.simH=Math.max(130,(py-10)-G.simY);
+  G.sw=Math.max(104,Math.min(178,S.w*0.30));
+  G.sx=S.x+S.w-8-G.sw;G.sy=G.simY+G.simH*0.12;G.sh=Math.max(140,G.simH*0.60);
   G.qw=32;G.qx=G.sx-G.qw-22;G.qy=G.sy;G.qh=G.sh;
   var cw=Math.max(70,Math.min(132,S.w*0.24)),cols=8,rows=10;
   var gx=Math.min(cw/cols,16),gy=Math.min((G.simH*0.82)/rows,17);
@@ -98,7 +99,7 @@ function resize(){
   DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
   cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);cv.style.width=W+'px';cv.style.height=H+'px';
   ctx.setTransform(DPR,0,0,DPR,0,0);
-  var r=ui.getBoundingClientRect();
+  var r=ui.getBoundingClientRect();UIB=r.bottom;
   if(W-(r.right+16)>=370){S={x:r.right+16,y:12,w:W-(r.right+16)-12,h:H-24}}
   else {S={x:12,y:r.bottom+12,w:W-24,h:H-(r.bottom+12)-12}}
   if(S.h<170){S.y=12;S.h=H-24}
@@ -205,18 +206,25 @@ function draw(){
   sg.addColorStop(0,'rgba(14,26,48,.95)');sg.addColorStop(1,'rgba(7,13,26,.95)');
   ctx.fillStyle=sg;rr(G.sx,G.sy,G.sw,G.sh,9);ctx.fill();
   ctx.strokeStyle=dip?'#ff5c46':'#2a4d84';ctx.lineWidth=dip?2:1;ctx.stroke();
-  ctx.fillStyle='#9fbde6';ctx.font='600 10px ui-monospace,monospace';ctx.textAlign='center';ctx.textBaseline='top';
-  ctx.fillText('SERVER POOL',G.sx+G.sw/2,G.sy+7);
-  var wn=6,pad=9,cwid=(G.sw-pad*2-(wn-1)*4)/wn,cyy=G.sy+24,chh=Math.max(14,G.sh*0.2);
-  var busy=Math.min(wn,Math.round(wn*Math.min(1,queue.length>0?1:0.35)*(cap/CAP0)));
-  ctx.globalCompositeOperation='lighter';
-  for(i=0;i<wn;i++){var bx=G.sx+pad+i*(cwid+4);
-    var on=i<busy;
-    ctx.fillStyle=on?(dip?'rgba(255,92,70,.85)':'rgba(79,227,255,.8)'):'rgba(40,60,92,.5)';
-    rr(bx,cyy,cwid,chh,3);ctx.fill();}
-  ctx.globalCompositeOperation='source-over';
+  ctx.fillStyle='#9fbde6';ctx.font='600 10px ui-monospace,monospace';ctx.textAlign='left';ctx.textBaseline='top';
+  ctx.fillText('SERVER POOL',G.sx+pad,G.sy+8);
+  var pad=9,gc=4,gr2=5,gtop=G.sy+26,lbh=9,lby=G.sy+G.sh-30;
+  var gwh=(lby-12)-gtop,cwid=(G.sw-pad*2-(gc-1)*4)/gc,chh=(gwh-(gr2-1)*4)/gr2;
+  var alive=Math.max(1,Math.round(20*cap/CAP0));
+  var busy=queue.length>0?alive:Math.min(alive,Math.round(alive*Math.min(1,loadRate()/Math.max(1,cap))));
+  var sat=queue.length>MAXQ*0.5;
+  for(i=0;i<20;i++){var bx=G.sx+pad+(i%gc)*(cwid+4),byy=gtop+Math.floor(i/gc)*(chh+4);
+    if(i>=alive){ctx.fillStyle='rgba(74,22,24,.8)';rr(bx,byy,cwid,chh,3);ctx.fill();
+      ctx.strokeStyle='rgba(255,92,70,.35)';ctx.lineWidth=1;ctx.stroke()}
+    else if(i<busy){ctx.fillStyle=sat?'rgba(255,92,70,.9)':'rgba(79,227,255,.85)';rr(bx,byy,cwid,chh,3);ctx.fill();
+      ctx.globalCompositeOperation='lighter';glow(sat?SP.retry:SP.req,bx+cwid/2,byy+chh/2,cwid*1.5,.3);
+      ctx.globalCompositeOperation='source-over'}
+    else{ctx.fillStyle='rgba(38,58,90,.55)';rr(bx,byy,cwid,chh,3);ctx.fill()}}
+  ctx.fillStyle='#6f86a8';ctx.font='9px ui-monospace,monospace';ctx.textAlign='right';ctx.textBaseline='top';
+  ctx.fillText(dip?(20-alive)+' slots down':(busy+'/20 busy'),G.sx+G.sw-pad,G.sy+9);
+  ctx.textAlign='left';
   // latency bar
-  var lat=queue.length/Math.max(1,cap),lby=cyy+chh+12,lbh=9,lbw=G.sw-pad*2;
+  var lat=queue.length/Math.max(1,cap),lbw=G.sw-pad*2;
   ctx.fillStyle='rgba(10,18,32,.9)';rr(G.sx+pad,lby,lbw,lbh,4);ctx.fill();
   var lf=Math.min(1,lat/(TIMEOUT*3));
   ctx.fillStyle=lat>TIMEOUT?'#ff5c46':'#4dffa8';rr(G.sx+pad,lby,Math.max(3,lbw*lf),lbh,4);ctx.fill();
@@ -258,11 +266,11 @@ function drawPlot(){
     ctx.strokeStyle=col;ctx.lineWidth=1.8;ctx.shadowColor=col;ctx.shadowBlur=7;ctx.stroke();ctx.shadowBlur=0}
   line('g','#4dffa8');line('l','#ff9a4d');
   ctx.font='600 9.5px ui-monospace,monospace';ctx.textAlign='left';ctx.textBaseline='middle';
-  ctx.fillStyle='#ff9a4d';ctx.fillText('offered load',P.x+9,P.y+10);
-  ctx.fillStyle='#4dffa8';ctx.fillText('goodput',P.x+92,P.y+10);
-  ctx.fillStyle='#a6b6cf';ctx.fillText('— — capacity',P.x+152,P.y+10);
+  ctx.fillStyle='#ff9a4d';ctx.fillText('offered load',P.x+9,P.y+12);
+  ctx.fillStyle='#4dffa8';ctx.fillText('goodput',P.x+92,P.y+12);
+  ctx.fillStyle='#a6b6cf';ctx.fillText('— — capacity',P.x+152,P.y+12);
   ctx.textAlign='right';ctx.fillStyle='#6f86a8';
-  ctx.fillText('shaded = the 2 s trigger; load stays high after it ends',P.x+P.w-9,P.y+10);
+  ctx.fillText('shaded = the 2 s trigger — load stays high long after it ends',P.x+P.w-9,P.y+P.h-9);
   ctx.textAlign='left';
 }
 // ---------- ui ----------
