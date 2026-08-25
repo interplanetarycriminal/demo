@@ -1,0 +1,206 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The 16.7ms Frame Budget</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#050810}
+canvas{display:block;position:fixed;inset:0;touch-action:none}
+#ui{position:fixed;top:10px;left:10px;z-index:10;font:12px/1.5 ui-monospace,Menlo,monospace;color:#dfe7ff;
+ background:rgba(8,11,22,.72);padding:9px 12px;border:1px solid rgba(120,255,190,.30);border-radius:11px;
+ backdrop-filter:blur(6px);width:min(340px,calc(100vw - 20px));max-height:45vh;overflow:auto}
+@media (max-width:640px){#ui{font-size:11px;max-height:38vh}#ui .detail{display:none}}
+.t{color:#6effb8;letter-spacing:.14em;font-weight:700}
+.m{color:#93a6c8;margin:2px 0 5px;font-size:11px;line-height:1.45}
+.ro{display:grid;grid-template-columns:1fr 1fr 1fr;gap:2px 8px;margin:5px 0;
+ background:rgba(120,255,190,.07);border:1px solid rgba(120,255,190,.20);border-radius:7px;padding:5px 7px}
+.ro i{font-style:normal;color:#8497bd;font-size:9.5px}
+.ro s{text-decoration:none;color:#c6ffe4;font-size:12.5px}
+.chips{display:flex;flex-wrap:wrap;gap:4px;margin:5px 0}
+.ch{cursor:pointer;color:#9fe8c6;background:rgba(120,255,190,.10);border:1px solid rgba(120,255,190,.30);
+ border-radius:6px;padding:2px 7px;font-size:10.5px;user-select:none}
+.ch.on{color:#04120c;background:#6effb8;border-color:#6effb8;font-weight:700}
+.row{display:flex;align-items:center;gap:6px;margin:3px 0}
+.row label{width:88px;color:#93a6c8;font-size:11px}
+input[type=range]{flex:1;min-width:60px;accent-color:#6effb8;height:15px}
+.hon{color:#8de8b6;background:rgba(70,220,150,.08);border:1px solid rgba(70,220,150,.22);border-radius:6px;padding:3px 6px;margin-top:5px;font-size:10.5px;line-height:1.45}
+.detail{color:#8497bd;margin-top:6px;border-top:1px solid rgba(140,170,255,.16);padding-top:5px;font-size:10.5px;line-height:1.5}
+a{color:#8cf;text-decoration:none}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div id="ui">
+ <div class="t">THE 16.7 ms FRAME BUDGET</div>
+ <div class="m">At 60 Hz every frame gets <b>16.7 ms</b> for input + script + layout + paint. A 30 ms task doesn't slow the animation — it <b>drops frames</b>.</div>
+ <div class="ro">
+  <div><i>fps</i><br><s id="rF">—</s></div>
+  <div><i>dropped</i><br><s id="rDr" style="color:#ff9aa8">0</s></div>
+  <div><i>longest task</i><br><s id="rL">—</s></div>
+  <div><i>task cost</i><br><s id="rW">—</s></div>
+  <div><i>tap→paint p100</i><br><s id="rI">—</s></div>
+  <div><i>work done</i><br><s id="rT">0 ms</s></div>
+ </div>
+ <div class="chips">
+  <span class="ch" id="cChunk">↦ move work off-frame</span><span class="ch" id="cRed">↓ reduce work</span>
+  <span class="ch on" id="cAuto">auto-scenario</span>
+ </div>
+ <div class="row"><label>task cost</label><input id="sW" type="range" min="0" max="40" value="0"></div>
+ <div class="hon">Honest: the load is a <b>real busy-wait</b> inside the rAF callback — the jank you see is genuine dropped frames, not a simulation. Busy-wait models script cost; layout and paint share the same budget in a real page.</div>
+ <div class="detail">Lineage: 60 Hz displays → Google's RAIL model (2015) → Long Tasks API &amp; the INP Core Web Vital → 120 Hz displays halve the budget to 8.3 ms. <a href="index.html">← gallery</a></div>
+</div>
+<canvas id="c"></canvas>
+<script>
+/*MODEL_START*/
+var BUDGET=16.7,TASK_PERIOD=100,CHUNK=6;
+function frameInterval(workMs,budget){var k=Math.max(1,Math.ceil((workMs+1.0)/budget));return k*budget;}
+function simLoop(taskCost,chunked,nFrames,budget,periodFrames){
+ var out=[],pend=0,done=0,i,w;
+ for(i=0;i<nFrames;i++){
+  if(i%periodFrames===0)pend+=taskCost;
+  w=chunked?Math.min(pend,CHUNK):pend;pend-=w;done+=w;
+  out.push({dt:frameInterval(w,budget),work:w});}
+ return {frames:out,done:done,pending:pend};}
+function droppedFrames(fr,budget){var d=0,i;for(i=0;i<fr.length;i++)d+=Math.max(0,Math.round(fr[i].dt/budget)-1);return d;}
+function tri(u){u=u-Math.floor(u);return u<.5?u*2:2-u*2;}
+/*MODEL_END*/
+var cv=document.getElementById('c'),ctx=cv.getContext('2d'),ui=document.getElementById('ui');
+function $(i){return document.getElementById(i)}
+var W=1,H=1,DPR=1,A={x:0,y:0,w:1,h:1},B=A,C=A,UIB={r:0,b:0},wide=true;
+function rr(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+function sprite(r,g,b){var Z=112,cn=document.createElement('canvas');cn.width=cn.height=Z;var x=cn.getContext('2d');
+ var gr=x.createRadialGradient(Z/2,Z/2,0,Z/2,Z/2,Z/2);
+ gr.addColorStop(0,'rgba('+r+','+g+','+b+',.96)');gr.addColorStop(.22,'rgba('+r+','+g+','+b+',.48)');
+ gr.addColorStop(.56,'rgba('+r+','+g+','+b+',.12)');gr.addColorStop(1,'rgba('+r+','+g+','+b+',0)');
+ x.fillStyle=gr;x.fillRect(0,0,Z,Z);return cn;}
+var SPg=sprite(110,255,184),SPr=sprite(255,90,110),SPa=sprite(255,196,90),SPc=sprite(120,220,255);
+function blit(s,x,y,r,a){ctx.save();ctx.globalAlpha=a;ctx.globalCompositeOperation='lighter';ctx.drawImage(s,x-r,y-r,r*2,r*2);ctx.restore();}
+function chip(x,y,txt,col,maxW){var fs=10.5,w;
+ for(;;){ctx.font=fs+'px ui-monospace,Menlo,monospace';w=ctx.measureText(txt).width+13;
+  if(!maxW||w<=maxW||fs<=8.5)break;fs-=.5;}
+ if(maxW&&w>maxW){while(txt.length>5&&ctx.measureText(txt+'…').width+13>maxW)txt=txt.slice(0,-1);
+  txt+='…';w=ctx.measureText(txt).width+13;}
+ var h=fs+8;
+ ctx.fillStyle='rgba(5,8,16,.9)';ctx.strokeStyle=col.replace(')',',.42)').replace('rgb','rgba');ctx.lineWidth=1;
+ rr(x,y,w,h,5);ctx.fill();ctx.stroke();ctx.fillStyle=col;ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillText(txt,x+6.5,y+h/2+.5);return h+3;}
+function card(r,ttl,col){ctx.fillStyle='rgba(10,14,26,.62)';ctx.strokeStyle=col.replace(')',',.22)').replace('rgb','rgba');ctx.lineWidth=1;
+ rr(r.x,r.y,r.w,r.h,10);ctx.fill();ctx.stroke();
+ ctx.font='bold 10.5px ui-monospace,Menlo,monospace';ctx.fillStyle=col;ctx.textAlign='left';ctx.textBaseline='alphabetic';ctx.fillText(ttl,r.x+10,r.y+15);}
+function layout(){var M=10,r=ui.getBoundingClientRect();UIB={r:r.right,b:r.bottom};wide=W>=720;
+ if(wide){var lx=UIB.r+10,lw=W-M-lx,ah=Math.max(170,(H-3*M)*.545);
+  A={x:lx,y:M,w:lw,h:ah};B={x:lx,y:M+ah+M,w:lw,h:H-M-(M+ah+M)};
+  C={x:M,y:UIB.b+10,w:UIB.r-M,h:H-M-(UIB.b+10)};}
+ else{var top=UIB.b+8,av=Math.max(210,H-M-top);
+  A={x:M,y:top,w:W-2*M,h:av*.42};B={x:M,y:A.y+A.h+6,w:W-2*M,h:av*.34-6};
+  C={x:M,y:B.y+B.h+6,w:W-2*M,h:av*.24-6};}}
+function resize(){DPR=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);layout();}
+addEventListener('resize',resize);
+var T0=performance.now(),PREV=T0,pend=0,nextTask=0,workDone=0,frames=[],trail=[],drop=0,longest=0,lat=0,latW=0,lats=[],probeAt=T0+900,probeReal=0,flashPad=0;
+var S={chunk:false,auto:true,cost:0};
+$('cChunk').addEventListener('click',function(){S.chunk=!S.chunk;this.classList.toggle('on',S.chunk);});
+$('cRed').addEventListener('click',function(){S.auto=false;$('cAuto').classList.remove('on');
+ $('sW').value=Math.max(0,Math.round(+$('sW').value/2));});
+$('cAuto').addEventListener('click',function(){S.auto=!S.auto;this.classList.toggle('on',S.auto);});
+$('sW').addEventListener('input',function(){S.auto=false;$('cAuto').classList.remove('on');});
+function scenario(el){ // wall-clock scripted sweep; t≈4s lands in heavy-load judder
+ var t=el/1000;
+ if(t<2.2)return {c:0,ch:false,lbl:'baseline — nothing on the main thread'};
+ if(t<4.0)return {c:Math.round(2+30*(t-2.2)/1.8),ch:false,lbl:'loading the main thread…'};
+ if(t<8.2)return {c:32,ch:false,lbl:'32 ms task every 100 ms'};
+ if(t<12.4)return {c:32,ch:true,lbl:'same total work, chunked — no missed frames'};
+ if(t<15.0)return {c:8,ch:false,lbl:'reduced work — inside 16.7 ms'};
+ T0=performance.now()-2200;return {c:0,ch:false,lbl:'baseline'};}
+function frame(now){
+ var el=now-T0,dt=now-PREV;PREV=now;
+ if(S.auto){var sc=scenario(el);S.cost=sc.c;S.chunk=sc.ch;S.lbl=sc.lbl;$('sW').value=sc.c;
+  $('cChunk').classList.toggle('on',S.chunk);}
+ else{S.cost=+$('sW').value;S.lbl=S.chunk?'chunked — same work spread across frames':'manual';}
+ if(nextTask===0)nextTask=now;
+ while(now>=nextTask){pend+=S.cost;nextTask+=TASK_PERIOD;if(nextTask<now-500)nextTask=now+TASK_PERIOD;}
+ var w=S.chunk?Math.min(pend,CHUNK):pend;pend-=w;workDone+=w;
+ if(w>0.2){var e2=performance.now()+w;while(performance.now()<e2){}}
+ if(dt>0&&dt<400){frames.push({dt:dt,work:w});if(frames.length>260)frames.shift();
+  drop+=Math.max(0,Math.round(dt/BUDGET)-1);}
+ if(w>longest)longest=w;
+ if(now>=probeAt){lat=performance.now()-probeAt;lats.push(lat);if(lats.length>8)lats.shift();
+  latW=0;for(var z=0;z<lats.length;z++)if(lats[z]>latW)latW=lats[z];
+  probeAt=now+520+Math.random()*260;probeReal=0;flashPad=1;}
+ flashPad=Math.max(0,flashPad-dt/420);
+ // ball: pure function of wall clock — dropped frames literally skip positions
+ var chH=46,sx=A.x+22,sy=A.y+30,sw=A.w-44,sh=A.h-30-chH-14;
+ var bx=sx+tri(el/1600)*sw,by=sy+tri(el/1150+.17)*sh;
+ trail.push({x:bx,y:by,t:now,d:dt});if(trail.length>70)trail.shift();
+ draw(el,bx,by,sx,sy,sw,sh,chH,w);
+ var n=Math.min(40,frames.length),s=0;for(var i=frames.length-n;i<frames.length;i++)s+=frames[i].dt;
+ $('rF').textContent=n?(1000/(s/n)).toFixed(0):'—';
+ $('rDr').textContent=drop;$('rL').textContent=longest.toFixed(1)+' ms';
+ $('rW').textContent=S.cost+' ms';$('rI').textContent=(probeReal?lat:latW).toFixed(0)+' ms';
+ $('rT').textContent=(workDone/1000).toFixed(2)+' s';
+ requestAnimationFrame(frame);}
+function draw(el,bx,by,sx,sy,sw,sh,chH,w){
+ ctx.fillStyle='#050810';ctx.fillRect(0,0,W,H);
+ var g=ctx.createRadialGradient(W*.64,H*.35,0,W*.64,H*.35,W*.72);
+ g.addColorStop(0,'rgba(20,70,60,.30)');g.addColorStop(1,'rgba(5,8,16,0)');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+ var jank=false,jn=0;for(var q=Math.max(0,frames.length-14);q<frames.length;q++)if(frames[q].dt>BUDGET*1.5){jank=true;jn++;}
+ // ---- A : smoothness probe
+ card(A,'SMOOTHNESS PROBE — one ball, wall-clock path','rgb(110,255,184)');
+ ctx.strokeStyle='rgba(255,255,255,.05)';rr(sx,sy,sw,sh,8);ctx.stroke();
+ for(var i=0;i<trail.length;i++){var p=trail[i],age=(performance.now()-p.t)/900;if(age>1)continue;
+  var bad=p.d>BUDGET*1.5,sp=bad?SPr:SPg;
+  blit(sp,p.x,p.y,(bad?15:10)*(1-age*.55),(bad?.34:.18)*(1-age));
+  if(bad){ctx.strokeStyle='rgba(255,90,110,'+(0.30*(1-age))+')';ctx.lineWidth=1;
+   ctx.beginPath();ctx.arc(p.x,p.y,13*(1-age*.4),0,7);ctx.stroke();}}
+ if(trail.length>1){ctx.strokeStyle='rgba(140,255,200,.16)';ctx.lineWidth=1;ctx.beginPath();
+  for(i=0;i<trail.length;i++){if(i)ctx.lineTo(trail[i].x,trail[i].y);else ctx.moveTo(trail[i].x,trail[i].y);}ctx.stroke();}
+ var R0=Math.max(13,Math.min(24,sh*.075));
+ blit(jank?SPr:SPg,bx,by,R0*2.6,.85);
+ ctx.fillStyle=jank?'#ff6d84':'#8effc4';ctx.beginPath();ctx.arc(bx,by,R0,0,7);ctx.fill();
+ ctx.strokeStyle='rgba(255,255,255,.55)';ctx.lineWidth=1.5;ctx.stroke();ctx.lineWidth=1;
+ var cy=A.y+A.h-chH+2;
+ cy+=chip(A.x+12,cy,jank?('the animation didn’t slow down — it SKIPPED ('+jn+' of last 14)'):'every frame rendered — inside budget',
+  jank?'rgb(255,90,110)':'rgb(110,255,184)',A.w-24);
+ chip(A.x+12,cy,jank?'trail gaps = frames that never happened':(S.lbl||'wall-clock path: position never lags, it jumps'),
+  jank?'rgb(255,196,90)':'rgb(110,255,184)',A.w-24);
+ // ---- B : frame timeline
+ card(B,'FRAME TIMELINE — bar = one frame interval','rgb(255,196,90)');
+ var pl={x:B.x+34,y:B.y+24,w:B.w-46,h:B.h-24-40};
+ ctx.fillStyle='rgba(3,6,14,.72)';rr(pl.x,pl.y,pl.w,pl.h,6);ctx.fill();
+ var MX=50;function BY(v){return pl.y+pl.h-Math.min(1,v/MX)*pl.h;}
+ ctx.strokeStyle='rgba(110,255,184,.55)';ctx.setLineDash([4,3]);ctx.beginPath();ctx.moveTo(pl.x,BY(16.7));ctx.lineTo(pl.x+pl.w,BY(16.7));ctx.stroke();
+ ctx.strokeStyle='rgba(255,196,90,.40)';ctx.beginPath();ctx.moveTo(pl.x,BY(33.4));ctx.lineTo(pl.x+pl.w,BY(33.4));ctx.stroke();ctx.setLineDash([]);
+ ctx.font='9px ui-monospace,Menlo,monospace';ctx.textAlign='right';ctx.textBaseline='middle';
+ ctx.fillStyle='#7dffbe';ctx.fillText('16.7',pl.x-4,BY(16.7));ctx.fillStyle='#ffc45a';ctx.fillText('33',pl.x-4,BY(33.4));
+ ctx.fillStyle='#6f83ad';ctx.fillText('ms',pl.x-4,pl.y+8);
+ var bw=4,nb=Math.floor(pl.w/bw),st=Math.max(0,frames.length-nb);
+ for(i=st;i<frames.length;i++){var f=frames[i],x=pl.x+(i-st)*bw,hgt=pl.y+pl.h-BY(f.dt);
+  ctx.fillStyle=f.dt<=18.5?'rgba(110,255,184,.85)':f.dt<=34?'rgba(255,196,90,.9)':'rgba(255,90,110,.95)';
+  ctx.fillRect(x,BY(f.dt),bw-1,Math.max(1,hgt));}
+ ctx.textAlign='left';ctx.textBaseline='top';ctx.fillStyle='#6f83ad';ctx.fillText('newest →',pl.x+pl.w-58,pl.y+pl.h-12);
+ ctx.fillStyle='#ff9aa8';ctx.fillText(drop+' frames dropped',pl.x+5,pl.y+4);
+ chip(B.x+12,B.y+B.h-24,'16.7 ms is the whole budget: script, layout, paint','rgb(255,196,90)',B.w-24);
+ // ---- C : input latency
+ card(C,'INPUT LATENCY — tap → paint','rgb(120,220,255)');
+ var pw=Math.min(C.w-40,190),ph=Math.max(44,Math.min(74,C.h*.26)),px=C.x+(C.w-pw)/2,py=C.y+34;
+ blit(SPc,px+pw/2,py+ph/2,pw*.55,.16+.34*flashPad);
+ ctx.fillStyle='rgba(120,220,255,'+(0.12+0.30*flashPad)+')';rr(px,py,pw,ph,10);ctx.fill();
+ ctx.strokeStyle='rgba(120,220,255,.8)';ctx.lineWidth=1.4;ctx.stroke();ctx.lineWidth=1;
+ ctx.font='bold 12px ui-monospace,Menlo,monospace';ctx.fillStyle='#cdeeff';ctx.textAlign='center';ctx.textBaseline='middle';
+ ctx.fillText(probeReal?'YOUR TAP':'TAP ME',px+pw/2,py+ph/2);
+ var by2=py+ph+16;
+ ctx.font='bold 22px ui-monospace,Menlo,monospace';ctx.textAlign='left';ctx.textBaseline='alphabetic';
+ var LV=probeReal?lat:latW;
+ ctx.fillStyle=LV>60?'#ff8a9c':LV>33?'#ffc45a':'#8effc4';
+ ctx.fillText(LV.toFixed(0)+' ms',C.x+14,by2+18);
+ ctx.font='9.5px ui-monospace,Menlo,monospace';ctx.fillStyle='#8497bd';
+ ctx.fillText(probeReal?'your tap → painted response':'worst of last 8 probes (INP-style)',C.x+14,by2+32);
+ var lb={x:C.x+14,y:by2+40,w:C.w-28,h:8};
+ ctx.fillStyle='rgba(255,255,255,.07)';rr(lb.x,lb.y,lb.w,lb.h,4);ctx.fill();
+ ctx.fillStyle=LV>60?'rgba(255,120,140,.9)':'rgba(120,220,255,.85)';
+ rr(lb.x,lb.y,Math.max(3,lb.w*Math.min(1,LV/120)),lb.h,4);ctx.fill();
+ var ccy=C.y+C.h-46;
+ ccy+=chip(C.x+12,ccy,'long tasks delay input too','rgb(120,220,255)',C.w-24);
+ chip(C.x+12,ccy,probeReal?'measured from your pointerdown':'auto-probe every ~0.6 s — tap to measure yours','rgb(140,160,200)',C.w-24);
+}
+cv.addEventListener('pointerdown',function(e){cv.setPointerCapture(e.pointerId);
+ probeAt=performance.now();probeReal=1;lats.length=0;e.preventDefault();});
+cv.addEventListener('pointerup',function(e){try{cv.releasePointerCapture(e.pointerId)}catch(x){}});
+resize();requestAnimationFrame(frame);
+</script>
