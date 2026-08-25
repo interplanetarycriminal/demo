@@ -109,7 +109,8 @@ function chip(x,y,txt,col,fs,al){var f=fs||10;ctx.font='600 '+f+'px ui-monospace
 function layout(){
   var lh=Math.max(96,Math.min(126,H*0.20)),ly=S.y+S.h-lh,full=(ly>=UIB+10);
   G.log={x:full?12:S.x+6,y:ly,w:full?W-24:S.w-12,h:lh-2};
-  G.cx=S.x+S.w/2;var top=S.y+34,bot=ly-14;G.cy=(top+bot)/2;
+  G.capY=G.log.y-46;
+  G.cx=S.x+S.w/2;var top=S.y+34,bot=G.capY-8;G.cy=(top+bot)/2;
   G.R=Math.max(60,Math.min(S.w*0.27,(bot-top)*0.40));G.nr=Math.max(13,Math.min(22,G.R*0.24))}
 function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
   cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);cv.style.width=W+'px';cv.style.height=H+'px';
@@ -177,7 +178,7 @@ function drawStage(){
   else chip(G.cx,G.cy-G.R-40,'replicated — all 5 agree  x='+(st.log0.length?st.log0[st.log0.length-1]:0),'#4dffa8',11,'c');
   var d=CORE.diverge(st);
   if(st.part&&d>0&&CORE.leaders(st)===2){
-    var by2=G.cy+G.R+Math.min(46,(G.log.y-(G.cy+G.R))*0.5);
+    var by2=G.cy+G.R+Math.min(40,Math.max(14,(G.capY-(G.cy+G.R))*0.5));
     ctx.font='700 '+Math.round(Math.max(15,Math.min(24,S.w*0.030)))+'px ui-monospace,monospace';
     ctx.textAlign='center';ctx.textBaseline='middle';ctx.shadowColor='#ff3b2a';ctx.shadowBlur=22;
     ctx.fillStyle=(Math.sin(st.t*9)>-0.4)?'#ff6d5e':'#ff9c90';
@@ -185,9 +186,9 @@ function drawStage(){
     ctx.shadowBlur=0}
   if(st.conflict>0)chip(G.cx,G.cy-G.R-42,'CONFLICT — last-write-wins lost '+st.lost+' writes','#ff6d5e',11,'c');
   else if(st.healed&&st.lost===0)chip(G.cx,G.cy-G.R-42,'clean catch-up — minority replays the majority log','#4dffa8',10.5,'c');
-  chip(S.x+6,G.log.y-19,'fencing token: the old leader’s writes get rejected by token number','#6f86a8',9.5,'l');
-  ctx.font='9.5px ui-monospace,monospace';ctx.textAlign='right';ctx.textBaseline='bottom';ctx.fillStyle='#6f86a8';
-  ctx.fillText(st.quorum?'quorum ON: majority writes, minority refuses (CP)':'quorum OFF: both sides accept (AP)',S.x+S.w-6,G.log.y-8);
+  chip(S.x+S.w-6,G.capY,st.quorum?'quorum ON: majority writes, minority refuses — CP':
+    'quorum OFF: both sides accept writes — AP',st.quorum?'#57ffab':'#ff9c4d',9.5,'r');
+  chip(S.x+6,G.capY+22,'fencing token: the old leader’s writes get rejected by token number','#6f86a8',9.5,'l');
 }
 function drawLog(){
   var P=G.log;ctx.fillStyle='rgba(7,12,23,.92)';rr(P.x,P.y,P.w,P.h,9);ctx.fill();
@@ -247,10 +248,10 @@ function drag(e){var dx=e.clientX-G.cx,dy=e.clientY-G.cy,r=Math.sqrt(dx*dx+dy*dy
   st.auto=false;if(!st.part)CORE.partition(st);
   CORE.setCut(st,Math.atan2(-dx/r,dy/r))}
 window.addEventListener('resize',resize);
-var lastT=performance.now()/1000,uiAcc=0;
+var lastT=performance.now()/1000;
 function frame(now){now/=1000;var rdt=now-lastT;lastT=now;if(rdt>0.45)rdt=0.45;if(rdt<0)rdt=0;
   var n=Math.max(1,Math.round(rdt/SUB));for(var i=0;i<n;i++){CORE.step(st,SUB);stepFx(SUB)}
-  if(flash>0)flash-=rdt*1.6;draw();uiAcc+=rdt;if(uiAcc>0.1){uiAcc=0;syncUI()}requestAnimationFrame(frame)}
+  if(flash>0)flash-=rdt*1.6;draw();syncUI();requestAnimationFrame(frame)}
 resize();syncUI();requestAnimationFrame(frame);
 })();
 </script>
