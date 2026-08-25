@@ -1,0 +1,240 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Doherty Threshold</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#05090f}
+canvas{display:block;position:fixed;inset:0;touch-action:none}
+#ui{position:fixed;top:10px;left:10px;z-index:10;font:12px/1.5 ui-monospace,Menlo,monospace;color:#dff2f0;
+ background:rgba(6,14,20,.68);padding:9px 12px;border:1px solid rgba(56,232,208,.30);border-radius:11px;
+ backdrop-filter:blur(6px);width:min(340px,calc(100vw - 20px));max-height:45vh;overflow:auto}
+@media (max-width:640px){#ui{font-size:11px;max-height:38vh}#ui .detail{display:none}}
+.t{color:#4fe8d2;letter-spacing:.14em;font-weight:700}
+.m{color:#8fb0b4;margin:2px 0 5px}
+.ro{display:grid;grid-template-columns:1fr 1fr 1fr;gap:3px 8px;margin:5px 0;
+ background:rgba(56,232,208,.08);border:1px solid rgba(56,232,208,.2);border-radius:7px;padding:5px 7px}
+.ro i{font-style:normal;color:#7f9ea3;font-size:10px}
+.ro s{text-decoration:none;color:#b7f5ea;font-size:13px}
+.row{display:flex;align-items:center;gap:6px;margin:4px 0;flex-wrap:wrap}
+.row label{width:96px;color:#8fb0b4;font-size:11px}
+input[type=range]{flex:1;min-width:80px;accent-color:#ffb84d;height:16px}
+button{font:11px ui-monospace,Menlo,monospace;color:#b7f5ea;background:rgba(56,232,208,.13);
+ border:1px solid rgba(56,232,208,.4);border-radius:6px;padding:3px 7px;cursor:pointer}
+button.on{background:rgba(255,184,77,.18);border-color:rgba(255,184,77,.6);color:#ffd9a0}
+.hon{color:#8de8b6;background:rgba(70,220,150,.08);border:1px solid rgba(70,220,150,.22);border-radius:6px;padding:3px 6px;margin-top:5px;font-size:10.5px;line-height:1.45}
+.detail{color:#7f9ea3;margin-top:6px;border-top:1px solid rgba(120,200,200,.16);padding-top:5px;font-size:10.5px;line-height:1.5}
+a{color:#8cf;text-decoration:none}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div id="ui">
+ <div class="t">THE DOHERTY THRESHOLD</div>
+ <div class="m">Below ~400 ms of system response your attention locks on and throughput climbs steeply.</div>
+ <div class="ro">
+  <div><i>latency</i><br><s id="rL">—</s></div>
+  <div><i>patterns/min</i><br><s id="rP">—</s></div>
+  <div><i>flow</i><br><s id="rF">—</s></div>
+  <div><i>waiting</i><br><s id="rW">—</s></div>
+  <div><i>completed</i><br><s id="rC">0</s></div>
+  <div><i>tiles left</i><br><s id="rD">—</s></div>
+ </div>
+ <div class="row"><label>LATENCY</label><input id="lat" type="range" min="50" max="2000" value="380"></div>
+ <div class="row"><button id="bsw" class="on">auto-sweep: on</button><button id="b200">snap 200 ms</button><button id="b1200">snap 1200 ms</button></div>
+ <div class="hon">Honest: the productivity curve is the Doherty–Thadani 1982 shape (transaction rate vs response time); the flow meter is an illustrative model, not a measurement of you. The plot opens with a 9-point ghost warm-up from that same curve.</div>
+ <div class="detail">Lineage: IBM TSO study 1982 → Doherty &amp; Thadani, "The Economic Value of Rapid Response Time" → the 100 ms / 1 s / 10 s thresholds (Miller 1968, Nielsen 1993). <a href="index.html">← gallery</a></div>
+</div>
+<canvas id="c"></canvas>
+<script>
+/*MODEL_START*/
+function dohertyThink(L){                 // ms of human think+act per interaction at system latency L
+  var over=Math.max(0,L-300);             // attention starts leaking past ~300 ms
+  var wander=Math.min(0.5,Math.max(0,(L-1000)/1500));  // past 1 s you start doing something else
+  return 260+0.35*over+wander*800;
+}
+function patternsPerMin(L,clicks){var c=clicks||6;return 60000/(c*(dohertyThink(L)+L));}
+function flowAt(L){return 1/(1+Math.pow(L/380,2.2));}   // steady-state focus, falls off the cliff at ~400 ms
+/*MODEL_END*/
+const cv=document.getElementById('c'),ctx=cv.getContext('2d'),ui=document.getElementById('ui');
+const $=function(i){return document.getElementById(i)};
+let W=1,H=1,DPR=1,S={x:8,y:8,w:1,h:1},CA={x:0,y:0,w:1,h:1},CB={x:0,y:0,w:1,h:1},GR={x:0,y:0,w:1,h:1},UIB={r:0,b:0},wide=true;
+function rr(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+function sprite(r,g,b){var Z=128,cn=document.createElement('canvas');cn.width=cn.height=Z;var x=cn.getContext('2d');
+ var gr=x.createRadialGradient(Z/2,Z/2,0,Z/2,Z/2,Z/2);
+ gr.addColorStop(0,'rgba('+r+','+g+','+b+',.95)');gr.addColorStop(.22,'rgba('+r+','+g+','+b+',.5)');
+ gr.addColorStop(.55,'rgba('+r+','+g+','+b+',.13)');gr.addColorStop(1,'rgba('+r+','+g+','+b+',0)');
+ x.fillStyle=gr;x.fillRect(0,0,Z,Z);return cn;}
+const SP={tl:sprite(56,232,208),am:sprite(255,184,77),pk:sprite(255,95,162),cy:sprite(130,220,255)};
+function blit(sp,x,y,rad,a){ctx.save();ctx.globalAlpha=a;ctx.globalCompositeOperation='lighter';ctx.drawImage(sp,x-rad,y-rad,rad*2,rad*2);ctx.restore();}
+function chip(x,y,txt,col){ctx.font='11px ui-monospace,Menlo,monospace';var w=ctx.measureText(txt).width+14,h=19;
+ ctx.fillStyle='rgba(4,10,14,.9)';ctx.strokeStyle=col.replace('rgb(','rgba(').replace(')',',.45)');ctx.lineWidth=1;
+ rr(x,y,w,h,6);ctx.fill();ctx.stroke();ctx.fillStyle=col;ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillText(txt,x+7,y+h/2+.5);ctx.textBaseline='alphabetic';return w;}
+function layout(){var M=8,r=ui.getBoundingClientRect();UIB={r:r.right,b:r.bottom};wide=W>=740;
+ if(wide){var pw=Math.max(250,Math.min(370,W*.35));
+  CA={x:W-M-pw,y:M,w:pw,h:Math.max(140,Math.min(200,(H-2*M)*.36))};
+  CB={x:W-M-pw,y:M+CA.h+8,w:pw,h:H-2*M-CA.h-8};
+  S={x:M,y:M,w:CA.x-10-M,h:H-2*M};
+  GR={x:S.x+16,y:Math.min(UIB.b+18,S.y+S.h*.45),w:S.w-32,h:0};GR.h=Math.max(130,S.y+S.h-24-GR.y);}
+ else{var ph=Math.max(150,Math.min(260,H*.30));CB={x:M,y:H-M-ph,w:W-2*M,h:ph};CA={x:0,y:0,w:0,h:0};
+  var top=Math.min(UIB.b+8,H*.5);S={x:M,y:top,w:W-2*M,h:Math.max(140,CB.y-8-top)};
+  GR={x:S.x+12,y:S.y+30,w:S.w-24,h:Math.max(100,S.h-44)};}}
+function resize(){DPR=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);layout();}
+addEventListener('resize',resize);
+const rnd=Math.random;
+const D={grid:[],pat:[],pend:null,lat:380,sweep:true,swp:0,done:0,pts:[],flow:1,waitA:0,totA:0,
+ patT:0,patLat:0,cyc0:0,est:0,mode:'ghost',idle:0,busy:0,wand:[],burst:0,note:0,rate:0};
+for(var i=0;i<16;i++){D.grid.push(0);D.pat.push(0);}
+function newPattern(){var k=5+Math.floor(rnd()*3),used={};D.pat=D.grid.slice();
+ for(var j=0;j<k;j++){var t=Math.floor(rnd()*16);if(used[t]){j--;continue;}used[t]=1;D.pat[t]=D.pat[t]?0:1;}
+ D.patT=0;D.patLat=0;}
+function diffs(){var a=[];for(var i=0;i<16;i++)if(D.grid[i]!==D.pat[i])a.push(i);return a;}
+function tiles(){var sz=Math.min(GR.w,GR.h)/4,ts=sz*.80,ox=GR.x+(GR.w-sz*4)/2,oy=GR.y+(GR.h-sz*4)/2,a=[];
+ for(var i=0;i<16;i++)a.push({x:ox+(i%4)*sz+sz/2,y:oy+Math.floor(i/4)*sz+sz/2,r:ts/2,i:i});return a;}
+function click(i){if(D.pend){D.busy=.35;return;} if(!D.cyc0)D.cyc0=performance.now();
+ D.pend={i:i,t0:performance.now(),dur:D.lat};}
+function settle(){var i=D.pend.i,now=performance.now();D.grid[i]=D.grid[i]?0:1;D.pend=null;
+ var cyc=(now-D.cyc0)/1000;D.cyc0=now;                     // one tap cycle = think + system latency
+ if(cyc>.05&&cyc<25){D.est=60/(6*cyc);                     // 6 taps per pattern → implied patterns/min
+  D.pts.push({L:D.lat,r:D.est,h:D.mode==='human',c:1});if(D.pts.length>160)D.pts.shift();}
+ if(diffs().length===0){D.done++;var r=60/Math.max(.2,D.patT);
+  D.pts.push({L:D.patT>0?D.patLat/D.patT:D.lat,r:r,h:D.mode==='human',c:0});if(D.pts.length>160)D.pts.shift();
+  D.rate=D.rate?D.rate*.6+r*.4:r;D.burst=.7;newPattern();}}
+const GH={x:0,y:0,sx:0,sy:0,t:0,T:.2,st:'think',think:.3,tgt:0};
+function ghostStep(dt,tl){
+ if(GH.st==='think'){GH.think-=dt;if(GH.think<=0){var d=diffs();if(!d.length){newPattern();d=diffs();}
+   GH.tgt=d[Math.floor(rnd()*d.length)];GH.sx=GH.x;GH.sy=GH.y;GH.t=0;GH.T=.16+rnd()*.10;GH.st='move';}}
+ else if(GH.st==='move'){GH.t+=dt;var u=Math.min(1,GH.t/GH.T),m=u*u*u*(10-15*u+6*u*u),b=tl[GH.tgt];
+  GH.x=GH.sx+(b.x-GH.sx)*m;GH.y=GH.sy+(b.y-GH.sy)*m;
+  if(u>=1){click(GH.tgt);GH.st='wait';}}
+ else{if(!D.pend){GH.st='think';GH.think=Math.max(.06,dohertyThink(D.lat)/1000-.22);}
+  else{var el=(performance.now()-D.pend.t0)/1000;
+   if(el>1&&D.wand.length<4&&rnd()<dt*1.6){D.wand.push({x:GH.x,y:GH.y,vx:(rnd()-.5)*36-16,vy:-26-rnd()*20,a:1});}
+   if(el>1){GH.x+=(rnd()-.5)*22*dt;GH.y-=8*dt;}}}}
+cv.addEventListener('pointerdown',function(e){e.preventDefault();cv.setPointerCapture(e.pointerId);
+ if(D.mode==='ghost'){D.mode='human';D.note=2.6;}
+ D.idle=0;GH.x=e.clientX;GH.y=e.clientY;var tl=tiles();
+ for(var i=0;i<16;i++)if(Math.abs(e.clientX-tl[i].x)<tl[i].r*1.15&&Math.abs(e.clientY-tl[i].y)<tl[i].r*1.15){click(i);break;}});
+cv.addEventListener('pointermove',function(e){if(D.mode==='human'){D.idle=0;GH.x=e.clientX;GH.y=e.clientY;}});
+$('lat').addEventListener('input',function(){D.sweep=false;$('bsw').textContent='auto-sweep: off';$('bsw').className='';D.lat=+this.value;});
+$('bsw').onclick=function(){D.sweep=!D.sweep;this.textContent='auto-sweep: '+(D.sweep?'on':'off');this.className=D.sweep?'on':'';};
+$('b200').onclick=function(){D.sweep=false;$('bsw').textContent='auto-sweep: off';$('bsw').className='';D.lat=200;$('lat').value=200;};
+$('b1200').onclick=function(){D.sweep=false;$('bsw').textContent='auto-sweep: off';$('bsw').className='';D.lat=1200;$('lat').value=1200;};
+function readout(){$('rL').textContent=Math.round(D.lat)+' ms';
+ $('rP').textContent=(D.rate||D.est)?(D.rate||D.est).toFixed(1):'—';$('rF').textContent=Math.round(D.flow*100)+'%';
+ $('rW').textContent=D.totA>0?Math.round(100*D.waitA/D.totA)+'%':'—';
+ $('rC').textContent=D.done;$('rD').textContent=diffs().length;}
+D.swp=.377;let prev=performance.now(),ro=0;
+function frame(now){var dt=Math.min(.05,(now-prev)/1000);prev=now;
+ if(D.sweep){D.swp+=dt/16;var u=D.swp%2,ph=u<1?u:2-u;
+  D.lat=Math.exp(Math.log(120)+(Math.log(2000)-Math.log(120))*ph);$('lat').value=Math.round(D.lat);}
+ D.totA+=dt;if(D.pend){D.waitA+=dt;}
+ D.patT+=dt;D.patLat+=D.lat*dt;D.busy=Math.max(0,D.busy-dt*2.5);D.burst=Math.max(0,D.burst-dt*1.6);D.note=Math.max(0,D.note-dt);
+ var tgt=D.pend?flowAt(D.lat):Math.min(1,flowAt(D.lat)+.18);
+ D.flow+=(tgt-D.flow)*Math.min(1,dt/.9);
+ if(D.pend&&now-D.pend.t0>=D.pend.dur)settle();
+ if(D.mode==='human'){D.idle+=dt;if(D.idle>16){D.mode='ghost';D.note=2.4;}}
+ if(D.mode==='ghost')ghostStep(dt,tiles());
+ for(var i=D.wand.length-1;i>=0;i--){var w=D.wand[i];w.x+=w.vx*dt;w.y+=w.vy*dt;w.a-=dt*.42;if(w.a<=0)D.wand.splice(i,1);}
+ ro+=dt;if(ro>.1){ro=0;readout();}
+ draw(now);requestAnimationFrame(frame);}
+function draw(now){
+ ctx.fillStyle='#05090f';ctx.fillRect(0,0,W,H);
+ var lag=Math.max(0,Math.min(1,(D.lat-300)/1400));
+ var vg=ctx.createRadialGradient(GR.x+GR.w*.5,GR.y+GR.h*.5,10,GR.x+GR.w*.5,GR.y+GR.h*.5,Math.max(GR.w,GR.h));
+ vg.addColorStop(0,'rgba('+Math.round(10+lag*60)+','+Math.round(60-lag*30)+',70,.26)');vg.addColorStop(1,'rgba(5,9,15,0)');
+ ctx.fillStyle=vg;ctx.fillRect(0,0,W,H);
+ ctx.strokeStyle='rgba(56,232,208,.15)';ctx.lineWidth=1;rr(S.x,S.y,S.w,S.h,10);ctx.stroke();
+ var hx=wide?Math.min(UIB.r+14,S.x+S.w-280):S.x+8,hy=wide?S.y+14:S.y+6;
+ ctx.font='600 15px ui-monospace,Menlo,monospace';ctx.textAlign='left';ctx.fillStyle='#8ff0e2';
+ ctx.fillText('MATCH THE PATTERN',hx,hy+16);
+ ctx.font='11px ui-monospace,Menlo,monospace';ctx.fillStyle='#7f9ea3';
+ ctx.fillText('tap every dashed tile — each tap echoes after the latency',hx,hy+33);
+ if(D.pend){var el=(now-D.pend.t0)/D.pend.dur;
+  chip(hx,hy+42,'system responding… '+Math.round(D.lat)+' ms',lag>.4?'rgb(255,184,77)':'rgb(56,232,208)');
+  var bw=170;ctx.fillStyle='rgba(255,255,255,.09)';rr(hx,hy+64,bw,5,3);ctx.fill();
+  ctx.fillStyle=lag>.4?'rgba(255,184,77,.95)':'rgba(56,232,208,.95)';rr(hx,hy+64,bw*Math.min(1,el),5,3);ctx.fill();}
+ else chip(hx,hy+42,'ready — the tool is invisible','rgb(56,232,208)');
+ var tl=tiles();
+ for(var i=0;i<16;i++){var b=tl[i],on=D.grid[i],need=D.grid[i]!==D.pat[i],pend=D.pend&&D.pend.i===i;
+  if(on)blit(SP.tl,b.x,b.y,b.r*2.2,.75);
+  ctx.fillStyle=on?'rgba(30,190,170,.34)':'rgba(20,40,50,.5)';
+  rr(b.x-b.r,b.y-b.r,b.r*2,b.r*2,Math.max(5,b.r*.24));ctx.fill();
+  ctx.strokeStyle=on?'rgba(120,255,235,.9)':'rgba(80,140,150,.45)';ctx.lineWidth=on?2:1.2;ctx.stroke();
+  if(need){ctx.save();ctx.setLineDash([5,4]);ctx.strokeStyle='rgba(255,184,77,.95)';ctx.lineWidth=2;
+   rr(b.x-b.r-4,b.y-b.r-4,b.r*2+8,b.r*2+8,Math.max(6,b.r*.3));ctx.stroke();ctx.restore();}
+  if(pend){ctx.save();ctx.globalAlpha=.5+.4*Math.sin(now/90);blit(SP.am,b.x,b.y,b.r*2.4,.6);ctx.restore();
+   ctx.strokeStyle='rgba(255,184,77,.9)';ctx.lineWidth=2;ctx.beginPath();
+   ctx.arc(b.x,b.y,b.r*.55,-1.57,-1.57+6.283*Math.min(1,(now-D.pend.t0)/D.pend.dur));ctx.stroke();}}
+ if(D.pend){ctx.save();ctx.beginPath();rr(GR.x-6,GR.y-6,GR.w+12,GR.h+12,12);ctx.clip();
+  var sh=((now/6)%(GR.w+400))-200;var g2=ctx.createLinearGradient(GR.x+sh-120,GR.y,GR.x+sh+120,GR.y+GR.h);
+  g2.addColorStop(0,'rgba(255,184,77,0)');g2.addColorStop(.5,'rgba(255,184,77,.13)');g2.addColorStop(1,'rgba(255,184,77,0)');
+  ctx.fillStyle=g2;ctx.fillRect(GR.x-6,GR.y-6,GR.w+12,GR.h+12);ctx.restore();}
+ if(D.burst>0)blit(SP.tl,GR.x+GR.w/2,GR.y+GR.h/2,GR.h*.6*(1.2-D.burst),D.burst*.5);
+ if(D.busy>0)chip(S.x+8,S.y+S.h-76,'tap ignored — the system is still busy','rgb(255,95,162)');
+ for(i=0;i<D.wand.length;i++){var w=D.wand[i];ctx.save();ctx.globalAlpha=Math.max(0,w.a);
+  ctx.font='16px system-ui,sans-serif';ctx.fillText('💭',w.x,w.y);ctx.restore();}
+ if(D.mode==='ghost'){blit(SP.cy,GH.x,GH.y,17,.7);
+  ctx.strokeStyle='rgba(190,240,255,.95)';ctx.lineWidth=1.6;ctx.beginPath();ctx.arc(GH.x,GH.y,7,0,7);ctx.stroke();
+  chip(GH.x+14,GH.y-9,GH.st==='wait'?'ghost hand · waiting…':'ghost hand','rgb(130,220,255)');}
+ chip(S.x+8,S.y+S.h-28,D.mode==='ghost'?'AUTO · simulated hand — tap a tile to take over':'YOUR SESSION · tap the dashed tiles','rgb(56,232,208)');
+ if(D.note>0)chip(S.x+8,S.y+S.h-52,D.mode==='human'?'you have the controls':'idle → ghost hand resumed','rgb(140,255,190)');
+ drawFlow(now);drawPlot();}
+function drawFlow(now){
+ var cx,cy,rad;
+ if(wide){ctx.fillStyle='rgba(6,14,20,.82)';ctx.strokeStyle='rgba(56,232,208,.26)';ctx.lineWidth=1;rr(CA.x,CA.y,CA.w,CA.h,11);ctx.fill();ctx.stroke();
+  ctx.font='11px ui-monospace,Menlo,monospace';ctx.textAlign='left';ctx.fillStyle='#4fe8d2';ctx.fillText('ATTENTION / FLOW',CA.x+12,CA.y+20);
+  cx=CA.x+CA.w*.28;cy=CA.y+CA.h*.58;rad=Math.min(CA.h*.30,46);}
+ else{cx=S.x+S.w-46;cy=S.y+46;rad=30;}
+ var f=Math.max(0,Math.min(1,D.flow)),col=f>.6?'rgba(56,232,208,':(f>.3?'rgba(255,184,77,':'rgba(255,95,162,');
+ blit(f>.6?SP.tl:(f>.3?SP.am:SP.pk),cx,cy,rad*1.8,.30+f*.45);
+ ctx.strokeStyle='rgba(255,255,255,.10)';ctx.lineWidth=8;ctx.beginPath();ctx.arc(cx,cy,rad,0,6.283);ctx.stroke();
+ ctx.strokeStyle=col+'.95)';ctx.lineWidth=8;ctx.lineCap='round';ctx.beginPath();
+ ctx.arc(cx,cy,rad,-1.5708,-1.5708+6.283*f);ctx.stroke();ctx.lineCap='butt';
+ ctx.font='600 '+Math.round(rad*.52)+'px ui-monospace,Menlo,monospace';ctx.textAlign='center';ctx.textBaseline='middle';
+ ctx.fillStyle=col+'1)';ctx.fillText(Math.round(f*100)+'%',cx,cy);ctx.textBaseline='alphabetic';ctx.textAlign='left';
+ if(wide){var tx=CA.x+CA.w*.52;
+  ctx.font='11px ui-monospace,Menlo,monospace';ctx.fillStyle='#8fb0b4';
+  wrap(D.lat<400?'Below 400 ms the tool disappears — you think WITH it, not ABOUT it.':(D.lat<1000?'Attention leaking: every wait past 300 ms costs think-time on the way back.':'Past 1 s you start doing something else — 💭 that is the interruption cost.'),tx,CA.y+40,CA.w*.44-14,14);
+  ctx.fillStyle='#7f9ea3';ctx.fillText('waiting '+(D.totA>0?Math.round(100*D.waitA/D.totA):0)+'% of session',tx,CA.y+CA.h-16);}}
+function drawPlot(){
+ ctx.fillStyle='rgba(6,14,20,.84)';ctx.strokeStyle='rgba(255,95,162,.26)';ctx.lineWidth=1;rr(CB.x,CB.y,CB.w,CB.h,11);ctx.fill();ctx.stroke();
+ ctx.font='11px ui-monospace,Menlo,monospace';ctx.textAlign='left';ctx.fillStyle='#ff8fc0';
+ ctx.fillText('THROUGHPUT  vs  SYSTEM RESPONSE TIME',CB.x+12,CB.y+20);
+ var pl={x:CB.x+42,y:CB.y+34,w:CB.w-56,h:Math.max(90,Math.min(CB.h-104,300))};
+ if(!wide)pl.h=Math.max(80,CB.h-72);
+ var L0=Math.log(50),L1=Math.log(2000),ymax=34;
+ var X=function(L){return pl.x+(Math.log(Math.max(50,Math.min(2000,L)))-L0)/(L1-L0)*pl.w;},
+     Y=function(v){return pl.y+pl.h-Math.max(0,Math.min(1,v/ymax))*pl.h;};
+ ctx.strokeStyle='rgba(150,200,210,.13)';ctx.beginPath();
+ for(var k=0;k<=4;k++){var yy=pl.y+pl.h*k/4;ctx.moveTo(pl.x,yy);ctx.lineTo(pl.x+pl.w,yy);}ctx.stroke();
+ var ticks=[50,100,200,400,1000,2000];
+ ctx.fillStyle='#7f9ea3';ctx.textAlign='center';
+ for(k=0;k<ticks.length;k++)ctx.fillText(ticks[k]+'',X(ticks[k]),pl.y+pl.h+14);
+ ctx.fillText('system response time (ms, log)',pl.x+pl.w/2,pl.y+pl.h+29);
+ ctx.textAlign='right';for(k=0;k<=4;k++)ctx.fillText(Math.round(ymax*(4-k)/4)+'',pl.x-6,pl.y+pl.h*k/4+4);
+ ctx.save();ctx.translate(CB.x+12,pl.y+pl.h/2);ctx.rotate(-Math.PI/2);ctx.textAlign='center';ctx.fillStyle='#7f9ea3';ctx.fillText('patterns / min',0,0);ctx.restore();
+ ctx.save();ctx.setLineDash([4,4]);ctx.strokeStyle='rgba(255,184,77,.8)';ctx.lineWidth=1.5;
+ ctx.beginPath();ctx.moveTo(X(400),pl.y);ctx.lineTo(X(400),pl.y+pl.h);ctx.stroke();ctx.restore();
+ chip(Math.min(X(400)+6,CB.x+CB.w-150),pl.y+2,'Doherty 400 ms','rgb(255,184,77)');
+ ctx.strokeStyle='rgba(255,95,162,.9)';ctx.lineWidth=2.2;ctx.beginPath();
+ for(k=0;k<=70;k++){var L=Math.exp(L0+(L1-L0)*k/70),v=patternsPerMin(L,6);
+  if(k===0)ctx.moveTo(X(L),Y(v));else ctx.lineTo(X(L),Y(v));}ctx.stroke();
+ for(k=0;k<D.pts.length;k++){var p=D.pts[k];
+  var rr2=p.c?2.2:4.2,cl=p.h?'rgba(120,255,235,':'rgba(130,220,255,';
+  if(!p.c)blit(p.h?SP.tl:SP.cy,X(p.L),Y(p.r),9,.5);
+  if(p.h||!p.c){ctx.fillStyle=cl+(p.c?'.55)':'.95)');ctx.beginPath();ctx.arc(X(p.L),Y(p.r),rr2,0,7);ctx.fill();}
+  else{ctx.strokeStyle=cl+'.7)';ctx.lineWidth=1.2;ctx.beginPath();ctx.arc(X(p.L),Y(p.r),rr2,0,7);ctx.stroke();}}
+ var lx=X(D.lat),ly=Y(patternsPerMin(D.lat,6));
+ blit(SP.am,lx,ly,17,.85);ctx.fillStyle='rgba(255,210,140,1)';ctx.beginPath();ctx.arc(lx,ly,5,0,7);ctx.fill();
+ ctx.strokeStyle='rgba(255,184,77,.5)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(lx,ly);ctx.lineTo(lx,pl.y+pl.h);ctx.stroke();
+ var by=pl.y+pl.h+38;ctx.textAlign='left';
+ if(by+34<CB.y+CB.h){ctx.fillStyle='#8fb0b4';
+  wrap('small dots = one tap cycle · big dots = a completed pattern (◦ ghost, ● you).  The cliff is real: doubling response time past 400 ms costs far more than the wait itself — it costs the attention you spend getting back.',CB.x+12,by,CB.w-24,14);}}
+function wrap(txt,x,y,w,lh){ctx.font='11px ui-monospace,Menlo,monospace';var ws=txt.split(' '),line='',yy=y;
+ for(var i=0;i<ws.length;i++){var tst=line+ws[i]+' ';
+  if(ctx.measureText(tst).width>w&&line){ctx.fillText(line,x,yy);line=ws[i]+' ';yy+=lh;}else line=tst;}
+ ctx.fillText(line,x,yy);}
+function seedGhost(){for(var i=0;i<9;i++){var L=90+Math.pow(rnd(),.8)*1500;
+ D.pts.push({L:L,r:patternsPerMin(L,6)*(1+.10*(rnd()+rnd()+rnd()-1.5)),h:false,c:1});}}
+resize();newPattern();seedGhost();GH.x=GR.x+GR.w*.3;GH.y=GR.y+GR.h*.4;readout();requestAnimationFrame(frame);
+</script>
+</body>
