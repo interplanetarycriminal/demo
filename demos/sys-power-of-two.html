@@ -17,15 +17,15 @@ h1{font-size:12.5px;letter-spacing:.6px;color:#eaf4ff;text-shadow:0 0 10px #2f7f
 .row{display:flex;justify-content:space-between;gap:8px;font-size:11px;line-height:1.4}
 .k{color:#7e96bb}.v{color:#eaf4ff}.v b{color:#ffd489;font-weight:600}
 .v b.hot{color:#ff6d5e}.v b.good{color:#7dffd0}
-.ctl{margin-top:8px;display:flex;flex-wrap:wrap;gap:5px}
-button{flex:1 1 22%;font:600 10px/1.25 inherit;color:#8fa8cc;background:#0b162b;border:1px solid #22406e;
+.ctl{margin-top:6px;display:flex;flex-wrap:wrap;gap:5px}
+button{flex:1 1 22%;font:600 9.5px/1.25 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:nowrap;color:#8fa8cc;background:#0b162b;border:1px solid #22406e;
   border-radius:6px;padding:5px 3px;cursor:pointer}
 button.wide{flex:1 1 46%}
 button.on{color:#04121a;background:#4fe3ff;border-color:#8ff2ff;box-shadow:0 0 14px #4fe3ff88}
-label{display:block;font-size:10px;margin:7px 0 1px;color:#96afd2}
+label{display:block;font-size:10px;margin:5px 0 1px;color:#96afd2}
 label span{color:#ffd489}
 input[type=range]{width:100%;accent-color:#4fe3ff;height:16px}
-.hon{margin-top:8px;font-size:9.5px;color:#6d84a6;border-top:1px solid #14243f;padding-top:6px}
+.hon{margin-top:6px;font-size:9.5px;color:#6d84a6;border-top:1px solid #14243f;padding-top:6px}
 .detail{margin-top:6px;font-size:9.5px;color:#63799a}
 .detail b{color:#8fb6e8}
 @media (max-width:640px){#ui{font-size:11px;max-height:38vh}#ui .detail{display:none}}
@@ -36,7 +36,7 @@ input[type=range]{width:100%;accent-color:#4fe3ff;height:16px}
 <canvas id="c"></canvas>
 <div id="ui">
   <h1>THE POWER OF TWO CHOICES</h1>
-  <div class="mech">One random server gives max-load ~log&nbsp;n/log&nbsp;log&nbsp;n; sample TWO, take the lighter &rarr; ~log&nbsp;log&nbsp;n.</div>
+  <div class="mech">One random server &rarr; max-load ~log n/log log n; sample TWO, take the lighter &rarr; ~log log n.</div>
   <div class="row"><span class="k">max load / mean</span><span class="v"><b id="rMx" class="hot">0</b> / <b id="rMe">0</b> jobs</span></div>
   <div class="row"><span class="k">imbalance (stddev)</span><span class="v"><b id="rSd">0.0</b></span></div>
   <div class="row"><span class="k">samples per job</span><span class="v"><b id="rSp">1</b> of 12 &mdash; the cost axis</span></div>

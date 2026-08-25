@@ -56,7 +56,7 @@ var c=document.getElementById('c'),g=c.getContext('2d'),ui=document.getElementBy
 var W=0,H=0,DPR=1,ST={x:0,y:0,w:0,h:0},CA={x:0,y:0,w:0,h:0},CB={x:0,y:0,w:0,h:0};
 /*MODEL*/
 var GC_BASE=0.006,GC_MARK=0.00035,GC_SWEEP=0.00119,GC_MIN=0.0012,
-    REQ=60,SRV=260,SVC=0.004,CONC_TAX=0.88,CONC_CYC=0.72;
+    REQ=170,SRV=260,SVC=0.004,CONC_TAX=0.88,CONC_CYC=0.72;
 function gcObj(t){var lg=Math.random()<0.08;
  return{b:t,d:t+(lg?4+Math.random()*26:0.01+Math.random()*0.09),gen:0}}
 function gcNew(o){o=o||{};
@@ -65,7 +65,7 @@ function gcNew(o){o=o||{};
   sweep:0,conc:0,work:0,wall:0,thr:1,last:0};
  var pre=o.pre==null?160:o.pre,i;
  for(i=0;i<pre;i++){var ob=gcObj(-(0.2+Math.random()*5));if(S.mode!=='stw')ob.gen=1;S.obj.push(ob)}
- for(i=0;i<220;i++)S.lat.push({t:-3.6+i*0.0164,l:SVC+Math.random()*0.0016});
+ for(i=0;i<620;i++)S.lat.push({t:-3.6+i*0.0058,l:SVC+Math.random()*0.0016});
  return S}
 function gcStart(S,d,k,live){S.pause=d;S.pdur=d;S.pkind=k;S.plive=live;S.sweep=0;
  S.pauses.push({t:S.t,d:d,k:k});if(S.pauses.length>400)S.pauses.shift();S.last=d}

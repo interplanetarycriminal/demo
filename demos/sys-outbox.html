@@ -17,15 +17,15 @@ h1{font-size:12.5px;letter-spacing:.6px;color:#eaf4ff;text-shadow:0 0 10px #2f7f
 .row{display:flex;justify-content:space-between;gap:8px;font-size:11px;line-height:1.4}
 .k{color:#7e96bb}.v{color:#eaf4ff}.v b{color:#ffd489;font-weight:600}
 .v b.hot{color:#ff6d5e}.v b.good{color:#7dffd0}
-.ctl{margin-top:8px;display:flex;flex-wrap:wrap;gap:5px}
-button{flex:1 1 30%;font:600 10px/1.25 inherit;color:#8fa8cc;background:#0b162b;border:1px solid #22406e;
+.ctl{margin-top:6px;display:flex;flex-wrap:wrap;gap:5px}
+button{flex:1 1 30%;font:600 9.5px/1.25 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:nowrap;color:#8fa8cc;background:#0b162b;border:1px solid #22406e;
   border-radius:6px;padding:5px 3px;cursor:pointer}
 button.wide{flex:1 1 46%}
 button.on{color:#04121a;background:#4fe3ff;border-color:#8ff2ff;box-shadow:0 0 14px #4fe3ff88}
-label{display:block;font-size:10px;margin:7px 0 1px;color:#96afd2}
+label{display:block;font-size:10px;margin:5px 0 1px;color:#96afd2}
 label span{color:#ffd489}
 input[type=range]{width:100%;accent-color:#4fe3ff;height:16px}
-.hon{margin-top:8px;font-size:9.5px;color:#6d84a6;border-top:1px solid #14243f;padding-top:6px}
+.hon{margin-top:6px;font-size:9.5px;color:#6d84a6;border-top:1px solid #14243f;padding-top:6px}
 .detail{margin-top:6px;font-size:9.5px;color:#63799a}
 .detail b{color:#8fb6e8}
 @media (max-width:640px){#ui{font-size:11px;max-height:38vh}#ui .detail{display:none}}
@@ -36,7 +36,7 @@ input[type=range]{width:100%;accent-color:#4fe3ff;height:16px}
 <canvas id="c"></canvas>
 <div id="ui">
   <h1>DUAL WRITE &rarr; THE OUTBOX PATTERN</h1>
-  <div class="mech">&ldquo;Save the order AND publish the event&rdquo; is two writes with two fates — unless the event is written inside the same transaction.</div>
+  <div class="mech">Two writes — commit the order, publish the event — have two fates unless they share one.</div>
   <div class="row"><span class="k">orders / inventory</span><span class="v"><b id="rO">0</b> / <b id="rI">0</b></span></div>
   <div class="row"><span class="k">divergence</span><span class="v"><b id="rD" class="hot">0</b> <span id="rDw">rows adrift</span></span></div>
   <div class="row"><span class="k">published / deduped</span><span class="v"><b id="rP">0</b> / <b id="rX" class="good">0</b></span></div>
@@ -48,7 +48,7 @@ input[type=range]{width:100%;accent-color:#4fe3ff;height:16px}
   </div>
   <label>crash rate <span id="lC">50</span>% of writes</label>
   <input id="sC" type="range" min="0" max="90" step="5" value="50">
-  <div class="hon">honesty: one partition, one relay; the broker may accept a publish and lose the ack — that is where the duplicates come from.</div>
+  <div class="hon">honesty: duplicates come from a lost publish-ack.</div>
   <div class="detail">lineage: <b>the price of 2-phase commit / XA</b> &rarr; transactional outbox + CDC (<b>Debezium</b>) &rarr; the &ldquo;exactly-once&rdquo; folklore every queue-shaped system re-learns.</div>
 </div>
 <script>
@@ -173,7 +173,9 @@ function draw(){g.fillStyle='#04060c';g.fillRect(0,0,W,H);
   g.fillStyle='#8fb6e8';g.font='9px ui-monospace,monospace';g.textAlign='center';
   g.fillText('orders  ('+S.orders+')',oX+hw/2,yTop+16);
   g.fillText(ob?('outbox  ('+S.outbox.length+' unsent)'):'(no outbox)',xX+hw/2,yTop+16);
-  var maxR=Math.floor((yBot-rowY-8)/rh),i;
+  var maxR=Math.floor((yBot-rowY-18)/rh),i;
+  g.strokeStyle='rgba(46,70,108,.35)';g.lineWidth=1;
+  for(i=0;i<maxR;i++){g.strokeRect(oX+3.5,rowY+i*rh+0.5,hw-7,rh-4);if(ob)g.strokeRect(xX+3.5,rowY+i*rh+0.5,hw-7,rh-4)}
   for(i=0;i<Math.min(rows.length,maxR);i++){var rw=rows[rows.length-1-i],al=Math.max(0.25,1-rw.t/6);
     g.globalAlpha=al;g.fillStyle=rw.ok?(rw.t<0.6?'#7dffd0':'rgba(90,180,150,.55)'):'#ff6d5e';
     g.fillRect(oX+3,rowY+i*rh,hw-6,rh-3);
@@ -244,9 +246,12 @@ function draw(){g.fillStyle='#04060c';g.fillRect(0,0,W,H);
     g.fillText(ghosts.length+' × '+ghosts[ghosts.length-1].why,sx+sw-22,gy+2+gh/2+3);g.globalAlpha=1}
   if(dedupMsg){var dm=Math.max(0,1-dedupMsg.t/1.3);g.globalAlpha=Math.min(1,dm*2.2);
     chip(brX+brW/2,yBot+13,'seen id '+dedupMsg.id+' — skipped','#7dffd0');g.globalAlpha=1}
-  g.font='10px ui-monospace,monospace';g.textAlign='center';g.fillStyle='#8ba6ce';
-  g.fillText(ob?'the relay retries until the broker acks; the consumer drops ids it has already seen — the drift always returns to zero'
-    :'the DB commit and the publish have separate fates: one crash and inventory is wrong forever',sx+sw/2,sy+sh-58);
+  g.textAlign='center';g.fillStyle='#8ba6ce';
+  var ex=ob?'the relay retries until the broker acks; the consumer drops ids it has seen — the drift returns to zero'
+    :'the DB commit and the publish have separate fates: one crash and inventory is wrong forever';
+  var fs=10;g.font=fs+'px ui-monospace,monospace';
+  while(g.measureText(ex).width>sw-30&&fs>7.5){fs-=0.5;g.font=fs+'px ui-monospace,monospace'}
+  g.fillText(ex,sx+sw/2,sy+sh-58);
   chip(sx+sw*0.31,sy+sh-34,'two writes, two fates — unless they share one transaction','#ff9c8b');
   chip(sx+sw*0.69,sy+sh-12,'exactly-once = at-least-once + idempotence, never magic','#7dffd0');
   drawPlot();
