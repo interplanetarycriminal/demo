@@ -73,24 +73,24 @@ function layout(){var M=8,r=ui.getBoundingClientRect();UIB={r:r.right,b:r.bottom
 function resize(){DPR=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);layout();}
 addEventListener('resize',resize);
 const rnd=Math.random;
-const R={tr:[],last:{x:0,y:0},tgt:null,t0:0,mode:'ghost',mt:0,id:0,miss:0,flash:0,idle:0,fit:null,note:0,trail:[]};
+const R={tr:[],last:{x:0,y:0},tgt:null,t0:0,mode:'ghost',mt:0,id:0,miss:0,flash:0,idle:0,fit:null,note:0,trail:[],hist:[],cur:[],ct:0};
 const G={x:0,y:0,sx:0,sy:0,lx:0,ly:0,t:0,T:1,dwell:0,on:true};
 function inUI(x,y,pad){return wide&&x<UIB.r+pad&&y<UIB.b+pad;}
 function spawn(now){
  var v=+$('sz').value, wmax=18+v*.95, wmin=Math.max(13,wmax*.32);
  var mind=Math.min(S.w,S.h), dv=+$('ds').value, dmax=(.10+dv*.0085)*mind, dmin=Math.max(40,dmax*.30);
- var n=R.tr.length, edge=(n%6===5)&&wide!==null;
+ var n=R.tr.length, edge=(n%6===5);
+ var PAD=40,BOT=84;
+ var minX=Math.max(S.x+PAD,PAD),maxX=Math.min(S.x+S.w-PAD,W-PAD);
+ var minY=Math.max(S.y+PAD,PAD),maxY=Math.min(S.y+S.h-BOT,H-PAD);
  var Wd=wmin+rnd()*(wmax-wmin), rad=Wd/2, tx=0, ty=0, ok=false;
- if(edge){ var side=Math.floor(rnd()*3);
-  if(side===0){tx=S.x+S.w-1; ty=S.y+rad+8+rnd()*(S.h-2*rad-16);}
-  else if(side===1){ty=S.y+S.h-1; tx=S.x+rad+8+rnd()*(S.w-2*rad-16);}
-  else {tx=S.x+1; ty=Math.max(S.y+rad+8,UIB.b+rad+10)+rnd()*Math.max(10,S.y+S.h-rad-8-Math.max(S.y+rad+8,UIB.b+rad+10));}
-  if(inUI(tx,ty,rad)) {edge=false;} else ok=true;
- }
- if(!ok){ for(var i=0;i<60;i++){var D=dmin+rnd()*(dmax-dmin),an=rnd()*Math.PI*2;
+ if(maxX-minX<4*rad||maxY-minY<4*rad){rad=Math.max(11,Math.min(rad,Math.min(maxX-minX,maxY-minY)/4));Wd=rad*2;}
+ if(edge){ tx=Math.min(S.x+S.w-1,W-42); ty=minY+rad+rnd()*Math.max(8,(maxY-minY)-2*rad);
+  if(inUI(tx,ty,rad)){edge=false;}else ok=true; }
+ if(!ok){ for(var i=0;i<70;i++){var D=dmin+rnd()*(dmax-dmin),an=rnd()*Math.PI*2;
    tx=R.last.x+Math.cos(an)*D; ty=R.last.y+Math.sin(an)*D;
-   if(tx>S.x+rad+10&&tx<S.x+S.w-rad-10&&ty>S.y+rad+10&&ty<S.y+S.h-rad-10&&!inUI(tx,ty,rad+14)){ok=true;break;} }
-  if(!ok){tx=S.x+S.w*.6;ty=S.y+S.h*.6;} edge=false; }
+   if(tx>minX+rad&&tx<maxX-rad&&ty>minY+rad&&ty<maxY-rad&&!inUI(tx,ty,rad+14)){ok=true;break;} }
+  if(!ok){tx=(minX+maxX)/2+(rnd()-.5)*60;ty=(minY+maxY)/2+(rnd()-.5)*60;} edge=false; }
  var D2=Math.max(30,Math.hypot(tx-R.last.x,ty-R.last.y));
  var Weff=edge?Wd*2.5:Wd;
  R.tgt={x:tx,y:ty,r:rad,w:Wd,we:Weff,edge:edge,id:fittsID(D2,Weff),D:D2,ph:0};
@@ -114,6 +114,9 @@ function fit(){var p=R.tr.filter(function(t){return !t.edge;});
  R.fit={a:a,b:b,r2:r2,n:n};}
 function tap(x,y,ghost){var now=performance.now();if(!R.tgt)return;
  var t=R.tgt,d=Math.hypot(x-t.x,y-t.y),hit=d<=t.r*(t.edge?1.5:1.05);
+ R.cur.push({x:x,y:y});
+ R.hist.push({tx:t.x,ty:t.y,r:t.r,hx:x,hy:y,hit:hit,edge:t.edge,path:R.cur.slice(0)});
+ if(R.hist.length>6)R.hist.shift();R.cur=[];
  if(hit){var mt=(now-R.t0)/1000;R.tr.push({id:t.id,mt:mt,w:t.w,edge:t.edge});if(R.tr.length>110)R.tr.shift();
   R.mt=mt;R.id=t.id;R.last={x:t.x,y:t.y};R.flash=.5;fit();}
  else{R.miss++;R.flash=1;R.last={x:x,y:y};}
@@ -139,6 +142,8 @@ function frame(now){var dt=Math.min(.05,(now-prev)/1000);prev=now;
    G.x=G.sx+(G.lx-G.sx)*m;G.y=G.sy+(G.ly-G.sy)*m;
    R.trail.push({x:G.x,y:G.y,a:1});if(R.trail.length>40)R.trail.shift();
    if(u>=1)tap(G.lx,G.ly,true);}}
+ R.ct+=dt;if(R.ct>.035){R.ct=0;var cp=(R.mode==='ghost')?{x:G.x,y:G.y}:(R.trail.length?R.trail[R.trail.length-1]:null);
+  if(cp)R.cur.push({x:cp.x,y:cp.y});if(R.cur.length>90)R.cur.shift();}
  for(var i=0;i<R.trail.length;i++)R.trail[i].a-=dt*1.5;
  R.trail=R.trail.filter(function(p){return p.a>0;});
  draw();requestAnimationFrame(frame);}
@@ -150,6 +155,17 @@ function draw(){
  for(var gx=S.x;gx<S.x+S.w;gx+=44){ctx.moveTo(gx,S.y);ctx.lineTo(gx,S.y+S.h);}
  for(var gy=S.y;gy<S.y+S.h;gy+=44){ctx.moveTo(S.x,gy);ctx.lineTo(S.x+S.w,gy);}ctx.stroke();
  ctx.strokeStyle='rgba(255,190,110,.16)';rr(S.x,S.y,S.w,S.h,10);ctx.stroke();ctx.restore();
+ for(var h=0;h<R.hist.length;h++){var e=R.hist[h],aa=.09+.115*h,col=e.hit?'255,190,110':'255,88,110';
+  if(e.path.length>1){ctx.strokeStyle='rgba(126,231,255,'+(aa*.85).toFixed(3)+')';ctx.lineWidth=1.4;
+   ctx.beginPath();ctx.moveTo(e.path[0].x,e.path[0].y);
+   for(var q2=1;q2<e.path.length;q2++)ctx.lineTo(e.path[q2].x,e.path[q2].y);ctx.stroke();}
+  ctx.strokeStyle='rgba('+col+','+(aa+.16).toFixed(3)+')';ctx.lineWidth=1.2;
+  ctx.beginPath();ctx.arc(e.tx,e.ty,e.r,0,7);ctx.stroke();
+  ctx.fillStyle='rgba('+col+','+(aa+.30).toFixed(3)+')';
+  ctx.beginPath();ctx.arc(e.hx,e.hy,e.hit?2.6:2.0,0,7);ctx.fill();
+  if(!e.hit){ctx.strokeStyle='rgba(255,88,110,'+(aa+.34).toFixed(3)+')';ctx.lineWidth=1.4;ctx.beginPath();
+   ctx.moveTo(e.hx-5,e.hy-5);ctx.lineTo(e.hx+5,e.hy+5);ctx.moveTo(e.hx+5,e.hy-5);ctx.lineTo(e.hx-5,e.hy+5);ctx.stroke();}
+  ctx.beginPath();ctx.arc(e.hx,e.hy,7+ (6-h),0,7);ctx.strokeStyle='rgba('+col+','+(aa*.5).toFixed(3)+')';ctx.lineWidth=1;ctx.stroke();}
  for(var i=1;i<R.trail.length;i++){var p=R.trail[i],q=R.trail[i-1];
   ctx.strokeStyle='rgba(126,231,255,'+(p.a*.5).toFixed(3)+')';ctx.lineWidth=2;
   ctx.beginPath();ctx.moveTo(q.x,q.y);ctx.lineTo(p.x,p.y);ctx.stroke();}
@@ -161,7 +177,7 @@ function draw(){
   ctx.beginPath();ctx.arc(t.x,t.y,t.r*pulse,0,7);ctx.stroke();
   ctx.fillStyle=t.edge?'rgba(120,255,180,.5)':'rgba(255,190,110,.42)';ctx.beginPath();ctx.arc(t.x,t.y,t.r*.42,0,7);ctx.fill();
   ctx.restore();
-  var ly=Math.max(S.y+16,Math.min(S.y+S.h-30,t.y+t.r+14));
+  var ly=t.y+t.r+14; if(ly>S.y+S.h-86)ly=t.y-t.r-34; ly=Math.max(S.y+16,ly);
   if(t.edge)chip(Math.min(S.x+S.w-190,Math.max(S.x+6,t.x-90)),ly,'EDGE TARGET · infinite width','rgb(130,255,190)');
   else chip(Math.min(S.x+S.w-150,Math.max(S.x+6,t.x-60)),ly,'D '+Math.round(t.D)+'px · W '+Math.round(t.w)+'px','rgb(200,190,220)');}
  if(R.flash>0&&t){blit(SP.rd,R.last.x,R.last.y,26,R.flash*.5);}
@@ -173,8 +189,9 @@ function draw(){
   ctx.beginPath();ctx.moveTo(G.x-13,G.y);ctx.lineTo(G.x-9,G.y);ctx.moveTo(G.x+9,G.y);ctx.lineTo(G.x+13,G.y);
   ctx.moveTo(G.x,G.y-13);ctx.lineTo(G.x,G.y-9);ctx.moveTo(G.x,G.y+9);ctx.lineTo(G.x,G.y+13);ctx.stroke();
   chip(G.x+16,G.y-9,'ghost hand','rgb(126,231,255)');}
+ chip(S.x+8,S.y+S.h-76,'faded rings = last '+R.hist.length+' trials · ✕ = miss','rgb(150,170,210)');
  chip(S.x+8,S.y+S.h-28,R.mode==='ghost'?'AUTO · simulated hand — tap anywhere to take over':'YOUR DATA · tap the glowing target','rgb(255,190,110)');
- if(R.note>0)chip(S.x+8,S.y+S.h-52,R.mode==='human'?'ghost data cleared — plotting YOU':'idle → ghost hand resumed','rgb(140,255,190)');
+ if(R.note>0)chip(S.x+210,S.y+S.h-28,R.mode==='human'?'ghost data cleared — plotting YOU':'idle → ghost hand resumed','rgb(140,255,190)');
  // ---- plot card ----
  ctx.fillStyle='rgba(9,12,26,.80)';ctx.strokeStyle='rgba(255,190,110,.26)';ctx.lineWidth=1;rr(P.x,P.y,P.w,P.h,11);ctx.fill();ctx.stroke();
  ctx.font='11px ui-monospace,Menlo,monospace';ctx.textAlign='left';ctx.textBaseline='alphabetic';

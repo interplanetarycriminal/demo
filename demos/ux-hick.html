@@ -60,7 +60,7 @@ function scanRT(N,rnd){                              // alphabetized list: you S
 /*MODEL_END*/
 const cv=document.getElementById('c'),ctx=cv.getContext('2d'),ui=document.getElementById('ui');
 const $=function(i){return document.getElementById(i)};
-let W=1,H=1,DPR=1,S={x:8,y:8,w:1,h:1},P={x:0,y:0,w:1,h:1},GR={x:0,y:0,w:1,h:1},UIB={r:0,b:0},wide=true;
+let W=1,H=1,DPR=1,S={x:8,y:8,w:1,h:1},P={x:0,y:0,w:1,h:1},GR={x:0,y:0,w:1,h:1},HD={x:0,y:0,below:false},UIB={r:0,b:0},wide=true;
 function rr(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
 function sprite(r,g,b){var Z=128,cn=document.createElement('canvas');cn.width=cn.height=Z;var x=cn.getContext('2d');
  var gr=x.createRadialGradient(Z/2,Z/2,0,Z/2,Z/2,Z/2);
@@ -76,10 +76,13 @@ function chip(x,y,txt,col){ctx.font='11px ui-monospace,Menlo,monospace';var w=ct
  rr(x,y,w,h,6);ctx.fill();ctx.stroke();ctx.fillStyle=col;ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillText(txt,x+7,y+h/2+.5);ctx.textBaseline='alphabetic';return w;}
 function layout(){var M=8,r=ui.getBoundingClientRect();UIB={r:r.right,b:r.bottom};wide=W>=740;
  if(wide){var pw=Math.max(250,Math.min(370,W*.35));P={x:W-M-pw,y:M,w:pw,h:H-2*M};S={x:M,y:M,w:P.x-10-M,h:H-2*M};
-  GR={x:S.x+12,y:Math.min(UIB.b+16,S.y+S.h*.5),w:S.w-24,h:0};GR.h=Math.max(120,S.y+S.h-16-GR.y);}
+  var roomR=(S.x+S.w)-(UIB.r+24);
+  if(roomR>=270){HD={x:UIB.r+24,y:S.y+14,below:false};GR={x:S.x+12,y:Math.min(UIB.b+16,S.y+S.h*.42),w:S.w-24,h:0};}
+  else{HD={x:S.x+12,y:UIB.b+10,below:true};GR={x:S.x+12,y:UIB.b+78,w:S.w-24,h:0};}
+  GR.h=Math.max(120,S.y+S.h-40-GR.y);}
  else{var ph=Math.max(160,Math.min(280,H*.32));P={x:M,y:H-M-ph,w:W-2*M,h:ph};
   var top=Math.min(UIB.b+8,H*.5);S={x:M,y:top,w:W-2*M,h:Math.max(140,P.y-8-top)};
-  GR={x:S.x+10,y:S.y+34,w:S.w-20,h:Math.max(100,S.h-46)};}}
+  HD={x:S.x+10,y:S.y+6,below:true};GR={x:S.x+10,y:S.y+74,w:S.w-20,h:Math.max(100,S.y+S.h-40-(S.y+74))};}}
 function resize(){DPR=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);layout();}
 addEventListener('resize',resize);
 const rnd=Math.random,LET='ABCDEFGHIJKLMNOP';let T9=0;
@@ -146,14 +149,18 @@ function draw(){
  vg.addColorStop(0,'rgba(60,40,120,.22)');vg.addColorStop(1,'rgba(6,8,20,0)');ctx.fillStyle=vg;ctx.fillRect(0,0,W,H);
  ctx.strokeStyle='rgba(150,130,255,.16)';ctx.lineWidth=1;rr(S.x,S.y,S.w,S.h,10);ctx.stroke();
  // header strip (right of the panel in wide mode, above the grid otherwise)
- var hx=wide?Math.min(UIB.r+14,S.x+S.w-260):S.x+8, hy=wide?S.y+14:S.y+8;
+ var hx=HD.x,hy=HD.y;
+ ctx.fillStyle='rgba(6,7,20,.82)';ctx.strokeStyle='rgba(150,130,255,.20)';ctx.lineWidth=1;
+ var hw=Math.min(S.x+S.w-hx-8,HD.below?S.w-24:330);rr(hx-8,hy-4,hw,HD.below?66:96,9);ctx.fill();ctx.stroke();
  ctx.font='600 15px ui-monospace,Menlo,monospace';ctx.textAlign='left';ctx.fillStyle='#c9beff';
  ctx.fillText('N = '+R.N+'  EQUALLY LIKELY CHOICES',hx,hy+16);
  ctx.font='11px ui-monospace,Menlo,monospace';ctx.fillStyle='#8e98c6';
- ctx.fillText('log₂(N+1) = '+Math.log2(R.N+1).toFixed(2)+' bits of choice',hx,hy+34);
+ ctx.fillText('log₂(N+1) = '+Math.log2(R.N+1).toFixed(2)+' bits of choice',hx,hy+33);
  var st=R.phase==='wait'?'foreperiod…':(R.phase==='go'?(R.alpha?'FIND  "'+LET[R.tgt]+'"':'TAP THE LIT ONE'):'—');
- chip(hx,hy+44,st,R.phase==='go'?'rgb(92,255,157)':'rgb(150,140,200)');
- if(wide)chip(hx,hy+70,R.alpha?'ALPHABETIZED · you scan, not decide':'CHOICE · every option is a live alternative',R.alpha?'rgb(255,209,102)':'rgb(139,125,255)');
+ var cw=chip(hx,hy+40,st,R.phase==='go'?'rgb(92,255,157)':'rgb(150,140,200)');
+ var mtxt=R.alpha?'ALPHABETIZED · you scan, not decide':'CHOICE · every option is a live alternative';
+ if(HD.below){if(hx+cw+10+ctx.measureText(mtxt).width+14<S.x+S.w-8)chip(hx+cw+10,hy+40,mtxt,R.alpha?'rgb(255,209,102)':'rgb(139,125,255)');}
+ else chip(hx,hy+66,mtxt,R.alpha?'rgb(255,209,102)':'rgb(139,125,255)');
  // buttons
  for(var i=0;i<R.btns.length;i++){var b=R.btns[i],lit=(R.phase!=='wait'&&i===R.tgt&&!R.alpha),
   pulse=1+(lit?.09*Math.sin(T9*7):0);

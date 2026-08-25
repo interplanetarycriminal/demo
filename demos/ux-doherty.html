@@ -56,7 +56,7 @@ function flowAt(L){return 1/(1+Math.pow(L/380,2.2));}   // steady-state focus, f
 /*MODEL_END*/
 const cv=document.getElementById('c'),ctx=cv.getContext('2d'),ui=document.getElementById('ui');
 const $=function(i){return document.getElementById(i)};
-let W=1,H=1,DPR=1,S={x:8,y:8,w:1,h:1},CA={x:0,y:0,w:1,h:1},CB={x:0,y:0,w:1,h:1},GR={x:0,y:0,w:1,h:1},UIB={r:0,b:0},wide=true;
+let W=1,H=1,DPR=1,S={x:8,y:8,w:1,h:1},CA={x:0,y:0,w:1,h:1},CB={x:0,y:0,w:1,h:1},GR={x:0,y:0,w:1,h:1},HD={x:0,y:0,below:false},TH={x:0,y:0,s:0},UIB={r:0,b:0},wide=true;
 function rr(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
 function sprite(r,g,b){var Z=128,cn=document.createElement('canvas');cn.width=cn.height=Z;var x=cn.getContext('2d');
  var gr=x.createRadialGradient(Z/2,Z/2,0,Z/2,Z/2,Z/2);
@@ -73,10 +73,14 @@ function layout(){var M=8,r=ui.getBoundingClientRect();UIB={r:r.right,b:r.bottom
   CA={x:W-M-pw,y:M,w:pw,h:Math.max(140,Math.min(200,(H-2*M)*.36))};
   CB={x:W-M-pw,y:M+CA.h+8,w:pw,h:H-2*M-CA.h-8};
   S={x:M,y:M,w:CA.x-10-M,h:H-2*M};
-  GR={x:S.x+16,y:Math.min(UIB.b+18,S.y+S.h*.45),w:S.w-32,h:0};GR.h=Math.max(130,S.y+S.h-24-GR.y);}
+  var roomR=(S.x+S.w)-(UIB.r+24);
+  if(roomR>=300){HD={x:UIB.r+24,y:S.y+14,below:false};GR={x:S.x+16,y:Math.min(UIB.b+18,S.y+S.h*.42),w:S.w-32,h:0};}
+  else{HD={x:S.x+14,y:UIB.b+10,below:true};GR={x:S.x+16,y:UIB.b+90,w:S.w-32,h:0};}
+  TH={x:S.x+S.w-112,y:HD.below?S.y+14:HD.y,s:20};GR.y=Math.max(GR.y,HD.below?HD.y+88:HD.y+120);GR.h=Math.max(120,S.y+S.h-40-GR.y);}
  else{var ph=Math.max(150,Math.min(260,H*.30));CB={x:M,y:H-M-ph,w:W-2*M,h:ph};CA={x:0,y:0,w:0,h:0};
   var top=Math.min(UIB.b+8,H*.5);S={x:M,y:top,w:W-2*M,h:Math.max(140,CB.y-8-top)};
-  GR={x:S.x+12,y:S.y+30,w:S.w-24,h:Math.max(100,S.h-44)};}}
+  HD={x:S.x+12,y:S.y+6,below:true};TH={x:S.x+S.w-84,y:S.y+S.h-84,s:16};
+  GR={x:S.x+12,y:S.y+82,w:S.w-24,h:Math.max(96,S.y+S.h-38-(S.y+82))};}}
 function resize(){DPR=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);layout();}
 addEventListener('resize',resize);
 const rnd=Math.random;
@@ -143,16 +147,20 @@ function draw(now){
  vg.addColorStop(0,'rgba('+Math.round(10+lag*60)+','+Math.round(60-lag*30)+',70,.26)');vg.addColorStop(1,'rgba(5,9,15,0)');
  ctx.fillStyle=vg;ctx.fillRect(0,0,W,H);
  ctx.strokeStyle='rgba(56,232,208,.15)';ctx.lineWidth=1;rr(S.x,S.y,S.w,S.h,10);ctx.stroke();
- var hx=wide?Math.min(UIB.r+14,S.x+S.w-280):S.x+8,hy=wide?S.y+14:S.y+6;
+ var hx=HD.x,hy=HD.y;
+ ctx.fillStyle='rgba(4,10,14,.84)';ctx.strokeStyle='rgba(56,232,208,.20)';ctx.lineWidth=1;
+ var hw=HD.below?Math.min(S.w-28,380):Math.min(TH.x-hx-14,360);if(hw<210)hw=Math.min(S.x+S.w-hx-10,380);
+ rr(hx-8,hy-4,hw,78,9);ctx.fill();ctx.stroke();
  ctx.font='600 15px ui-monospace,Menlo,monospace';ctx.textAlign='left';ctx.fillStyle='#8ff0e2';
  ctx.fillText('MATCH THE PATTERN',hx,hy+16);
  ctx.font='11px ui-monospace,Menlo,monospace';ctx.fillStyle='#7f9ea3';
  ctx.fillText('tap every dashed tile — each tap echoes after the latency',hx,hy+33);
  if(D.pend){var el=(now-D.pend.t0)/D.pend.dur;
   chip(hx,hy+42,'system responding… '+Math.round(D.lat)+' ms',lag>.4?'rgb(255,184,77)':'rgb(56,232,208)');
-  var bw=170;ctx.fillStyle='rgba(255,255,255,.09)';rr(hx,hy+64,bw,5,3);ctx.fill();
-  ctx.fillStyle=lag>.4?'rgba(255,184,77,.95)':'rgba(56,232,208,.95)';rr(hx,hy+64,bw*Math.min(1,el),5,3);ctx.fill();}
+  var bw=Math.min(170,hw-24);ctx.fillStyle='rgba(255,255,255,.09)';rr(hx,hy+66,bw,5,3);ctx.fill();
+  ctx.fillStyle=lag>.4?'rgba(255,184,77,.95)':'rgba(56,232,208,.95)';rr(hx,hy+66,bw*Math.min(1,el),5,3);ctx.fill();}
  else chip(hx,hy+42,'ready — the tool is invisible','rgb(56,232,208)');
+ drawThumb();
  var tl=tiles();
  for(var i=0;i<16;i++){var b=tl[i],on=D.grid[i],need=D.grid[i]!==D.pat[i],pend=D.pend&&D.pend.i===i;
   if(on)blit(SP.tl,b.x,b.y,b.r*2.2,.75);
@@ -178,6 +186,17 @@ function draw(now){
  chip(S.x+8,S.y+S.h-28,D.mode==='ghost'?'AUTO · simulated hand — tap a tile to take over':'YOUR SESSION · tap the dashed tiles','rgb(56,232,208)');
  if(D.note>0)chip(S.x+8,S.y+S.h-52,D.mode==='human'?'you have the controls':'idle → ghost hand resumed','rgb(140,255,190)');
  drawFlow(now);drawPlot();}
+function drawThumb(){var z=TH.s,w=z*4+16,h=z*4+30;
+ ctx.fillStyle='rgba(4,10,14,.9)';ctx.strokeStyle='rgba(56,232,208,.34)';ctx.lineWidth=1;rr(TH.x,TH.y,w,h,9);ctx.fill();ctx.stroke();
+ ctx.font='9px ui-monospace,Menlo,monospace';ctx.textAlign='left';ctx.fillStyle='#4fe8d2';
+ ctx.fillText('TARGET PATTERN',TH.x+8,TH.y+13);
+ for(var i=0;i<16;i++){var cx=TH.x+8+(i%4)*z,cy=TH.y+18+Math.floor(i/4)*z,on=D.pat[i];
+  ctx.fillStyle=on?'rgba(56,232,208,.85)':'rgba(30,60,70,.55)';
+  rr(cx+1,cy+1,z-2,z-2,3);ctx.fill();
+  ctx.strokeStyle=on?'rgba(150,255,240,.8)':'rgba(80,140,150,.35)';ctx.lineWidth=1;ctx.stroke();
+  if(D.grid[i]!==D.pat[i]){ctx.fillStyle='rgba(255,184,77,.95)';ctx.beginPath();ctx.arc(cx+z/2,cy+z/2,2,0,7);ctx.fill();}}
+ ctx.font='9px ui-monospace,Menlo,monospace';ctx.fillStyle='#7f9ea3';
+ ctx.fillText(diffs().length+' tiles left',TH.x+8,TH.y+h-5);}
 function drawFlow(now){
  var cx,cy,rad;
  if(wide){ctx.fillStyle='rgba(6,14,20,.82)';ctx.strokeStyle='rgba(56,232,208,.26)';ctx.lineWidth=1;rr(CA.x,CA.y,CA.w,CA.h,11);ctx.fill();ctx.stroke();
