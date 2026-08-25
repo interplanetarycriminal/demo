@@ -87,17 +87,20 @@ function gcTrigger(S){var C=gcCounts(S),n=S.obj.length;
   if(S.mode==='conc'){S.conc+=d2*5;gcStart(S,0.0025+GC_MARK*C.sv*0.12,'young',C.sv)}
   else gcStart(S,d2,'NURSERY',C.sv)}}
 function gcStep(S,dt){S.t+=dt;S.wall+=dt;
- var sp=S.pause>0?0:(S.mode==='conc'?(S.conc>0?CONC_CYC:CONC_TAX):1);
+ var pt=Math.min(dt,Math.max(0,S.pause)),runF=1-pt/dt,
+   base=(S.mode==='conc'?(S.conc>0?CONC_CYC:CONC_TAX):1),sp=base*runF,n=0;
  S.work+=sp*dt;S.thr+=(sp-S.thr)*Math.min(1,dt/2.5);
- if(S.pause>0){S.pause-=dt;S.sweep=1-S.pause/Math.max(1e-6,S.pdur);if(S.pause<=0)gcFinish(S)}
- else{if(S.conc>0)S.conc=Math.max(0,S.conc-dt);
-  S.aacc+=S.alloc*sp*dt;var n=0;
+ if(S.pause>0){S.pause-=dt;S.sweep=1-Math.max(0,S.pause)/Math.max(1e-6,S.pdur);
+  if(S.pause<=0)gcFinish(S)}
+ if(S.pause<=0){if(S.conc>0)S.conc=Math.max(0,S.conc-dt*runF);
+  S.aacc+=S.alloc*sp*dt;
   while(S.aacc>=1&&n<600){S.aacc-=1;S.obj.push(gcObj(S.t));n++}
   gcTrigger(S)}
- S.racc+=REQ*dt;n=0;while(S.racc>=1&&n<400){S.racc-=1;S.q.push(S.t);n++}
+ S.racc+=REQ*dt;n=0;while(S.racc>=1&&n<400){S.racc-=1;S.q.push(S.t-S.racc/REQ);n++}
  S.sacc+=SRV*sp*dt;n=0;
- while(S.sacc>=1&&S.q.length&&n<600){S.sacc-=1;var a=S.q.shift();
-  S.lat.push({t:S.t,l:(S.t-a)+SVC/Math.max(0.2,sp)});n++}
+ while(S.sacc>=1&&S.q.length&&n<600){S.sacc-=1;var a=S.q.shift(),
+   ct=S.t-S.sacc/(SRV*base);
+  S.lat.push({t:S.t,l:Math.max(0,ct-a)+SVC/base});n++}
  if(!S.q.length&&S.sacc>1)S.sacc=1;
  while(S.lat.length>2200)S.lat.shift();
  return S}

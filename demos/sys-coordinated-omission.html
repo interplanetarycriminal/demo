@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Coordinated Omission</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:#06060e;overflow:hidden;color:#e6ecff;
+  font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+#c{position:fixed;inset:0;display:block;touch-action:none}
+#ui{position:fixed;top:10px;left:10px;width:min(340px,calc(100vw - 20px));max-height:45vh;overflow:auto;
+  background:rgba(9,9,20,.9);border:1px solid #35305e;border-radius:11px;padding:9px 11px 10px;z-index:5;
+  box-shadow:0 0 24px #000a}
+h1{font-size:12.5px;letter-spacing:.6px;color:#f2f5ff;text-shadow:0 0 10px #ffc85e88}
+.mech{font-size:10.5px;color:#9a93b8;margin:4px 0 7px}
+.row{display:flex;justify-content:space-between;gap:8px;font-size:11px;line-height:1.42}
+.k{color:#8781a6}.v{color:#f2f5ff}.v b{font-weight:600}
+.am b{color:#ffc85e}.cy b{color:#4fe3ff}.rd b{color:#ff6d5e}
+.ctl{margin-top:8px;display:flex;flex-wrap:wrap;gap:5px}
+button{flex:1 1 44%;font:600 10px/1.25 inherit;color:#9a93c4;background:#141230;border:1px solid #332c66;
+  border-radius:6px;padding:5px 3px;cursor:pointer}
+button.on{color:#1a1000;background:#ffc85e;border-color:#ffe3a8;box-shadow:0 0 14px #ffc85e88}
+label{display:block;font-size:10.5px;margin:6px 0 1px;color:#9a93b8}
+label span{color:#ffc85e}
+input[type=range]{width:100%;accent-color:#ffc85e;height:15px}
+.hon{margin-top:8px;font-size:9.5px;color:#7a749c;border-top:1px solid #2a2450;padding-top:6px}
+.detail{margin-top:6px;font-size:9.5px;color:#6f6994}
+.detail b{color:#b39aea}
+@media (max-width:640px){#ui{font-size:11px;max-height:38vh}#ui .detail{display:none}}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>COORDINATED OMISSION</h1>
+  <div class="mech">A naive load generator sends, <b>waits for the reply</b>, then sends again &mdash; so when the server stalls the generator stalls with it, and the requests it never sent never appear in the latency data.</div>
+  <div class="row am"><span class="k">closed-loop p50 / p99</span><span class="v"><b id="aP">0</b> / <b id="aQ">0</b> ms</span></div>
+  <div class="row cy"><span class="k">open-loop&nbsp; p50 / p99</span><span class="v"><b id="bP">0</b> / <b id="bQ">0</b> ms</span></div>
+  <div class="row"><span class="k">requests sent (closed / open)</span><span class="v"><b id="rS">0 / 0</b></span></div>
+  <div class="row rd"><span class="k">requests omitted (phantom)</span><span class="v"><b id="rO">0</b></span></div>
+  <div class="ctl">
+    <button id="bR">REPLAY</button>
+    <button id="bN">STALL: ON</button>
+  </div>
+  <label>stall length <span id="lS">1.5</span> s</label>
+  <input id="sS" type="range" min="0" max="30" step="1" value="15">
+  <label>stall every <span id="lP">9</span> s</label>
+  <input id="sP" type="range" min="4" max="20" step="1" value="9">
+  <label>request rate <span id="lR">120</span> /s</label>
+  <input id="sR" type="range" min="30" max="300" step="10" value="120">
+  <div class="hon">honesty: single-threaded toy generators against one toy server &mdash; identical service-time draw and identical stall schedule in both lanes, so the only difference is <i>when the generator decides to send</i>.</div>
+  <div class="detail">lineage: <b>Gil Tene</b>, "How NOT to Measure Latency" (2013) names coordinated omission &rarr; <b>HdrHistogram</b> records full-range values and can correct for it &rarr; <b>wrk2</b>, and every open-loop load tool since, hold the schedule instead of the client. <a href="index.html" style="color:#b39aea;text-decoration:none">&larr; gallery</a></div>
+</div>
+<script>
+var c=document.getElementById('c'),g=c.getContext('2d'),ui=document.getElementById('ui');
+var W=0,H=0,DPR=1,ST={x:0,y:0,w:0,h:0},CA={x:0,y:0,w:0,h:0},CB={x:0,y:0,w:0,h:0};
+/*MODEL*/
+function coSvc(S){var b=S.svc*(0.75+0.5*Math.random());return Math.random()<0.02?b*3.5:b}
+function coLane(kind){return{kind:kind,q:[],lat:[],marks:[],sent:0,done:0,inflight:null,acc:0,next:0,
+ free:0,omitted:0,maxq:0}}
+function coNew(o){o=o||{};
+ var S={rate:o.rate||120,svc:o.svc==null?0.003:o.svc,stallLen:o.stallLen==null?1.5:o.stallLen,
+  period:o.period||9,first:o.first==null?2.5:o.first,t:0,stalling:false,stallEnd:0,nextStall:0,
+  stalls:[],L:[coLane('closed'),coLane('open')]};
+ S.nextStall=S.first;return S}
+function coPush(A,S,l){A.lat.push({t:S.t,l:l});A.done++;if(A.lat.length>9000)A.lat.shift()}
+function coStep(S,dt){S.t+=dt;
+ if(!S.stalling&&S.stallLen>0&&S.t>=S.nextStall){S.stalling=true;S.stallEnd=S.t+S.stallLen;
+  S.stalls.push({a:S.t,b:S.stallEnd})}
+ if(S.stalling&&S.t>=S.stallEnd){S.stalling=false;S.nextStall=S.t+S.period}
+ var frozen=S.stalling,A=S.L[0],B=S.L[1],n=0,cur=S.t-dt;
+ while(n++<200){
+  if(A.inflight){if(frozen)break;
+   var ct=cur+A.inflight.rem;
+   if(ct>S.t){A.inflight.rem-=(S.t-cur);break}
+   coPush(A,S,ct-A.inflight.s);A.free=ct;A.inflight=null;cur=ct}
+  else{var st=Math.max(A.free,A.next);if(st>=S.t)break;if(st<cur)st=cur;
+   A.inflight={s:st,rem:coSvc(S)};A.sent++;A.marks.push(st);A.next=st+1/S.rate;cur=st}}
+ A.omitted=Math.max(0,Math.floor(S.t*S.rate)-A.sent);
+ B.acc+=S.rate*dt;n=0;
+ while(B.acc>=1&&n++<900){B.acc-=1;B.q.push(S.t-B.acc/S.rate);B.sent++;B.marks.push(S.t-B.acc/S.rate)}
+ var cur2=S.t-dt;n=0;
+ while(!frozen&&n++<900){
+  if(B.inflight){var c2=cur2+B.inflight.rem;
+   if(c2>S.t){B.inflight.rem-=(S.t-cur2);break}
+   coPush(B,S,c2-B.inflight.i);B.inflight=null;cur2=c2}
+  else{if(!B.q.length)break;var iq=B.q[0],s2=Math.max(cur2,iq);if(s2>=S.t)break;
+   B.q.shift();B.inflight={i:iq,rem:coSvc(S)};cur2=s2}}
+ if(B.q.length>B.maxq)B.maxq=B.q.length;
+ if(A.marks.length>1400)A.marks.splice(0,A.marks.length-1400);
+ if(B.marks.length>2600)B.marks.splice(0,B.marks.length-2600);
+ return S}
+function coPct(A,q){var v=[],i;for(i=0;i<A.lat.length;i++)v.push(A.lat[i].l);
+ if(!v.length)return 0;v.sort(function(a,b){return a-b});
+ return v[Math.max(0,Math.min(v.length-1,Math.floor(q*v.length)))]}
+function coHist(A,nb,lo,hi){var h=[],i;for(i=0;i<nb;i++)h.push(0);
+ var l0=Math.log(lo),l1=Math.log(hi);
+ for(i=0;i<A.lat.length;i++){var v=Math.max(lo,Math.min(hi*0.999,A.lat[i].l));
+  var k=Math.floor((Math.log(v)-l0)/(l1-l0)*nb);h[Math.max(0,Math.min(nb-1,k))]++}
+ return h}
+/*ENDMODEL*/
+var S=coNew({}),T=0,LC=['#ffc85e','#4fe3ff'],LN=['CLOSED-LOOP','OPEN-LOOP'],
+ LD=['sends, waits for the reply, sends again','holds the schedule, queues the delay'];
+function mkGlow(r,gc,b,rad){var s=document.createElement('canvas');s.width=s.height=rad*2;var x=s.getContext('2d');
+ var q=x.createRadialGradient(rad,rad,0,rad,rad,rad);q.addColorStop(0,'rgba('+r+','+gc+','+b+',.95)');
+ q.addColorStop(.32,'rgba('+r+','+gc+','+b+',.36)');q.addColorStop(1,'rgba('+r+','+gc+','+b+',0)');
+ x.fillStyle=q;x.fillRect(0,0,rad*2,rad*2);return s}
+var GA=mkGlow(255,200,94,24),GB=mkGlow(79,227,255,24),GR=mkGlow(255,90,70,28);
+function blit(s,x,y,sc){var d=s.width*sc;g.drawImage(s,x-d/2,y-d/2,d,d)}
+function rr(x,y,w,h,r){r=Math.min(r,w/2,h/2);g.beginPath();g.moveTo(x+r,y);g.arcTo(x+w,y,x+w,y+h,r);
+ g.arcTo(x+w,y+h,x,y+h,r);g.arcTo(x,y+h,x,y,r);g.arcTo(x,y,x+w,y,r);g.closePath()}
+function tx(s,x,y,col,fs,al,bold){g.fillStyle=col;g.font=(bold?'600 ':'')+fs+'px ui-monospace,Menlo,monospace';
+ g.textAlign=al||'left';g.textBaseline='middle';g.fillText(s,x,y)}
+function chip(s,x,y,col,bg,fs,maxw){fs=fs||10;g.font='600 '+fs+'px ui-monospace,Menlo,monospace';
+ var w=g.measureText(s).width+14;
+ if(maxw&&w>maxw){while(s.length>8&&g.measureText(s+'…').width+14>maxw)s=s.slice(0,-1);s=s+'…';
+  w=g.measureText(s).width+14}
+ g.fillStyle=bg||'rgba(9,9,20,.9)';rr(x,y-8.5,w,18,9);g.fill();
+ g.strokeStyle=col;g.lineWidth=1;g.stroke();tx(s,x+7,y+.5,col,fs,'left',1);return x+w+7}
+function layout(){var r=ui.getBoundingClientRect(),wide=W>=760;
+ if(wide){ST={x:r.right+14,y:12,w:Math.max(240,W-r.right-28),h:H-24};
+  var cy=r.bottom+12,av=H-cy-12,ch=Math.max(74,Math.min(150,(av-10)/2));
+  CA={x:12,y:cy,w:r.width,h:ch};CB={x:12,y:cy+ch+10,w:r.width,h:ch}}
+ else{var top=r.bottom+8,av2=Math.max(250,H-top-10);
+  ST={x:10,y:top,w:W-20,h:Math.max(230,av2*0.56)};
+  CA={x:10,y:top+ST.h+8,w:W-20,h:Math.max(66,av2*0.20)};
+  CB={x:10,y:top+ST.h+CA.h+14,w:W-20,h:Math.max(66,av2*0.20)}}}
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;
+ c.width=W*DPR|0;c.height=H*DPR|0;c.style.width=W+'px';c.style.height=H+'px';
+ g.setTransform(DPR,0,0,DPR,0,0);layout()}
+addEventListener('resize',resize);
+function step(dt){T+=dt;coStep(S,dt)}
+function drawStream(A,x,y,w,h,col){
+ g.fillStyle='rgba(255,255,255,.03)';rr(x,y,w,h,5);g.fill();
+ var win=6,t0=T-win,i,gapA=-1,gapB=-1;
+ for(i=0;i<S.stalls.length;i++){var s2=S.stalls[i];if(s2.b<t0)continue;
+  var ax=x+Math.max(0,(s2.a-t0))/win*w,bx=x+Math.min(win,(Math.min(T,s2.b)-t0))/win*w;
+  if(bx>ax){g.fillStyle='rgba(255,109,94,.13)';g.fillRect(ax,y+1,bx-ax,h-2);
+   g.strokeStyle='rgba(255,109,94,.4)';g.lineWidth=1;g.strokeRect(ax+.5,y+1.5,bx-ax-1,h-3);gapA=ax;gapB=bx}}
+ for(i=0;i<A.marks.length;i++){var m=A.marks[i];if(m<t0)continue;
+  var X=x+(m-t0)/win*w;g.strokeStyle=col;g.globalAlpha=0.30+0.7*((m-t0)/win);g.lineWidth=1;
+  g.beginPath();g.moveTo(X,y+h-2.5);g.lineTo(X,y+3);g.stroke()}
+ g.globalAlpha=1;
+ if(gapA>=0&&A.kind==='closed'&&gapB-gapA>26)
+  tx('no requests sent',(gapA+gapB)/2,y+h/2,'#ff9a8e',8.5,'center',1)}
+function drawHist(A,x,y,w,h,col,tail){
+ var nb=30,lo=0.001,hi=4,hst=coHist(A,nb,lo,hi),i,mx=1;
+ for(i=0;i<nb;i++)mx=Math.max(mx,hst[i]);
+ var bw=w/nb,base=y+h;
+ for(i=0;i<nb;i++){if(!hst[i])continue;
+  var hh=Math.max(1.5,Math.sqrt(hst[i]/mx)*(h-4)),
+    v=lo*Math.exp((i+0.5)/nb*Math.log(hi/lo));
+  g.fillStyle=v>0.02?'rgba(255,109,94,.92)':col;
+  g.fillRect(x+i*bw+0.6,base-hh,bw-1.2,hh)}
+ g.strokeStyle='rgba(160,170,210,.28)';g.lineWidth=1;
+ g.beginPath();g.moveTo(x,base+.5);g.lineTo(x+w,base+.5);g.stroke();
+ var dec=[0.001,0.01,0.1,1];
+ for(i=0;i<dec.length;i++){var X=x+Math.log(dec[i]/lo)/Math.log(hi/lo)*w;
+  g.strokeStyle='rgba(160,170,210,.16)';g.beginPath();g.moveTo(X,y);g.lineTo(X,base);g.stroke();
+  tx(dec[i]<1?(dec[i]*1000)+'ms':'1s',X,base+8,'#6f6994',8,'center')}
+ var p50=coPct(A,0.5),p99=coPct(A,0.99);
+ var x50=x+Math.log(Math.max(lo,p50)/lo)/Math.log(hi/lo)*w,
+     x99=x+Math.log(Math.max(lo,p99)/lo)/Math.log(hi/lo)*w;
+ g.setLineDash([3,3]);
+ g.strokeStyle='rgba(230,236,255,.7)';g.lineWidth=1.2;
+ g.beginPath();g.moveTo(x50,y-2);g.lineTo(x50,base);g.stroke();
+ g.strokeStyle=p99>0.05?'#ff6d5e':'#7fffb0';g.lineWidth=1.6;
+ g.beginPath();g.moveTo(x99,y-2);g.lineTo(x99,base);g.stroke();g.setLineDash([]);
+ tx('p50',Math.min(x+w-12,Math.max(x+10,x50)),y-8,'#e6ecff',8.5,'center',1);
+ tx('p99',Math.min(x+w-12,Math.max(x+10,x99)),y-8,p99>0.05?'#ff6d5e':'#7fffb0',8.5,'center',1);
+ return{p50:p50,p99:p99}}
+function drawLane(i,x,y,w,h){var A=S.L[i],col=LC[i],frozen=S.stalling;
+ chip(LN[i]+' generator',x,y+9,col,'rgba(9,9,20,.92)',10,w);
+ tx(LD[i],x+2,y+25,'#8781a6',8.5);
+ var sy=y+33,sh=30;
+ drawStream(A,x,sy,w,sh,col);
+ tx('requests sent (6 s)',x+3,sy-4,'#6f6994',8);
+ var qy=sy+sh+16,qh=74;
+ g.fillStyle='rgba(255,255,255,.025)';rr(x,qy,w,qh,6);g.fill();
+ var k,cols=Math.max(6,Math.floor((w-8)/9)),cell=(w-8)/cols;
+ if(i===0){
+  tx('phantom requests it never sent',x+3,qy-5,'#ff6d5e',8.5,'left',1);
+  var ng=Math.min(cols*Math.floor((qh-8)/9),A.omitted);
+  g.strokeStyle='rgba(255,109,94,.55)';g.lineWidth=1;g.setLineDash([2,2]);
+  g.beginPath();
+  for(k=0;k<ng;k++){var gx=x+4+(k%cols)*cell,gy=qy+qh-8-Math.floor(k/cols)*9;
+   g.moveTo(gx+3.2,gy);g.arc(gx,gy,3.2,0,6.2832)}
+  g.stroke();g.setLineDash([]);
+  tx(A.omitted?A.omitted+' omitted — never measured':'schedule intact',
+    x+w-3,qy+10,A.omitted?'#ff6d5e':'#7fffb0',8.5,'right',1)}
+ else{
+  tx('queue of delayed intended-requests',x+3,qy-5,'#4fe3ff',8.5,'left',1);
+  var nq=Math.min(cols*Math.floor((qh-8)/9),A.q.length);
+  g.fillStyle='rgba(79,227,255,.85)';g.beginPath();
+  for(k=0;k<nq;k++){var qx=x+4+(k%cols)*cell,qy2=qy+qh-8-Math.floor(k/cols)*9;
+   g.moveTo(qx+3.2,qy2);g.arc(qx,qy2,3.2,0,6.2832)}
+  g.fill();
+  tx(A.q.length?A.q.length+' queued'+(frozen?' — piling up':' — draining'):'queue empty',
+    x+w-3,qy+10,A.q.length?'#4fe3ff':'#7fffb0',8.5,'right',1)}
+ var vy=qy+qh+14,vh=26;
+ g.fillStyle=frozen?'rgba(58,6,6,.92)':'rgba(16,18,38,.88)';rr(x,vy,w,vh,6);g.fill();
+ g.strokeStyle=frozen?'#ff6d5e':'#4a4478';g.lineWidth=frozen?1.8:1;g.stroke();
+ if(frozen){g.globalCompositeOperation='lighter';
+  g.globalAlpha=0.35+0.3*Math.sin(T*9);blit(GR,x+w*0.5,vy+vh*0.5,w/50);g.globalAlpha=1;
+  g.globalCompositeOperation='source-over'}
+ tx(frozen?'SERVER: GC PAUSE / HICCUP  '+Math.max(0,S.stallEnd-T).toFixed(2)+'s':
+   'SERVER: healthy — '+(S.svc*1000).toFixed(0)+' ms service',
+   x+w*0.5,vy+vh*0.5,frozen?'#ffd9d2':'#a9a3d0',Math.min(10,w/23),'center',1);
+ var hy=vy+vh+30,hh2=Math.max(56,h-(hy-y)-40);
+ tx('latency histogram — log x',x+3,hy-20,'#8781a6',9);
+ var P=drawHist(A,x,hy,w,hh2,col,i===1);
+ var vy2=hy+hh2+18;
+ tx('p50 '+(P.p50*1000).toFixed(1)+' ms',x+2,vy2,'#a9a3d0',9);
+ tx('p99 = '+(P.p99*1000).toFixed(0)+' ms',x+w-2,vy2,P.p99>0.05?'#ff6d5e':'#7fffb0',
+   Math.min(13,w/17),'right',1);
+ return P}
+function drawStage(){var x=ST.x,y=ST.y,w=ST.w,h=ST.h;
+ var gr=g.createRadialGradient(x+w*0.5,y+h*0.5,10,x+w*0.5,y+h*0.5,w*0.8);
+ gr.addColorStop(0,S.stalling?'rgba(80,14,14,.32)':'rgba(30,26,72,.30)');gr.addColorStop(1,'rgba(6,6,14,0)');
+ g.fillStyle=gr;g.fillRect(x,y,w,h);
+ tx('SAME SERVER, TWO GENERATORS',x+3,y+10,'#f2f5ff',12,'left',1);
+ tx('t '+T.toFixed(1)+' s',x+w-3,y+10,'#8781a6',10,'right');
+ var msg,mc,mb;
+ if(S.stalling){msg='STALL IN PROGRESS — the closed-loop generator stopped generating';mc='#ff6d5e';
+  mb='rgba(58,6,6,.94)'}
+ else if(S.L[0].omitted>0){msg='the generator flinched — and the histogram forgave the worst second';
+  mc='#ffc85e';mb='rgba(34,22,4,.9)'}
+ else{msg='measure at constant rate, or measure a fiction';mc='#7fffb0';mb='rgba(6,26,18,.9)'}
+ chip(msg,x+3,y+31,mc,mb,10.5,w-6);
+ var q99=coPct(S.L[1],0.99),a99=coPct(S.L[0],0.99),ratio=a99>0?q99/a99:0;
+ chip('same system — which number would you ship?'+(ratio>2?'   ×'+ratio.toFixed(0)+' apart':''),
+   x+3,y+53,'#b39aea','rgba(20,14,40,.9)',10.5,w-6);
+ var gap=14,cw=(w-gap)/2,top=y+64,ch=h-(top-y)-6;
+ drawLane(0,x+1,top,cw-2,ch);
+ g.strokeStyle='rgba(120,130,180,.18)';g.lineWidth=1;
+ g.beginPath();g.moveTo(x+cw+gap*0.5,top+6);g.lineTo(x+cw+gap*0.5,y+h-8);g.stroke();
+ drawLane(1,x+cw+gap,top,cw-2,ch)}
+function card(C,title,right,rcol){g.fillStyle='rgba(9,9,20,.86)';rr(C.x,C.y,C.w,C.h,9);g.fill();
+ g.strokeStyle='#2a2450';g.lineWidth=1;g.stroke();
+ tx(title,C.x+9,C.y+12,'#a9a3d0',10,'left',1);
+ if(right)tx(right,C.x+C.w-9,C.y+12,rcol||'#ffc85e',10,'right',1)}
+function drawLedger(){var A=S.L[0],B=S.L[1],intended=Math.floor(T*S.rate);
+ card(CA,'the ledger','intended '+intended,'#8781a6');
+ var rows=[['closed-loop sent',A.sent,LC[0]],['open-loop sent',B.sent,LC[1]],
+   ['omitted by the closed loop',A.omitted,'#ff6d5e']];
+ var yy=CA.y+30,lh=Math.min(17,(CA.h-40)/3),i;
+ for(i=0;i<3;i++){tx(rows[i][0],CA.x+10,yy+i*lh,'#8781a6',9.5);
+  tx(''+rows[i][1],CA.x+CA.w-10,yy+i*lh,rows[i][2],10.5,'right',1)}
+ var bx0=CA.x+10,bx1=CA.x+CA.w-10,by=CA.y+CA.h-11;
+ g.fillStyle='rgba(255,109,94,.2)';rr(bx0,by-4,bx1-bx0,8,4);g.fill();
+ var fr=intended?Math.min(1,A.sent/intended):0;
+ g.fillStyle=LC[0];rr(bx0,by-4,(bx1-bx0)*fr,8,4);g.fill();
+ tx(Math.round(fr*100)+'% of the intended schedule actually sent',bx0+2,by-13,'#6f6994',8.5)}
+function drawVerdict(){var a=coPct(S.L[0],0.99)*1000,b=coPct(S.L[1],0.99)*1000;
+ card(CB,'two verdicts, one system',b>0&&a>0?'×'+(b/a).toFixed(0)+' apart':'','#ff6d5e');
+ var yy=CB.y+32,lh=Math.min(22,(CB.h-42)/2);
+ tx('CLOSED-LOOP p99',CB.x+10,yy,LC[0],9.5);
+ tx(a.toFixed(0)+' ms',CB.x+CB.w-10,yy,LC[0],Math.min(15,CB.w/13),'right',1);
+ tx('OPEN-LOOP p99',CB.x+10,yy+lh,LC[1],9.5);
+ tx(b.toFixed(0)+' ms',CB.x+CB.w-10,yy+lh,'#ff6d5e',Math.min(15,CB.w/13),'right',1);
+ tx('the stall happened in both lanes — only one lane wrote it down',
+   CB.x+10,CB.y+CB.h-11,'#6f6994',8.5)}
+function frame(){g.setTransform(DPR,0,0,DPR,0,0);g.fillStyle='#06060e';g.fillRect(0,0,W,H);
+ drawStage();drawLedger();drawVerdict();
+ document.getElementById('aP').textContent=(coPct(S.L[0],0.5)*1000).toFixed(1);
+ document.getElementById('aQ').textContent=(coPct(S.L[0],0.99)*1000).toFixed(0);
+ document.getElementById('bP').textContent=(coPct(S.L[1],0.5)*1000).toFixed(1);
+ document.getElementById('bQ').textContent=(coPct(S.L[1],0.99)*1000).toFixed(0);
+ document.getElementById('rS').textContent=S.L[0].sent+' / '+S.L[1].sent;
+ document.getElementById('rO').textContent=S.L[0].omitted}
+var last=performance.now(),acc=0,SUB=1/60;
+function loop(now){var rd=Math.min(0.45,(now-last)/1000);last=now;acc+=rd;
+ var n=0;while(acc>=SUB&&n<40){step(SUB);acc-=SUB;n++}
+ frame();requestAnimationFrame(loop)}
+var sS=document.getElementById('sS'),sP=document.getElementById('sP'),sR=document.getElementById('sR'),
+ bR=document.getElementById('bR'),bN=document.getElementById('bN'),stallOn=true;
+function restart(){S=coNew({rate:+sR.value,stallLen:stallOn?(+sS.value)/10:0,period:+sP.value});T=0}
+sS.oninput=function(){document.getElementById('lS').textContent=((+sS.value)/10).toFixed(1);restart()};
+sP.oninput=function(){document.getElementById('lP').textContent=sP.value;restart()};
+sR.oninput=function(){document.getElementById('lR').textContent=sR.value;restart()};
+bR.onclick=function(){restart()};
+bN.onclick=function(){stallOn=!stallOn;bN.textContent='STALL: '+(stallOn?'ON':'OFF');
+ bN.className=stallOn?'':'on';restart()};
+c.addEventListener('pointerdown',function(e){c.setPointerCapture(e.pointerId);restart();e.preventDefault()});
+c.addEventListener('pointerup',function(e){try{c.releasePointerCapture(e.pointerId)}catch(_){}});
+resize();requestAnimationFrame(loop);
+</script>
+</body>
+</html>

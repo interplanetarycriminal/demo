@@ -36,7 +36,7 @@ input[type=range]{width:100%;accent-color:#4fe3ff;height:16px}
 <canvas id="c"></canvas>
 <div id="ui">
   <h1>THE POWER OF TWO CHOICES</h1>
-  <div class="mech">One random server gives max-load ~log&nbsp;n/log&nbsp;log&nbsp;n; peek at TWO and take the lighter and it collapses to ~log&nbsp;log&nbsp;n.</div>
+  <div class="mech">One random server gives max-load ~log&nbsp;n/log&nbsp;log&nbsp;n; sample TWO, take the lighter &rarr; ~log&nbsp;log&nbsp;n.</div>
   <div class="row"><span class="k">max load / mean</span><span class="v"><b id="rMx" class="hot">0</b> / <b id="rMe">0</b> jobs</span></div>
   <div class="row"><span class="k">imbalance (stddev)</span><span class="v"><b id="rSd">0.0</b></span></div>
   <div class="row"><span class="k">samples per job</span><span class="v"><b id="rSp">1</b> of 12 &mdash; the cost axis</span></div>
@@ -49,7 +49,7 @@ input[type=range]{width:100%;accent-color:#4fe3ff;height:16px}
   </div>
   <label>utilisation &rho; = <span id="lU">0.90</span> &mdash; arrivals per second <span id="lL">32</span></label>
   <input id="sU" type="range" min="50" max="98" step="1" value="90">
-  <div class="hon">honesty: least-conn here reads a FRESH global view — real load balancers read stale counters and herd.</div>
+  <div class="hon">honesty: least-conn here reads a FRESH global view.</div>
   <div class="detail">lineage: <b>Azar, Broder, Karlin &amp; Upfal 1994 / Mitzenmacher 1996</b> &rarr; NGINX <b>least_conn</b>, Envoy/HAProxy <b>p2c</b> &rarr; every modern balancer default.</div>
 </div>
 <script>
@@ -142,7 +142,7 @@ function draw(){g.fillStyle='#04060c';g.fillRect(0,0,W,H);
   var colX=function(i){return sx+20+(i+0.5)*cw},colT=function(i){return baseY-Math.min(1,S.q[i]/scale)*(baseY-topY)};
   for(var i=0;i<N;i++){var X=colX(i),hh=baseY-colT(i),f=S.q[i]/scale,
       col=f>0.72?'#ff6d5e':f>0.42?'#ffd489':'#4fe3ff';
-    g.fillStyle='rgba(20,34,58,.55)';g.fillRect(X-cw*0.34,topY,cw*0.68,baseY-topY);
+    g.fillStyle='rgba(18,30,52,.32)';g.fillRect(X-cw*0.34,topY,cw*0.68,baseY-topY);
     if(hh>1){g.fillStyle=col;g.globalAlpha=0.30;g.fillRect(X-cw*0.34,baseY-hh,cw*0.68,hh);g.globalAlpha=1;
       g.fillStyle=col;g.fillRect(X-cw*0.34,baseY-hh,cw*0.68,Math.min(hh,3.5));
       if(f>0.72)blit(GR,X,baseY-hh,0.55+0.12*Math.sin(T*8))}

@@ -60,7 +60,7 @@ var W=0,H=0,DPR=1,ST={x:0,y:0,w:0,h:0},FL={x:0,y:0,w:0,h:0},CA={x:0,y:0,w:0,h:0}
 /*MODEL*/
 var FG_P=[-1,0,1,0,3,3,0,6,6,8,8,8];
 var FG_NM=['main','parse','lex','render','layout','paint','query','sql','orm','serialize','hydrate','futex_wait'];
-var FG_W={io:[2,5,7,3,10,11,3,9,6,34,10,0],cpu:[2,10,20,4,22,24,3,5,4,4,2,0],
+var FG_W={io:[2,5,7,3,10,11,3,9,6,34,10,0],cpu:[2,10,18,4,14,30,3,5,4,4,6,0],
           lock:[2,4,4,3,6,6,3,6,4,10,4,48]};
 var FG_OFF=11,FG_HOT=9,FG_N=12;
 function fgKids(i){var a=[],k;for(k=1;k<FG_N;k++)if(FG_P[k]===i)a.push(k);return a}
