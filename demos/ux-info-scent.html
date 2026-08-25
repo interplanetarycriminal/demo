@@ -1,0 +1,319 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Information Scent</title>
+<style>
+ html,body{margin:0;height:100%;overflow:hidden;background:#05070f}
+ canvas{display:block;position:fixed;inset:0;touch-action:none}
+ #ui{position:fixed;top:10px;left:10px;z-index:10;font:12px/1.5 ui-monospace,Menlo,monospace;color:#cfe3ff;
+  background:rgba(6,10,24,.62);padding:10px 12px;border:1px solid rgba(120,200,255,.28);border-radius:10px;
+  backdrop-filter:blur(6px);width:min(340px,calc(100vw - 20px));max-height:45vh;overflow:auto}
+ #ui b{color:#7fe9c8;letter-spacing:.09em}
+ #ui .mech{color:#9fb4d6;margin:3px 0 6px}
+ #ui .ro{display:flex;justify-content:space-between;gap:8px;color:#eaf4ff}
+ #ui .ro i{color:#8aa6c8;font-style:normal}
+ #ui .ro b{color:#ffd47f;letter-spacing:0}
+ #ui .grp{margin-top:7px;border-top:1px solid rgba(120,200,255,.16);padding-top:6px}
+ #ui input[type=range]{width:100%;accent-color:#7fe9c8;margin:2px 0}
+ #ui button{font:11px ui-monospace,monospace;color:#cfe3ff;background:rgba(30,50,90,.6);
+  border:1px solid rgba(120,200,255,.35);border-radius:6px;padding:3px 7px;cursor:pointer;margin:2px 3px 0 0}
+ #ui button.on{background:rgba(20,120,110,.65);border-color:#7fe9c8;color:#dffaf1}
+ #ui .hon{color:#8aa6c8;font-size:11px;margin-top:6px}
+ #ui a{color:#8cf;text-decoration:none}
+ @media (max-width:640px){#ui{font-size:11px;max-height:38vh} #ui .detail{display:none}}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div id="ui">
+ <b>INFORMATION SCENT</b>
+ <div class="mech">At each link users follow the label with the strongest <i>scent</i> of the goal; weak scent ⇒ wrong branches and backtracking.</div>
+ <div class="ro"><i>success</i><b id="rSucc">–</b></div>
+ <div class="ro"><i>avg clicks to goal</i><b id="rClk">–</b></div>
+ <div class="ro"><i>pogo-sticks / min</i><b id="rPogo">–</b></div>
+ <div class="ro"><i>scent quality</i><b id="rQ">–</b></div>
+ <div class="grp">SCENT QUALITY <span id="qv">30%</span> — relabels the menu
+ <input id="q" type="range" min="0" max="100" value="30">
+ <button id="bMode">nav: 4×3 nested</button><button id="bAuto" class="on">auto-sweep</button><br>
+ foragers/s <input id="rate" type="range" min="1" max="9" step="0.5" value="5"></div>
+ <div class="hon">honesty: scent here = a word-match toy (label↔goal overlap + noise). Real scent is semantic, contextual, and learned.</div>
+ <div class="detail grp">lineage: optimal foraging theory (MacArthur &amp; Pianka 1966) → Pirolli &amp; Card, <i>information foraging</i>, Xerox PARC 1999 → Nielsen's scent-of-information studies → today's nav-label / tree testing. <a href="index.html">← gallery</a></div>
+</div>
+<canvas id="c"></canvas>
+<script>
+var cv=document.getElementById('c'),ctx=cv.getContext('2d'),ui=document.getElementById('ui');
+var W,H,DPR;
+function resize(){DPR=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);LAY=null;}
+addEventListener('resize',resize);resize();
+
+/*MODEL-START*/
+function scentTier(q){return q<0.34?0:(q<0.67?1:2);}
+function scentMatch(q){return {mg:0.14+0.82*q, md:0.34-0.20*q};}
+function pickProb(mg,md,n,K){var a=Math.exp(K*mg),b=Math.exp(K*md);return a/(a+(n-1)*b);}
+function predict(q,deep,K,ab,budget){
+  K=K||6.2; ab=(ab==null?0.34:ab); budget=budget||12;
+  var m=scentMatch(q),succ=0,ck=0,pogo=0,alive=1,cl=0,i;
+  if(deep){
+    var pOK=pickProb(m.mg,m.md,4,K)*pickProb(m.mg,m.md,3,K);
+    for(i=0;i<8&&cl<budget;i++){
+      succ+=alive*pOK; ck+=alive*pOK*(cl+2);
+      var f=alive*(1-pOK); pogo+=f; cl+=4; alive=f*(1-ab);
+    }
+  }else{
+    var p=pickProb(m.mg,m.md,12,K);
+    for(i=0;i<10&&cl<budget;i++){
+      succ+=alive*p; ck+=alive*p*(cl+1);
+      var f2=alive*(1-p); pogo+=f2; cl+=2; alive=f2*(1-ab);
+    }
+  }
+  return {success:succ, clicks: succ>1e-6?ck/succ:budget, pogo:pogo};
+}
+/*MODEL-END*/
+
+var LAB={
+ sec:[['Misc','Stuff','Info','More'],['Shop','Help','Account','About'],['Shop','Returns & Refunds','Account','About']],
+ goal:['Form 27B','Policies','Refund policy'],
+ leaf:[['Item A','Item B','Item C','Item D','Item E','Item F','Item G','Item H','Item J','Item K','Item L'],
+       ['Orders','Sizing','Shipping','Contact','Login','Cards','Press','Jobs','Blog','Legal','Stores'],
+       ['Track order','Size guide','Delivery','Contact us','Sign in','Payment','Press kit','Careers','Blog','Terms','Stores']]};
+
+var q=0.30, deep=true, auto=true, rate=5, t0=performance.now()/1000, T=0;
+var qs=document.getElementById('q'),qv=document.getElementById('qv');
+qs.oninput=function(){q=+qs.value/100;auto=false;bA.classList.remove('on');};
+var bM=document.getElementById('bMode'),bA=document.getElementById('bAuto');
+bM.onclick=function(){deep=!deep;bM.textContent='nav: '+(deep?'4×3 nested':'12 flat');LAY=null;reset();};
+bA.onclick=function(){auto=!auto;bA.classList.toggle('on',auto);};
+document.getElementById('rate').oninput=function(){rate=+this.value;};
+
+// ---- glow sprites ----
+function sprite(col,r){var s=document.createElement('canvas');s.width=s.height=r*2;var x=s.getContext('2d');
+ var g=x.createRadialGradient(r,r,0,r,r,r);g.addColorStop(0,col);g.addColorStop(.35,col.replace('1)','0.55)'));g.addColorStop(1,'rgba(0,0,0,0)');
+ x.fillStyle=g;x.fillRect(0,0,r*2,r*2);return s;}
+var SP={dot:sprite('rgba(150,230,255,1)',16),win:sprite('rgba(140,255,190,1)',22),bad:sprite('rgba(255,140,120,1)',18),node:sprite('rgba(120,190,255,1)',30)};
+function blit(s,x,y,sc){ctx.drawImage(s,x-s.width/2*sc,y-s.height/2*sc,s.width*sc,s.height*sc);}
+
+// ---- layout ----
+var LAY=null,NODES=[],EDGES=[],GOAL=-1;
+function layout(){
+ var r=ui.getBoundingClientRect(),pad=12,S={};
+ if(W>=780){ // two columns: overlay+card+chips left, tree fills the whole right side
+  S.x=r.right+14;S.y=pad+6;S.w=W-(r.right+14)-pad;S.h=H-pad*2-6;
+  S.cardW=Math.min(r.right-pad,330);S.cardH=Math.min(150,H*0.30);
+  S.cardX=pad;S.chipTop=H-pad-45;S.cardY=Math.max(r.bottom+16,S.chipTop-12-S.cardH);
+  S.chipX=pad;S.treeTop=S.y+26;S.treeBot=S.y+S.h-8;
+ }else{
+  S.x=pad;S.y=r.bottom+10;S.w=W-pad*2;S.h=H-(r.bottom+10)-pad;
+  S.cardW=Math.min(320,S.w);S.cardH=Math.min(132,S.h*0.34);
+  S.chipTop=H-pad-45;S.cardY=S.chipTop-10-S.cardH;S.cardX=S.x;S.chipX=S.x;
+  S.treeTop=S.y+24;S.treeBot=S.cardY-10;
+ }
+ S.x1=S.x+S.w;S.y1=S.y+S.h;
+ NODES=[];EDGES=[];
+ var th=Math.max(60,S.treeBot-S.treeTop), n, i, j;
+ if(deep){
+  var cx=[S.x+30,S.x+S.w*0.33,S.x+S.w*0.63];
+  NODES.push({x:cx[0],y:S.treeTop+th/2,d:0,p:-1,kids:[],lab:'home'});
+  for(i=0;i<4;i++){var si=NODES.length;NODES.push({x:cx[1],y:0,d:1,p:0,kids:[],lab:''});NODES[0].kids.push(si);
+   for(j=0;j<3;j++){var li=NODES.length;NODES.push({x:cx[2],y:0,d:2,p:si,kids:[],lab:''});NODES[si].kids.push(li);}}
+  var k=0;for(i=0;i<NODES.length;i++)if(NODES[i].d===2){NODES[i].y=S.treeTop+th*(k+0.5)/12;k++;}
+  for(i=0;i<NODES.length;i++)if(NODES[i].d===1){var s=0;for(j=0;j<3;j++)s+=NODES[NODES[i].kids[j]].y;NODES[i].y=s/3;}
+  GOAL=NODES[1].kids[1];
+ }else{
+  var fx=[S.x+30,S.x+S.w*0.55];
+  NODES.push({x:fx[0],y:S.treeTop+th/2,d:0,p:-1,kids:[],lab:'home'});
+  for(i=0;i<12;i++){NODES.push({x:fx[1],y:S.treeTop+th*(i+0.5)/12,d:1,p:0,kids:[],lab:''});NODES[0].kids.push(i+1);}
+  GOAL=6;
+ }
+ for(i=0;i<NODES.length;i++)if(NODES[i].p>=0)EDGES.push({a:NODES[i].p,b:i,heat:0});
+ for(i=0;i<NODES.length;i++)NODES[i].ei=-1;
+ for(i=0;i<EDGES.length;i++)NODES[EDGES[i].b].ei=i;
+ LAY=S;return S;
+}
+function labelOf(i){
+ var tier=scentTier(q);
+ if(i===0)return 'home';
+ if(i===GOAL)return LAB.goal[tier];
+ var N=NODES[i];
+ if(deep&&N.d===1){var k=NODES[0].kids.indexOf(i);return LAB.sec[tier][k];}
+ var c=0;for(var j=0;j<NODES.length;j++){if(j===i)break;if(j!==0&&j!==GOAL&&NODES[j].d===NODES[i].d)c++;}
+ return LAB.leaf[tier][c%11];
+}
+function onGoalPath(i){var n=GOAL;while(n>=0){if(n===i)return true;n=NODES[n].p;}return false;}  // goal OR any ancestor of it
+function edgeMatch(b){var m=scentMatch(q);return onGoalPath(b)?m.mg:m.md;}
+
+// ---- agents ----
+var ag=[],hist=[],pogoT=[],acc=0,K=6.2,AB=0.34,BUDGET=12;
+function reset(){ag=[];hist=[];pogoT=[];}
+function spawn(){
+ if(!LAY)return;
+ ag.push({n:0,fx:NODES[0].x,fy:NODES[0].y,tx:NODES[0].x,ty:NODES[0].y,t:1,from:0,to:0,cl:0,st:'choose',ttl:0,arc:0,hue:190+Math.random()*40});
+}
+function choose(a){
+ var N=NODES[a.n];
+ if(N.kids.length===0){
+  if(a.n===GOAL){a.st='win';a.ttl=0.9;hist.push({ok:1,cl:a.cl});}
+  else{a.st='back';a.flash=0.9;a.fxx=N.x;a.fyy=N.y;pogoT.push(T);a.to=N.p;a.from=a.n;a.t=0;a.arc=1;}
+  return;
+ }
+ var m=scentMatch(q),ws=[],tot=0,i;
+ for(i=0;i<N.kids.length;i++){var kd=N.kids[i];var mm=onGoalPath(kd)?m.mg:m.md;var w=Math.exp(K*mm);ws.push(w);tot+=w;}
+ var r=Math.random()*tot,acc2=0,pick=N.kids[0];
+ for(i=0;i<N.kids.length;i++){acc2+=ws[i];if(r<=acc2){pick=N.kids[i];break;}}
+ a.from=a.n;a.to=pick;a.t=0;a.st='move';a.arc=0;
+}
+function step(dt){
+ acc+=dt*rate;while(acc>=1){acc-=1;spawn();}
+ for(var h=0;h<ag.length;h++){var ah=ag[h];if(ah.st==='move'&&ah.t<0.06){var eh=NODES[ah.to].ei;if(eh>=0)EDGES[eh].heat+=1;}}
+ for(var i=ag.length-1;i>=0;i--){
+  var a=ag[i];
+  if(a.flash)a.flash=Math.max(0,a.flash-dt);
+  if(a.st==='choose'){choose(a);continue;}
+  if(a.st==='win'){a.ttl-=dt;if(a.ttl<=0)ag.splice(i,1);continue;}
+  if(a.st==='quit'){a.ttl-=dt;if(a.ttl<=0)ag.splice(i,1);continue;}
+  a.t+=dt/0.42;
+  if(a.t>=1){
+   a.t=1;a.n=a.to;a.cl++;
+   if(a.st==='back'){
+    if(NODES[a.n].d>0&&a.n!==0){a.st='back';a.from=a.n;a.to=NODES[a.n].p;a.t=0;}
+    else if(a.cl>=BUDGET||Math.random()<AB){a.st='quit';a.ttl=0.7;hist.push({ok:0,cl:a.cl});}
+    else a.st='choose';
+   }else a.st='choose';
+  }
+ }
+ while(hist.length>140)hist.shift();
+ while(pogoT.length&&T-pogoT[0]>12)pogoT.shift();
+}
+function agPos(a){
+ var A=NODES[a.from],B=NODES[a.to],u=a.t,e=u*u*(3-2*u);
+ var x=A.x+(B.x-A.x)*e,y=A.y+(B.y-A.y)*e;
+ if(a.arc){var d=Math.sin(Math.PI*u)*22;x-=d;}
+ return [x,y];
+}
+
+// ---- draw ----
+function rr(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+function chip(x,y,txt,col,bg){ctx.font='10px ui-monospace,Menlo,monospace';var w=ctx.measureText(txt).width+14;
+ ctx.fillStyle=bg||'rgba(8,14,30,.72)';rr(x,y,w,14,7);ctx.fill();ctx.strokeStyle=col;ctx.globalAlpha=.45;ctx.stroke();ctx.globalAlpha=1;
+ ctx.fillStyle=col;ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillText(txt,x+7,y+7.5);return w;}
+function draw(){
+ var S=LAY||layout();
+ ctx.fillStyle='#05070f';ctx.fillRect(0,0,W,H);
+ var g=ctx.createRadialGradient(S.x+S.w*0.55,S.y+S.h*0.45,10,S.x+S.w*0.55,S.y+S.h*0.45,S.w*0.9);
+ g.addColorStop(0,'rgba(24,60,90,.35)');g.addColorStop(1,'rgba(4,6,14,0)');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+ // stage header (own row, clear of overlay)
+ ctx.font='bold 12px ui-monospace,Menlo,monospace';ctx.fillStyle='#7fe9c8';ctx.textAlign='left';ctx.textBaseline='alphabetic';
+ ctx.fillText('SITE MAP · goal = "refund policy"',S.x,S.y+12);
+ ctx.textAlign='right';ctx.fillStyle='#8aa6c8';ctx.font='10px ui-monospace,Menlo,monospace';
+ ctx.fillText(deep?'4 sections × 3 leaves (depth tax)':'12 flat leaves',S.x1,S.y+12);ctx.textAlign='left';
+ // edges
+ ctx.globalCompositeOperation='lighter';
+ for(var i=0;i<EDGES.length;i++){
+  var E=EDGES[i],A=NODES[E.a],B=NODES[E.b],mm=edgeMatch(E.b);
+  var heat=Math.min(1,E.heat/14);
+  ctx.lineWidth=6;ctx.strokeStyle='rgba(90,170,255,'+(0.05+0.18*mm+0.10*heat)+')';
+  ctx.beginPath();ctx.moveTo(A.x,A.y);ctx.bezierCurveTo((A.x+B.x)/2,A.y,(A.x+B.x)/2,B.y,B.x,B.y);ctx.stroke();
+  ctx.lineWidth=1.4;ctx.strokeStyle=onGoalPath(E.b)?'rgba(140,255,200,'+(0.20+0.72*mm)+')':'rgba(150,200,255,'+(0.12+0.42*mm)+')';
+  ctx.beginPath();ctx.moveTo(A.x,A.y);ctx.bezierCurveTo((A.x+B.x)/2,A.y,(A.x+B.x)/2,B.y,B.x,B.y);ctx.stroke();
+  E.heat*=0.995;
+ }
+ ctx.globalCompositeOperation='source-over';
+ // nodes + labels
+ for(i=0;i<NODES.length;i++){
+  var N=NODES[i],isG=(i===GOAL),leaf=N.kids.length===0,mm=i===0?1:edgeMatch(i);
+  ctx.globalCompositeOperation='lighter';blit(isG?SP.win:SP.node,N.x,N.y,(isG?0.55:0.34)+0.35*mm);ctx.globalCompositeOperation='source-over';
+  ctx.beginPath();ctx.arc(N.x,N.y,i===0?7:(leaf?4.5:6),0,7);
+  ctx.fillStyle=isG?'#8fffc4':(i===0?'#ffd47f':'#cfe3ff');ctx.fill();
+  var lab=labelOf(i);ctx.font=(isG?'bold ':'')+'10px ui-monospace,Menlo,monospace';
+  ctx.fillStyle=isG?'#9fffcf':(mm>0.5?'#dbeaff':'#8fa6c4');
+  ctx.textBaseline='middle';
+  if(leaf){ // leaf labels sit to the right, on the node's own row
+   var tx=N.x+11,ta='left',wd=ctx.measureText(lab).width;
+   if(tx+wd>S.x1-4){tx=N.x-11;ta='right';}
+   ctx.textAlign=ta;ctx.fillText(lab,tx,N.y);
+  }else{ // branch labels sit ABOVE the node — never over the dot or the edges
+   ctx.textAlign='center';
+   var cw2=ctx.measureText(lab).width/2,cxx=Math.max(S.x+cw2+2,Math.min(S.x1-cw2-2,N.x));
+   ctx.fillStyle='rgba(6,10,22,.8)';ctx.fillRect(cxx-cw2-4,N.y-21,cw2*2+8,13);
+   ctx.fillStyle=isG?'#9fffcf':(i===0?'#ffd47f':(mm>0.5?'#dbeaff':'#9fb6d4'));
+   ctx.fillText(lab,cxx,N.y-14);
+  }
+  ctx.textAlign='left';
+ }
+ // agents
+ ctx.globalCompositeOperation='lighter';
+ for(i=0;i<ag.length;i++){
+  var a=ag[i],p;
+  if(a.st==='choose'||a.st==='win'||a.st==='quit'){p=[NODES[a.n].x,NODES[a.n].y];}else p=agPos(a);
+  var sc=a.st==='win'?0.5:0.26, col=a.st==='win'?SP.win:(a.st==='back'||a.st==='quit'?SP.bad:SP.dot);
+  blit(col,p[0],p[1],sc*1.25*(a.st==='quit'?Math.max(0.2,a.ttl):1));
+  ctx.fillStyle=a.st==='win'?'#cfffe6':(a.st==='back'||a.st==='quit'?'#ffb0a0':'#e6f6ff');
+  ctx.beginPath();ctx.arc(p[0],p[1],2.9,0,7);ctx.fill();
+ }
+ ctx.globalCompositeOperation='source-over';
+ var used=[];
+ for(i=0;i<ag.length;i++){var a2=ag[i];
+  if(a2.flash>0.01&&a2.st==='back'&&a2.fxx!==undefined){var pp=[a2.fxx,a2.fyy],fy=pp[1]-12,clash=1,guard=0;
+   while(clash&&guard<6){clash=0;for(var u=0;u<used.length;u++)if(Math.abs(used[u][0]-pp[0])<34&&Math.abs(used[u][1]-fy)<12){clash=1;fy-=12;break;}guard++;}
+   used.push([pp[0],fy]);
+   ctx.font='bold 9px ui-monospace,monospace';ctx.fillStyle='rgba(255,150,130,'+a2.flash+')';
+   ctx.textAlign='center';ctx.fillText('back',pp[0],fy);ctx.textAlign='left';}}
+ drawCard(S);drawChips(S);
+}
+function drawCard(S){
+ var x=S.cardX,y=S.cardY,w=S.cardW,h=S.cardH;
+ ctx.fillStyle='rgba(7,12,26,.82)';rr(x,y,w,h,8);ctx.fill();
+ ctx.strokeStyle='rgba(120,200,255,.22)';ctx.lineWidth=1;ctx.stroke();
+ ctx.font='10px ui-monospace,Menlo,monospace';ctx.textBaseline='alphabetic';
+ ctx.fillStyle='#9fd8ff';ctx.textAlign='left';ctx.fillText('outcome vs scent quality',x+8,y+13);
+ // legend on its OWN row
+ ctx.fillStyle='#8fffc4';ctx.fillText('■ success %',x+8,y+25);
+ ctx.fillStyle='#ffd47f';ctx.fillText('■ clicks to goal',x+90,y+25);
+ var px=x+26,py=y+32,pw=w-38,ph=h-32-20;
+ ctx.strokeStyle='rgba(140,180,230,.25)';ctx.strokeRect(px,py,pw,ph);
+ var i,pr;
+ ctx.beginPath();for(i=0;i<=40;i++){pr=predict(i/40,deep);var X=px+pw*i/40,Y=py+ph*(1-pr.success);i?ctx.lineTo(X,Y):ctx.moveTo(X,Y);}
+ ctx.strokeStyle='#8fffc4';ctx.lineWidth=1.6;ctx.stroke();
+ ctx.beginPath();for(i=0;i<=40;i++){pr=predict(i/40,deep);var X2=px+pw*i/40,Y2=py+ph*(1-Math.min(1,pr.clicks/12));i?ctx.lineTo(X2,Y2):ctx.moveTo(X2,Y2);}
+ ctx.strokeStyle='#ffd47f';ctx.lineWidth=1.4;ctx.stroke();
+ var st=stats();
+ if(st.n>4){ctx.fillStyle='#8fffc4';ctx.beginPath();ctx.arc(px+pw*q,py+ph*(1-st.succ),3.2,0,7);ctx.fill();
+  ctx.fillStyle='#ffd47f';ctx.beginPath();ctx.arc(px+pw*q,py+ph*(1-Math.min(1,st.clk/12)),3.2,0,7);ctx.fill();}
+ ctx.strokeStyle='rgba(255,255,255,.32)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(px+pw*q,py);ctx.lineTo(px+pw*q,py+ph);ctx.stroke();
+ // axis labels INSIDE the card, own rows
+ ctx.font='9px ui-monospace,monospace';ctx.fillStyle='#7d94b4';
+ ctx.textAlign='center';ctx.fillText('scent quality  0 → 100%',px+pw/2,py+ph+13);
+ ctx.save();ctx.translate(x+11,py+ph/2);ctx.rotate(-Math.PI/2);ctx.textAlign='center';ctx.fillText('low → high',0,0);ctx.restore();
+ ctx.textAlign='left';
+}
+function drawChips(S){
+ var y=S.chipTop,x=S.chipX;
+ chip(x,y,'users don’t read menus — they sniff them','#9fd8ff');
+ chip(x,y+15,'pogo-sticking is the smell of weak scent','#ffb0a0');
+ chip(x,y+30,'honesty: word-match toy model + noise','#8aa6c8');
+}
+function stats(){
+ var n=hist.length,ok=0,cl=0,c=0;
+ for(var i=0;i<n;i++){ok+=hist[i].ok;if(hist[i].ok){cl+=hist[i].cl;c++;}}
+ return {n:n,succ:n?ok/n:0,clk:c?cl/c:0,pogo:pogoT.length*5};
+}
+// ---- loop ----
+var last=performance.now()/1000,accT=0,SUB=1/60;
+function frame(){
+ var now=performance.now()/1000,rd=Math.min(0.45,now-last);last=now;T=now-t0;
+ if(auto){var ph=(T-9)/22;q=T<9?0.30:0.5-0.44*Math.cos(Math.max(0,ph)*Math.PI*2);q=Math.max(0.04,Math.min(0.98,q));qs.value=Math.round(q*100);}
+ accT+=rd;var k=0;
+ while(accT>=SUB&&k<40){step(SUB);accT-=SUB;k++;}
+ if(!LAY)layout();
+ draw();
+ var st=stats();
+ document.getElementById('rSucc').textContent=(st.n>3?(st.succ*100).toFixed(0)+'%':'…');
+ document.getElementById('rClk').textContent=(st.clk?st.clk.toFixed(1):'…');
+ document.getElementById('rPogo').textContent=st.pogo.toFixed(0);
+ document.getElementById('rQ').textContent=Math.round(q*100)+'%  ('+['vague','plain','goal-matched'][scentTier(q)]+')';
+ qv.textContent=Math.round(q*100)+'%';
+ requestAnimationFrame(frame);
+}
+bM.textContent='nav: '+(deep?'4×3 nested':'12 flat');
+layout();
+for(var s0=0;s0<1500;s0++){T=-25+s0*SUB;step(SUB);}   // warm start: readouts + crowd are live at t=0
+T=0;
+requestAnimationFrame(frame);
+</script></body>

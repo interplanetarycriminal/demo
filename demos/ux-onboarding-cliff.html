@@ -1,0 +1,271 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Onboarding Cliff</title>
+<style>
+ html,body{margin:0;height:100%;overflow:hidden;background:#06080f}
+ canvas{display:block;position:fixed;inset:0;touch-action:none}
+ #ui{position:fixed;top:10px;left:10px;z-index:10;font:12px/1.5 ui-monospace,Menlo,monospace;color:#dbe6ff;
+  background:rgba(8,10,26,.66);padding:10px 12px;border:1px solid rgba(255,120,110,.28);border-radius:10px;
+  backdrop-filter:blur(6px);width:min(340px,calc(100vw - 20px));max-height:45vh;overflow:auto}
+ #ui b{color:#ff8f7a;letter-spacing:.09em}
+ #ui .mech{color:#9fb0d0;margin:3px 0 6px}
+ #ui .ro{display:flex;justify-content:space-between;gap:8px}
+ #ui .ro i{color:#8b9dbd;font-style:normal}
+ #ui .ro b{color:#ffe08a;letter-spacing:0}
+ #ui .grp{margin-top:7px;border-top:1px solid rgba(255,120,110,.18);padding-top:6px}
+ #ui input[type=range]{width:100%;accent-color:#ff8f7a;margin:2px 0}
+ #ui button{font:11px ui-monospace,monospace;color:#dbe6ff;background:rgba(34,40,72,.6);
+  border:1px solid rgba(255,140,120,.35);border-radius:6px;padding:3px 7px;cursor:pointer;margin:2px 3px 0 0}
+ #ui button.on{background:rgba(150,55,45,.72);border-color:#ff8f7a;color:#ffdfd6}
+ #ui .hon{color:#8b9dbd;font-size:11px;margin-top:6px}
+ #ui a{color:#8cf;text-decoration:none}
+ @media (max-width:640px){#ui{font-size:11px;max-height:38vh} #ui .detail{display:none}}
+</style>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div id="ui">
+ <b>THE ONBOARDING CLIFF</b>
+ <div class="mech">A first-run funnel leaks at every step — but it <i>breaks</i> at the one step that suddenly demands real effort. Move that wall and the whole funnel changes shape.</div>
+ <div class="ro"><i>reach “aha!”</i><b id="rA">–</b></div>
+ <div class="ro"><i>biggest drop</i><b id="rB">–</b></div>
+ <div class="ro"><i>survivors / min</i><b id="rS">–</b></div>
+ <div class="ro"><i>wall sits at</i><b id="rW">–</b></div>
+ <div class="grp">DRAG THE WALL on the stage · demand <span id="dv">2.8</span>
+ <input id="dem" type="range" min="0.6" max="4.2" step="0.1" value="2.8">
+ <button id="bSplit">split the wall</button><button id="bDefer">defer past aha!</button><button id="bAuto" class="on">auto</button></div>
+ <div class="detail grp">honesty: drop probability = logistic(effort − motivation); motivation decays per step, with a value bonus only after the aha moment.<br>lineage: AARRR pirate funnels (McClure 2007) → NN/g onboarding research → growth-team “aha moment” practice (Facebook’s 7-friends-in-10-days is <i>folklore</i>, never a published result). <a href="index.html">← gallery</a></div>
+</div>
+<canvas id="c"></canvas>
+<script>
+var cv=document.getElementById('c'),ctx=cv.getContext('2d'),ui=document.getElementById('ui');
+var W,H,DPR;
+function resize(){DPR=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;cv.width=W*DPR;cv.height=H*DPR;ctx.setTransform(DPR,0,0,DPR,0,0);LAY=null;}
+addEventListener('resize',resize);resize();
+
+/*MODEL-START*/
+var CLIFF={m0:2.4,decay:0.9,base:0.30,k:1.6,aha:5,bonus:1.6,N:7};
+function motivation(i){return CLIFF.m0*Math.pow(CLIFF.decay,i)+(i>CLIFF.aha?CLIFF.bonus:0);}
+function dropP(i,e){return 1/(1+Math.exp(-CLIFF.k*(e-motivation(i))));}
+function effortOf(i,wallPos,wallE,split){
+  if(split){if(i===wallPos||i===wallPos+1)return wallE/2;}
+  else if(i===wallPos)return wallE;
+  return CLIFF.base;
+}
+function funnel(wallPos,wallE,split){
+  var ps=[],i;
+  for(i=0;i<CLIFF.N;i++)ps.push(dropP(i,effortOf(i,wallPos,wallE,split)));
+  var aha=1;for(i=0;i<=CLIFF.aha;i++)aha*=(1-ps[i]);   // reaching past the aha step
+  var big=0,bi=0;for(i=0;i<=CLIFF.aha;i++)if(ps[i]>big){big=ps[i];bi=i;}
+  return {p:ps,aha:aha,bigStep:bi,bigDrop:big};
+}
+/*MODEL-END*/
+
+var STEP=['land','tour','sign-up','import data','invite','aha!','later'];
+var SHORT=['land','tour','sign','import','invite','aha!','later'];
+var wallPos=3,wallE=2.8,split=false,auto=true,t0=performance.now()/1000,T=0;
+var ghost=null,banner='',bannerT=0;
+var dem=document.getElementById('dem'),dv=document.getElementById('dv');
+var bS=document.getElementById('bSplit'),bD=document.getElementById('bDefer'),bA=document.getElementById('bAuto');
+function markChange(msg){ghost=funnel(pw,pe,ps_);pw=wallPos;pe=wallE;ps_=split;banner=msg||'';bannerT=2.4;reset();}
+var pw=wallPos,pe=wallE,ps_=split;
+dem.oninput=function(){wallE=+dem.value;dv.textContent=wallE.toFixed(1);noAuto();markChange('demand → '+wallE.toFixed(1));};
+bS.onclick=function(){split=!split;bS.classList.toggle('on',split);noAuto();markChange(split?'wall split into two half-steps':'wall re-joined');};
+bD.onclick=function(){wallPos=(wallPos===6?3:6);bD.classList.toggle('on',wallPos===6);noAuto();markChange(wallPos===6?'deferred past aha! — value before effort':'wall back inside the funnel');};
+bA.onclick=function(){auto=!auto;bA.classList.toggle('on',auto);};
+function noAuto(){auto=false;bA.classList.remove('on');}
+
+function sprite(col,r){var s=document.createElement('canvas');s.width=s.height=r*2;var x=s.getContext('2d');
+ var g=x.createRadialGradient(r,r,0,r,r,r);g.addColorStop(0,col);g.addColorStop(.35,col.replace('1)','0.5)'));g.addColorStop(1,'rgba(0,0,0,0)');
+ x.fillStyle=g;x.fillRect(0,0,r*2,r*2);return s;}
+var SP={w:sprite('rgba(150,220,255,1)',16),f:sprite('rgba(255,110,90,1)',18),a:sprite('rgba(255,220,130,1)',24)};
+function blit(s,x,y,sc){ctx.drawImage(s,x-s.width/2*sc,y-s.height/2*sc,s.width*sc,s.height*sc);}
+function rr(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+function chip(x,y,txt,col){ctx.font='10px ui-monospace,Menlo,monospace';var w=ctx.measureText(txt).width+14;
+ ctx.fillStyle='rgba(8,10,22,.78)';rr(x,y,w,14,7);ctx.fill();ctx.strokeStyle=col;ctx.globalAlpha=.45;ctx.lineWidth=1;ctx.stroke();ctx.globalAlpha=1;
+ ctx.fillStyle=col;ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillText(txt,x+7,y+7.5);return w;}
+
+var LAY=null,PL=[];
+function layout(){
+ var r=ui.getBoundingClientRect(),pad=12,S={};
+ if(W>=780){ // staircase owns the whole right side; funnel card + chips fill under the overlay
+  S.x=r.right+14;S.y=pad+6;S.w=W-(r.right+14)-pad;S.h=H-pad*2-6;
+  S.cardX=pad;S.cardW=Math.min(r.right-pad,346);S.cardH=Math.min(206,H*0.38);
+  S.cardY=H-pad-S.cardH;S.chipTop=S.cardY-14-45;S.chipX=pad;
+  S.stTop=S.y+30;S.stBot=H-pad-8;
+ }else{
+  S.x=pad;S.y=r.bottom+10;S.w=W-pad*2;S.h=H-(r.bottom+10)-pad;
+  S.cardX=pad;S.cardW=W-2*pad;S.cardH=Math.min(150,H*0.24);
+  S.cardY=H-pad-S.cardH;S.chipTop=S.cardY-10-45;S.chipX=pad;
+  S.stTop=S.y+26;S.stBot=S.chipTop-12;
+ }
+ S.x1=S.x+S.w;S.y1=S.y+S.h;
+ PL=[];var n=CLIFF.N,pw2=S.w/n;
+ for(var i=0;i<n;i++)PL.push({x0:S.x+i*pw2+2,x1:S.x+(i+1)*pw2-2,y:S.stTop+30+(S.stBot-S.stTop-50)*i/(n-1)});
+ LAY=S;return S;
+}
+// ---- agents ----
+var ag=[],acc=0,RATE=10,entered=[],dropped=[],resolved=[],ahaT=[],serve=0;
+function reset(){for(var i=0;i<CLIFF.N;i++){entered[i]=0;dropped[i]=0;resolved[i]=0;}ahaT=[];}
+reset();
+function spawn(){if(!PL.length)return;if(occ(0)>=Math.floor((PL[0].x1-PL[0].x0)/7))return;ag.push({p:0,x:PL[0].x0,y:PL[0].y,st:'walk',vy:0,a:1,hop:0,hx:0,hy:0});entered[0]++;}
+function resolve(a){
+ var i=a.p,e=effortOf(i,wallPos,wallE,split),p=dropP(i,e);resolved[i]++;
+ if(Math.random()<p){a.st='fall';a.vy=10+Math.random()*30;dropped[i]++;return;}
+ if(i+1<CLIFF.N){a.st='hop';a.hop=0;a.hx=a.x;a.hy=a.y;a.p=i+1;entered[i+1]++;if(i+1===CLIFF.aha)ahaT.push(T);}
+ else a.st='exit';
+}
+function occ(i){var c=0;for(var z=0;z<ag.length;z++){var q=ag[z];if(q.p===i&&(q.st==='walk'||q.st==='hop'))c++;}return c;}
+function step(dt){
+ if(auto){
+  var ph=T%40;
+  if(ph<13){if(wallPos!==3||split){wallPos=3;split=false;bS.classList.remove('on');bD.classList.remove('on');markChange('');}}
+  else if(ph<22){if(!split){split=true;bS.classList.add('on');markChange('wall split into two half-steps');}}
+  else if(ph<31){if(split||wallPos!==1){split=false;wallPos=1;bS.classList.remove('on');markChange('wall moved early — cheap, but few taste value');}}
+  else {if(wallPos!==6){wallPos=6;bD.classList.add('on');markChange('deferred past aha! — value before effort');}}
+ }
+ if(bannerT>0)bannerT-=dt;
+ serve=Math.min(3,serve+dt*6.0);
+ acc+=dt*RATE;while(acc>=1){acc-=1;spawn();}
+ var i,a;
+ for(i=ag.length-1;i>=0;i--){
+  a=ag[i];
+  if(a.st==='fall'){a.vy+=430*dt;a.y+=a.vy*dt;a.x-=26*dt;a.a-=dt*0.62;if(a.a<=0||a.y>LAY.y1+40)ag.splice(i,1);continue;}
+  if(a.st==='exit'){a.x+=70*dt;a.a-=dt*1.2;if(a.a<=0)ag.splice(i,1);continue;}
+  if(a.st==='hop'){a.hop+=dt/0.22;var u=Math.min(1,a.hop),P=PL[a.p];
+   a.x=a.hx+(P.x0-a.hx)*u;a.y=a.hy+(P.y-a.hy)*u-Math.sin(Math.PI*u)*16;
+   if(a.hop>=1){a.st='walk';a.x=P.x0;a.y=P.y;}continue;}
+  var Pl=PL[a.p];a.y=Pl.y;
+  var gate=Pl.x1-6;
+  if(a.x<gate){a.x=Math.min(gate,a.x+125*dt);}
+  else{ // at the gate — wall meters throughput, and a full next step backs the queue up the stairs
+   var isWall=(a.p===wallPos)||(split&&a.p===wallPos+1);
+   var nxt=PL[a.p+1],room=!nxt||occ(a.p+1)<Math.floor((nxt.x1-nxt.x0)/7);
+   if(room){if(isWall){if(serve>=1){serve-=1;resolve(a);}}else resolve(a);}
+  }
+ }
+ // bunching: keep spacing on each platform
+ var byP={};
+ for(i=0;i<ag.length;i++){a=ag[i];if(a.st!=='walk')continue;(byP[a.p]=byP[a.p]||[]).push(a);}
+ for(var kk in byP){var arr=byP[kk];arr.sort(function(u,v){return v.x-u.x;});
+  var P0=PL[kk|0];
+  for(i=1;i<arr.length;i++)if(arr[i].x>arr[i-1].x-7)arr[i].x=Math.max(P0?P0.x0+2:0,arr[i-1].x-7);}
+ while(ahaT.length&&T-ahaT[0]>10)ahaT.shift();
+}
+// ---- draw ----
+function draw(){
+ var S=LAY||layout(),i;
+ ctx.fillStyle='#06080f';ctx.fillRect(0,0,W,H);
+ var g=ctx.createRadialGradient(S.x+S.w*0.5,S.y+S.h*0.4,10,S.x+S.w*0.5,S.y+S.h*0.4,S.w*0.9);
+ g.addColorStop(0,'rgba(50,30,60,.32)');g.addColorStop(1,'rgba(5,6,14,0)');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+ var F=funnel(wallPos,wallE,split);
+ // header (own row)
+ ctx.font='bold 12px ui-monospace,Menlo,monospace';ctx.fillStyle='#ff8f7a';ctx.textAlign='left';ctx.textBaseline='alphabetic';
+ ctx.fillText('FIRST-RUN FUNNEL · '+RATE.toFixed(0)+' new users/s',S.x,S.y+12);
+ ctx.textAlign='right';ctx.font='10px ui-monospace,monospace';ctx.fillStyle='#8b9dbd';
+ ctx.fillText('drag the red wall to any step',S.x1,S.y+12);ctx.textAlign='left';
+ // ground beneath the staircase (the space the fallen fall into)
+ ctx.beginPath();ctx.moveTo(PL[0].x0,PL[0].y);
+ for(i=0;i<PL.length;i++){ctx.lineTo(PL[i].x1,PL[i].y);if(PL[i+1])ctx.lineTo(PL[i+1].x0,PL[i+1].y);}
+ ctx.lineTo(PL[PL.length-1].x1,S.y1+20);ctx.lineTo(PL[0].x0,S.y1+20);ctx.closePath();
+ var gg=ctx.createLinearGradient(0,S.stTop,0,S.y1);
+ gg.addColorStop(0,'rgba(70,90,150,.16)');gg.addColorStop(1,'rgba(30,20,40,.03)');ctx.fillStyle=gg;ctx.fill();
+ // platforms
+ for(i=0;i<PL.length;i++){
+  var P=PL[i],isW=(i===wallPos)||(split&&i===wallPos+1),post=(i>CLIFF.aha);
+  var nx=PL[i+1];
+  if(nx){ctx.strokeStyle='rgba(120,170,230,.20)';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(P.x1,P.y);ctx.lineTo(P.x1,nx.y);ctx.lineTo(nx.x0,nx.y);ctx.stroke();}
+  ctx.globalCompositeOperation='lighter';ctx.strokeStyle=i===CLIFF.aha?'rgba(120,90,20,.5)':'rgba(30,60,110,.5)';
+  ctx.lineWidth=9;ctx.beginPath();ctx.moveTo(P.x0,P.y);ctx.lineTo(P.x1,P.y);ctx.stroke();ctx.globalCompositeOperation='source-over';
+  ctx.strokeStyle=i===CLIFF.aha?'rgba(255,220,130,.95)':(post?'rgba(130,150,190,.4)':'rgba(150,205,255,.7)');
+  ctx.lineWidth=i===CLIFF.aha?4:3;ctx.beginPath();ctx.moveTo(P.x0,P.y);ctx.lineTo(P.x1,P.y);ctx.stroke();
+  if(i===CLIFF.aha){ctx.globalCompositeOperation='lighter';blit(SP.a,(P.x0+P.x1)/2,P.y,1.0);ctx.globalCompositeOperation='source-over';}
+  ctx.font='9px ui-monospace,monospace';ctx.textAlign='left';
+  ctx.fillStyle=i===CLIFF.aha?'#ffe08a':(post?'#8b9dbd':'#bcd6f5');
+  ctx.fillText(STEP[i],P.x0+2,P.y-14);            // own row, left of the riser
+  var dp=resolved[i]>25?dropped[i]/resolved[i]:F.p[i];
+  ctx.fillStyle=isW?'#ff7a63':'#7f93b4';
+  ctx.fillText('−'+(dp*100).toFixed(0)+'%',P.x0+2,P.y+15);
+  if(isW){ // the wall riser
+   var hgt=Math.min(62,effortOf(i,wallPos,wallE,split)*17);
+   var wx=P.x1-4;
+   ctx.fillStyle='rgba(200,50,40,.35)';ctx.fillRect(wx-5,P.y-hgt,10,hgt);
+   ctx.strokeStyle='rgba(255,120,100,.95)';ctx.lineWidth=2;ctx.strokeRect(wx-5,P.y-hgt,10,hgt);
+   ctx.globalCompositeOperation='lighter';blit(SP.f,wx,P.y-hgt/2,hgt/24);ctx.globalCompositeOperation='source-over';
+   var lb=(split?'½ wall':'WALL')+' · effort '+effortOf(i,wallPos,wallE,split).toFixed(1);
+   ctx.font='9px ui-monospace,monospace';var lw=ctx.measureText(lb).width+12;
+   var lx=Math.max(S.x+2,Math.min(S.x1-lw-2,wx-lw/2)),ly=Math.max(S.y+18,P.y-hgt-16);
+   chip(lx,ly,lb,'#ff9d84');
+  }
+ }
+ // agents
+ ctx.globalCompositeOperation='lighter';
+ for(i=0;i<ag.length;i++){var a=ag[i];
+  blit(a.st==='fall'?SP.f:SP.w,a.x,a.y-5,(a.st==='fall'?0.34:0.26)*Math.max(0.15,a.a));}
+ ctx.globalCompositeOperation='source-over';
+ for(i=0;i<ag.length;i++){var b=ag[i];
+  ctx.globalAlpha=Math.max(0,Math.min(1,b.a));
+  ctx.fillStyle=b.st==='fall'?'#ff8f77':'#dff0ff';
+  ctx.beginPath();ctx.arc(b.x,b.y-5,2.7,0,7);ctx.fill();ctx.globalAlpha=1;}
+ // banner (own row above chips)
+ if(bannerT>0&&banner){
+  ctx.font='bold 11px ui-monospace,monospace';var tw=ctx.measureText(banner).width+20;
+  var bx=Math.max(12,Math.min(W-12-Math.min(tw,W-24),S.x+S.w/2-tw/2));
+  ctx.fillStyle='rgba(120,30,25,'+Math.min(.85,bannerT)+')';rr(bx,S.chipTop-24,Math.min(tw,W-24),18,9);ctx.fill();
+  ctx.strokeStyle='rgba(255,140,110,.8)';ctx.lineWidth=1;ctx.stroke();
+  ctx.fillStyle='#ffdcd2';ctx.textBaseline='middle';ctx.fillText(banner,bx+10,S.chipTop-15);ctx.textBaseline='alphabetic';
+ }
+ chip(S.chipX,S.chipTop,'the funnel doesn’t leak evenly — it breaks at the wall','#ff9d84');
+ chip(S.chipX,S.chipTop+15,'value before effort: let them taste the product first','#ffe08a');
+ chip(S.chipX,S.chipTop+30,'honesty: drop = logistic(effort − motivation)','#8b9dbd');
+ drawCard(S,F);
+}
+function drawCard(S,F){
+ var x=S.cardX,y=S.cardY,w=S.cardW,h=S.cardH;
+ ctx.fillStyle='rgba(7,10,24,.82)';rr(x,y,w,h,8);ctx.fill();
+ ctx.strokeStyle='rgba(255,140,120,.2)';ctx.lineWidth=1;ctx.stroke();
+ ctx.font='10px ui-monospace,monospace';ctx.textBaseline='alphabetic';ctx.textAlign='left';
+ ctx.fillStyle='#ffb2a0';ctx.fillText('drop-off per step',x+8,y+13);
+ ctx.fillStyle='#8b9dbd';ctx.fillText('▭ before this change',x+8,y+26);   // legend on its own row
+ var px=x+10,py=y+32,pw=w-20,ph=h-32-26,n=CLIFF.N,bw=pw/n*0.62;
+ for(var i=0;i<n;i++){
+  var cx=px+pw*(i+0.5)/n,dp=resolved[i]>25?dropped[i]/resolved[i]:F.p[i],hh=ph*dp;
+  if(ghost){var gh=ph*ghost.p[i];ctx.strokeStyle='rgba(150,170,210,.45)';ctx.lineWidth=1;ctx.strokeRect(cx-bw/2-2,py+ph-gh,bw+4,gh);}
+  var isW=(i===wallPos)||(split&&i===wallPos+1);
+  ctx.fillStyle=isW?'rgba(255,90,70,.85)':'rgba(120,180,255,.6)';
+  ctx.fillRect(cx-bw/2,py+ph-hh,bw,hh);
+  ctx.font='9px ui-monospace,monospace';ctx.textAlign='center';
+  ctx.fillStyle=isW?'#ff9d84':'#a9c2e6';ctx.fillText((dp*100).toFixed(0)+'%',cx,py+ph-hh-3);
+  ctx.font='8px ui-monospace,monospace';ctx.fillStyle=i===CLIFF.aha?'#ffe08a':'#7f93b4';ctx.fillText(SHORT[i],cx,py+ph+14);
+ }
+ ctx.textAlign='left';
+ ctx.strokeStyle='rgba(140,170,220,.25)';ctx.beginPath();ctx.moveTo(px,py+ph);ctx.lineTo(px+pw,py+ph);ctx.stroke();
+}
+// ---- pointer: drag the wall ----
+var drag=false;
+function idxAt(e){var S=LAY;if(!S)return wallPos;var r=cv.getBoundingClientRect(),X=e.clientX-r.left;
+ var k=Math.floor((X-S.x)/(S.w/CLIFF.N));return Math.max(0,Math.min(CLIFF.N-1,k));}
+cv.addEventListener('pointerdown',function(e){drag=true;cv.setPointerCapture(e.pointerId);noAuto();
+ var k=idxAt(e);if(k!==wallPos){wallPos=k;bD.classList.toggle('on',wallPos===6);markChange('wall → “'+STEP[k]+'”');}e.preventDefault();});
+cv.addEventListener('pointermove',function(e){if(!drag)return;var k=idxAt(e);
+ if(k!==wallPos){wallPos=k;bD.classList.toggle('on',wallPos===6);markChange('wall → “'+STEP[k]+'”');}});
+cv.addEventListener('pointerup',function(e){drag=false;});
+cv.addEventListener('pointercancel',function(e){drag=false;});
+
+var last=performance.now()/1000,accT=0,SUB=1/60;
+function frame(){
+ var now=performance.now()/1000,rd=Math.min(0.45,now-last);last=now;T=now-t0;
+ if(!LAY)layout();
+ accT+=rd;var k=0;while(accT>=SUB&&k<40){step(SUB);accT-=SUB;k++;}
+ draw();
+ var F=funnel(wallPos,wallE,split);
+ document.getElementById('rA').textContent=(F.aha*100).toFixed(1)+'%';
+ document.getElementById('rB').textContent=STEP[F.bigStep]+'  −'+(F.bigDrop*100).toFixed(0)+'%';
+ document.getElementById('rS').textContent=(ahaT.length*6).toFixed(0);
+ document.getElementById('rW').textContent=(wallPos>CLIFF.aha?'after aha!':'“'+STEP[wallPos]+'”')+(split?' (split)':'');
+ requestAnimationFrame(frame);
+}
+layout();
+for(var s0=0;s0<1500;s0++){T=-25+s0*SUB;step(SUB);}   // warm start: the funnel is already flowing at t=0
+T=0;bannerT=0;ghost=null;
+requestAnimationFrame(frame);
+</script></body>
