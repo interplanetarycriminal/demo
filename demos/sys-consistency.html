@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Consistency Spectrum</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:#04060c;overflow:hidden;color:#d5e6ff;
+  font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+#c{position:fixed;inset:0;display:block;touch-action:none}
+#ui{position:fixed;top:10px;left:10px;width:min(340px,calc(100vw - 20px));max-height:45vh;overflow:auto;
+  background:rgba(6,11,22,.86);border:1px solid #1d3560;border-radius:11px;padding:9px 11px 10px;z-index:5;
+  box-shadow:0 0 24px #000a}
+h1{font-size:12.5px;letter-spacing:.6px;color:#eaf4ff;text-shadow:0 0 10px #55e6ff55}
+.mech{font-size:10.5px;color:#8ba6ce;margin:4px 0 7px}
+.row{display:flex;justify-content:space-between;gap:8px;font-size:11px;line-height:1.35}
+.k{color:#7e96bb}.v{color:#eaf4ff}.v b{color:#ffd489;font-weight:600}
+.v s{color:#ff6d5e;text-decoration:none;font-weight:600}.v u{color:#55e6ff;text-decoration:none;font-weight:600}
+#rQ{font-weight:700;padding:0 6px;border-radius:4px;background:#3a0d10;color:#ff6d5e}
+#rQ.ok{background:#0c2a1c;color:#57ffab;box-shadow:0 0 10px #4dffa855}
+.ctl{margin-top:8px;display:flex;flex-wrap:wrap;gap:4px}
+button{flex:1 1 30%;font:600 10px/1.2 inherit;color:#8fa8cc;background:#0b162b;
+  border:1px solid #22406e;border-radius:6px;padding:5px 3px;cursor:pointer}
+button.on{color:#04121a;background:#55e6ff;border-color:#b3f3ff;box-shadow:0 0 14px #55e6ff88}
+label{display:block;font-size:10px;margin:6px 0 1px;color:#96afd2}
+label span{color:#ffd489}
+input[type=range]{width:100%;accent-color:#55e6ff;height:15px}
+.sl{display:flex;gap:8px}.sl>div{flex:1}
+.hon{margin-top:8px;font-size:9.5px;color:#6d84a6;border-top:1px solid #14243f;padding-top:6px}
+.detail{margin-top:6px;font-size:9.5px;color:#63799a}
+.detail b{color:#8fb6e8}
+@media (max-width:640px){#ui{font-size:11px;max-height:38vh}#ui .detail{display:none}}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>THE CONSISTENCY SPECTRUM</h1>
+  <div class="mech">Replicas answer reads while replication is still in flight — each named guarantee forbids one specific anomaly, and quorum arithmetic (R+W&gt;N) buys the strong end.</div>
+  <div class="row"><span class="k">guarantee</span><span class="v"><b id="rG">eventual</b></span></div>
+  <div class="row"><span class="k">anomalies caught</span><span class="v">RYW <s id="rRy">0</s> · mono <s id="rMo">0</s> · stale <s id="rSt">0</s></span></div>
+  <div class="row"><span class="k">effective staleness</span><span class="v"><b id="rLagms">0</b> ms</span></div>
+  <div class="row"><span class="k">R+W &gt; N ?</span><span id="rQ">1+1 &gt; 3 · no overlap</span></div>
+  <div class="ctl">
+    <button id="g0" class="on">eventual</button><button id="g1">read-your-writes</button>
+    <button id="g2">monotonic</button><button id="g3">bounded Δ</button><button id="g4">strong</button>
+  </div>
+  <div class="sl">
+    <div><label>N <span id="vN">3</span></label><input id="sN" type="range" min="3" max="5" value="3"></div>
+    <div><label>R <span id="vR">1</span></label><input id="sR" type="range" min="1" max="5" value="1"></div>
+    <div><label>W <span id="vW">1</span></label><input id="sW" type="range" min="1" max="5" value="1"></div>
+  </div>
+  <label>replication lag: <span id="vL">550</span> ms</label>
+  <input id="sL" type="range" min="10" max="140" value="55">
+  <div class="hon">Honesty: a 3-to-5 replica toy with one key and per-key versions — no transactions, no clock skew, no read repair, and "strong" here means quorum overlap, not linearizability with real clocks.</div>
+  <div class="detail"><b>Lineage.</b> <b>Terry et al.</b> (Bayou, 1994) named the <b>session guarantees</b> — read-your-writes, monotonic reads, writes-follow-reads. <b>Dynamo</b> (2007) shipped <b>tunable N/R/W</b> quorums so an operator could dial the trade per request. Today every cloud database has a consistency page — Cosmos DB sells exactly five levels, bounded staleness included.</div>
+</div>
+<script>
+(function(){
+var cv=document.getElementById('c'),ctx=cv.getContext('2d'),ui=document.getElementById('ui');
+var W=0,H=0,DPR=1,UIB=0,S={x:0,y:0,w:0,h:0},G={};
+function $(i){return document.getElementById(i)}
+//--CORE--
+var CORE=(function(){
+var EV=[[0.30,'w',0,0],[0.90,'r',1,2],[1.50,'w',1,0],[2.10,'r',0,1],[2.70,'w',1,0],
+        [3.10,'r',0,0],[3.60,'w',0,0],[3.95,'r',0,2],[4.10,'r',1,0],[4.50,'r',1,2],
+        [5.20,'w',1,0],[5.75,'r',0,2],[6.35,'r',0,0]],CYC=7.2,NM=['A','B','C','D','E'],CN=['YOU','RIVAL'];
+function create(){var st={t:0,N:3,R:1,W:1,lag:0.55,delta:0.45,guar:'eventual',ver:0,rep:[],inflight:[],
+  cl:[{lastW:0,lastR:0},{lastW:0,lastR:0}],cnt:{ryw:0,mono:0,stale:0},log:[],flash:0,fi:null,ops:[],idx:0,cyc:0};
+  setN(st,3);return st}
+function setN(st,n){st.N=n;st.rep=[];for(var i=0;i<n;i++)st.rep.push({ver:0,val:4,src:0});
+  st.inflight=[];st.ver=0;st.cl=[{lastW:0,lastR:0},{lastW:0,lastR:0}];reset(st)}
+function reset(st){st.cnt={ryw:0,mono:0,stale:0};st.log=[];st.flash=0;st.fi=null}
+function dly(st,j){return st.lag*(j===1?1:2.2+0.9*(j-2))}
+function write(st,c){st.ver++;var v=st.ver,x=4+v;
+  st.rep[0].ver=v;st.rep[0].val=x;st.rep[0].src=st.t;
+  for(var j=1;j<st.N;j++)st.inflight.push({to:j,ver:v,val:x,src:st.t,t0:st.t,at:st.t+dly(st,j)});
+  st.cl[c].lastW=v;st.ops.push({k:'w',c:c,set:[0],age:0,val:x,ver:v})}
+function committed(st){var v=[],i;for(i=0;i<st.N;i++)v.push(st.rep[i].ver);
+  v.sort(function(a,b){return b-a});return v[Math.min(st.W,st.N)-1]||0}
+function readN(st){return st.guar==='strong'?Math.max(st.R,st.N-st.W+1):st.R}
+function order(st,c,pref){var idx=[pref%st.N],i,g=st.guar,cl=st.cl[c],pass=[],fail=[];
+  for(i=0;i<st.N;i++)if(i!==pref%st.N)idx.push(i);
+  for(i=0;i<idx.length;i++){var r=st.rep[idx[i]],ok=true;
+    if(g==='ryw')ok=r.ver>=cl.lastW;else if(g==='monotonic')ok=r.ver>=cl.lastR;
+    else if(g==='bounded')ok=(st.t-r.src)<=st.delta;
+    (ok?pass:fail).push(idx[i])}
+  return pass.concat(fail)}
+function read(st,c,pref){
+  var set=order(st,c,pref).slice(0,Math.min(st.N,readN(st))),got=-1,gv=0,src=st.t,i,from=set[0];
+  for(i=0;i<set.length;i++){var r=st.rep[set[i]];if(r.ver>got){got=r.ver;gv=r.val;src=r.src;from=set[i]}}
+  var cl=st.cl[c],cm=committed(st),ty=null,txt='';
+  if(got<cl.lastW){st.cnt.ryw++;ty='ryw';txt=CN[c]+' wrote x='+(4+cl.lastW)+', then read x='+gv+' from '+NM[from]}
+  if(got<cl.lastR){st.cnt.mono++;if(!ty){ty='mono';txt=CN[c]+' saw x='+(4+cl.lastR)+', then x='+gv+' from '+NM[from]}}
+  if(got<cm){st.cnt.stale++;if(!ty){ty='stale';txt=CN[c]+' read x='+gv+' — x='+(4+cm)+' was already committed'}}
+  if(ty){st.flash=1.15;st.fi={ty:ty,c:c,from:from,txt:txt,saw:gv};
+    st.log.unshift({t:st.t,ty:ty,txt:txt});if(st.log.length>5)st.log.pop()}
+  cl.lastR=Math.max(cl.lastR,got);
+  st.ops.push({k:'r',c:c,set:set,age:0,val:gv,ver:got,bad:!!ty});return got}
+function step(st,dt){st.t+=dt;if(st.flash>0)st.flash-=dt;var i;
+  while(st.idx<EV.length&&st.t>=EV[st.idx][0]+st.cyc*CYC){var e=EV[st.idx];st.idx++;
+    if(e[1]==='w')write(st,e[2]);else read(st,e[2],e[3])}
+  if(st.idx>=EV.length&&st.t>=(st.cyc+1)*CYC){st.cyc++;st.idx=0}
+  for(i=st.inflight.length-1;i>=0;i--){var m=st.inflight[i];
+    if(st.t>=m.at){var r=st.rep[m.to];if(m.ver>r.ver){r.ver=m.ver;r.val=m.val;r.src=m.src}st.inflight.splice(i,1)}}
+  for(i=st.ops.length-1;i>=0;i--){st.ops[i].age+=dt;if(st.ops[i].age>0.85)st.ops.splice(i,1)}}
+function stale(st){var mx=0;for(var i=0;i<st.N;i++)mx=Math.max(mx,st.t-st.rep[i].src);return mx}
+return{create:create,step:step,setN:setN,reset:reset,committed:committed,readN:readN,stale:stale,NM:NM,CN:CN}})();
+//--ENDCORE--
+var st=CORE.create(),SUB=1/60;
+function spr(r,g,b,sz){var q=document.createElement('canvas');q.width=q.height=sz;var x=q.getContext('2d'),c=sz/2,
+  gr=x.createRadialGradient(c,c,0,c,c,c);gr.addColorStop(0,'rgba('+r+','+g+','+b+',1)');
+  gr.addColorStop(.3,'rgba('+r+','+g+','+b+',.5)');gr.addColorStop(.62,'rgba('+r+','+g+','+b+',.14)');
+  gr.addColorStop(1,'rgba('+r+','+g+','+b+',0)');x.fillStyle=gr;x.fillRect(0,0,sz,sz);return q}
+var SP={w:spr(255,196,84,40),r:spr(85,230,255,40),b:spr(255,90,70,40),g:spr(77,255,168,40)};
+var CC=['#ffc454','#a98bff'],PROM={eventual:'eventual: replicas converge — until then, anything goes',
+  ryw:'read-your-writes: a read must include at least your own last write',
+  monotonic:'monotonic reads: a session never sees version numbers go backwards',
+  bounded:'bounded staleness: never read data older than Δ',
+  strong:'strong: R+W>N forces the read set to overlap the write set'};
+function glow(s,x,y,sz,al){ctx.globalAlpha=al==null?1:al;ctx.drawImage(s,x-sz/2,y-sz/2,sz,sz);ctx.globalAlpha=1}
+function rr(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath()}
+function chip(x,y,txt,col,fs,al){var f=fs||10;ctx.font='600 '+f+'px ui-monospace,monospace';
+  var w=ctx.measureText(txt).width+14,h=f+9,bx=al==='c'?x-w/2:(al==='r'?x-w:x);
+  ctx.fillStyle='rgba(6,12,24,.92)';rr(bx,y,w,h,5);ctx.fill();ctx.strokeStyle=col;ctx.lineWidth=1;ctx.stroke();
+  ctx.fillStyle=col;ctx.textAlign='left';ctx.textBaseline='middle';ctx.fillText(txt,bx+7,y+h/2);return w}
+function layout(){
+  var lh=Math.max(92,Math.min(120,H*0.19)),ly=S.y+S.h-lh,full=(ly>=UIB+10);
+  G.log={x:full?12:S.x+6,y:ly,w:full?W-24:S.w-12,h:lh-2};
+  G.cy=S.y+40;G.band={x:S.x+8,y:S.y+66,w:S.w-16,h:38};
+  G.top=G.band.y+G.band.h+10;G.bot=ly-12;
+  G.cw=Math.min(150,(S.w-24)/st.N-10);G.gap=(S.w-24-G.cw*st.N)/Math.max(1,st.N-1);
+  G.x0=S.x+12}
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
+  cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);cv.style.width=W+'px';cv.style.height=H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);var r=ui.getBoundingClientRect();UIB=r.bottom;
+  if(W-(r.right+16)>=380){S={x:r.right+16,y:12,w:W-(r.right+16)-12,h:H-24}}
+  else{S={x:12,y:r.bottom+12,w:W-24,h:H-(r.bottom+12)-12}}
+  if(S.h<210){S.y=12;S.h=H-24}layout()}
+function colX(i){return G.x0+i*(G.cw+G.gap)}
+function cliX(c){return S.x+S.w*(c===0?0.24:0.76)}
+function drawClient(c){var x=cliX(c),y=G.cy,w=Math.min(120,S.w*0.28),h=26,act=0;
+  for(var i=0;i<st.ops.length;i++)if(st.ops[i].c===c)act=Math.max(act,1-st.ops[i].age/0.85);
+  ctx.globalCompositeOperation='lighter';glow(c===0?SP.w:SP.r,x,y+h/2,w*1.3,0.05+0.16*act);
+  ctx.globalCompositeOperation='source-over';
+  ctx.fillStyle='rgba(9,15,28,.95)';rr(x-w/2,y,w,h,7);ctx.fill();
+  ctx.strokeStyle=CC[c];ctx.lineWidth=act>0?2:1.2;ctx.stroke();
+  ctx.fillStyle=CC[c];ctx.font='600 11px ui-monospace,monospace';ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.fillText('client '+CORE.CN[c],x,y+h/2)}
+function drawRep(i){var x=colX(i),y=G.top,w=G.cw,h=G.bot-G.top,r=st.rep[i],act=0,bad=false,j;
+  for(j=0;j<st.ops.length;j++){var o=st.ops[j];if(o.set.indexOf(i)>=0){act=Math.max(act,1-o.age/0.85);if(o.bad)bad=true}}
+  var sl=st.t-r.src,old=sl>st.delta;
+  ctx.globalCompositeOperation='lighter';glow(bad?SP.b:(old?SP.w:SP.g),x+w/2,y+h*0.42,w*1.25,0.05+0.15*act);
+  ctx.globalCompositeOperation='source-over';
+  ctx.fillStyle='rgba(8,13,25,.95)';rr(x,y,w,h,9);ctx.fill();
+  ctx.strokeStyle=bad?'#ff6d5e':(act>0?'#55e6ff':'#1e3a66');ctx.lineWidth=act>0?2:1;ctx.stroke();
+  ctx.textAlign='center';ctx.textBaseline='top';ctx.font='600 11px ui-monospace,monospace';
+  ctx.fillStyle=i===0?'#4dffa8':'#8ba6ce';
+  ctx.fillText('REPLICA '+CORE.NM[i]+(i===0?' · leader':''),x+w/2,y+8);
+  var dr=Math.min(w*0.30,Math.min(30,h*0.20)),dx=x+w/2,dy=y+30+dr;
+  ctx.strokeStyle='#2b4a7d';ctx.lineWidth=1;ctx.beginPath();ctx.arc(dx,dy,dr,0,6.2832);ctx.stroke();
+  for(j=0;j<12;j++){var a=j*Math.PI/6,c1=Math.cos(a),s1=Math.sin(a);
+    ctx.beginPath();ctx.moveTo(dx+c1*dr*0.86,dy+s1*dr*0.86);ctx.lineTo(dx+c1*dr,dy+s1*dr);ctx.stroke()}
+  var ha=-Math.PI/2+(r.ver%12)*Math.PI/6;
+  ctx.strokeStyle='#ffd489';ctx.lineWidth=2;ctx.shadowColor='#ffd489';ctx.shadowBlur=8;ctx.beginPath();
+  ctx.moveTo(dx,dy);ctx.lineTo(dx+Math.cos(ha)*dr*0.72,dy+Math.sin(ha)*dr*0.72);ctx.stroke();ctx.shadowBlur=0;
+  ctx.font='600 '+Math.round(Math.min(21,w*0.20))+'px ui-monospace,monospace';ctx.fillStyle='#eaf4ff';
+  ctx.fillText('x='+r.val,x+w/2,dy+dr+7);
+  ctx.font='10px ui-monospace,monospace';ctx.fillStyle='#8ba6ce';ctx.fillText('version v'+r.ver,x+w/2,dy+dr+30);
+  var by=y+h-24,bw=w-22;
+  ctx.fillStyle='rgba(255,255,255,.07)';rr(x+11,by,bw,7,3);ctx.fill();
+  var f=Math.max(0,Math.min(1,sl/1.6));ctx.fillStyle=old?'#ff9c4d':'#4dffa8';rr(x+11,by,Math.max(2,bw*f),7,3);ctx.fill();
+  ctx.font='9px ui-monospace,monospace';ctx.fillStyle=old?'#ffb066':'#6f86a8';ctx.textBaseline='top';
+  ctx.fillText('stale '+Math.round(sl*1000)+' ms',x+w/2,by+10)}
+function drawStage(){
+  ctx.font='600 11px ui-monospace,monospace';ctx.textAlign='center';ctx.textBaseline='top';ctx.fillStyle='#9fb8dd';
+  ctx.fillText(st.N+' REPLICAS  ·  ONE KEY  x  ·  WRITES LAND ON THE LEADER, READS LAND ANYWHERE',S.x+S.w/2,S.y+6);
+  var i,j;
+  ctx.globalCompositeOperation='lighter';
+  for(i=0;i<st.inflight.length;i++){var m=st.inflight[i],u=Math.max(0,Math.min(1,(st.t-m.t0)/(m.at-m.t0))),
+    ax=colX(0)+G.cw/2,bx=colX(m.to)+G.cw/2,yy=G.top+(G.bot-G.top)*0.5;
+    glow(SP.g,ax+(bx-ax)*u,yy-Math.sin(u*Math.PI)*22,15,.85)}
+  for(i=0;i<st.ops.length;i++){var o=st.ops[i],al=1-o.age/0.85,cx=cliX(o.c),cy2=G.cy+26;
+    for(j=0;j<o.set.length;j++){var tx=colX(o.set[j])+G.cw/2;
+      ctx.strokeStyle=(o.bad?'rgba(255,90,70,':(o.k==='w'?'rgba(255,196,84,':'rgba(85,230,255,'))+(al*0.7)+')';
+      ctx.lineWidth=o.k==='w'?2.2:1.5;ctx.beginPath();ctx.moveTo(cx,cy2);
+      ctx.bezierCurveTo(cx,cy2+34,tx,G.top-34,tx,G.top);ctx.stroke();
+      var uu=o.k==='w'?(1-al):al,px=cx+(tx-cx)*uu,py=cy2+(G.top-cy2)*uu;
+      glow(o.bad?SP.b:(o.k==='w'?SP.w:SP.r),px,py,16,al)}}
+  ctx.globalCompositeOperation='source-over';
+  for(i=0;i<st.N;i++)drawRep(i);
+  drawClient(0);drawClient(1);
+  var B=G.band,fl=st.flash>0&&st.fi;
+  ctx.fillStyle=fl?'rgba(46,8,10,.94)':'rgba(8,14,26,.85)';rr(B.x,B.y,B.w,B.h,8);ctx.fill();
+  ctx.strokeStyle=fl?'rgba(255,90,70,'+(0.65+0.35*Math.sin(st.t*11))+')':'#1e3a66';ctx.lineWidth=fl?2:1;ctx.stroke();
+  ctx.textAlign='center';ctx.textBaseline='middle';
+  if(fl){var TT={ryw:'READ-YOUR-WRITES VIOLATION',mono:'NON-MONOTONIC READ',stale:'STALE READ'};
+    ctx.font='700 '+Math.round(Math.max(12,Math.min(17,S.w*0.023)))+'px ui-monospace,monospace';
+    ctx.shadowColor='#ff3b2a';ctx.shadowBlur=18;ctx.fillStyle='#ff6d5e';
+    ctx.fillText('↺  '+TT[st.fi.ty]+'  ↺',B.x+B.w/2,B.y+13);ctx.shadowBlur=0;
+    ctx.font='10.5px ui-monospace,monospace';ctx.fillStyle='#ffb3aa';
+    ctx.fillText(st.fi.txt+(st.fi.ty==='ryw'?'  — you saw your own past':''),B.x+B.w/2,B.y+29)}
+  else{ctx.font='600 11px ui-monospace,monospace';ctx.fillStyle='#7fd9ff';
+    ctx.fillText(PROM[st.guar],B.x+B.w/2,B.y+13);
+    ctx.font='10px ui-monospace,monospace';ctx.fillStyle='#6f86a8';
+    ctx.fillText('reads contact '+CORE.readN(st)+' of '+st.N+' replicas  ·  committed version v'+CORE.committed(st),B.x+B.w/2,B.y+29)}}
+function drawLog(){
+  var P=G.log;ctx.fillStyle='rgba(7,12,23,.92)';rr(P.x,P.y,P.w,P.h,9);ctx.fill();
+  ctx.strokeStyle='#1b3057';ctx.lineWidth=1;ctx.stroke();
+  ctx.font='600 9.5px ui-monospace,monospace';ctx.textAlign='left';ctx.textBaseline='middle';
+  ctx.fillStyle='#8ba6ce';ctx.fillText('ANOMALY LOG',P.x+9,P.y+11);
+  ctx.textAlign='right';ctx.fillStyle='#6f86a8';
+  ctx.fillText('each guarantee forbids one row type — and costs latency or availability',P.x+P.w-9,P.y+11);
+  var CL={ryw:'#ff6d5e',mono:'#ff9c4d',stale:'#ffd489'},
+    NMT={ryw:'READ-YOUR-WRITES',mono:'MONOTONIC READS',stale:'STALE READ'},
+    rows=Math.max(1,Math.floor((P.h-26)/15)),i;
+  ctx.textAlign='left';
+  if(!st.log.length){ctx.fillStyle='#4dffa8';ctx.font='10px ui-monospace,monospace';
+    ctx.fillText('no violations under this setting — the guarantee is holding',P.x+9,P.y+30)}
+  for(i=0;i<Math.min(rows,st.log.length);i++){var L=st.log[i],y=P.y+30+i*15;
+    ctx.font='600 9.5px ui-monospace,monospace';ctx.fillStyle=CL[L.ty];
+    ctx.fillText('t='+L.t.toFixed(2)+'s',P.x+9,y);ctx.fillText(NMT[L.ty],P.x+66,y);
+    ctx.font='9.5px ui-monospace,monospace';ctx.fillStyle='#9fb6d8';ctx.fillText(L.txt,P.x+186,y)}}
+function draw(){ctx.fillStyle='#04060c';ctx.fillRect(0,0,W,H);
+  if(st.flash>0){ctx.fillStyle='rgba(255,60,40,'+(0.09*Math.max(0,st.flash))+')';ctx.fillRect(0,0,W,H)}
+  drawStage();drawLog()}
+var el={g:$('rG'),ry:$('rRy'),mo:$('rMo'),sa:$('rSt'),lg:$('rLagms'),q:$('rQ')};
+function syncUI(){el.g.textContent=st.guar;el.ry.textContent=st.cnt.ryw;el.mo.textContent=st.cnt.mono;
+  el.sa.textContent=st.cnt.stale;el.lg.textContent=Math.round(CORE.stale(st)*1000);
+  var R=CORE.readN(st),ok=R+st.W>st.N;
+  el.q.textContent=R+'+'+st.W+(ok?' > ':' ≤ ')+st.N+(ok?' · overlap':' · no overlap');
+  el.q.className=ok?'ok':''}
+var GS=['eventual','ryw','monotonic','bounded','strong'];
+for(var gi=0;gi<5;gi++)(function(k){$('g'+k).onclick=function(){st.guar=GS[k];CORE.reset(st);
+  for(var j=0;j<5;j++)$('g'+j).className=j===k?'on':''}})(gi);
+$('sN').oninput=function(){var v=+this.value;$('vN').textContent=v;CORE.setN(st,v);
+  $('sR').max=v;$('sW').max=v;if(st.R>v){st.R=v;$('sR').value=v;$('vR').textContent=v}
+  if(st.W>v){st.W=v;$('sW').value=v;$('vW').textContent=v}layout()};
+$('sR').oninput=function(){st.R=+this.value;$('vR').textContent=this.value;CORE.reset(st)};
+$('sW').oninput=function(){st.W=+this.value;$('vW').textContent=this.value;CORE.reset(st)};
+$('sL').oninput=function(){st.lag=+this.value/100;st.delta=Math.max(0.2,st.lag*0.82);
+  $('vL').textContent=Math.round(st.lag*1000);CORE.reset(st)};
+cv.addEventListener('pointerdown',function(e){cv.setPointerCapture(e.pointerId);pick(e)});
+function pick(e){for(var i=0;i<st.N;i++){var x=colX(i);
+  if(e.clientX>=x&&e.clientX<=x+G.cw&&e.clientY>=G.top&&e.clientY<=G.bot){
+    var g=GS[(GS.indexOf(st.guar)+1)%5];st.guar=g;CORE.reset(st);
+    for(var j=0;j<5;j++)$('g'+j).className=GS[j]===g?'on':''}}}
+window.addEventListener('resize',resize);
+var lastT=performance.now()/1000,uiAcc=0;
+function frame(now){now/=1000;var rdt=now-lastT;lastT=now;if(rdt>0.45)rdt=0.45;if(rdt<0)rdt=0;
+  var n=Math.max(1,Math.round(rdt/SUB));for(var i=0;i<n;i++)CORE.step(st,SUB);
+  draw();uiAcc+=rdt;if(uiAcc>0.1){uiAcc=0;syncUI()}requestAnimationFrame(frame)}
+resize();syncUI();requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
