@@ -13,11 +13,11 @@ html,body{height:100%;background:#04060c;overflow:hidden;color:#d5e6ff;
   background:rgba(6,11,22,.87);border:1px solid #1d3560;border-radius:11px;padding:9px 11px 10px;z-index:5;
   box-shadow:0 0 24px #000a}
 h1{font-size:12.5px;letter-spacing:.6px;color:#eaf4ff;text-shadow:0 0 10px #4dffa855}
-.mech{font-size:10.5px;color:#8ba6ce;margin:4px 0 7px}
-.row{display:flex;justify-content:space-between;gap:8px;font-size:11px;line-height:1.35}
+.mech{font-size:10.5px;line-height:1.32;color:#8ba6ce;margin:3px 0 6px}
+.row{display:flex;justify-content:space-between;gap:8px;font-size:11px;line-height:1.28}
 .k{color:#7e96bb}.v{color:#eaf4ff}.v b{color:#4dffa8;font-weight:600}.v i{color:#ff6d5e;font-style:normal;font-weight:600}
-.bars{margin:5px 0 2px}
-.bar{display:flex;align-items:center;gap:5px;font-size:9.5px;margin-top:2px}
+.bars{margin:4px 0 1px}
+.bar{display:flex;align-items:center;gap:5px;font-size:9.5px;margin-top:1px}
 .bar span{width:11px;font-weight:700}
 .bar i{flex:1;height:6px;background:#0e1b30;border-radius:3px;overflow:hidden;display:block}
 .bar u{display:block;height:100%;border-radius:3px;text-decoration:none;transition:width .18s}
@@ -40,7 +40,7 @@ input[type=range]{width:100%;height:15px;accent-color:#4dffa8;background:transpa
 <canvas id="c"></canvas>
 <div id="ui">
   <h1>CONSISTENT HASHING</h1>
-  <div class="mech">Hash servers <b>and</b> keys onto one ring; a key belongs to the next server clockwise — so a new server steals only the arc behind it.</div>
+  <div class="mech">Hash servers <b>and</b> keys onto one ring; a key belongs to the next server clockwise, so a new server steals only the arc behind it.</div>
   <div class="row"><span class="k">servers</span><span class="v"><b id="rN">4</b></span></div>
   <div class="row"><span class="k">keys moved · last change</span><span class="v"><b id="rMv">—</b></span></div>
   <div class="row"><span class="k">mod-N would have moved</span><span class="v"><i id="rMod">—</i></span></div>
@@ -50,7 +50,7 @@ input[type=range]{width:100%;height:15px;accent-color:#4dffa8;background:transpa
   <label>virtual nodes per server <b id="lVN">6</b><input id="sVN" type="range" min="1" max="32" value="6"></label>
   <label>keys <b id="lK">80</b><input id="sK" type="range" min="40" max="160" value="80"></label>
   <div class="hint">Tap the ring to drop a key at that spot.</div>
-  <div class="hon">Honesty: hash = 32-bit FNV-1a over label strings, so positions are deterministic but not cryptographic; real rings hash 128-bit MD5/Murmur and store replicas on the next R distinct servers.</div>
+  <div class="hon">Honesty: hash = 32-bit FNV-1a over label strings plus an avalanche mix (raw FNV puts <b>A#0</b> and <b>A#1</b> almost on top of each other). Real rings use 128-bit MD5/Murmur and place replicas on the next R <i>distinct</i> servers.</div>
   <div class="detail"><b>Lineage.</b> <b>Karger et al. 1997</b> invented consistent hashing for <b>web caching</b> — relocating clients without a global rehash. <b>Amazon Dynamo (2007)</b> put it under a database, adding virtual nodes for load smoothing. Today it is <b>memcached</b> clients, <b>Cassandra</b> and <b>Riak</b> token rings, and every <b>CDN</b> deciding which edge holds your object.</div>
 </div>
 <script>
@@ -60,7 +60,10 @@ var W=0,H=0,DPR=1,UIB=0,S={x:0,y:0,w:0,h:0},G={};
 function $(i){return document.getElementById(i)}
 //--CORE--
 var CORE=(function(){
-function fnv(s){var h=2166136261>>>0;for(var i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)>>>0}return h>>>0}
+function fnv(s){var h=2166136261>>>0,i;
+  for(i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)>>>0}
+  h^=h>>>15;h=Math.imul(h,2246822507)>>>0;h^=h>>>13;h=Math.imul(h,3266489909)>>>0;h^=h>>>16;
+  return h>>>0}
 function pos(s){return fnv(s)/4294967296}
 function mkRing(sv,vn){var p=[],i,v;
   for(i=0;i<sv.length;i++)for(v=0;v<vn;v++)p.push({p:pos(sv[i]+'#'+v),s:i});
@@ -88,6 +91,7 @@ var st={servers:['A','B','C','D'],vn:6,keys:CORE.mkKeys(80),pts:null,t:0,auto:tr
 function ownName(p){var o=CORE.owner(st.pts,p);return o<0?'A':st.servers[o]}
 st.pts=CORE.mkRing(st.servers,st.vn);
 for(var i=0;i<st.keys.length;i++)st.keys[i].own=ownName(st.keys[i].p);
+st.modMoved=CORE.movedMod(st.keys,4,5);st.changed=false;
 function apply(sv,vn,anim){
   var old=st.keys.map(function(k){return k.own});
   st.servers=sv;st.vn=vn;st.pts=CORE.mkRing(sv,vn);
@@ -97,16 +101,14 @@ function apply(sv,vn,anim){
       if(anim){st.fly.push({from:old[i],to:nn,key:k,d:d,t:-d,dur:1.25});d+=0.055}
       else k.own=nn}
     else k.own=nn}
-  if(anim){st.moved=moved;st.flash=1;
-    st.modMoved=CORE.movedMod(st.keys,Math.max(1,old.length?st.servers.length-(sv.length>old.length?1:-1):1),st.servers.length)}
+  if(anim)st.flash=1;
   return moved}
 function change(sv){
   var prev=st.servers.length,ns=sv.length;
-  st.modFrom=prev;st.modTo=ns;
-  var old=st.servers;
-  var moved=apply(sv,st.vn,true);
-  st.moved=moved;st.modMoved=CORE.movedMod(st.keys,Math.max(1,prev),Math.max(1,ns));
-  st.modPhase=0;st.auto=false;return old}
+  st.modFrom=Math.max(1,prev);st.modTo=Math.max(1,ns);
+  st.moved=apply(sv,st.vn,true);st.changed=true;buildBars();
+  st.modMoved=CORE.movedMod(st.keys,st.modFrom,st.modTo);
+  st.modPhase=0;st.auto=false}
 //--fx--
 function spr(r,g,b,sz){var q=document.createElement('canvas');q.width=q.height=sz;var x=q.getContext('2d'),c=sz/2,
   gr=x.createRadialGradient(c,c,0,c,c,c);gr.addColorStop(0,'rgba('+r+','+g+','+b+',1)');
@@ -143,13 +145,14 @@ function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth
 function drawRing(){
   var i,a0,a1,p0,p1,pts=st.pts;
   ctx.lineCap='butt';
-  ctx.strokeStyle='rgba(24,50,92,.9)';ctx.lineWidth=G.bw+8;
+  ctx.strokeStyle='rgba(18,36,68,.95)';ctx.lineWidth=G.bw+7;
   ctx.beginPath();ctx.arc(G.cx,G.cy,G.R,0,Math.PI*2);ctx.stroke();
   for(i=0;i<pts.length;i++){
     p0=pts[(i-1+pts.length)%pts.length].p;p1=pts[i].p;
     a0=-Math.PI/2+p0*Math.PI*2;a1=-Math.PI/2+p1*Math.PI*2;
     if(a1<a0)a1+=Math.PI*2;
-    ctx.strokeStyle=col(st.servers[pts[i].s]);ctx.globalAlpha=.30;ctx.lineWidth=G.bw;
+    var isNew=st.flash>0&&st.servers[pts[i].s]===st.servers[st.servers.length-1];
+    ctx.strokeStyle=col(st.servers[pts[i].s]);ctx.globalAlpha=isNew?(.62+.3*st.flash):.5;ctx.lineWidth=isNew?G.bw+4:G.bw;
     ctx.beginPath();ctx.arc(G.cx,G.cy,G.R,a0,a1);ctx.stroke();ctx.globalAlpha=1}
   for(i=0;i<pts.length;i++){var c=col(st.servers[pts[i].s]),A=ringXY(pts[i].p,G.R-G.bw/2-3),B=ringXY(pts[i].p,G.R+G.bw/2+3);
     ctx.strokeStyle=c;ctx.globalAlpha=.85;ctx.lineWidth=1.6;
@@ -168,22 +171,23 @@ function drawRing(){
     var u=Math.min(1,f.t/f.dur),A2=svXY(f.from),B2=svXY(f.to),K=ringXY(f.key.p,G.R),c4=col(f.to);
     for(var j=0;j<7;j++){var uu=u-j*0.035;if(uu<0)break;
       var x=bez(A2[0],G.cx*.5+K[0]*.5,B2[0],uu),y=bez(A2[1],G.cy*.5+K[1]*.5,B2[1],uu);
-      glow(SP[c4],x,y,j===0?17:12,(j===0?.95:.42)*(1-j/8))}}
+      glow(SP[c4],x,y,j===0?24:16,(j===0?1:.5)*(1-j/8));
+      if(j===0){ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(x,y,2,0,6.3);ctx.fill()}}}
 }
 function bez(a,b,c,u){var v=1-u;return v*v*a+2*v*u*b+u*u*c}
 function drawStrip(){
   var g=G.strip;
   ctx.fillStyle='rgba(8,13,26,.82)';rr(g.x,g.y,g.w,g.h,8);ctx.fill();
-  ctx.strokeStyle=st.modPhase>=0&&st.modPhase<1.6?'rgba(255,109,94,'+(0.35+0.5*(1-st.modPhase/1.6))+')':'rgba(40,70,120,.7)';
+  ctx.strokeStyle=st.modPhase>=0&&st.modPhase<2.8?'rgba(255,109,94,'+(0.35+0.5*(1-st.modPhase/2.8))+')':'rgba(40,70,120,.7)';
   ctx.lineWidth=1;ctx.stroke();
-  var ph=st.modPhase,mix=ph>=0?Math.min(1,ph/0.55):0,chaos=ph>=0&&ph<1.6?(1-ph/1.6):0;
+  var ph=st.modPhase,mix=ph>=0?Math.min(1,ph/0.55):0,chaos=ph>=0&&ph<2.8?(1-ph/2.8):0;
   chip(g.x+6,g.y+4,'ABLATION · mod-N rehash',"#ff9a8a",9.5);
   chip(g.x+g.w-6,g.y+4,'keys moved '+st.modMoved+'/'+st.keys.length+'  ('+Math.round(100*st.modMoved/st.keys.length)+'%)','#ff6d5e',9.5,'r');
   var n=Math.min(80,st.keys.length),per=40,sp=(g.w-18)/per,x0=g.x+9+sp/2;
   for(var i=0;i<n;i++){var k=st.keys[i],r=(i/per)|0,c1=k.h%st.modFrom,c2=k.h%st.modTo,
     jump=(c1!==c2)?1:0,cc=col(LET[mix>0.5?c2:c1]),
     x=x0+(i%per)*sp,y=g.y+38+r*17,
-    dy=jump*chaos*Math.sin(ph*22+i*1.7)*5.5;
+    dy=jump*chaos*Math.sin(ph*20+i*1.7)*6.5;
     if(jump&&chaos>0){glow(SP['#ff6eb4'],x,y+dy,12,chaos*.5)}
     glow(SP[cc],x,y+dy,9,.8);ctx.fillStyle=cc;ctx.beginPath();ctx.arc(x,y+dy,2.1,0,6.3);ctx.fill()}
 }
@@ -191,7 +195,7 @@ function drawStage(){
   ctx.fillStyle='#04060c';ctx.fillRect(0,0,W,H);
   drawRing();
   chip(S.x+2,S.y,'CONSISTENT HASH RING · '+st.servers.length+' servers × '+st.vn+' vnodes','#6ab6ff',10.5);
-  chip(S.x+S.w-2,S.y,'keys moved '+st.moved+'/'+st.keys.length+'  ('+Math.round(100*st.moved/st.keys.length)+'%)','#4dffa8',10.5,'r');
+  chip(S.x+S.w-2,S.y,st.changed?('keys moved '+st.moved+'/'+st.keys.length+'  ('+Math.round(100*st.moved/st.keys.length)+'%)'):'ring stable · server E joins at 2.5 s','#4dffa8',10.5,'r');
   chip(S.x+2,S.y+26,'only the arc between you and your predecessor changes hands','#8fb6e8',9.5);
   chip(S.x+2,G.capY,'virtual nodes: many small arcs average out the luck','#b98cff',9.5);
   drawStrip()}
@@ -212,7 +216,7 @@ function sync(){
 var SUB=1/60;
 function step(dt){st.t+=dt;if(st.flash>0)st.flash-=dt*1.3;
   if(st.modPhase>=0)st.modPhase+=dt;
-  if(st.modPhase>6.5)st.modPhase=0;
+  if(st.modPhase>7.4)st.modPhase=0;
   if(st.auto&&st.t>=2.5){st.auto=false;change(st.servers.concat(['E']))}
   for(var i=st.fly.length-1;i>=0;i--){var f=st.fly[i];f.t+=dt;
     if(f.t>0)f.key.flying=true;

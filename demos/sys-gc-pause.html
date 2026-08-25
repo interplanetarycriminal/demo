@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GC Pauses &amp; the Generational Bargain</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:#04060c;overflow:hidden;color:#d8ecff;
+  font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+#c{position:fixed;inset:0;display:block;touch-action:none}
+#ui{position:fixed;top:10px;left:10px;width:min(340px,calc(100vw - 20px));max-height:45vh;overflow:auto;
+  background:rgba(6,10,20,.9);border:1px solid #1f3358;border-radius:11px;padding:9px 11px 10px;z-index:5;
+  box-shadow:0 0 24px #000a}
+h1{font-size:12.5px;letter-spacing:.6px;color:#eaf4ff;text-shadow:0 0 10px #4fe3ff88}
+.mech{font-size:10.5px;color:#8b9ec2;margin:4px 0 7px}
+.row{display:flex;justify-content:space-between;gap:8px;font-size:11px;line-height:1.42}
+.k{color:#7c8dab}.v{color:#eaf4ff}.v b{font-weight:600}
+.cy b{color:#4fe3ff}.rd b{color:#ff6d5e}.gn b{color:#7fffb0}.vi b{color:#b39aea}
+.ctl{margin-top:8px;display:flex;flex-wrap:wrap;gap:5px}
+button{flex:1 1 30%;font:600 10px/1.25 inherit;color:#8ea4c8;background:#0d1526;border:1px solid #263c66;
+  border-radius:6px;padding:5px 3px;cursor:pointer}
+button.on{color:#04121a;background:#4fe3ff;border-color:#a8f0ff;box-shadow:0 0 14px #4fe3ff88}
+label{display:block;font-size:10.5px;margin:7px 0 1px;color:#8b9ec2}
+label span{color:#4fe3ff}
+input[type=range]{width:100%;accent-color:#4fe3ff;height:16px}
+.hon{margin-top:8px;font-size:9.5px;color:#6d7d9a;border-top:1px solid #1b2b4a;padding-top:6px}
+.detail{margin-top:6px;font-size:9.5px;color:#68789a}
+.detail b{color:#b39aea}
+@media (max-width:640px){#ui{font-size:11px;max-height:38vh}#ui .detail{display:none}}
+</style>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>GC PAUSES &amp; THE GENERATIONAL BARGAIN</h1>
+  <div class="mech">A managed runtime must find the dead objects; a stop-the-world collector freezes the program to do it &mdash; and the freeze lands exactly when allocation was fastest, because allocation is what filled the heap.</div>
+  <div class="row cy"><span class="k">heap fill</span><span class="v"><b id="rH">0%</b></span></div>
+  <div class="row rd"><span class="k">pause now / p99 latency</span><span class="v"><b id="rP">0</b> / <b id="rQ">0</b> ms</span></div>
+  <div class="row"><span class="k">pauses per minute</span><span class="v"><b id="rF">0</b></span></div>
+  <div class="row gn"><span class="k">throughput (mutator time)</span><span class="v"><b id="rT">100</b>%</span></div>
+  <div class="ctl">
+    <button id="bA" class="on">STOP-THE-WORLD</button>
+    <button id="bB">GENERATIONAL</button>
+    <button id="bC">CONCURRENT</button>
+    <button id="bR">REPLAY</button>
+  </div>
+  <label>allocation rate <span id="lA">150</span> obj/s &mdash; faster allocation, more pauses</label>
+  <input id="sA" type="range" min="40" max="330" step="10" value="150">
+  <div class="hon">honesty: a toy mark-sweep with two generations &mdash; costs are linear (mark &amp; copy &prop; live objects, sweep &prop; heap slots), lifetimes drawn 92% short / 8% long, one mutator thread, no compaction pass drawn.</div>
+  <div class="detail">lineage: <b>McCarthy's Lisp GC</b> (1959) invents automatic reclamation &rarr; <b>Ungar's generational scavenger</b> (1984) turns "most objects die young" into a cheap nursery &rarr; CMS, G1, Shenandoah and <b>ZGC</b> move marking off the pause and buy millisecond stalls with barrier overhead. <a href="index.html" style="color:#b39aea;text-decoration:none">&larr; gallery</a></div>
+</div>
+<script>
+var c=document.getElementById('c'),g=c.getContext('2d'),ui=document.getElementById('ui');
+var W=0,H=0,DPR=1,ST={x:0,y:0,w:0,h:0},CA={x:0,y:0,w:0,h:0},CB={x:0,y:0,w:0,h:0};
+/*MODEL*/
+var GC_BASE=0.006,GC_MARK=0.00035,GC_SWEEP=0.00119,GC_MIN=0.0012,
+    REQ=60,SRV=260,SVC=0.004,CONC_TAX=0.88,CONC_CYC=0.72;
+function gcObj(t){var lg=Math.random()<0.08;
+ return{b:t,d:t+(lg?4+Math.random()*26:0.01+Math.random()*0.09),gen:0}}
+function gcNew(o){o=o||{};
+ var S={mode:o.mode||'stw',alloc:o.alloc||150,cap:700,ncap:140,ocap:900,t:0,
+  obj:[],aacc:0,racc:0,sacc:0,q:[],lat:[],pauses:[],pause:0,pdur:0,pkind:'',plive:0,
+  sweep:0,conc:0,work:0,wall:0,thr:1,last:0};
+ var pre=o.pre==null?160:o.pre,i;
+ for(i=0;i<pre;i++){var ob=gcObj(-(0.2+Math.random()*5));if(S.mode!=='stw')ob.gen=1;S.obj.push(ob)}
+ for(i=0;i<220;i++)S.lat.push({t:-3.6+i*0.0164,l:SVC+Math.random()*0.0016});
+ return S}
+function gcStart(S,d,k,live){S.pause=d;S.pdur=d;S.pkind=k;S.plive=live;S.sweep=0;
+ S.pauses.push({t:S.t,d:d,k:k});if(S.pauses.length>400)S.pauses.shift();S.last=d}
+function gcFinish(S){var i,keep=[],k=S.pkind,yg=(k==='NURSERY'||k==='young');
+ for(i=0;i<S.obj.length;i++){var o=S.obj[i];
+  if(yg){if(o.gen===0){if(o.d>S.t){o.gen=1;keep.push(o)}}else keep.push(o)}
+  else if(o.d>S.t){if(S.mode!=='stw')o.gen=1;keep.push(o)}}
+ S.obj=keep;S.pause=0;S.sweep=0;S.pkind=''}
+function gcCounts(S){var ny=0,ol=0,sv=0,lo=0,i;
+ for(i=0;i<S.obj.length;i++){var o=S.obj[i];
+  if(o.gen===0){ny++;if(o.d>S.t)sv++}else{ol++;if(o.d>S.t)lo++}}
+ return{ny:ny,ol:ol,sv:sv,lo:lo,live:sv+lo}}
+function gcTrigger(S){var C=gcCounts(S),n=S.obj.length;
+ if(S.mode==='stw'){if(n>=S.cap)gcStart(S,GC_BASE+GC_MARK*C.live+GC_SWEEP*n,'FULL',C.live);return}
+ if(C.ol>=S.ocap){var d=GC_BASE+GC_MARK*C.lo+GC_SWEEP*C.ol;
+  if(S.mode==='conc'){S.conc+=d*0.7;gcStart(S,0.004,'CONCURRENT MARK',C.lo)}
+  else gcStart(S,d,'FULL',C.lo);return}
+ if(C.ny>=S.ncap){var d2=GC_MIN+GC_MARK*C.sv;
+  if(S.mode==='conc'){S.conc+=d2*5;gcStart(S,0.0025+GC_MARK*C.sv*0.12,'young',C.sv)}
+  else gcStart(S,d2,'NURSERY',C.sv)}}
+function gcStep(S,dt){S.t+=dt;S.wall+=dt;
+ var sp=S.pause>0?0:(S.mode==='conc'?(S.conc>0?CONC_CYC:CONC_TAX):1);
+ S.work+=sp*dt;S.thr+=(sp-S.thr)*Math.min(1,dt/2.5);
+ if(S.pause>0){S.pause-=dt;S.sweep=1-S.pause/Math.max(1e-6,S.pdur);if(S.pause<=0)gcFinish(S)}
+ else{if(S.conc>0)S.conc=Math.max(0,S.conc-dt);
+  S.aacc+=S.alloc*sp*dt;var n=0;
+  while(S.aacc>=1&&n<600){S.aacc-=1;S.obj.push(gcObj(S.t));n++}
+  gcTrigger(S)}
+ S.racc+=REQ*dt;n=0;while(S.racc>=1&&n<400){S.racc-=1;S.q.push(S.t);n++}
+ S.sacc+=SRV*sp*dt;n=0;
+ while(S.sacc>=1&&S.q.length&&n<600){S.sacc-=1;var a=S.q.shift();
+  S.lat.push({t:S.t,l:(S.t-a)+SVC/Math.max(0.2,sp)});n++}
+ if(!S.q.length&&S.sacc>1)S.sacc=1;
+ while(S.lat.length>2200)S.lat.shift();
+ return S}
+function gcPct(S,q,win){var v=[],i,t0=S.t-(win||20);
+ for(i=0;i<S.lat.length;i++)if(S.lat[i].t>=t0)v.push(S.lat[i].l);
+ if(!v.length)return 0;v.sort(function(a,b){return a-b});
+ return v[Math.max(0,Math.min(v.length-1,Math.floor(q*v.length)))]}
+function gcFreq(S,win){win=win||30;var n=0,i,t0=Math.max(0,S.t-win);
+ for(i=0;i<S.pauses.length;i++)if(S.pauses[i].t>=t0)n++;
+ var span=Math.max(2,Math.min(win,S.t));return n/span*60}
+/*ENDMODEL*/
+var S=gcNew({}),T=0,BARS={stw:null,gen:null,conc:null},dwell=0,ribbon=[],rp=0,rT=0;
+function mkGlow(r,gc,b,rad){var s=document.createElement('canvas');s.width=s.height=rad*2;var x=s.getContext('2d');
+ var q=x.createRadialGradient(rad,rad,0,rad,rad,rad);q.addColorStop(0,'rgba('+r+','+gc+','+b+',.95)');
+ q.addColorStop(.32,'rgba('+r+','+gc+','+b+',.36)');q.addColorStop(1,'rgba('+r+','+gc+','+b+',0)');
+ x.fillStyle=q;x.fillRect(0,0,rad*2,rad*2);return s}
+var GC1=mkGlow(79,227,255,26),GR=mkGlow(255,90,70,30),GV=mkGlow(179,154,234,24);
+function blit(s,x,y,sc){var d=s.width*sc;g.drawImage(s,x-d/2,y-d/2,d,d)}
+function rr(x,y,w,h,r){r=Math.min(r,w/2,h/2);g.beginPath();g.moveTo(x+r,y);g.arcTo(x+w,y,x+w,y+h,r);
+ g.arcTo(x+w,y+h,x,y+h,r);g.arcTo(x,y+h,x,y,r);g.arcTo(x,y,x+w,y,r);g.closePath()}
+function tx(s,x,y,col,fs,al,bold){g.fillStyle=col;g.font=(bold?'600 ':'')+fs+'px ui-monospace,Menlo,monospace';
+ g.textAlign=al||'left';g.textBaseline='middle';g.fillText(s,x,y)}
+function chip(s,x,y,col,bg,fs,maxw){fs=fs||10;g.font='600 '+fs+'px ui-monospace,Menlo,monospace';
+ var w=g.measureText(s).width+14;
+ if(maxw&&w>maxw){while(s.length>8&&g.measureText(s+'…').width+14>maxw)s=s.slice(0,-1);s=s+'…';
+  w=g.measureText(s).width+14}
+ g.fillStyle=bg||'rgba(6,10,20,.9)';rr(x,y-8.5,w,18,9);g.fill();
+ g.strokeStyle=col;g.lineWidth=1;g.stroke();tx(s,x+7,y+.5,col,fs,'left',1);return x+w+7}
+function layout(){var r=ui.getBoundingClientRect(),wide=W>=760;
+ if(wide){ST={x:r.right+14,y:12,w:Math.max(240,W-r.right-28),h:H-24};
+  var cy=r.bottom+12,av=H-cy-12,ch=Math.max(76,Math.min(150,(av-10)/2));
+  CA={x:12,y:cy,w:r.width,h:ch};CB={x:12,y:cy+ch+10,w:r.width,h:ch}}
+ else{var top=r.bottom+8,av2=Math.max(250,H-top-10);
+  ST={x:10,y:top,w:W-20,h:Math.max(190,av2*0.50)};
+  CA={x:10,y:top+ST.h+8,w:W-20,h:Math.max(72,av2*0.24)};
+  CB={x:10,y:top+ST.h+CA.h+14,w:W-20,h:Math.max(72,av2*0.24)}}}
+function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;
+ c.width=W*DPR|0;c.height=H*DPR|0;c.style.width=W+'px';c.style.height=H+'px';
+ g.setTransform(DPR,0,0,DPR,0,0);layout()}
+addEventListener('resize',resize);
+function step(dt){T+=dt;gcStep(S,dt);
+ var sp=S.pause>0?0:(S.mode==='conc'?(S.conc>0?CONC_CYC:CONC_TAX):1);
+ rp+=dt*8.2*sp;
+ if(T-rT>0.028){rT=T;ribbon.push({t:T,v:S.pause>0?0:Math.sin(rp)*(0.55+0.45*Math.sin(rp*0.37)),
+   p:S.pause>0?1:0});if(ribbon.length>460)ribbon.shift()}
+ dwell+=dt;
+ if(dwell>6){var key=S.mode==='stw'?'stw':S.mode==='gen'?'gen':'conc';
+  BARS[key]={p99:gcPct(S,0.99,20),p50:gcPct(S,0.5,20),thr:S.thr,f:gcFreq(S)}}}
+function bandGrid(x,y,w,h,slots){var cols=Math.max(4,Math.ceil(Math.sqrt(slots*w/Math.max(1,h))));
+ var cell=Math.min(w/cols,h/Math.ceil(slots/cols));
+ cols=Math.max(4,Math.floor(w/cell));return{cols:cols,cell:cell}}
+function drawBand(x,y,w,h,slots,list,label,col){
+ g.fillStyle='rgba(255,255,255,.028)';rr(x,y,w,h,7);g.fill();
+ g.strokeStyle='rgba(120,150,200,.22)';g.lineWidth=1;g.stroke();
+ var G0=bandGrid(x+3,y+3,w-6,h-6,slots),cell=G0.cell,cols=G0.cols,i,s=Math.max(1.4,cell-1.6);
+ var sweepX=x+3+S.sweep*(w-6),paused=S.pause>0;
+ var A=[],B=[],C2=[];
+ for(i=0;i<list.length;i++){var o=list[i],cx=x+3+(i%cols)*cell,cy=y+3+((i/cols)|0)*cell;
+  if(cy>y+h-cell*0.6)break;
+  var dead=o.d<=S.t;
+  if(dead&&paused&&cx<sweepX)continue;
+  (dead?C2:(o.gen===0?A:B)).push([cx,cy])}
+ g.fillStyle=col;g.beginPath();for(i=0;i<A.length;i++)g.rect(A[i][0],A[i][1],s,s);g.fill();
+ g.fillStyle='#b39aea';g.beginPath();for(i=0;i<B.length;i++)g.rect(B[i][0],B[i][1],s,s);g.fill();
+ g.fillStyle='rgba(120,132,158,.42)';g.beginPath();
+ for(i=0;i<C2.length;i++)g.rect(C2[i][0],C2[i][1],s,s);g.fill();
+ if(paused){g.strokeStyle='#ff6d5e';g.lineWidth=2;g.beginPath();
+  g.moveTo(sweepX,y+2);g.lineTo(sweepX,y+h-2);g.stroke();
+  g.globalCompositeOperation='lighter';blit(GR,sweepX,y+h*0.5,h/54);g.globalCompositeOperation='source-over'}
+ tx(label,x+4,y-7,'#7c8dab',9);
+ return cell}
+function drawRibbon(x,y,w,h){
+ g.fillStyle='rgba(8,12,24,.8)';rr(x,y,w,h,7);g.fill();
+ g.strokeStyle='#1f3358';g.lineWidth=1;g.stroke();
+ tx('program activity — the honest latency probe',x+7,y+9,'#7c8dab',9);
+ var px0=x+7,px1=x+w-7,mid=y+h*0.62,amp=Math.max(6,(h-24)*0.5),win=4.2,t0=T-win,i,st=0;
+ g.lineWidth=1.9;g.lineJoin='round';
+ var seg=[],cur=null;
+ for(i=0;i<ribbon.length;i++){var r0=ribbon[i];if(r0.t<t0)continue;
+  if(!cur||cur.p!==r0.p){cur={p:r0.p,pts:[]};seg.push(cur)}
+  cur.pts.push([px0+(r0.t-t0)/win*(px1-px0),mid-r0.v*amp])}
+ for(i=0;i<seg.length;i++){var sg=seg[i];if(sg.pts.length<2)continue;
+  g.strokeStyle=sg.p?'#ff6d5e':'#7fffb0';g.beginPath();
+  g.moveTo(sg.pts[0][0],sg.pts[0][1]);
+  for(var j=1;j<sg.pts.length;j++)g.lineTo(sg.pts[j][0],sg.pts[j][1]);
+  g.stroke();
+  if(sg.p&&sg.pts.length>3){var mx=(sg.pts[0][0]+sg.pts[sg.pts.length-1][0])/2;
+   tx('FROZEN',mx,mid-13,'#ff6d5e',9,'center',1)}}
+ if(S.pause>0){g.globalCompositeOperation='lighter';blit(GR,px1-4,mid,0.6);
+  g.globalCompositeOperation='source-over'}}
+function drawStage(){var x=ST.x,y=ST.y,w=ST.w,h=ST.h,paused=S.pause>0,C=gcCounts(S);
+ var gr=g.createRadialGradient(x+w*0.5,y+h*0.45,10,x+w*0.5,y+h*0.45,w*0.85);
+ gr.addColorStop(0,paused?'rgba(90,14,14,.34)':'rgba(14,44,86,.30)');gr.addColorStop(1,'rgba(4,6,12,0)');
+ g.fillStyle=gr;g.fillRect(x,y,w,h);
+ tx('THE HEAP',x+3,y+10,'#eaf4ff',12,'left',1);
+ tx('t '+T.toFixed(1)+' s · '+S.obj.length+' objects',x+w-3,y+10,'#7c8dab',10,'right');
+ var mL=S.mode==='stw'?'collector: STOP-THE-WORLD mark & sweep':
+   S.mode==='gen'?'collector: GENERATIONAL — nursery + old':'collector: CONCURRENT — mark beside the mutator';
+ var cx=chip(mL,x+3,y+31,S.mode==='stw'?'#ff6d5e':S.mode==='gen'?'#4fe3ff':'#7fffb0',
+   S.mode==='stw'?'rgba(40,8,8,.9)':'rgba(6,18,34,.9)',10,w*0.66);
+ chip(S.alloc+' obj/s',cx,y+31,'#b39aea','rgba(16,10,32,.85)',10,x+w-cx-4);
+ var msg,mc,mb;
+ if(paused){msg='STOP THE WORLD — '+Math.round(S.pdur*1000)+' ms · '+S.pkind+' · '+S.plive+' live of '+
+   S.obj.length+' · sweeping '+Math.round(S.sweep*100)+'%';mc='#ff6d5e';mb='rgba(58,6,6,.95)'}
+ else if(S.mode==='conc'&&S.conc>0){msg='marking concurrently — the program keeps running, 12% slower';
+   mc='#7fffb0';mb='rgba(6,26,18,.9)'}
+ else if(S.mode==='stw'){msg='the pause lands exactly when you were busiest — allocation caused it';
+   mc='#ffc85e';mb='rgba(34,22,4,.9)'}
+ else if(S.mode==='conc'){msg='concurrent trades throughput for latency — barriers tax every read';
+   mc='#7fffb0';mb='rgba(6,26,18,.9)'}
+ else{msg='most objects die young: collect the nursery, spare the old';mc='#4fe3ff';mb='rgba(6,18,34,.9)'}
+ chip(msg,x+3,y+53,mc,mb,10.5,w-6);
+ var rh=Math.max(46,Math.min(76,h*0.15)),ay=y+70,ah=h-70-rh-12;
+ if(S.mode==='stw'){drawBand(x+3,ay+8,w-6,ah-8,S.cap,S.obj,'heap — '+S.obj.length+' / '+S.cap+' slots','#4fe3ff')}
+ else{var nh=Math.max(46,ah*0.26),lists=[[],[]],i;
+  for(i=0;i<S.obj.length;i++)lists[S.obj[i].gen===0?0:1].push(S.obj[i]);
+  drawBand(x+3,ay+8,w-6,nh-8,S.ncap,lists[0],'nursery — '+C.ny+' / '+S.ncap+' (collected often, cheaply)','#4fe3ff');
+  drawBand(x+3,ay+nh+16,w-6,ah-nh-16,S.ocap,lists[1],
+    'old generation — '+C.ol+' / '+S.ocap+' (survivors promoted here)','#b39aea')}
+ if(paused){var bw=Math.min(w-40,320),bx=x+w/2-bw/2,by=ay+ah*0.5;
+  g.fillStyle='rgba(58,4,4,.92)';rr(bx,by-20,bw,40,9);g.fill();
+  g.strokeStyle='#ff6d5e';g.lineWidth=2;g.stroke();
+  tx('STOP THE WORLD — '+Math.round(S.pdur*1000)+' ms',bx+bw/2,by-7,'#ffd9d2',13,'center',1);
+  g.fillStyle='rgba(255,109,94,.25)';rr(bx+10,by+6,bw-20,7,4);g.fill();
+  g.fillStyle='#ff6d5e';rr(bx+10,by+6,(bw-20)*S.sweep,7,4);g.fill();
+  tx(Math.round(S.pause*1000)+' ms left',bx+bw-14,by+9.5,'#ffb0a6',9,'right')}
+ drawRibbon(x+3,y+h-rh-4,w-6,rh);
+ tx('cyan = young live · violet = promoted · grey = garbage awaiting sweep',
+   x+3,y+h-rh-12,'#6d7d9a',9)}
+function card(C,title,right,rcol){g.fillStyle='rgba(6,10,20,.86)';rr(C.x,C.y,C.w,C.h,9);g.fill();
+ g.strokeStyle='#1f3358';g.lineWidth=1;g.stroke();
+ tx(title,C.x+9,C.y+12,'#9fb2d0',10,'left',1);
+ if(right)tx(right,C.x+C.w-9,C.y+12,rcol||'#4fe3ff',10,'right',1)}
+function drawLat(){var p99=gcPct(S,0.99,20)*1000,p50=gcPct(S,0.5,20)*1000;
+ card(CA,'service latency','p99 '+p99.toFixed(0)+' ms',p99>60?'#ff6d5e':'#7fffb0');
+ tx('per-request · GC spikes are the red needles',CA.x+9,CA.y+25,'#6d7d9a',9);
+ var px0=CA.x+12,px1=CA.x+CA.w-30,py0=CA.y+33,py1=CA.y+CA.h-11,i;
+ if(px1<=px0+10||py1<=py0+6)return;
+ var win=10,t0=T-win,mx=Math.max(0.05,p99/1000*1.35);
+ for(i=0;i<S.lat.length;i++)if(S.lat[i].t>=t0)mx=Math.max(mx,S.lat[i].l);
+ g.save();g.beginPath();g.rect(px0,py0-1,px1-px0,py1-py0+2);g.clip();
+ for(i=0;i<S.lat.length;i++){var L=S.lat[i];if(L.t<t0)continue;
+  var X=px0+(L.t-t0)/win*(px1-px0),Y=py1-Math.min(1,L.l/mx)*(py1-py0);
+  g.strokeStyle=L.l>0.05?'rgba(255,109,94,.85)':'rgba(79,227,255,.55)';
+  g.lineWidth=L.l>0.05?1.5:1;g.beginPath();g.moveTo(X,py1);g.lineTo(X,Y);g.stroke()}
+ g.restore();
+ var yq=py1-Math.min(1,p99/1000/mx)*(py1-py0);
+ g.setLineDash([3,3]);g.strokeStyle='rgba(255,200,94,.6)';g.lineWidth=1;
+ g.beginPath();g.moveTo(px0,yq);g.lineTo(px1,yq);g.stroke();g.setLineDash([]);
+ tx('p99',px1+3,yq,'#ffc85e',8.5);
+ tx((mx*1000).toFixed(0)+'ms',px1+3,py0+4,'#6d7d9a',8.5);
+ tx('now',px1,py1+7,'#6d7d9a',8.5,'right');tx('−10 s',px0,py1+7,'#6d7d9a',8.5)}
+function drawBars(){card(CB,'measured p99 vs collector','log scale','#7c8dab');
+ tx('run each collector ≥6 s to fill a bar',CB.x+9,CB.y+25,'#6d7d9a',9);
+ var names=[['stw','STOP-THE-WORLD','#ff6d5e'],['gen','GENERATIONAL','#4fe3ff'],['conc','CONCURRENT','#7fffb0']];
+ var bx0=CB.x+96,bx1=CB.x+CB.w-58,top=CB.y+34,rowH=Math.max(11,(CB.h-42)/3),i;
+ for(i=0;i<3;i++){var k=names[i][0],B=BARS[k],yy=top+rowH*i+rowH*0.5;
+  tx(names[i][1],CB.x+9,yy,names[i][2],8.6,'left',S.mode===k?1:0);
+  g.fillStyle='rgba(40,54,86,.55)';rr(bx0,yy-4.5,bx1-bx0,9,4);g.fill();
+  if(B){var lg=Math.log(Math.max(1,B.p99*1000))/Math.log(2000);
+   g.fillStyle=names[i][2];rr(bx0,yy-4.5,Math.max(3,lg*(bx1-bx0)),9,4);g.fill();
+   tx((B.p99*1000).toFixed(0)+'ms',CB.x+CB.w-32,yy,names[i][2],8.6,'right');
+   tx((B.thr*100).toFixed(0)+'%',CB.x+CB.w-6,yy,'#9fb2d0',8.6,'right')}
+  else tx('—',CB.x+CB.w-32,yy,'#55668a',8.6,'right')}
+ tx('1ms',bx0,CB.y+CB.h-6,'#6d7d9a',8);
+ tx('p99 latency',bx0+(bx1-bx0)*0.5,CB.y+CB.h-6,'#6d7d9a',8,'center');
+ tx('thr',CB.x+CB.w-6,CB.y+CB.h-6,'#6d7d9a',8,'right');
+ tx('2 s',bx1,CB.y+CB.h-6,'#6d7d9a',8,'right')}
+function frame(){g.setTransform(DPR,0,0,DPR,0,0);g.fillStyle='#04060c';g.fillRect(0,0,W,H);
+ drawStage();drawLat();drawBars();
+ var C=gcCounts(S);
+ document.getElementById('rH').textContent=S.mode==='stw'?
+   Math.round(S.obj.length/S.cap*100)+'%':
+   'nursery '+Math.round(C.ny/S.ncap*100)+'% · old '+Math.round(C.ol/S.ocap*100)+'%';
+ document.getElementById('rP').textContent=S.pause>0?Math.round(S.pause*1000):0;
+ document.getElementById('rQ').textContent=Math.round(gcPct(S,0.99,20)*1000);
+ document.getElementById('rF').textContent=gcFreq(S).toFixed(0);
+ document.getElementById('rT').textContent=(S.thr*100).toFixed(0)}
+var last=performance.now(),acc=0,SUB=1/60;
+function loop(now){var rd=Math.min(0.45,(now-last)/1000);last=now;acc+=rd;
+ var n=0;while(acc>=SUB&&n<40){step(SUB);acc-=SUB;n++}
+ frame();requestAnimationFrame(loop)}
+var sA=document.getElementById('sA'),bA=document.getElementById('bA'),bB=document.getElementById('bB'),
+ bC=document.getElementById('bC'),bR=document.getElementById('bR');
+function setMode(m){S=gcNew({mode:m,alloc:+sA.value,pre:m==='stw'?160:120});T=0;ribbon=[];dwell=0;
+ bA.className=m==='stw'?'on':'';bB.className=m==='gen'?'on':'';bC.className=m==='conc'?'on':''}
+sA.oninput=function(){S.alloc=+sA.value;document.getElementById('lA').textContent=sA.value};
+bA.onclick=function(){setMode('stw')};bB.onclick=function(){setMode('gen')};
+bC.onclick=function(){setMode('conc')};bR.onclick=function(){setMode(S.mode)};
+c.addEventListener('pointerdown',function(e){c.setPointerCapture(e.pointerId);
+ var m=S.mode==='stw'?'gen':S.mode==='gen'?'conc':'stw';setMode(m);e.preventDefault()});
+c.addEventListener('pointerup',function(e){try{c.releasePointerCapture(e.pointerId)}catch(_){}});
+resize();requestAnimationFrame(loop);
+</script>
+</body>
+</html>

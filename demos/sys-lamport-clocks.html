@@ -13,10 +13,10 @@ html,body{height:100%;background:#04060c;overflow:hidden;color:#d5e6ff;
   background:rgba(6,11,22,.87);border:1px solid #1d3560;border-radius:11px;padding:9px 11px 10px;z-index:5;
   box-shadow:0 0 24px #000a}
 h1{font-size:12.5px;letter-spacing:.6px;color:#eaf4ff;text-shadow:0 0 10px #6ab6ff55}
-.mech{font-size:10.5px;color:#8ba6ce;margin:4px 0 7px}
-.row{display:flex;justify-content:space-between;gap:8px;font-size:11px;line-height:1.35}
+.mech{font-size:10.5px;line-height:1.3;color:#8ba6ce;margin:3px 0 6px}
+.row{display:flex;justify-content:space-between;gap:8px;font-size:11px;line-height:1.28}
 .k{color:#7e96bb}.v{color:#eaf4ff}.v b{color:#6ab6ff;font-weight:600}.v i{color:#ff6d5e;font-style:normal;font-weight:600}
-.ctl{margin-top:7px;display:flex;flex-wrap:wrap;gap:5px}
+.ctl{margin-top:6px;display:flex;flex-wrap:wrap;gap:4px}
 button{flex:1 1 30%;font:600 10.5px/1.25 inherit;color:#8fa8cc;background:#0b162b;
   border:1px solid #22406e;border-radius:6px;padding:5px 4px;cursor:pointer}
 button.on{color:#04121a;background:#6ab6ff;border-color:#a8d8ff;box-shadow:0 0 14px #6ab6ff88}
@@ -35,7 +35,7 @@ input[type=range]{width:100%;height:15px;accent-color:#6ab6ff;background:transpa
 <canvas id="c"></canvas>
 <div id="ui">
   <h1>LOGICAL CLOCKS</h1>
-  <div class="mech">Wall clocks skew, so ordering needs causality: <b>max(local, received)+1</b> stamps every event. Lamport counters preserve cause→effect; vector clocks also reveal what is truly independent.</div>
+  <div class="mech">Wall clocks skew, so ordering needs causality: <b>max(local, received)+1</b>. Lamport counters preserve cause→effect; vector clocks also reveal true independence.</div>
   <div class="row"><span class="k">paradoxes seen</span><span class="v"><i id="rP">0</i></span></div>
   <div class="row"><span class="k">events</span><span class="v"><b id="rE">0</b></span></div>
   <div class="row"><span class="k">concurrent pairs (window)</span><span class="v"><b id="rC">0</b></span></div>
@@ -130,8 +130,9 @@ function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth
   if(W-(r.right+16)>=380)S={x:r.right+16,y:12,w:W-(r.right+16)-12,h:H-24};
   else S={x:12,y:r.bottom+12,w:W-24,h:H-(r.bottom+12)-12};
   if(S.h<200){S.y=12;S.h=H-24}layout()}
-function T0(){return Math.max(0,st.t-WIN)}
-function X(t){return G.x0+(t-T0())/WIN*(G.x1-G.x0)}
+function SPAN(){return Math.min(WIN,Math.max(2.6,st.t*1.09))}
+function T0(){return Math.max(0,st.t-SPAN())}
+function X(t){return G.x0+(t-T0())/SPAN()*(G.x1-G.x0)}
 function stamp(e){
   if(st.mode==='W')return CORE.wall(st,e.p,e.t).toFixed(2)+'s';
   if(st.mode==='L')return 'L'+e.lam;
@@ -141,6 +142,8 @@ function drawStage(){
   var i,p,sel=st.sel.length?st.sel[st.sel.length-1]:null,PAST=sel?CORE.past(st,sel):null;
   for(p=0;p<3;p++){
     var y=G.ly[p];
+    ctx.fillStyle=p%2?'rgba(12,22,42,.55)':'rgba(9,17,34,.55)';
+    rr(S.x+2,y-G.lh*0.42,S.w-4,G.lh*0.84,9);ctx.fill();
     ctx.strokeStyle='rgba(26,52,96,.9)';ctx.lineWidth=1.4;
     ctx.beginPath();ctx.moveTo(G.x0,y);ctx.lineTo(G.x1,y);ctx.stroke();
     ctx.fillStyle=PC[p];ctx.font='700 12px ui-monospace,monospace';ctx.textAlign='left';ctx.textBaseline='bottom';

@@ -13,13 +13,13 @@ html,body{height:100%;background:#04060c;overflow:hidden;color:#d5e6ff;
   background:rgba(6,11,22,.87);border:1px solid #1d3560;border-radius:11px;padding:9px 11px 10px;z-index:5;
   box-shadow:0 0 24px #000a}
 h1{font-size:12.5px;letter-spacing:.6px;color:#eaf4ff;text-shadow:0 0 10px #ffc45455}
-.mech{font-size:10.5px;color:#8ba6ce;margin:4px 0 7px}
-.row{display:flex;justify-content:space-between;gap:8px;font-size:11px;line-height:1.35}
+.mech{font-size:10.5px;line-height:1.3;color:#8ba6ce;margin:3px 0 6px}
+.row{display:flex;justify-content:space-between;gap:8px;font-size:11px;line-height:1.28}
 .k{color:#7e96bb}.v{color:#eaf4ff}.v b{color:#ffc454;font-weight:600}.v i{color:#ff6d5e;font-style:normal;font-weight:600}
 #rSt{font-weight:700;letter-spacing:.5px;padding:0 6px;border-radius:4px;background:#0c2a1c;color:#57ffab}
 #rSt.warn{background:#33240a;color:#ffc44d;box-shadow:0 0 10px #ffc44d55}
 #rSt.bad{background:#3a0d10;color:#ff6d5e;box-shadow:0 0 10px #ff3b2a66}
-.ctl{margin-top:7px;display:flex;flex-wrap:wrap;gap:5px}
+.ctl{margin-top:6px;display:flex;flex-wrap:wrap;gap:4px}
 button{flex:1 1 21%;font:600 10.5px/1.25 inherit;color:#8fa8cc;background:#0b162b;
   border:1px solid #22406e;border-radius:6px;padding:5px 3px;cursor:pointer}
 button.wide{flex:1 1 100%}
@@ -40,7 +40,7 @@ input[type=range]{width:100%;height:15px;accent-color:#ffc454;background:transpa
 <canvas id="c"></canvas>
 <div id="ui">
   <h1>RAFT LEADER ELECTION</h1>
-  <div class="mech">Followers expect heartbeats. Whoever's <b>randomized</b> timer expires first becomes a candidate in a new term and wins on a majority — the randomness is what stops two starting at once.</div>
+  <div class="mech">Followers expect heartbeats; whoever's <b>randomized</b> timer expires first becomes a candidate in a new term and wins on a majority. The randomness is what stops two starting at once.</div>
   <div class="row"><span class="k">term</span><span class="v"><b id="rT">1</b></span></div>
   <div class="row"><span class="k">leader</span><span class="v"><b id="rL">n0</b></span></div>
   <div class="row"><span class="k">votes for candidate</span><span class="v"><b id="rV">—</b></span></div>
@@ -153,10 +153,11 @@ function layout(){
   G.capY=G.plot.y-25;
   var top=S.y+52,bot=G.capY-8;
   G.cx=S.x+S.w/2;G.cy=(top+bot)/2;
-  G.R=Math.max(60,Math.min(S.w*0.34,(bot-top)/2-40));
-  G.nr=Math.max(14,Math.min(23,G.R*0.20));
+  G.ry=Math.max(52,(bot-top)/2-38);
+  G.rx=Math.max(60,Math.min(S.w*0.40,G.ry*1.55));
+  G.R=G.ry;G.nr=Math.max(15,Math.min(26,G.ry*0.24));
   G.pos=[];for(var i=0;i<5;i++){var a=-Math.PI/2+i*Math.PI*2/5;
-    G.pos.push([G.cx+Math.cos(a)*G.R,G.cy+Math.sin(a)*G.R])}}
+    G.pos.push([G.cx+Math.cos(a)*G.rx,G.cy+Math.sin(a)*G.ry])}}
 function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=window.innerWidth;H=window.innerHeight;
   cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);cv.style.width=W+'px';cv.style.height=H+'px';
   ctx.setTransform(DPR,0,0,DPR,0,0);var r=ui.getBoundingClientRect();
@@ -239,7 +240,8 @@ function drawStage(){
     L>=0?'#4dffa8':'#ffc454',10.5,'r');
   chip(S.x+2,S.y+26,'the dial you can’t see on real servers','#8fb6e8',9.5);
   var cap='an old leader with an old term is politely ignored',cc='#8fb6e8';
-  if(!st.rand&&st.splitChip>0){cap='same timeout, same instant, split vote — randomness is the fix';cc='#ff6d5e'}
+  if(st.splitChip>0){cap=st.rand?'two dials collided — a rare split vote; new random timers break it'
+    :'same timeout, same instant, split vote — randomness is the fix';cc='#ff6d5e'}
   else if(st.stale>0){cap='an old leader with an old term is politely ignored';cc='#ff9a8a'}
   else if(C>=0)cap='randomized timers: one dial expires first, and that is the whole trick';
   chip(S.x+2,G.capY,cap,cc,9.5);
@@ -256,9 +258,8 @@ function sync(){var L=CORE.leader(st),C=CORE.cand(st);
   $('rSt').textContent=s;$('rSt').className=c}
 $('bC').onclick=function(){var L=CORE.leader(st);if(L>=0){CORE.crash(st,L);st.auto=false}};
 $('bR').onclick=function(){for(var i=0;i<5;i++)if(!st.nodes[i].alive)CORE.revive(st,i);st.auto=false};
-$('bP').onclick=function(){st.paused=!st.paused;this.className=st.paused?'on':'';this.textContent=st.paused?'step':'pause';
-  if(st.paused)this.onclick=null};
-$('bP').addEventListener('click',function(){if(st.paused)for(var i=0;i<8;i++)CORE.step(st,SUB)});
+$('bP').onclick=function(){st.paused=!st.paused;this.className=st.paused?'on':'';this.textContent=st.paused?'resume':'pause'};
+$('bS').onclick=function(){var p=st.paused;st.paused=false;for(var i=0;i<9;i++)CORE.step(st,SUB);st.paused=p};
 $('bRand').onclick=function(){st.rand=!st.rand;st.auto=false;
   this.className=st.rand?'on':'';this.textContent='randomized timeouts: '+(st.rand?'ON':'OFF');
   for(var i=0;i<5;i++)CORE.reset(st,i)};
