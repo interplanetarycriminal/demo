@@ -1,430 +1,700 @@
-<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
-<title>Minimax + Alpha-Beta</title>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Minimax + Alpha-Beta — ML Field Notes</title>
 <style>
-  html,body{margin:0;height:100%;background:#04060a;overflow:hidden}
-  canvas{display:block;position:fixed;inset:0;touch-action:none}
-  #ui{position:fixed;top:0;left:0;margin:12px;padding:10px 12px;background:rgba(6,12,18,.75);
-      border:1px solid rgba(90,240,200,.26);border-radius:8px;color:#c9f6e8;
-      font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;max-width:330px;z-index:10;
-      backdrop-filter:blur(6px);text-shadow:0 0 8px rgba(90,240,200,.3);max-height:52vh;overflow:auto}
-  #ui h1{margin:0 0 4px;font-size:14px;letter-spacing:.11em;color:#5fe;text-transform:uppercase}
-  #ui .e{color:#8db6ab;margin:0 0 7px}
-  #ui .k{color:#5d857a}
-  #ui b{color:#fff;font-weight:600}
-  #ui a{color:#ff7bd5;text-decoration:none;display:inline-block;margin-top:7px}
-  #ui a:hover{text-decoration:underline}
-  #ui hr{border:0;border-top:1px solid rgba(90,240,200,.16);margin:7px 0}
-@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
+/* ===== ML Field Notes design system (shared by every ML/AI demo) =====
+   Colour means the same thing in every demo:
+   --a coral = class A / "positive"     --b teal = class B / "negative"
+   --hl amber = the model's current parameters / guess / selection
+   --grad violet = gradients, updates, errors flowing back
+   --accent = this demo's signature colour (set per demo) */
+:root{
+  --bg:#0c0e1a; --bg2:#10132a; --panel:#13162c; --panel2:#181c38; --line:rgba(190,200,255,.10); --line2:rgba(190,200,255,.18);
+  --ink:#e9ecfa; --dim:#a2a9c8; --faint:#6b7396;
+  --a:#ff7a6b; --b:#3fd0c0; --hl:#ffc857; --grad:#a78bfa; --good:#7ee787; --bad:#ff6b8a;
+  --accent:#8fb3ff;
+  --r:12px; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.5 var(--sans)}
+body{overflow:hidden}
+a{color:var(--accent)}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app{display:grid;grid-template-columns:minmax(0,1fr) 380px;grid-template-rows:48px minmax(0,1fr);height:100vh;height:100dvh}
+.top{grid-column:1/-1;display:flex;align-items:center;gap:12px;padding:0 14px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#11142a,#0d1020)}
+.top a.back{color:var(--dim);text-decoration:none;font-size:13px;white-space:nowrap}
+.top a.back:hover{color:var(--ink)}
+.top .chip{font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 45%,transparent);border-radius:99px;padding:5px 8px}
+.top h1{margin:0;font-size:15px;font-weight:650;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top .sp{flex:1}
+.top .keys{font:11px var(--mono);color:var(--faint);white-space:nowrap}
+.stage{position:relative;min-width:0;min-height:0;background:radial-gradient(ellipse at 50% 40%,#151a3a 0%,var(--bg) 70%)}
+.stage::before{content:"";position:absolute;inset:0;background-image:radial-gradient(rgba(190,200,255,.07) 1px,transparent 1.3px);background-size:24px 24px;pointer-events:none}
+.stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.caption{position:absolute;left:16px;right:16px;top:14px;max-width:640px;padding:10px 14px;border-radius:10px;background:rgba(12,14,30,.78);border:1px solid var(--line2);backdrop-filter:blur(6px);font-size:14px;line-height:1.45;pointer-events:none;transition:opacity .3s}
+.caption b{color:var(--accent)}
+.caption:empty{opacity:0}
+.dock{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;gap:6px;padding:6px;border-radius:99px;background:rgba(12,14,30,.82);border:1px solid var(--line2);backdrop-filter:blur(6px)}
+.dock button{border:0;background:transparent;border-radius:99px;min-width:36px;height:34px;padding:0 12px;cursor:pointer;color:var(--ink);white-space:nowrap}
+.dock button:hover{background:rgba(255,255,255,.08)}
+.dock button.on{background:color-mix(in srgb,var(--accent) 22%,transparent);color:var(--accent)}
+.lesson{border-left:1px solid var(--line);background:var(--panel);overflow:auto;min-height:0;display:flex;flex-direction:column}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border-bottom:1px solid var(--line)}
+.stat{background:var(--panel);padding:10px 12px}
+.stat .k{font:600 10px/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.stat .v{font:600 18px/1.3 var(--mono);font-variant-numeric:tabular-nums;margin-top:3px}
+.tabs{display:flex;gap:2px;padding:10px 12px 0;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);z-index:2}
+.tabs button{border:0;background:none;padding:9px 12px;color:var(--dim);cursor:pointer;border-bottom:2px solid transparent;font-weight:600}
+.tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent)}
+.pane{padding:14px 16px 22px;display:none}
+.pane.on{display:block}
+.pane h3{margin:14px 0 6px;font-size:13px;letter-spacing:.02em}
+.pane p{margin:0 0 10px;color:var(--dim)}
+.pane p b,.pane li b{color:var(--ink)}
+.lede{font-size:15px;color:var(--ink)!important}
+.steps{list-style:none;margin:10px 0 0;padding:0;counter-reset:s}
+.steps li{counter-increment:s;border:1px solid var(--line);border-radius:10px;margin:0 0 8px;padding:10px 12px 10px 40px;position:relative;cursor:pointer;color:var(--dim);background:var(--panel2)}
+.steps li::before{content:counter(s);position:absolute;left:12px;top:10px;width:18px;height:18px;border-radius:99px;display:grid;place-items:center;font:600 11px var(--mono);background:rgba(255,255,255,.07);color:var(--dim)}
+.steps li.on{border-color:color-mix(in srgb,var(--accent) 60%,transparent);color:var(--ink)}
+.steps li.on::before{background:var(--accent);color:#141414}
+.steps li.done::before{content:"✓";background:rgba(126,231,135,.2);color:var(--good)}
+.steps li .t{font-weight:650;color:var(--ink);display:block}
+.steps li .d{display:none;margin-top:4px}
+.steps li.on .d{display:block}
+.tournav{display:flex;gap:8px;margin-top:6px}
+.btn{border:1px solid var(--line2);background:var(--panel2);border-radius:9px;padding:7px 12px;cursor:pointer;color:var(--ink)}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:#15131a;border-color:transparent;font-weight:650}
+.card{border:1px solid var(--line);border-radius:12px;padding:12px;margin:0 0 10px;background:var(--panel2)}
+.card .q{color:var(--ink);font-weight:600;margin-bottom:8px}
+.card .why{display:none;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line2);color:var(--dim)}
+.card.revealed .why{display:block}
+.card .row{display:flex;gap:8px;flex-wrap:wrap}
+.eq{font:14px/1.7 var(--mono);background:#0e1124;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:6px 0 12px;overflow-x:auto;white-space:nowrap}
+.eq .c-a{color:var(--a)} .eq .c-b{color:var(--b)} .eq .c-hl{color:var(--hl)} .eq .c-g{color:var(--grad)} .eq .c-acc{color:var(--accent)}
+.live{font-variant-numeric:tabular-nums;color:var(--hl)}
+.ctrl{display:grid;grid-template-columns:1fr auto;gap:4px 10px;align-items:center;margin:10px 0}
+.ctrl label{color:var(--dim);font-size:13px}
+.ctrl output{font:12px var(--mono);color:var(--ink);font-variant-numeric:tabular-nums}
+.ctrl input[type=range]{grid-column:1/-1;width:100%;accent-color:var(--accent)}
+.seg{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 10px}
+.seg button{border:1px solid var(--line2);background:transparent;border-radius:99px;padding:5px 11px;cursor:pointer;color:var(--dim);font-size:13px}
+.seg button[aria-pressed=true]{background:color-mix(in srgb,var(--accent) 20%,transparent);color:var(--ink);border-color:color-mix(in srgb,var(--accent) 55%,transparent)}
+.note{border-left:3px solid var(--grad);padding:6px 10px;margin:8px 0 12px;color:var(--dim);background:rgba(167,139,250,.06);border-radius:0 8px 8px 0}
+.wild li{margin-bottom:6px;color:var(--dim)}
+@media (max-width:880px){
+  body{overflow:auto}
+  .app{grid-template-columns:1fr;grid-template-rows:48px 58vh auto;height:auto}
+  .stage{height:58vh}
+  .lesson{border-left:0;border-top:1px solid var(--line)}
+  .top .keys{display:none}
+  .caption{font-size:13px;top:10px;left:10px;right:10px}
+  .stats{grid-template-columns:repeat(3,1fr)}
+  .stat .v{font-size:15px}
+}
+@media (prefers-reduced-motion:reduce){.caption{transition:none}}
 </style>
+</head>
 <body>
-<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
-<canvas id="c"></canvas>
-<div id="ui">
-  <h1>Minimax + Alpha-Beta</h1>
-  <p class="e">The AI searches every possible future of the game, and alpha-beta lets it skip whole branches that cannot change the answer.</p>
-  <div class="k">click to play X &middot; P toggle pruning &middot; R restart &middot; Space pause search</div>
-  <hr>
-  <div id="stats"></div>
-  <a href="index.html">&larr; gallery</a>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace;max-width:100vw;white-space:pre-wrap';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div class="app">
+  <header class="top">
+    <a class="back" href="index.html">← Gallery</a>
+    <span class="chip">ML / AI</span>
+    <h1>Minimax + Alpha-Beta</h1>
+    <span class="sp"></span>
+    <span class="keys">Space play · ←/→ tour · R reset</span>
+  </header>
+  <section class="stage" id="stage">
+    <canvas id="c" role="img" aria-label="Tic-tac-toe board against a perfect AI, with its minimax search tree below: candidate moves, your replies, backed-up values and branches pruned by alpha-beta"></canvas>
+    <div class="caption" id="caption" aria-live="polite"></div>
+    <div class="dock" role="group" aria-label="Simulation controls">
+      <button id="bPlay" class="on" aria-label="Pause">❚❚</button>
+      <button id="bStep" aria-label="Step once">Step</button>
+      <button id="bReset" aria-label="Reset">Reset</button>
+      <button id="bSpeed" aria-label="Speed">1×</button>
+    </div>
+  </section>
+  <aside class="lesson">
+    <div class="stats" id="stats"><!-- 3 stat tiles: .stat > .k + .v#id --></div>
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-tab="learn">Learn</button>
+      <button role="tab" aria-selected="false" data-tab="try">Try this</button>
+      <button role="tab" aria-selected="false" data-tab="math">The math</button>
+      <button role="tab" aria-selected="false" data-tab="play">Controls</button>
+    </div>
+    <div class="pane on" id="p-learn">
+      <p class="lede">A perfect game AI imagines every future, assumes you will answer perfectly, and backs the final scores up the tree — alpha-beta just skips the futures that cannot change its mind.</p>
+      <ol class="steps" id="steps"></ol>
+      <div class="tournav"><button class="btn" id="tPrev">← Back</button><button class="btn primary" id="tNext">Next step →</button></div>
+      <h3>In the wild</h3>
+      <ul class="wild"><li><b>Chess engines</b> (Stockfish) run alpha-beta to a depth limit, score the leaves with an evaluation function, and spend heavily on move ordering: hash moves, killer moves, iterative deepening.</li><li><b>AlphaZero / MuZero</b> swap brute force for Monte-Carlo tree search guided by a network: the policy head is a learned move order, the value head a learned leaf score.</li><li>The same <b>max–min</b> shape trains GANs and adversarially robust models: one player maximises a loss the other minimises.</li></ul>
+    </div>
+    <div class="pane" id="p-try"><!-- .card experiments: predict → run → why --></div>
+    <div class="pane" id="p-math">
+      <h3>Minimax value</h3>
+      <div class="eq">V(s) = <span class="c-hl">u(s)</span> &nbsp;if the game is over<br>V(s) = <span class="c-a">max</span><sub>m</sub> V(s+m) &nbsp;if the AI moves<br>V(s) = <span class="c-b">min</span><sub>m</sub> V(s+m) &nbsp;if you move</div>
+      <p><span style="color:var(--hl)">u(s)</span> is the final score: <span style="color:var(--a)">+1</span> AI wins, 0 draw, <span style="color:var(--b)">−1</span> you win. Exact value of the searched position: <span class="live" id="mV">–</span>. The empty board is worth 0 — a draw.</p>
+      <h3>Alpha-beta window</h3>
+      <div class="eq"><span class="c-a">α</span> = best the AI can already force<br><span class="c-b">β</span> = lowest you can already force<br>stop searching a node once <span class="c-g">α ≥ β</span></div>
+      <p>Last cut: <span style="color:var(--a)">α</span> = <span class="live" id="mA">–</span>, <span style="color:var(--b)">β</span> = <span class="live" id="mB">–</span>, <span class="live" id="mCut">–</span>. A cut value is only a bound: “≤0” means “no better than a draw for the AI”.</p>
+      <h3>Cost</h3>
+      <div class="eq">plain minimax ≈ b<sup>d</sup> = <span class="live" id="mNF">–</span><br>ideal α-β ≈ b<sup>d/2</sup> ≈ √(b<sup>d</sup>) = <span class="live" id="mSq">–</span><br>best-first (oracle) = <span class="live" id="mNB">–</span><br>your setting = <span class="live" id="mNA">–</span></div>
+      <p>b = moves per turn, d = plies to the end. Tic-tac-toe’s branching shrinks every ply, so √ is only a rough guide. Best-first can even lose to the heuristic: many moves tie on value and it breaks ties by square order, while the heuristic grabs an immediate win, which refutes a line in a single node.</p>
+      <div class="note"><b>Alpha-beta is not an approximation.</b> It returns exactly the minimax value and the same best-move value; it only skips branches that provably cannot change the answer.</div>
+      <div class="note"><b>“Perfect” means perfect against a perfect opponent.</b> Minimax is pessimistic: it cannot tell a safe draw from a draw that sets you a trap.</div>
+    </div>
+    <div class="pane" id="p-play"><!-- .ctrl sliders, .seg segmented choices --></div>
+  </aside>
 </div>
 <script>
 'use strict';
-var cv = document.getElementById('c'), ctx = cv.getContext('2d');
-var statsEl = document.getElementById('stats');
-
-var EMPTY = 0, X = 1, O = 2;
-var LINES = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
-var board = new Uint8Array(9);
-var turn = X, gameOver = false, winner = 0, winLine = null;
-var pruningOn = true, paused = false, thinking = false;
-var aiMove = -1, status = 'your move — you are X';
-var nodesPrune = 0, nodesFull = 0, prunedCount = 0;
-var lastPruneCmp = 0, lastFullCmp = 0;
-
-// visualisation
-var VIS_DEPTH = 4, MAX_VIS = 700;
-var nodes = [], events = [], evIdx = 0, evStep = 1;
-var revealed = [], revIdx = 0, maxDepthSeen = 0;
-
-// allocating version — only used by the UI / game flow, never inside the search
-function checkWin(b){
-  for (var i=0;i<8;i++){
-    var a=LINES[i][0],c=LINES[i][1],d=LINES[i][2];
-    if (b[a] && b[a]===b[c] && b[a]===b[d]) return {p:b[a], line:LINES[i]};
-  }
-  for (var j=0;j<9;j++) if (!b[j]) return null;
-  return {p:0, line:null};
+/* ===== shell helpers (keep) ===== */
+const $ = s => document.querySelector(s);
+const cv = $('#c'), ctx = cv.getContext('2d'), stage = $('#stage');
+let W = 0, H = 0, DPR = 1;
+function resize() {
+  const r = stage.getBoundingClientRect(); DPR = Math.min(2, devicePixelRatio || 1);
+  W = Math.max(1, r.width); H = Math.max(1, r.height);
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR); ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  if (typeof onResize === 'function') onResize();
+}
+new ResizeObserver(resize).observe(stage); resize();
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+// tabs
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', x === b));
+  document.querySelectorAll('.pane').forEach(p => p.classList.toggle('on', p.id === 'p-' + b.dataset.tab));
+});
+// playback
+let playing = !REDUCED, speed = 1;
+const SPEEDS = [0.25, 0.5, 1, 2, 4];
+function setPlaying(v) { playing = v; $('#bPlay').textContent = v ? '❚❚' : '▶'; $('#bPlay').classList.toggle('on', v); $('#bPlay').setAttribute('aria-label', v ? 'Pause' : 'Play'); }
+$('#bPlay').onclick = () => setPlaying(!playing);
+$('#bSpeed').onclick = () => { speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]; $('#bSpeed').textContent = speed + '×'; };
+// tour: STEPS = [{t:'title', d:'html', cap:'stage caption html', go(){ /* set demo state */ }}]
+let tour = 0;
+function renderSteps() {
+  const ol = $('#steps'); ol.innerHTML = '';
+  STEPS.forEach((s, i) => { const li = document.createElement('li'); li.className = (i === tour ? 'on' : '') + (i < tour ? ' done' : ''); li.innerHTML = `<span class="t">${s.t}</span><span class="d">${s.d}</span>`; li.onclick = () => goStep(i); ol.appendChild(li); });
+  $('#tPrev').disabled = tour === 0; $('#tNext').textContent = tour === STEPS.length - 1 ? 'Start over ↺' : 'Next step →';
+}
+function goStep(i) { tour = (i + STEPS.length) % STEPS.length; const s = STEPS[tour]; if (s.go) s.go(); $('#caption').innerHTML = s.cap || ''; renderSteps(); }
+$('#tPrev').onclick = () => goStep(Math.max(0, tour - 1));
+$('#tNext').onclick = () => goStep(tour + 1);
+// experiments: TRIES = [{q:'Predict…', run(){…}, why:'html'}]
+function renderTries() {
+  const p = $('#p-try'); p.innerHTML = '<p>Make a prediction first, then run it. Each experiment sets the demo up for you.</p>';
+  TRIES.forEach(x => { const c = document.createElement('div'); c.className = 'card'; c.innerHTML = `<div class="q">${x.q}</div><div class="row"><button class="btn primary">Run it</button><button class="btn">Show why</button></div><div class="why">${x.why}</div>`; const [run, why] = c.querySelectorAll('button'); run.onclick = () => { x.run(); setPlaying(true); }; why.onclick = () => c.classList.toggle('revealed'); p.appendChild(c); });
+}
+// controls helpers
+function slider(parent, id, label, min, max, step, value, fmt, onInput) {
+  const d = document.createElement('div'); d.className = 'ctrl';
+  d.innerHTML = `<label for="${id}">${label}</label><output id="${id}o"></output><input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${value}">`;
+  parent.appendChild(d); const inp = d.querySelector('input'), out = d.querySelector('output');
+  const upd = () => { out.textContent = fmt(+inp.value); onInput(+inp.value); }; inp.oninput = upd; upd();
+  return { set(v) { inp.value = v; upd(); }, get: () => +inp.value };
+}
+function seg(parent, options, value, onPick) {
+  const d = document.createElement('div'); d.className = 'seg'; parent.appendChild(d);
+  const bs = options.map(([v, label]) => { const b = document.createElement('button'); b.textContent = label; b.setAttribute('aria-pressed', v === value); b.onclick = () => set(v); d.appendChild(b); return [v, b]; });
+  function set(v) { bs.forEach(([k, b]) => b.setAttribute('aria-pressed', k === v)); onPick(v); }
+  return { set };
+}
+function stat(id, label) { const d = document.createElement('div'); d.className = 'stat'; d.innerHTML = `<div class="k">${label}</div><div class="v" id="${id}">–</div>`; $('#stats').appendChild(d); }
+const setText = (id, v) => { const e = document.getElementById(id); if (e && e.textContent !== v) e.textContent = v; };
+// keyboard
+addEventListener('keydown', e => {
+  if (e.target.matches('input,select,textarea')) return;
+  if (e.code === 'Space') { setPlaying(!playing); e.preventDefault(); }
+  else if (e.key === 'ArrowRight') goStep(tour + 1);
+  else if (e.key === 'ArrowLeft') goStep(Math.max(0, tour - 1));
+  else if (e.key === 'r' || e.key === 'R') $('#bReset').click();
+});
+// wall-clock-locked loop (dt clamped to [0, 0.1] — rAF timestamps can precede performance.now())
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.1, Math.max(0, (now - last) / 1000)); last = now;
+  try { frame(playing ? dt * speed : 0, dt); } catch (err) { window.onerror(err.message, '', 0); return; }
+  requestAnimationFrame(loop);
 }
 
-// hot path: no allocation. -1 = keep playing, 0 = draw, 1 = X won, 2 = O won
-var L0=[0,3,6,0,1,2,0,2], L1=[1,4,7,3,4,5,4,4], L2=[2,5,8,6,7,8,8,6];
-function winnerOf(b){
-  for (var i=0;i<8;i++){
-    var v = b[L0[i]];
-    if (v && v === b[L1[i]] && v === b[L2[i]]) return v;
-  }
-  for (var j=0;j<9;j++) if (!b[j]) return -1;
-  return 0;
+// ===== DEMO CODE =====
+/*CORE-START*/
+// Pure game + search code (no DOM). Board: 9 cells, 0 empty, 1 = AI (MAX), 2 = you (MIN).
+const AI = 1, YOU = 2;
+const LINES = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+function winLine(b) { for (const l of LINES) { const v = b[l[0]]; if (v && v === b[l[1]] && v === b[l[2]]) return l; } return null; }
+// +1 AI has won, -1 you have won, 0 full board draw, null = game still running
+function outcome(b) { const l = winLine(b); if (l) return b[l[0]] === AI ? 1 : -1; for (let i = 0; i < 9; i++) if (!b[i]) return null; return 0; }
+const kOf = (b, max) => b.join('') + (max ? 'M' : 'm');
+const SOLVED = new Map(), FULL = new Map();
+// exact minimax value (memoised; used for hover badges, oracle move orders and tests)
+function solve(b, max) {
+  const k = kOf(b, max); let v = SOLVED.get(k); if (v !== undefined) return v;
+  v = outcome(b);
+  if (v === null) { v = max ? -2 : 2; for (let i = 0; i < 9; i++) if (!b[i]) { b[i] = max ? AI : YOU; const c = solve(b, !max); b[i] = 0; v = max ? Math.max(v, c) : Math.min(v, c); } }
+  SOLVED.set(k, v); return v;
 }
-
-// ---------- pure counting search (for the honest node-count comparison) ----------
-function countSearch(depth, alpha, beta, maximizing, prune, box){
-  box.n++;
-  var w = winnerOf(board);
-  if (w >= 0) return (w === X) ? (10-depth) : (w === O ? (depth-10) : 0);
-  var bestV = maximizing ? -Infinity : Infinity;
-  for (var i=0;i<9;i++){
-    if (board[i]) continue;
-    board[i] = maximizing ? X : O;
-    var v = countSearch(depth+1, alpha, beta, !maximizing, prune, box);
-    board[i] = EMPTY;
-    if (maximizing){ if (v > bestV) bestV = v; if (bestV > alpha) alpha = bestV; }
-    else { if (v < bestV) bestV = v; if (bestV < beta) beta = bestV; }
-    if (prune && beta <= alpha) break;
-  }
-  return bestV;
+// number of positions plain minimax visits below (and including) b
+function fullCount(b, max) {
+  const k = kOf(b, max); let n = FULL.get(k); if (n !== undefined) return n;
+  n = 1; if (outcome(b) === null) for (let i = 0; i < 9; i++) if (!b[i]) { b[i] = max ? AI : YOU; n += fullCount(b, !max); b[i] = 0; }
+  FULL.set(k, n); return n;
 }
-
-// ---------- recording search (drives the animated tree) ----------
-function addNode(parent, depth, move, maximizing){
-  var id = nodes.length;
-  nodes.push({id:id, parent:parent, depth:depth, move:move, maximizing:maximizing,
-              val:null, pruned:false, leaf:false, x:0, y:0});
-  if (depth > maxDepthSeen) maxDepthSeen = depth;
-  events.push({type:'open', n:id});
-  return id;
+const POS = [2, 1, 2, 1, 3, 1, 2, 1, 2]; // corner 2, edge 1, centre 3
+function threatens(b, i, who) { for (const l of LINES) if (l.includes(i)) { let c = 0; for (const j of l) if (j !== i && b[j] === who) c++; if (c === 2) return true; } return false; }
+// move orders: 'worst' / 'best' use the exact values (an oracle), 'heur' = win > block > centre > corner > edge
+const ORD = new Map();
+function orderMoves(b, max, order) {
+  const key = kOf(b, max) + order; let hit = ORD.get(key); if (hit) return hit;
+  hit = rawOrder(b, max, order); ORD.set(key, hit); return hit;
 }
-
-function recSearch(id, depth, alpha, beta, maximizing){
-  var w = winnerOf(board);
-  if (w >= 0){
-    var tv = (w === X) ? (10-depth) : (w === O ? (depth-10) : 0);
-    if (id >= 0){ nodes[id].val = tv; nodes[id].leaf = true; events.push({type:'value', n:id}); }
-    return {v:tv, m:-1};
+function rawOrder(b, max, order) {
+  const ms = []; for (let i = 0; i < 9; i++) if (!b[i]) ms.push(i);
+  if (order === 'read') return ms;
+  const me = max ? AI : YOU, them = max ? YOU : AI, sc = {};
+  for (const i of ms) {
+    if (order === 'heur') sc[i] = (threatens(b, i, me) ? 100 : 0) + (threatens(b, i, them) ? 50 : 0) + POS[i];
+    else { b[i] = me; const v = solve(b, !max); b[i] = 0; const good = max ? v : -v; sc[i] = order === 'best' ? good : -good; }
   }
-  var bestM = -1, bestV = maximizing ? -Infinity : Infinity;
-  for (var i=0;i<9;i++){
-    if (board[i]) continue;
-    board[i] = maximizing ? X : O;
-    var canShow = (id >= 0) && (depth+1 <= VIS_DEPTH) && (nodes.length < MAX_VIS);
-    var child = canShow ? addNode(id, depth+1, i, !maximizing) : -1;
-    var r = recSearch(child, depth+1, alpha, beta, !maximizing);
-    board[i] = EMPTY;
-    if (maximizing){ if (r.v > bestV){ bestV = r.v; bestM = i; } if (bestV > alpha) alpha = bestV; }
-    else { if (r.v < bestV){ bestV = r.v; bestM = i; } if (bestV < beta) beta = bestV; }
-    if (id >= 0){ nodes[id].val = bestV; events.push({type:'update', n:id}); }
-    if (pruningOn && beta <= alpha){
-      if (id >= 0 && depth+1 <= VIS_DEPTH && nodes.length < MAX_VIS){
-        for (var k=i+1;k<9;k++){
-          if (board[k]) continue;
-          if (nodes.length >= MAX_VIS) break;
-          var gid = nodes.length;
-          nodes.push({id:gid, parent:id, depth:depth+1, move:k, maximizing:!maximizing,
-                      val:null, pruned:true, leaf:true, x:0, y:0});
-          if (depth+1 > maxDepthSeen) maxDepthSeen = depth+1;
-          events.push({type:'prune', n:gid});
-        }
+  return ms.sort((x, y) => sc[y] - sc[x] || x - y);
+}
+// Minimax with optional alpha-beta (fail-soft). st.n counts every position visited.
+// If `node` is given (depth <= 2) the search records a tidy tree + an event log in evaluation order.
+function search(b, max, alpha, beta, opt, st, node) {
+  // plain minimax below the drawn tree visits every position: same count + value as the memoised tables
+  if (!opt.prune && !node && !opt.literal) { st.n += fullCount(b, max); return solve(b, max); }
+  st.n++;
+  const o = outcome(b);
+  if (o !== null) { if (node) { node.v = o; node.term = true; node.bound = ''; } return o; }
+  const a0 = alpha, b0 = beta, ms = orderMoves(b, max, opt.order);
+  let best = max ? -Infinity : Infinity;
+  for (let k = 0; k < ms.length; k++) {
+    const m = ms[k], rec = node && node.depth < 2;
+    let child = null;
+    if (rec) { child = { move: m, depth: node.depth + 1, kids: [], v: null, bound: '', n: 0, pruned: false }; node.kids.push(child); child.openAt = st.ev.length; st.ev.push({ t: 'open', c: child, p: node, cum: st.n }); }
+    const n0 = st.n;
+    b[m] = max ? AI : YOU;
+    const v = search(b, !max, alpha, beta, opt, st, child);
+    if (child) { child.full = fullCount(b, !max); child.n = st.n - n0; child.valAt = st.ev.length; st.ev.push({ t: 'val', c: child, p: node, cum: st.n }); }
+    b[m] = 0;
+    if (max) { if (v > best) { best = v; if (node) node.best = m; } if (best > alpha) alpha = best; }
+    else { if (v < best) { best = v; if (node) node.best = m; } if (best < beta) beta = best; }
+    if (opt.prune && alpha >= beta) {
+      if (rec && k + 1 < ms.length) {
+        const at = st.ev.length;
+        for (let r = k + 1; r < ms.length; r++) { b[ms[r]] = max ? AI : YOU; node.kids.push({ move: ms[r], depth: node.depth + 1, kids: [], pruned: true, cutAt: at, n: 0, full: fullCount(b, !max) }); b[ms[r]] = 0; }
+        node.cut = { at, alpha, beta, k: k + 1 };
+        st.ev.push({ t: 'cut', c: node, alpha, beta, cum: st.n });
       }
       break;
     }
   }
-  if (id >= 0) events.push({type:'value', n:id});
-  return {v:bestV, m:bestM};
+  if (node) { node.v = best; node.bound = !opt.prune ? '' : best <= a0 ? 'le' : best >= b0 ? 'ge' : ''; } // fail-soft: outside the window = only a bound
+  return best;
+}
+// One AI decision: record the tree for the chosen settings, plus honest node counts for every alternative.
+function think(b, opt) {
+  const root = { move: -1, depth: 0, kids: [], v: null, bound: '' }, st = { n: 0, ev: [] };
+  const v = search(b.slice(), true, -Infinity, Infinity, opt, st, root);
+  // a perfect player takes an immediate win when one exists (equal value, but no dawdling)
+  let move = root.best;
+  for (const c of root.kids) if (c.term && c.v === 1) { move = c.move; break; }
+  const counts = {};
+  for (const o of ['worst', 'read', 'heur', 'best']) { const s = { n: 0, ev: [] }; search(b.slice(), true, -Infinity, Infinity, { prune: true, order: o }, s, null); counts[o] = s.n; }
+  return { root, v, move, ev: st.ev, n: st.n, full: fullCount(b.slice(), true), counts, exact: solve(b.slice(), true) };
+}
+/*CORE-END*/
+
+/* ===== demo state ===== */
+const COL = { a: '#ff7a6b', b: '#3fd0c0', hl: '#ffc857', grad: '#a78bfa', data: '#c7cbe0', ink: '#e9ecfa', dim: '#a2a9c8', faint: '#6b7396', line: 'rgba(190,200,255,.14)', acc: '#8fb3ff', good: '#7ee787' };
+const SANS = 'ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif', MONO = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace';
+const ORDERS = ['worst', 'read', 'heur', 'best'];
+const NAMES = { worst: 'worst-first', read: 'reading order', heur: 'heuristic', best: 'best-first' };
+const SHORT = { worst: 'worst', read: 'a1→c3', heur: 'heuristic', best: 'best' };
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const cellName = i => 'abc'[i % 3] + (1 + (i / 3 | 0));
+const fmtN = n => Math.round(n).toLocaleString('en-US');
+const fmtV = (v, bd) => (bd === 'le' ? '≤' : bd === 'ge' ? '≥' : '') + (v > 0 ? '+1' : v < 0 ? '−1' : '0');
+const vCol = v => v > 0 ? COL.a : v < 0 ? COL.b : COL.data;
+const pct = f => (100 - 100 * f) >= 99 ? (100 - 100 * f).toFixed(1) : Math.round(100 - 100 * f);
+const word = v => v > 0 ? 'AI wins' : v < 0 ? 'you win' : 'draw';
+const S = { youFirst: true, prune: true, order: 'read', showAll: false, board: Array(9).fill(0), turn: YOU, over: null,
+  tree: null, phase: 'human', drop: null, pulses: [], flashes: [], ptr: null, hover: null, focus: null, lastCut: null, T: 0 };
+
+/* ===== game flow ===== */
+function newGame(youFirst = S.youFirst, moves = [], instant = false) {
+  Object.assign(S, { youFirst, board: Array(9).fill(0), over: null, tree: null, drop: null, pulses: [], flashes: [], lastCut: null });
+  let who = youFirst ? YOU : AI; for (const m of moves) { S.board[m] = who; who = 3 - who; } S.turn = who;
+  if (checkOver()) return;
+  if (S.turn === AI) startThink(instant); else S.phase = 'human';
+}
+function checkOver() { const o = outcome(S.board); if (o === null) return false; S.over = { v: o, line: winLine(S.board) }; S.phase = 'over'; return true; }
+function startThink(instant) { S.tree = makeTree(think(S.board, { prune: S.prune, order: S.order }), S.board.slice(), instant); S.phase = 'think'; }
+function makeTree(res, rootBoard, instant) {
+  const w = res.ev.map(e => e.t === 'cut' ? 4 : e.t === 'open' ? (e.c.depth === 1 ? 3 : 1) : (e.c.depth === 1 ? 2.5 : 1.2));
+  const u = clamp(4.8 / w.reduce((a, b) => a + b, 0), 0.03, 0.16);
+  let maxFull = 1;
+  res.root.kids.forEach((m, i) => { m.ci = i; m.kids.forEach((c, j) => { c.ci = i; c.cj = j; maxFull = Math.max(maxFull, c.full); }); });
+  S.pulses = []; S.flashes = []; S.lastCut = null;
+  const t = { res, rootBoard, dur: w.map(x => x * u), k: 0, acc: 0, hold: 0, maxFull };
+  if (instant || REDUCED) while (t.k < res.ev.length) { const e = res.ev[t.k++]; if (e.t === 'cut') S.lastCut = e; }
+  return t;
+}
+function rethink() { const t = S.tree; if (t) S.tree = makeTree(think(t.rootBoard, { prune: S.prune, order: S.order }), t.rootBoard, false); }
+function humanPlay(i) {
+  if (S.phase !== 'human' || S.board[i]) return;
+  S.board[i] = YOU; S.turn = AI;
+  if (!checkOver()) startThink(false);
+}
+function commitAI() { S.board[S.drop.move] = AI; S.drop = null; S.turn = YOU; if (!checkOver()) S.phase = 'human'; }
+function finishReveal() { const t = S.tree; while (t && t.k < t.res.ev.length) reveal(t.k++); }
+function reveal(k) {
+  const e = S.tree.res.ev[k];
+  if (e.t === 'val') S.pulses.push({ c: e.c, t: 0 });
+  if (e.t === 'cut') { S.lastCut = e; S.flashes.push({ c: e.c, t: 0 }); }
 }
 
-function startThinking(){
-  nodes = []; events = []; evIdx = 0; revealed = []; revIdx = 0; maxDepthSeen = 0;
-
-  var boxA = {n:0}, boxB = {n:0};
-  countSearch(0, -Infinity, Infinity, false, true, boxA);
-  countSearch(0, -Infinity, Infinity, false, false, boxB);
-  nodesFull = boxB.n;
-  nodesPrune = boxA.n;
-  lastPruneCmp = boxA.n; lastFullCmp = boxB.n;
-  prunedCount = boxB.n - boxA.n;
-
-  var root = addNode(-1, 0, -1, false);
-  var res = recSearch(root, 0, -Infinity, Infinity, false);
-  aiMove = res.m;
-  evStep = Math.max(1, Math.ceil(events.length / 170));  // reveal in ~3s at 60fps
-  thinking = true;
-  status = 'AI thinking…';
+/* ===== layout (everything inside the safe rect {16, 84, W-32, H-160}) ===== */
+function geom() {
+  const sx = 16, sy = 84, sw = W - 32, sh = H - 160, wide = W >= 640;
+  const gut = wide ? 100 : 22, x0 = sx + gut, x1 = sx + sw, tw = x1 - x0;
+  const B = Math.round(clamp(Math.min(sh * 0.34, tw * 0.4), 90, 214));
+  const bx = Math.round(x0 + tw * 0.3 - B / 2), by = sy + (wide ? 6 : 12);
+  const px = bx + B + (wide ? 28 : 12), pw = x1 - px;
+  const kids = S.tree ? S.tree.res.root.kids : [];
+  const nk = Math.max(8, kids.length), colW = tw / nk;
+  const y1 = by + B + (wide ? 42 : 28), m = Math.round(clamp(Math.min(colW * 0.62, sh * 0.11), 24, 60));
+  const y2 = y1 + m + (wide ? 30 : 20), maxK = Math.max(7, ...kids.map(c => c.kids.length));
+  const chGap = wide ? 5 : 3, chH = Math.floor(clamp((sy + sh - y2) / maxK - chGap, 11, 30));
+  const cw = Math.min(colW - (wide ? 12 : 5), 120);
+  const off = (tw - colW * kids.length) / 2; // centre the columns when there are fewer than 8
+  const cx = i => x0 + off + colW * (i + 0.5);
+  return { wide, sx, sy, sw, sh, gut, x0, x1, tw, B, bx, by, px, pw, py: by, ph: B, colW, y1, m, y2, chH, chGap, cw, cx,
+    chipY: j => y2 + j * (chH + chGap), pill: by + B + (wide ? 21 : 14), bottom: sy + sh };
 }
-
-// ---------- game flow ----------
-function restart(){
-  board = new Uint8Array(9);
-  turn = X; gameOver = false; winner = 0; winLine = null; thinking = false;
-  nodes = []; events = []; evIdx = 0; revealed = []; revIdx = 0;
-  nodesPrune = 0; nodesFull = 0; prunedCount = 0; maxDepthSeen = 0;
-  status = 'your move — you are X';
-}
-function playerMove(i){
-  if (gameOver || thinking || turn !== X || board[i]) return;
-  board[i] = X;
-  var w = checkWin(board);
-  if (w){ finish(w); return; }
-  turn = O;
-  startThinking();
-}
-function commitAI(){
-  thinking = false;
-  if (aiMove >= 0 && !board[aiMove]) board[aiMove] = O;
-  var w = checkWin(board);
-  if (w){ finish(w); return; }
-  turn = X;
-  status = 'your move — you are X';
-}
-function finish(w){
-  gameOver = true; winner = w.p; winLine = w.line; thinking = false;
-  status = w.p === X ? 'you win?! (that should be impossible)'
-        : (w.p === O ? 'AI wins — press R to restart' : 'draw — perfect play, press R');
-}
-
-// ---------- rendering ----------
-var dpr=1, cw=0, ch=0, BS=0, BX=0, BY=0, treeTop=0, hoverCell=-1;
-function resize(){
-  dpr = Math.min(2, window.devicePixelRatio || 1);
-  cw = window.innerWidth; ch = window.innerHeight;
-  cv.width = Math.floor(cw*dpr); cv.height = Math.floor(ch*dpr);
-  cv.style.width = cw+'px'; cv.style.height = ch+'px';
-  ctx.setTransform(dpr,0,0,dpr,0,0);
-  BS = Math.max(140, Math.min(ch*0.30, cw*0.24, 280));
-  BX = cw/2 - BS/2; BY = 30;
-  treeTop = BY + BS + 46;
-}
-window.addEventListener('resize', resize);
-
-function drawBoard(time){
-  var cs = BS/3;
-  ctx.save();
-  ctx.shadowColor = 'rgba(90,240,200,.7)';
-  ctx.shadowBlur = 24 + 8*Math.sin(time*2);
-  ctx.strokeStyle = 'rgba(90,240,200,.55)';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(BX-4, BY-4, BS+8, BS+8);
-  ctx.restore();
-
-  ctx.strokeStyle = 'rgba(130,220,255,.28)';
-  ctx.lineWidth = 1.5;
-  for (var i=1;i<3;i++){
-    ctx.beginPath(); ctx.moveTo(BX+i*cs, BY+6); ctx.lineTo(BX+i*cs, BY+BS-6); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(BX+6, BY+i*cs); ctx.lineTo(BX+BS-6, BY+i*cs); ctx.stroke();
+function hitTest(g, x, y) {
+  const { bx, by, B } = g;
+  if (x >= bx && x < bx + B && y >= by && y < by + B) return { kind: 'cell', i: ((x - bx) / (B / 3) | 0) + 3 * ((y - by) / (B / 3) | 0) };
+  const t = S.tree; if (!t) return null;
+  for (const mn of t.res.root.kids) {
+    if (t.k <= mn.openAt) continue;
+    const cx = g.cx(mn.ci);
+    if (Math.abs(x - cx) < g.m / 2 + 4 && y > g.y1 - 4 && y < g.y1 + g.m + 18) return { kind: 'mini', n: mn };
+    for (const c of mn.kids) {
+      if (!(c.pruned ? t.k > c.cutAt : t.k > c.openAt)) continue;
+      const yy = g.chipY(c.cj);
+      if (Math.abs(x - cx) < g.cw / 2 && y >= yy && y < yy + g.chH) return { kind: 'chip', n: c, p: mn };
+    }
   }
-  for (var k=0;k<9;k++){
-    var x = BX + (k%3)*cs, y = BY + ((k/3)|0)*cs, p = cs*0.24;
-    if (!board[k]){
-      if (!gameOver && !thinking && k === hoverCell){
-        ctx.fillStyle = 'rgba(110,255,235,.09)';
-        ctx.fillRect(x+3,y+3,cs-6,cs-6);
+  return null;
+}
+
+/* ===== drawing primitives ===== */
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function text(s, x, y, font, col, align = 'left', base = 'middle') { ctx.font = font; ctx.fillStyle = col; ctx.textAlign = align; ctx.textBaseline = base; ctx.fillText(s, x, y); }
+function glowStroke(col, lw) { ctx.strokeStyle = col; ctx.globalAlpha *= 0.2; ctx.lineWidth = lw * 2.8; ctx.stroke(); ctx.globalAlpha /= 0.2; ctx.lineWidth = lw; ctx.stroke(); }
+function drawPiece(x, y, r, who, lw, a = 1) {
+  const isX = (who === YOU) === S.youFirst, col = who === AI ? COL.a : COL.b;
+  ctx.save(); ctx.globalAlpha = a; ctx.lineCap = 'round'; ctx.beginPath();
+  if (isX) { ctx.moveTo(x - r, y - r); ctx.lineTo(x + r, y + r); ctx.moveTo(x + r, y - r); ctx.lineTo(x - r, y + r); }
+  else ctx.arc(x, y, r * 1.05, 0, 6.2832);
+  glowStroke(col, lw); ctx.restore();
+}
+function pill(s, x, y, font, col, bg = 'rgba(12,14,30,.9)', align = 'center') {
+  ctx.font = font; const w = ctx.measureText(s).width + 14, h = parseInt(font.match(/(\d+)px/)[1]) + 8;
+  const lx = align === 'center' ? x - w / 2 : align === 'right' ? x - w : x;
+  rr(lx, y - h / 2, w, h, h / 2); ctx.fillStyle = bg; ctx.fill(); ctx.strokeStyle = COL.line; ctx.lineWidth = 1; ctx.stroke();
+  text(s, lx + w / 2, y + 0.5, font, col, 'center'); return w;
+}
+function ring(x, y, w, h) { const a = 0.45 + 0.35 * Math.sin(S.T * 4); rr(x, y, w, h, 12); ctx.strokeStyle = COL.hl; ctx.lineWidth = 2; ctx.globalAlpha = a; ctx.stroke(); ctx.globalAlpha = 1; }
+const edgePts = (g, i) => { const x0 = g.bx + g.B / 2, y0 = g.pill + 9, x1 = g.cx(i), y1 = g.y1 - 2, my = (y0 + y1) / 2; return [x0, y0, x0, my, x1, my, x1, y1]; };
+function bez(p, t) { const u = 1 - t; return [u * u * u * p[0] + 3 * u * u * t * p[2] + 3 * u * t * t * p[4] + t * t * t * p[6], u * u * u * p[1] + 3 * u * u * t * p[3] + 3 * u * t * t * p[5] + t * t * t * p[7]]; }
+
+/* ===== board (the root of the tree) ===== */
+function drawBoard(g) {
+  const { bx, by, B, wide } = g, cs = B / 3, human = S.phase === 'human', hv = S.hover;
+  rr(bx - 6, by - 6, B + 12, B + 12, 14); ctx.fillStyle = '#11152c'; ctx.fill(); ctx.strokeStyle = COL.line; ctx.lineWidth = 1; ctx.stroke();
+  const t = S.tree, peek = t && S.phase === 'think' && hv && hv.kind !== 'cell' ? (hv.kind === 'mini' ? hv.n.move : hv.p.move) : -1;
+  for (let i = 0; i < 9; i++) {
+    const x = bx + (i % 3) * cs, y = by + (i / 3 | 0) * cs, hot = human && !S.board[i] && hv && hv.kind === 'cell' && hv.i === i;
+    rr(x + 3, y + 3, cs - 6, cs - 6, 8); ctx.fillStyle = hot ? '#20264f' : '#171b38'; ctx.fill();
+    if (S.board[i]) drawPiece(x + cs / 2, y + cs / 2, cs * 0.26, S.board[i], Math.max(3, cs * 0.075));
+    else if (human && (S.showAll || hot)) {
+      const b2 = S.board.slice(); b2[i] = YOU; const v = solve(b2, true);
+      if (hot) drawPiece(x + cs / 2, y + cs / 2 - cs * 0.06, cs * 0.2, YOU, Math.max(2, cs * 0.05), 0.35);
+      const lab = v > 0 ? (wide ? 'you lose' : 'lose') : v < 0 ? (wide ? 'you win' : 'win') : 'draw';
+      pill(lab, x + cs / 2, y + cs * 0.8, `600 ${wide ? 11 : 10}px ${SANS}`, v > 0 ? COL.a : v < 0 ? COL.b : COL.data);
+    }
+    if (i === peek) { rr(x + 3, y + 3, cs - 6, cs - 6, 8); ctx.strokeStyle = COL.hl; ctx.lineWidth = 2; ctx.stroke(); drawPiece(x + cs / 2, y + cs / 2, cs * 0.22, AI, 2, 0.45); }
+  }
+  if (S.drop) { // the chosen move travels from its mini-board up into the real board
+    const e = edgePts(g, S.tree.res.root.kids.find(c => c.move === S.drop.move).ci), q = bez(e, 1 - S.drop.t);
+    const tx = bx + (S.drop.move % 3 + 0.5) * cs, ty = by + ((S.drop.move / 3 | 0) + 0.5) * cs, f = S.drop.t * S.drop.t;
+    drawPiece(q[0] + (tx - q[0]) * f, q[1] + (ty - q[1]) * f, cs * (0.1 + 0.16 * S.drop.t), AI, 3);
+  }
+  if (S.over) {
+    if (S.over.line) { const [a, , c] = S.over.line; ctx.beginPath(); ctx.moveTo(bx + (a % 3 + 0.5) * cs, by + ((a / 3 | 0) + 0.5) * cs); ctx.lineTo(bx + (c % 3 + 0.5) * cs, by + ((c / 3 | 0) + 0.5) * cs); ctx.lineCap = 'round'; glowStroke(COL.hl, 4); }
+    rr(bx + B * 0.1, by + B * 0.36, B * 0.8, B * 0.28, 10); ctx.fillStyle = 'rgba(12,14,30,.9)'; ctx.fill(); ctx.strokeStyle = COL.hl; ctx.lineWidth = 1; ctx.stroke();
+    text(S.over.v > 0 ? 'AI wins' : S.over.v < 0 ? 'You win?!' : 'Draw', bx + B / 2, by + B * 0.46, `700 ${wide ? 20 : 15}px ${SANS}`, S.over.v > 0 ? COL.a : S.over.v < 0 ? COL.b : COL.ink, 'center');
+    text('tap to play again', bx + B / 2, by + B * 0.56, `${wide ? 12 : 10}px ${SANS}`, COL.dim, 'center');
+  }
+}
+
+/* ===== search-cost panel ===== */
+function drawPanel(g) {
+  const { px, py, pw, ph, wide } = g, t = S.tree, pad = wide ? 14 : 8, x = px + pad, w = pw - 2 * pad;
+  rr(px, py, pw, ph, 12); ctx.fillStyle = 'rgba(19,22,44,.75)'; ctx.fill(); ctx.strokeStyle = COL.line; ctx.lineWidth = 1; ctx.stroke();
+  const fs = wide ? 12 : 10, F = `${fs}px ${SANS}`, FB = `600 ${fs}px ${SANS}`, FM = `${fs}px ${MONO}`;
+  text(wide ? 'SEARCH COST · THIS DECISION' : 'SEARCH COST', x, py + pad + 4, `600 ${wide ? 11 : 10}px ${MONO}`, COL.faint);
+  if (!t) { text('No search yet —', x, py + ph / 2 - 8, F, COL.dim); text('make your move.', x, py + ph / 2 + 8, F, COL.dim); return; }
+  const r = t.res, cum = t.k ? r.ev[t.k - 1].cum : 0, done = t.k >= r.ev.length, live = done ? r.n : cum;
+  const rowH = (ph - pad * 2 - 16) / (wide ? 9.2 : 7.4); let y = py + pad + 16 + rowH * 0.5;
+  const bar = (label, n, frac, col, on, liveFrac, sub) => {
+    if (wide) { text(label, x, y, on ? FB : F, on ? COL.ink : COL.dim); text(fmtN(n) + (sub || ''), x + w, y, FM, on ? COL.ink : COL.dim, 'right'); y += rowH * 0.85; }
+    const bw = wide ? w : w * 0.4, bx0 = wide ? x : x + w * 0.34;
+    if (!wide) { text(label, x, y, on ? FB : F, on ? COL.ink : COL.dim); text(n >= 1e4 ? (n / 1000).toFixed(n >= 1e5 ? 0 : 1) + 'k' : fmtN(n), x + w, y, FM, on ? COL.ink : COL.dim, 'right'); }
+    rr(bx0, y - 3, bw, 6, 3); ctx.fillStyle = 'rgba(255,255,255,.05)'; ctx.fill();
+    rr(bx0, y - 3, Math.max(2, bw * frac), 6, 3); ctx.fillStyle = col; ctx.globalAlpha = on ? 0.35 : 0.55; ctx.fill(); ctx.globalAlpha = 1;
+    if (on) { rr(bx0, y - 3, Math.max(2, bw * Math.min(frac, liveFrac)), 6, 3); ctx.fillStyle = col; ctx.fill(); }
+    y += rowH;
+  };
+  const ab = r.counts[S.order];
+  bar(wide ? 'plain minimax' : 'minimax', r.full, 1, COL.data, !S.prune, live / r.full);
+  bar(wide ? 'alpha-beta · ' + NAMES[S.order] : 'α-β', ab, ab / r.full, COL.acc, S.prune, live / r.full, wide ? `  (−${pct(ab / r.full)}%)` : '');
+  y += rowH * 0.1; text(wide ? 'α-β with each move order (same position):' : 'α-β by move order:', x, y, `${wide ? 11 : 10}px ${SANS}`, COL.faint); y += rowH * 0.9;
+  const mx = Math.max(...ORDERS.map(o => r.counts[o]));
+  for (const o of ORDERS) {
+    const on = S.prune && o === S.order, lw = wide ? w * 0.3 : w * 0.4;
+    text(wide ? NAMES[o] : SHORT[o], x, y, on ? FB : F, on ? COL.hl : COL.dim);
+    rr(x + lw, y - 2.5, (w - lw - (wide ? 70 : 36)) * r.counts[o] / mx, 5, 2.5); ctx.fillStyle = on ? COL.hl : COL.acc; ctx.globalAlpha = on ? 1 : 0.45; ctx.fill(); ctx.globalAlpha = 1;
+    text(wide ? fmtN(r.counts[o]) : (r.counts[o] >= 1e4 ? (r.counts[o] / 1000).toFixed(0) + 'k' : fmtN(r.counts[o])), x + w, y, FM, on ? COL.hl : COL.dim, 'right'); y += rowH * (wide ? 0.95 : 0.9);
+  }
+  if (wide && done) text(`✓ same root value (${fmtV(r.exact)}) with or without pruning`, x, y + rowH * 0.1, `${11}px ${SANS}`, COL.good);
+}
+
+/* ===== the search tree ===== */
+function drawTree(g) {
+  const t = S.tree, { wide, m, cw, chH } = g;
+  if (!t) { text(S.phase === 'over' ? '' : 'Your move — tap a square. The AI’s search tree will grow here.', g.x0 + g.tw / 2, (g.y1 + g.bottom) / 2, `${wide ? 14 : 12}px ${SANS}`, COL.dim, 'center'); return; }
+  const r = t.res, k = t.k, done = k >= r.ev.length, kids = r.root.kids, onRoot = S.phase === 'think' || S.phase === 'drop';
+  const alphaNow = kids.reduce((a, c) => k > c.valAt ? Math.max(a, c.v) : a, -Infinity);
+  // root pill: the root's running value (α when pruning)
+  const pt = done ? `value ${fmtV(r.v)} (${word(r.v)}) → AI plays ${cellName(r.move)}` + (onRoot ? '' : ' · last decision')
+    : alphaNow === -Infinity ? 'AI searching…' : (S.prune ? `α = ${fmtV(alphaNow)}  best so far` : `best so far ${fmtV(alphaNow)}`);
+  pill(S.phase === 'human' && done && !wide ? 'your turn' : pt, g.bx + g.B / 2, g.pill, `600 ${wide ? 12 : 11}px ${SANS}`, done ? COL.hl : COL.ink);
+  const fadeAll = onRoot ? 1 : 0.75;
+  ctx.globalAlpha = fadeAll;
+  for (const mn of kids) { // edges root → mini-board
+    if (k <= mn.openAt) continue;
+    const p = edgePts(g, mn.ci), act = k <= mn.valAt, pv = done && mn.move === r.move;
+    ctx.beginPath(); ctx.moveTo(p[0], p[1]); ctx.bezierCurveTo(p[2], p[3], p[4], p[5], p[6], p[7]);
+    ctx.strokeStyle = act || pv ? COL.hl : 'rgba(190,200,255,.22)'; ctx.lineWidth = pv ? 2.5 : act ? 2 : 1.2; ctx.stroke();
+  }
+  for (const mn of kids) {
+    if (k <= mn.openAt) continue;
+    const cx = g.cx(mn.ci), x = cx - m / 2, act = k <= mn.valAt, pv = done && mn.move === r.move, hasV = k > mn.valAt;
+    // spine mini → beads (dashed after a cut)
+    const vis = mn.kids.filter(c => c.pruned ? k > c.cutAt : k > c.openAt);
+    if (vis.length) {
+      const top = g.y1 + m + (wide ? 22 : 15), cut = mn.cut && k > mn.cut.at ? g.chipY(mn.cut.k) - g.chGap / 2 : null, end = g.chipY(vis.length - 1) + chH / 2;
+      ctx.beginPath(); ctx.moveTo(cx, top); ctx.lineTo(cx, cut !== null ? cut : end); ctx.strokeStyle = 'rgba(190,200,255,.25)'; ctx.lineWidth = 1.2; ctx.stroke();
+      if (cut !== null) {
+        ctx.setLineDash([2, 4]); ctx.beginPath(); ctx.moveTo(cx, cut); ctx.lineTo(cx, end); ctx.strokeStyle = 'rgba(190,200,255,.18)'; ctx.stroke(); ctx.setLineDash([]);
+        ctx.beginPath(); ctx.moveTo(cx - cw * 0.46, cut); ctx.lineTo(cx + cw * 0.46, cut); ctx.lineCap = 'round'; glowStroke(COL.grad, 2);
       }
-      continue;
     }
-    ctx.save();
-    ctx.lineWidth = Math.max(3, cs*0.075); ctx.lineCap = 'round';
-    if (board[k] === X){
-      ctx.strokeStyle = '#6ff'; ctx.shadowColor = '#6ff'; ctx.shadowBlur = 14;
-      ctx.beginPath();
-      ctx.moveTo(x+p, y+p); ctx.lineTo(x+cs-p, y+cs-p);
-      ctx.moveTo(x+cs-p, y+p); ctx.lineTo(x+p, y+cs-p);
-      ctx.stroke();
-    } else {
-      ctx.strokeStyle = '#ff6fd0'; ctx.shadowColor = '#ff6fd0'; ctx.shadowBlur = 14;
-      ctx.beginPath(); ctx.arc(x+cs/2, y+cs/2, cs/2 - p, 0, 6.2832); ctx.stroke();
-    }
-    ctx.restore();
-  }
-  if (winLine){
-    var a = winLine[0], b = winLine[2];
-    ctx.save();
-    ctx.strokeStyle = '#fff'; ctx.lineWidth = 4;
-    ctx.shadowColor = '#fff'; ctx.shadowBlur = 20;
-    ctx.beginPath();
-    ctx.moveTo(BX+(a%3)*cs+cs/2, BY+((a/3)|0)*cs+cs/2);
-    ctx.lineTo(BX+(b%3)*cs+cs/2, BY+((b/3)|0)*cs+cs/2);
-    ctx.stroke(); ctx.restore();
-  }
-  ctx.fillStyle = 'rgba(220,245,240,.9)';
-  ctx.font = '13px ui-monospace,monospace';
-  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-  ctx.fillText(status, cw/2, BY + BS + 14);
-}
-
-function valColor(v){
-  if (v === null) return 'rgba(140,165,190,.6)';
-  if (v > 0) return '#5ff0c8';
-  if (v < 0) return '#ff6fa8';
-  return '#9fb6ff';
-}
-
-function drawTree(){
-  if (!revealed.length) return;
-  var h = ch - treeTop - 16;
-  if (h < 60) return;
-  var rowH = h / Math.max(1, maxDepthSeen + 1);
-  var wpad = 34;
-
-  // bucket revealed nodes by depth (cheap: <= MAX_VIS nodes)
-  var perDepth = [];
-  for (var i=0;i<revealed.length;i++){
-    var n = nodes[revealed[i]];
-    (perDepth[n.depth] = perDepth[n.depth] || []).push(n);
-  }
-  for (var d=0; d<perDepth.length; d++){
-    var row = perDepth[d]; if (!row) continue;
-    var cnt = row.length, span = cw - wpad*2;
-    for (var j=0;j<cnt;j++){
-      row[j].x = wpad + (cnt === 1 ? span/2 : (j/(cnt-1))*span);
-      row[j].y = treeTop + d*rowH + rowH*0.5;
-    }
-  }
-
-  ctx.lineWidth = 1;
-  for (i=0;i<revealed.length;i++){
-    var nd = nodes[revealed[i]];
-    if (nd.parent < 0) continue;
-    var p = nodes[nd.parent];
-    ctx.strokeStyle = nd.pruned ? 'rgba(130,130,140,.18)' : 'rgba(120,200,230,.20)';
-    ctx.beginPath();
-    ctx.moveTo(p.x, p.y + 5);
-    ctx.bezierCurveTo(p.x, (p.y+nd.y)/2, nd.x, (p.y+nd.y)/2, nd.x, nd.y - 5);
-    ctx.stroke();
-  }
-
-  var r = Math.max(3.5, Math.min(10, rowH*0.20));
-  for (i=0;i<revealed.length;i++){
-    var q = nodes[revealed[i]];
-    var isNew = (revealed.length - i) <= 8;
-    if (q.pruned){
-      ctx.save();
-      ctx.globalAlpha = 0.6;
-      ctx.strokeStyle = '#8b8b96'; ctx.lineWidth = 1.3;
-      ctx.beginPath();
-      ctx.moveTo(q.x-r, q.y-r); ctx.lineTo(q.x+r, q.y+r);
-      ctx.moveTo(q.x+r, q.y-r); ctx.lineTo(q.x-r, q.y+r);
-      ctx.stroke();
-      if (isNew){
-        ctx.globalAlpha = 0.95;
-        ctx.shadowColor = '#fff'; ctx.shadowBlur = 18;
-        ctx.strokeStyle = '#e8e8f0';
-        ctx.beginPath(); ctx.arc(q.x, q.y, r*1.7, 0, 6.2832); ctx.stroke();
+    // mini-board: the root position + this candidate move
+    rr(x, g.y1, m, m, 6); ctx.fillStyle = '#141834'; ctx.fill();
+    ctx.strokeStyle = pv ? COL.hl : act ? COL.hl : COL.line; ctx.lineWidth = pv ? 2.5 : act ? 1.5 : 1; if (act) ctx.setLineDash([4, 3]); ctx.stroke(); ctx.setLineDash([]);
+    const s3 = m / 3; ctx.strokeStyle = 'rgba(190,200,255,.12)'; ctx.lineWidth = 1; ctx.beginPath();
+    for (let q = 1; q < 3; q++) { ctx.moveTo(x + q * s3, g.y1 + 3); ctx.lineTo(x + q * s3, g.y1 + m - 3); ctx.moveTo(x + 3, g.y1 + q * s3); ctx.lineTo(x + m - 3, g.y1 + q * s3); } ctx.stroke();
+    for (let i = 0; i < 9; i++) { const who = i === mn.move ? AI : t.rootBoard[i]; if (who) drawPiece(x + (i % 3 + 0.5) * s3, g.y1 + ((i / 3 | 0) + 0.5) * s3, s3 * 0.26, who, Math.max(1.3, m * 0.035), i === mn.move ? 1 : 0.4); }
+    if (hasV) text(fmtV(mn.v, mn.bound) + (mn.term && wide ? ' win' : ''), cx, g.y1 + m + (wide ? 12 : 8), `700 ${wide ? 13 : 11}px ${MONO}`, vCol(mn.v), 'center');
+    else text('…', cx, g.y1 + m + (wide ? 12 : 8), `700 ${wide ? 13 : 11}px ${MONO}`, COL.hl, 'center');
+    // beads: your replies (MAX positions), deeper plies folded into log-scaled bars
+    for (const c of vis) {
+      const y = g.chipY(c.cj), cx0 = cx - cw / 2, open = !c.pruned && k <= c.valAt, cpv = done && pv && c.move === mn.best;
+      rr(cx0, y, cw, chH, Math.min(8, chH / 2));
+      if (c.pruned) { ctx.fillStyle = 'rgba(255,255,255,.02)'; ctx.fill(); ctx.setLineDash([3, 3]); ctx.strokeStyle = 'rgba(190,200,255,.16)'; ctx.lineWidth = 1; ctx.stroke(); ctx.setLineDash([]); }
+      else { ctx.fillStyle = open ? '#1b2044' : '#161a36'; ctx.fill(); ctx.strokeStyle = open || cpv ? COL.hl : 'rgba(190,200,255,.16)'; ctx.lineWidth = open || cpv ? 1.5 : 1; ctx.stroke(); if (!open) { rr(cx0, y, 3, chH, 1.5); ctx.fillStyle = vCol(c.v); ctx.fill(); } }
+      const fsz = chH >= 22 ? 12 : chH >= 14 ? 11 : 10, big = cw >= 64;
+      if (big) { // tiny 3×3 locator: where you reply
+        const gs = Math.min(chH * 0.62, 16), gx = cx0 + 8, gy = y + (chH - gs) / 2;
+        for (let i = 0; i < 9; i++) { ctx.fillStyle = i === c.move ? (c.pruned ? COL.faint : COL.b) : i === mn.move ? 'rgba(255,122,107,.5)' : t.rootBoard[i] ? 'rgba(199,203,224,.3)' : 'rgba(199,203,224,.1)'; ctx.fillRect(gx + (i % 3) * gs / 3 + 0.5, gy + (i / 3 | 0) * gs / 3 + 0.5, gs / 3 - 1, gs / 3 - 1); }
       }
-      ctx.restore();
-      continue;
+      const tx = big ? cx0 + 8 + Math.min(chH * 0.62, 16) + 6 : cx, al = big ? 'left' : 'center';
+      if (c.pruned) { text(big ? 'cut' : '✕', tx, y + chH / 2, `${fsz}px ${SANS}`, COL.faint, al); ctx.beginPath(); ctx.moveTo(cx0 + 4, y + chH / 2); ctx.lineTo(cx0 + cw - 4, y + chH / 2); ctx.strokeStyle = 'rgba(190,200,255,.2)'; ctx.stroke(); }
+      else text(open ? '…' : fmtV(c.v, c.bound), tx, y + chH / 2 + 0.5, `700 ${fsz}px ${MONO}`, open ? COL.hl : vCol(c.v), al);
+      if (big && cw >= 84) { // bar: ghost = plain minimax, fill = actually searched
+        const bx0 = cx0 + Math.max(56, cw * 0.58), bw = cw - (bx0 - cx0) - 6, L = n => Math.log10(1 + n) / Math.log10(1 + t.maxFull);
+        ctx.strokeStyle = 'rgba(199,203,224,.3)'; ctx.lineWidth = 1; rr(bx0, y + chH / 2 - 3, bw * L(c.full), 6, 3); ctx.stroke();
+        if (!c.pruned && !open) { rr(bx0, y + chH / 2 - 3, bw * L(c.n), 6, 3); ctx.fillStyle = COL.acc; ctx.fill(); }
+      } else if (!c.pruned && !open) { ctx.fillStyle = COL.acc; ctx.globalAlpha = 0.7; ctx.fillRect(cx0 + 4, y + chH - 2.5, (cw - 8) * Math.log10(1 + c.n) / Math.log10(1 + t.maxFull), 1.5); ctx.globalAlpha = fadeAll; }
     }
-    var col = valColor(q.val);
-    ctx.save();
-    if (isNew){ ctx.shadowColor = col; ctx.shadowBlur = 16; }
-    ctx.fillStyle = (q.val === null) ? 'rgba(38,54,70,.95)' : col;
-    ctx.strokeStyle = col; ctx.lineWidth = 1.2;
-    ctx.beginPath();
-    if (q.maximizing){
-      ctx.moveTo(q.x, q.y - r); ctx.lineTo(q.x + r, q.y + r*0.8); ctx.lineTo(q.x - r, q.y + r*0.8);
+  }
+  // violet pulses: a finished value flowing up to its parent
+  for (const p of S.pulses) {
+    const c = p.c, e = 1 - (1 - p.t) * (1 - p.t); let q;
+    if (c.depth === 1) q = bez(edgePts(g, c.ci), 1 - e);
+    else { const cx = g.cx(c.ci), y0 = g.chipY(c.cj) + chH / 2, y1 = g.y1 + m; q = [cx, y0 + (y1 - y0) * e]; }
+    ctx.beginPath(); ctx.arc(q[0], q[1], 7, 0, 6.2832); ctx.fillStyle = COL.grad; ctx.globalAlpha = 0.25 * (1 - p.t); ctx.fill();
+    ctx.beginPath(); ctx.arc(q[0], q[1], 3.2, 0, 6.2832); ctx.globalAlpha = 1 - p.t * 0.5; ctx.fill(); ctx.globalAlpha = fadeAll;
+  }
+  for (const f of S.flashes) { const y = g.chipY(f.c.cut.k) - g.chGap / 2; ctx.beginPath(); ctx.arc(g.cx(f.c.ci), y, 6 + 26 * f.t, 0, 6.2832); ctx.strokeStyle = COL.grad; ctx.lineWidth = 2; ctx.globalAlpha = 1 - f.t; ctx.stroke(); ctx.globalAlpha = fadeAll; }
+  ctx.globalAlpha = 1;
+}
+function drawRowLabels(g) {
+  const rows = [['MAX', 'AI to move', 'takes the', 'highest value', g.by, g.by + g.B, COL.a],
+    ['MIN', 'you to move', 'AI assumes you', 'take the lowest', g.y1, g.y1 + g.m + 16, COL.b],
+    ['MAX', 'AI to move', 'bars: positions', 'searched below', g.y2, Math.min(g.bottom, g.y2 + 7 * (g.chH + g.chGap)), COL.a]];
+  for (const [a, b, c, d, y0, y1, col] of rows) {
+    if (g.wide) {
+      const y = y0 + Math.min(12, (y1 - y0) / 2 - 20);
+      text(a, g.sx, y + 4, `700 13px ${MONO}`, col); text(b, g.sx, y + 21, `12px ${SANS}`, COL.dim);
+      text(c, g.sx, y + 38, `11px ${SANS}`, COL.faint); text(d, g.sx, y + 52, `11px ${SANS}`, COL.faint);
+      if (a === 'MAX' && y0 === g.y2) text('(outline: no α-β)', g.sx, y + 66, `10px ${SANS}`, COL.faint);
     } else {
-      ctx.moveTo(q.x, q.y + r); ctx.lineTo(q.x + r, q.y - r*0.8); ctx.lineTo(q.x - r, q.y - r*0.8);
-    }
-    ctx.closePath(); ctx.fill(); ctx.stroke();
-    ctx.restore();
-    if (q.leaf && q.val !== null && r > 4.5){
-      ctx.fillStyle = 'rgba(255,255,255,.72)';
-      ctx.font = Math.round(r*1.2)+'px ui-monospace,monospace';
-      ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-      ctx.fillText(q.val > 0 ? '+1' : (q.val < 0 ? '-1' : '0'), q.x, q.y + r + 1);
+      ctx.save(); ctx.translate(g.sx + 7, (y0 + y1) / 2); ctx.rotate(-Math.PI / 2);
+      text(y1 - y0 > 60 ? `${a} · ${b.split(' ')[0]}` : a, 0, 0, `700 11px ${MONO}`, col, 'center'); ctx.restore();
     }
   }
-
-  ctx.fillStyle = 'rgba(150,190,210,.38)';
-  ctx.font = '10px ui-monospace,monospace';
-  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  for (d=0; d<perDepth.length; d++){
-    if (!perDepth[d]) continue;
-    ctx.fillText('ply '+d+(d%2===0 ? '  MIN' : '  MAX'), 6, treeTop + d*rowH + rowH*0.5);
-  }
+}
+function tooltip(g) {
+  const h = S.hover; if (!h || !S.ptr || h.kind === 'cell') return;
+  const t = S.tree, n = h.n; let L;
+  if (!n.pruned && t.k <= n.valAt) L = [`${h.kind === 'mini' ? 'AI plays' : 'you reply'} ${cellName(n.move)} → value not known yet`, 'still being searched…', 'its value appears once it is backed up'];
+  else if (h.kind === 'mini') {
+    const b2 = t.rootBoard.slice(); b2[n.move] = AI; const ex = solve(b2, false);
+    L = [`AI plays ${cellName(n.move)} → value ${fmtV(n.v, n.bound)}`, n.bound ? `α-β only proved “${fmtV(n.v, n.bound)}”; exact value ${fmtV(ex)}` : `${word(n.v)} with perfect play`, `searched ${fmtN(1 + n.kids.reduce((a, c) => a + c.n, 0))} positions here`];
+  } else if (n.pruned) L = [`you reply ${cellName(n.move)}: pruned ✂`, `never searched — would have cost ${fmtN(n.full)}`, `positions under plain minimax`];
+  else L = [`you reply ${cellName(n.move)} → value ${fmtV(n.v, n.bound)} (${word(n.v)})`, `searched ${fmtN(n.n)} positions below`, `plain minimax: ${fmtN(n.full)}`];
+  const fs = g.wide ? 12 : 11; ctx.font = `${fs}px ${SANS}`;
+  const w = Math.max(...L.map(s => ctx.measureText(s).width)) + 20, hh = L.length * (fs + 5) + 12;
+  const x = clamp(S.ptr.x + 14, 16, W - 16 - w), y = clamp(S.ptr.y + 16, 84, H - 70 - hh);
+  rr(x, y, w, hh, 8); ctx.fillStyle = 'rgba(10,12,26,.95)'; ctx.fill(); ctx.strokeStyle = COL.hl; ctx.lineWidth = 1; ctx.stroke();
+  L.forEach((s, i) => text(s, x + 10, y + 12 + i * (fs + 5) + fs / 2 - 2, i ? `${fs}px ${SANS}` : `600 ${fs}px ${SANS}`, i ? COL.dim : COL.ink));
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const g = geom();
+  S.hover = S.ptr ? hitTest(g, S.ptr.x, S.ptr.y) : null;
+  cv.style.cursor = S.hover && ((S.hover.kind === 'cell' && S.phase === 'human' && !S.board[S.hover.i]) || S.phase === 'over') ? 'pointer' : S.hover ? 'help' : 'default';
+  drawRowLabels(g); drawPanel(g); drawTree(g); drawBoard(g);
+  const f = S.focus; // tour highlight ring
+  if (f === 'board') ring(g.bx - 12, g.by - 12, g.B + 24, g.B + 24);
+  if (f === 'panel') ring(g.px - 5, g.py - 5, g.pw + 10, g.ph + 10);
+  if (f === 'rows') ring(g.sx - 6, g.by - 8, g.gut + 2, g.bottom - g.by + 10);
+  if (f === 'leaves') ring(g.x0 - 6, g.y2 - 8, g.tw + 12, g.bottom - g.y2 + 12);
+  if (f === 'cuts' && S.tree) for (const mn of S.tree.res.root.kids) if (mn.cut && S.tree.k > mn.cut.at) { const y = g.chipY(mn.cut.k) - g.chGap / 2; ring(g.cx(mn.ci) - g.cw / 2 - 4, y - 9, g.cw + 8, 18); }
+  tooltip(g);
 }
 
-function drawHUD(){
-  var lw = 224, lh = 112, lx = cw - lw - 14, ly = 14;
-  ctx.fillStyle = 'rgba(6,12,18,.74)';
-  ctx.fillRect(lx, ly, lw, lh);
-  ctx.strokeStyle = 'rgba(90,240,200,.22)'; ctx.lineWidth = 1;
-  ctx.strokeRect(lx+.5, ly+.5, lw-1, lh-1);
-  ctx.font = '11px ui-monospace,monospace';
-  ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-  var y = ly + 9;
-  ctx.fillStyle = 'rgba(200,235,228,.9)';
-  ctx.fillText('search tree legend', lx+10, y); y += 17;
-  ctx.fillStyle = '#5ff0c8';
-  ctx.beginPath(); ctx.moveTo(lx+16, y+1); ctx.lineTo(lx+22, y+10); ctx.lineTo(lx+10, y+10); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = 'rgba(200,220,220,.78)';
-  ctx.fillText('MAX ply (X to move)', lx+30, y); y += 17;
-  ctx.fillStyle = '#ff6fa8';
-  ctx.beginPath(); ctx.moveTo(lx+16, y+11); ctx.lineTo(lx+22, y+2); ctx.lineTo(lx+10, y+2); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = 'rgba(200,220,220,.78)';
-  ctx.fillText('MIN ply (AI to move)', lx+30, y); y += 17;
-  ctx.strokeStyle = '#8b8b96'; ctx.lineWidth = 1.3;
-  ctx.beginPath();
-  ctx.moveTo(lx+11, y+2); ctx.lineTo(lx+21, y+11);
-  ctx.moveTo(lx+21, y+2); ctx.lineTo(lx+11, y+11);
-  ctx.stroke();
-  ctx.fillStyle = 'rgba(200,220,220,.78)';
-  ctx.fillText('pruned — never evaluated', lx+30, y); y += 19;
-  ctx.fillStyle = 'rgba(160,200,195,.72)';
-  ctx.fillText('green = good for X   pink = for O', lx+10, y);
+/* ===== frame loop ===== */
+function frame(dt, realDt) {
+  S.T += realDt;
+  const t = S.tree;
+  if (t && t.k < t.res.ev.length) { t.acc += dt; while (t.k < t.res.ev.length && t.acc >= t.dur[t.k]) { t.acc -= t.dur[t.k]; reveal(t.k++); } }
+  else if (t && S.phase === 'think') { t.hold += dt; if (t.hold > 0.8) { S.drop = { move: t.res.move, t: 0 }; S.phase = 'drop'; } }
+  if (S.phase === 'drop') { S.drop.t += dt / 0.5; if (S.drop.t >= 1) commitAI(); }
+  for (const p of S.pulses) p.t += dt / 0.45; S.pulses = S.pulses.filter(p => p.t < 1);
+  for (const f of S.flashes) f.t += dt / 0.7; S.flashes = S.flashes.filter(f => f.t < 1);
+  updateLive(); draw();
+}
+function updateLive() {
+  const t = S.tree, r = t && t.res;
+  setText('sFull', r ? fmtN(r.full) : '–'); setText('sAB', r ? fmtN(r.counts[S.order]) : '–');
+  setText('sV', r && t.k >= r.ev.length ? `${fmtV(r.v)} ${word(r.v)}` : r ? 'searching…' : '–');
+  setText('mV', r ? fmtV(r.exact) + ' (' + word(r.exact) + ')' : '–');
+  const c = S.lastCut; setText('mA', c ? fmtV(c.alpha) : '–'); setText('mB', c ? fmtV(c.beta) : '–');
+  setText('mCut', c ? (c.c.depth === 1 ? `below AI move ${cellName(c.c.move)}` : `below the AI's root`) : 'no cut yet');
+  setText('mNF', r ? fmtN(r.full) : '–'); setText('mSq', r ? fmtN(Math.sqrt(r.full)) : '–'); setText('mNA', r ? fmtN(r.counts[S.order]) + ' (' + NAMES[S.order] + ')' : '–');
+  setText('mNB', r ? fmtN(r.counts.best) : '–');
 }
 
-function updateStats(){
-  var prog = events.length ? Math.min(100, (evIdx/events.length)*100) : 0;
-  var save = lastFullCmp ? (100*(1 - lastPruneCmp/lastFullCmp)) : 0;
-  statsEl.innerHTML =
-    'alpha-beta: <b>'+(pruningOn?'ON':'OFF')+'</b> &nbsp;(P toggles)<br>'+
-    'nodes visited <b>'+(pruningOn?nodesPrune:nodesFull)+'</b><br>'+
-    'pruned <b>'+(pruningOn?prunedCount:0)+'</b> nodes skipped<br>'+
-    (lastFullCmp ? 'full '+lastFullCmp+' vs pruned '+lastPruneCmp+' &rarr; <b>'+save.toFixed(0)+'%</b> saved<br>' : '')+
-    'tree shown: <b>'+nodes.length+'</b> nodes / ply &le;'+VIS_DEPTH+'<br>'+
-    'reveal <b>'+prog.toFixed(0)+'%</b> &nbsp; '+
-    (thinking ? 'state: <b>searching</b>' : (gameOver ? 'state: <b>game over</b>' : 'state: <b>your turn</b>'))+
-    (paused?' <b>PAUSED</b>':'');
+/* ===== lesson: tour + experiments ===== */
+function setup(o) {
+  configure({ prune: o.prune !== false, order: o.order || 'read', showAll: !!o.showAll, youFirst: o.youFirst !== false });
+  speed = o.speed || 1; $('#bSpeed').textContent = speed + '×';
+  S.focus = o.focus || null; newGame(o.youFirst !== false, o.moves || [], o.instant);
+  if (o.cap) $('#caption').innerHTML = o.cap;
 }
+const STEPS = [
+  { t: 'A tree of every future', d: 'You opened in the corner. Before replying, the AI imagines every move it could make (the mini-boards), every reply you could make to each (the beads), and so on to the end of the game — deeper plies are folded into the bars.',
+    cap: '<b>The AI is thinking.</b> Each mini-board is a move it could make; each bead beneath is a reply you could make. Hover any of them.', go: () => setup({ moves: [0] }) },
+  { t: 'MAX and MIN take turns', d: 'Scores are from the AI’s side: <b style="color:#ff7a6b">+1</b> AI wins, <b>0</b> draw, <b style="color:#3fd0c0">−1</b> you win. On MAX rows the AI takes the highest child; on MIN rows it assumes <i>you</i> take the lowest. Here you took the centre: corners hold 0, edges are −1.',
+    cap: '<b>MAX</b> rows take the highest value, <b>MIN</b> rows the lowest. AI corner moves score 0, edge moves −1 — so it takes a corner.', go: () => setup({ moves: [4], prune: false, focus: 'rows', instant: true }) },
+  { t: 'Back values up from the leaves', d: 'Four squares left. Finished games are leaves with a fixed score. Each bead takes the <b>max</b> of what lies below it, each mini-board the <b>min</b> of its beads, and the root the <b>max</b> of those. Violet dots are values travelling up.',
+    cap: 'Leaves are final scores. Values flow <b style="color:#a78bfa">up</b>: beads take the max below them, mini-boards the min of their beads. Only a3 blocks you.', go: () => setup({ moves: [0, 4, 8, 1, 7], prune: false, focus: 'leaves' }) },
+  { t: 'The AI never loses', d: 'Tic-tac-toe’s root value is 0: with perfect play from both sides it is a draw. The badges now show <b>your</b> outcome for every square — one keeps the draw, the rest lose. The AI never needs luck: it only ever picks children worth ≥ 0.',
+    cap: 'Every badge is <b>your</b> result with perfect play. One square holds the draw; the others lose. A draw is the best you can get.', go: () => setup({ moves: [0, 4, 8], showAll: true, instant: true, focus: 'board' }) },
+  { t: 'Alpha-beta skips what can’t matter', d: 'Step 2’s position (you took the centre), now with pruning. The first move, a1, guarantees a draw, so <b>α = 0</b>. Searching the next move, the moment one of your replies scores ≤ 0 the AI knows that move is no better — so the rest of its beads are <b>cut</b> ✂. Its value becomes a bound, “≤0” — even for the edges that step 2 showed really lose (−1).',
+    cap: 'Step 2’s position, pruned. a1 draws, so <b>α = 0</b>: one reply scoring ≤ 0 proves any later move no better — the violet slash <b>cuts</b> the rest.', go: () => setup({ moves: [4], speed: 0.5, focus: 'cuts' }) },
+  { t: 'Good move order prunes more', d: 'Cuts come sooner when strong moves are tried first, because α and β tighten early. On the empty board: 198,837 positions worst-first, 18,297 in reading order, 2,096 with a simple win / block / centre / corner heuristic.',
+    cap: 'Same empty board, four move orders (panel, top right). Strong moves first → earlier cuts: <b>198,837</b> worst-first vs <b>2,096</b> with a heuristic.', go: () => setup({ youFirst: false, order: 'heur', focus: 'panel' }) },
+  { t: 'Where minimax runs out', d: 'Plain minimax needs all 549,946 positions even for tic-tac-toe. Chess has ~10<sup>120</sup> possible games, so real engines stop at a depth and <i>estimate</i> the leaves with an evaluation function (or a neural net). And minimax assumes you never blunder — it never sets traps on purpose.',
+    cap: 'Without pruning the AI walks all <b>549,946</b> positions. Chess would need ~10¹²⁰ — real engines cut off at a depth and estimate.', go: () => setup({ youFirst: false, prune: false, focus: 'panel' }) },
+];
+const TRIES = [
+  { q: 'Alpha-beta skips ~95% of the tree. Will it ever choose a <b>worse</b> move than plain minimax?', run: () => setup({ moves: [4], focus: 'panel', cap: 'Alpha-beta on the same position as plain minimax: compare the two bars and the <b>✓</b> line. Hover an edge move (≤0).' }),
+    why: 'No. The root value is identical (the panel’s ✓ line) — alpha-beta is <b>exact</b>, not a heuristic. What it gives up is detail about moves it rejects: those only get a bound like “≤0” (“no better than a draw”); hover an edge move to see its exact value is really −1. Toggle <i>Plain minimax</i> in Controls: same choice, 55,505 positions instead of 2,316.' },
+  { q: 'Order moves <b>worst-first</b> on the empty board. Does alpha-beta still save anything?', run: () => setup({ youFirst: false, order: 'worst', focus: 'panel', cap: '<b>Worst-first</b> on the empty board: the reply that holds the draw is always tried last, so every cut comes late.' }),
+    why: 'Yes, but far less: 198,837 of 549,946 positions (−64%), against 2,096 (−99.6%) with the heuristic — about 95× the work. With a draw in hand, any reply that holds the draw still ends that move’s search; worst-first just tries it after every line that is good for the AI. Good ordering gets within a few × of the ideal ≈√ of the tree. That is why engines pour effort into ordering — hash moves, killer moves, and in AlphaZero a learned policy network.' },
+  { q: 'You open on an edge (b1). Several AI replies all draw. Will it pick the one most likely to trip you up?', run: () => setup({ moves: [1], prune: false, cap: 'You opened on the edge b1. Several AI moves score exactly 0 — which one will minimax take?' }),
+    why: 'Only by accident. a1, c1, b2 and b3 all score 0 against a perfect player, so minimax is indifferent: in reading order it takes a1 (3 of your 7 replies then lose), with the heuristic order it takes b2 (1 of 7 loses), b3 would leave no trap at all. Minimax models a perfect opponent; exploiting mistakes needs an opponent model (e.g. expectimax).' },
+];
 
-var frame = 0;
-function loop(now){
-  if (thinking && !paused){
-    var target = Math.min(events.length, evIdx + evStep);
-    while (evIdx < target){
-      var ev = events[evIdx++];
-      if (ev.type === 'open' || ev.type === 'prune') revealed.push(ev.n);
-    }
-    if (evIdx >= events.length) commitAI();
-  }
-  ctx.fillStyle = '#04060a';
-  ctx.fillRect(0,0,cw,ch);
-  drawTree();
-  drawBoard(now*0.001);
-  drawHUD();
-  if ((frame++ % 4) === 0) updateStats();
-  requestAnimationFrame(loop);
-}
+/* ===== controls ===== */
+let quiet = false, segSide, segPrune, segOrder, segHint;
+(function buildControls() {
+  const p = $('#p-play'), h = (s, d) => { const e = document.createElement('h3'); e.textContent = s; p.appendChild(e); if (d) { const q = document.createElement('p'); q.innerHTML = d; p.appendChild(q); } };
+  h('You play', 'Choosing starts a new game. The AI is always MAX.');
+  segSide = seg(p, [['first', 'First (you are X)'], ['second', 'Second (you are O)']], 'first', v => { if (!quiet) freePlay(v === 'first'); });
+  h('Search', 'Pruning never changes the AI’s value — only how much of the tree it has to look at.');
+  segPrune = seg(p, [[true, 'Alpha-beta pruning'], [false, 'Plain minimax']], true, v => { S.prune = v; if (!quiet) rethink(); });
+  h('Move order', 'Which child gets searched first. Worst/best-first peek at the solved values — an oracle, for comparison.');
+  segOrder = seg(p, ORDERS.map(o => [o, NAMES[o]]), 'read', v => { S.order = v; if (!quiet) rethink(); });
+  h('Board hints', 'Your outcome (with perfect play) for a square.');
+  segHint = seg(p, [[false, 'On hover'], [true, 'On every square']], false, v => { S.showAll = v; });
+  const b = document.createElement('button'); b.className = 'btn'; b.textContent = 'Replay the last search'; b.onclick = () => { rethink(); setPlaying(true); }; p.appendChild(b);
+  const q = document.createElement('p'); q.innerHTML = '<br>Keys <b>1–9</b> play a square (1 = a1, top-left). Click the tree while it animates to skip ahead.'; p.appendChild(q);
+})();
+function configure(o) { quiet = true; segPrune.set(o.prune); segOrder.set(o.order); segHint.set(o.showAll); segSide.set(o.youFirst ? 'first' : 'second'); quiet = false; }
 
-cv.addEventListener('pointermove', function(ev){
-  var cs = BS/3;
-  var x = Math.floor((ev.clientX - BX)/cs), y = Math.floor((ev.clientY - BY)/cs);
-  hoverCell = (x>=0&&y>=0&&x<3&&y<3) ? y*3+x : -1;
+/* ===== input ===== */
+cv.addEventListener('pointermove', e => { const r = cv.getBoundingClientRect(); S.ptr = { x: e.clientX - r.left, y: e.clientY - r.top }; });
+cv.addEventListener('pointerleave', () => { S.ptr = null; });
+cv.addEventListener('pointerdown', e => {
+  const r = cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top; S.ptr = { x, y };
+  const hit = hitTest(geom(), x, y);
+  if (S.phase === 'over') return newGame();
+  if (hit && hit.kind === 'cell' && S.phase === 'human') return humanPlay(hit.i);
+  if (S.phase === 'think') { finishReveal(); setPlaying(true); return; }
+  if (S.phase === 'human' && S.tree && !hit) { rethink(); setPlaying(true); }
 });
-cv.addEventListener('pointerdown', function(ev){
-  var cs = BS/3;
-  var x = Math.floor((ev.clientX - BX)/cs), y = Math.floor((ev.clientY - BY)/cs);
-  if (x>=0&&y>=0&&x<3&&y<3) playerMove(y*3+x);
-});
-window.addEventListener('keydown', function(ev){
-  var k = ev.key.toLowerCase();
-  if (k === 'r') restart();
-  else if (k === 'p'){ pruningOn = !pruningOn; if (thinking) startThinking(); }
-  else if (k === ' ' || ev.code === 'Space'){ paused = !paused; ev.preventDefault(); }
-});
+addEventListener('keydown', e => { if (/^[1-9]$/.test(e.key) && !e.target.matches('input,select,textarea')) humanPlay(+e.key - 1); });
+$('#bStep').onclick = () => {
+  setPlaying(false); const t = S.tree;
+  if (t && t.k < t.res.ev.length) { reveal(t.k++); t.acc = 0; }
+  else if (S.phase === 'think') { S.drop = { move: t.res.move, t: 0 }; S.phase = 'drop'; }
+  else if (S.phase === 'drop') commitAI();
+};
+function freePlay(youFirst) {
+  S.focus = null; newGame(youFirst);
+  $('#caption').innerHTML = youFirst ? '<b>Your game.</b> Tap a square (or keys 1–9). Hover first: each square shows what it is worth against perfect play.' : '<b>The AI opens.</b> It searches the entire game from the empty board, then it is your move.';
+}
+$('#bReset').onclick = () => freePlay(S.youFirst);
 
-resize();
-restart();
-requestAnimationFrame(loop);
+stat('sFull', 'Plain minimax'); stat('sAB', 'Alpha-beta'); stat('sV', 'Position value');
+renderSteps(); renderTries(); goStep(0); requestAnimationFrame(loop);
+window.__demo = { goStep, setPlaying, state: () => ({ phase: S.phase, board: S.board.join(''), k: S.tree && S.tree.k, events: S.tree && S.tree.res.ev.length, n: S.tree && S.tree.res.n, v: S.tree && S.tree.res.v }), S, TRIES };
 </script>
 </body>
+</html>

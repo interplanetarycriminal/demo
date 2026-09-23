@@ -1,413 +1,659 @@
-<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
-<title>Multi-Armed Bandit</title>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Multi-Armed Bandit — ML Field Notes</title>
 <style>
-  html,body{margin:0;height:100%;background:#06050c;overflow:hidden}
-  canvas{display:block;position:fixed;inset:0;touch-action:none}
-  #ui{position:fixed;top:0;left:0;margin:12px;padding:10px 12px;background:rgba(10,8,20,.74);
-      border:1px solid rgba(200,120,255,.28);border-radius:8px;color:#e5d4ff;
-      font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;max-width:340px;z-index:10;
-      backdrop-filter:blur(6px);text-shadow:0 0 8px rgba(180,110,255,.3);max-height:52vh;overflow:auto}
-  #ui h1{margin:0 0 4px;font-size:14px;letter-spacing:.11em;color:#f9a;text-transform:uppercase}
-  #ui .e{color:#a897c4;margin:0 0 7px}
-  #ui .k{color:#7a6b96}
-  #ui b{color:#fff;font-weight:600}
-  #ui a{color:#6ff;text-decoration:none;display:inline-block;margin-top:7px}
-  #ui a:hover{text-decoration:underline}
-  #ui hr{border:0;border-top:1px solid rgba(200,120,255,.16);margin:7px 0}
-@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
+/* ===== ML Field Notes design system (shared by every ML/AI demo) =====
+   Colour means the same thing in every demo:
+   --a coral = class A / "positive"     --b teal = class B / "negative"
+   --hl amber = the model's current parameters / guess / selection
+   --grad violet = gradients, updates, errors flowing back
+   --accent = this demo's signature colour (set per demo) */
+:root{
+  --bg:#0c0e1a; --bg2:#10132a; --panel:#13162c; --panel2:#181c38; --line:rgba(190,200,255,.10); --line2:rgba(190,200,255,.18);
+  --ink:#e9ecfa; --dim:#a2a9c8; --faint:#6b7396;
+  --a:#ff7a6b; --b:#3fd0c0; --hl:#ffc857; --grad:#a78bfa; --good:#7ee787; --bad:#ff6b8a;
+  --accent:#ff6fd8;
+  --r:12px; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.5 var(--sans)}
+body{overflow:hidden}
+a{color:var(--accent)}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app{display:grid;grid-template-columns:minmax(0,1fr) 380px;grid-template-rows:48px minmax(0,1fr);height:100vh;height:100dvh}
+.top{grid-column:1/-1;display:flex;align-items:center;gap:12px;padding:0 14px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#11142a,#0d1020)}
+.top a.back{color:var(--dim);text-decoration:none;font-size:13px;white-space:nowrap}
+.top a.back:hover{color:var(--ink)}
+.top .chip{font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 45%,transparent);border-radius:99px;padding:5px 8px}
+.top h1{margin:0;font-size:15px;font-weight:650;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top .sp{flex:1}
+.top .keys{font:11px var(--mono);color:var(--faint);white-space:nowrap}
+.stage{position:relative;min-width:0;min-height:0;background:radial-gradient(ellipse at 50% 40%,#151a3a 0%,var(--bg) 70%)}
+.stage::before{content:"";position:absolute;inset:0;background-image:radial-gradient(rgba(190,200,255,.07) 1px,transparent 1.3px);background-size:24px 24px;pointer-events:none}
+.stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.caption{position:absolute;left:16px;right:16px;top:14px;max-width:640px;padding:10px 14px;border-radius:10px;background:rgba(12,14,30,.78);border:1px solid var(--line2);backdrop-filter:blur(6px);font-size:14px;line-height:1.45;pointer-events:none;transition:opacity .3s}
+.caption b{color:var(--accent)}
+.caption:empty{opacity:0}
+.dock{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;gap:6px;padding:6px;border-radius:99px;background:rgba(12,14,30,.82);border:1px solid var(--line2);backdrop-filter:blur(6px)}
+.dock button{border:0;background:transparent;border-radius:99px;min-width:36px;height:34px;padding:0 12px;cursor:pointer;color:var(--ink);white-space:nowrap}
+.dock button:hover{background:rgba(255,255,255,.08)}
+.dock button.on{background:color-mix(in srgb,var(--accent) 22%,transparent);color:var(--accent)}
+.lesson{border-left:1px solid var(--line);background:var(--panel);overflow:auto;min-height:0;display:flex;flex-direction:column}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border-bottom:1px solid var(--line)}
+.stat{background:var(--panel);padding:10px 12px}
+.stat .k{font:600 10px/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.stat .v{font:600 18px/1.3 var(--mono);font-variant-numeric:tabular-nums;margin-top:3px}
+.tabs{display:flex;gap:2px;padding:10px 12px 0;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);z-index:2}
+.tabs button{border:0;background:none;padding:9px 12px;color:var(--dim);cursor:pointer;border-bottom:2px solid transparent;font-weight:600}
+.tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent)}
+.pane{padding:14px 16px 22px;display:none}
+.pane.on{display:block}
+.pane h3{margin:14px 0 6px;font-size:13px;letter-spacing:.02em}
+.pane p{margin:0 0 10px;color:var(--dim)}
+.pane p b,.pane li b{color:var(--ink)}
+.lede{font-size:15px;color:var(--ink)!important}
+.steps{list-style:none;margin:10px 0 0;padding:0;counter-reset:s}
+.steps li{counter-increment:s;border:1px solid var(--line);border-radius:10px;margin:0 0 8px;padding:10px 12px 10px 40px;position:relative;cursor:pointer;color:var(--dim);background:var(--panel2)}
+.steps li::before{content:counter(s);position:absolute;left:12px;top:10px;width:18px;height:18px;border-radius:99px;display:grid;place-items:center;font:600 11px var(--mono);background:rgba(255,255,255,.07);color:var(--dim)}
+.steps li.on{border-color:color-mix(in srgb,var(--accent) 60%,transparent);color:var(--ink)}
+.steps li.on::before{background:var(--accent);color:#141414}
+.steps li.done::before{content:"✓";background:rgba(126,231,135,.2);color:var(--good)}
+.steps li .t{font-weight:650;color:var(--ink);display:block}
+.steps li .d{display:none;margin-top:4px}
+.steps li.on .d{display:block}
+.tournav{display:flex;gap:8px;margin-top:6px}
+.btn{border:1px solid var(--line2);background:var(--panel2);border-radius:9px;padding:7px 12px;cursor:pointer;color:var(--ink)}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:#15131a;border-color:transparent;font-weight:650}
+.card{border:1px solid var(--line);border-radius:12px;padding:12px;margin:0 0 10px;background:var(--panel2)}
+.card .q{color:var(--ink);font-weight:600;margin-bottom:8px}
+.card .why{display:none;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line2);color:var(--dim)}
+.card.revealed .why{display:block}
+.card .row{display:flex;gap:8px;flex-wrap:wrap}
+.eq{font:14px/1.7 var(--mono);background:#0e1124;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:6px 0 12px;overflow-x:auto;white-space:nowrap}
+.eq .c-a{color:var(--a)} .eq .c-b{color:var(--b)} .eq .c-hl{color:var(--hl)} .eq .c-g{color:var(--grad)} .eq .c-acc{color:var(--accent)}
+.live{font-variant-numeric:tabular-nums;color:var(--hl)}
+.ctrl{display:grid;grid-template-columns:1fr auto;gap:4px 10px;align-items:center;margin:10px 0}
+.ctrl label{color:var(--dim);font-size:13px}
+.ctrl output{font:12px var(--mono);color:var(--ink);font-variant-numeric:tabular-nums}
+.ctrl input[type=range]{grid-column:1/-1;width:100%;accent-color:var(--accent)}
+.seg{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 10px}
+.seg button{border:1px solid var(--line2);background:transparent;border-radius:99px;padding:5px 11px;cursor:pointer;color:var(--dim);font-size:13px}
+.seg button[aria-pressed=true]{background:color-mix(in srgb,var(--accent) 20%,transparent);color:var(--ink);border-color:color-mix(in srgb,var(--accent) 55%,transparent)}
+.note{border-left:3px solid var(--grad);padding:6px 10px;margin:8px 0 12px;color:var(--dim);background:rgba(167,139,250,.06);border-radius:0 8px 8px 0}
+.wild li{margin-bottom:6px;color:var(--dim)}
+@media (max-width:880px){
+  body{overflow:auto}
+  .app{grid-template-columns:1fr;grid-template-rows:48px 58vh auto;height:auto}
+  .stage{height:58vh}
+  .lesson{border-left:0;border-top:1px solid var(--line)}
+  .top .keys{display:none}
+  .caption{font-size:13px;top:10px;left:10px;right:10px}
+  .stats{grid-template-columns:repeat(3,1fr)}
+  .stat .v{font-size:15px}
+}
+@media (prefers-reduced-motion:reduce){.caption{transition:none}}
 </style>
+</head>
 <body>
-<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
-<canvas id="c"></canvas>
-<div id="ui">
-  <h1>Multi-Armed Bandit</h1>
-  <p class="e">Three strategies race to find the best slot machine — watch ε-greedy's regret climb in a straight line while UCB and Thompson flatten off.</p>
-  <div class="k">R reroll odds &middot; 1/2/3 spotlight &middot; 0 all &middot; Space pause &middot; F fast</div>
-  <hr>
-  <div id="stats"></div>
-  <a href="index.html">&larr; gallery</a>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace;max-width:100vw;white-space:pre-wrap';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div class="app">
+  <header class="top">
+    <a class="back" href="index.html">← Gallery</a>
+    <span class="chip">ML / AI</span>
+    <h1>Multi-Armed Bandit</h1>
+    <span class="sp"></span>
+    <span class="keys">Space play · ←/→ tour · R reset</span>
+  </header>
+  <section class="stage" id="stage">
+    <canvas id="c" role="img" aria-label="Slot machines with hidden payout rates; ε-greedy, UCB1-Tuned and Thompson sampling race, showing each strategy's beliefs per machine and their cumulative regret curves"></canvas>
+    <div class="caption" id="caption" aria-live="polite"></div>
+    <div class="dock" role="group" aria-label="Simulation controls">
+      <button id="bPlay" class="on" aria-label="Pause">❚❚</button>
+      <button id="bStep" aria-label="Step once">Step</button>
+      <button id="bReset" aria-label="Reset">Reset</button>
+      <button id="bSpeed" aria-label="Speed">1×</button>
+      <button id="bReveal" class="on" aria-label="Reveal hidden odds">Reveal</button>
+    </div>
+  </section>
+  <aside class="lesson">
+    <div class="stats" id="stats"><!-- 3 stat tiles: .stat > .k + .v#id --></div>
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-tab="learn">Learn</button>
+      <button role="tab" aria-selected="false" data-tab="try">Try this</button>
+      <button role="tab" aria-selected="false" data-tab="math">The math</button>
+      <button role="tab" aria-selected="false" data-tab="play">Controls</button>
+    </div>
+    <div class="pane on" id="p-learn">
+      <p class="lede">ONE-SENTENCE INTUITION.</p>
+      <ol class="steps" id="steps"></ol>
+      <div class="tournav"><button class="btn" id="tPrev">← Back</button><button class="btn primary" id="tNext">Next step →</button></div>
+      <h3>In the wild</h3>
+      <ul class="wild"><li>WHERE THIS SHOWS UP IN REAL SYSTEMS</li></ul>
+    </div>
+    <div class="pane" id="p-try"><!-- .card experiments: predict → run → why --></div>
+    <div class="pane" id="p-math"><!-- .eq blocks with colour-coded terms + .live spans; .note for misconceptions --></div>
+    <div class="pane" id="p-play"><!-- .ctrl sliders, .seg segmented choices --></div>
+  </aside>
 </div>
 <script>
 'use strict';
-var cv = document.getElementById('c'), ctx = cv.getContext('2d');
-var statsEl = document.getElementById('stats');
-
-var K = 6;
-var truth = [];
-var best = 0, bestP = 0;
-var paused = false, fast = false, spotlight = -1;
-var particles = [];
-
-var EPSILON = 0.1;
-var STRATS = [
-  { name:'ε-greedy ε=0.1', color:'#ffcc44', short:'EPS' },
-  { name:'UCB1-tuned',     color:'#44e0ff', short:'UCB' },
-  { name:'Thompson',       color:'#ff5fd0', short:'THM' }
-];
-
-function makeAgent(i){
-  return {
-    def: STRATS[i],
-    n: new Float64Array(K),        // pull counts
-    sum: new Float64Array(K),      // total reward
-    est: new Float64Array(K),      // estimated value
-    a: new Float64Array(K),        // beta alpha (thompson)
-    b: new Float64Array(K),        // beta beta
-    flash: new Float64Array(K),
-    t: 0, reward: 0, regret: 0,
-    curve: [], last: -1
-  };
+/* ===== shell helpers (keep) ===== */
+const $ = s => document.querySelector(s);
+const cv = $('#c'), ctx = cv.getContext('2d'), stage = $('#stage');
+let W = 0, H = 0, DPR = 1;
+function resize() {
+  const r = stage.getBoundingClientRect(); DPR = Math.min(2, devicePixelRatio || 1);
+  W = Math.max(1, r.width); H = Math.max(1, r.height);
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR); ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  if (typeof onResize === 'function') onResize();
 }
-var agents = [];
-
-function reroll(){
-  truth = [];
-  for (var i=0;i<K;i++) truth.push(0.10 + Math.random()*0.52);
-  // guarantee one clearly-best arm so the gap is learnable on screen
-  var bi = (Math.random()*K)|0;
-  truth[bi] = 0.80 + Math.random()*0.14;
-  best = 0; bestP = truth[0];
-  for (var j=1;j<K;j++) if (truth[j] > bestP){ bestP = truth[j]; best = j; }
-  agents = [makeAgent(0), makeAgent(1), makeAgent(2)];
-  for (var s=0;s<3;s++) for (var k=0;k<K;k++){ agents[s].a[k]=1; agents[s].b[k]=1; }
-  particles = [];
+new ResizeObserver(resize).observe(stage); resize();
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+// tabs
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', x === b));
+  document.querySelectorAll('.pane').forEach(p => p.classList.toggle('on', p.id === 'p-' + b.dataset.tab));
+});
+// playback
+let playing = !REDUCED, speed = 1;
+const SPEEDS = [0.25, 0.5, 1, 2, 4];
+function setPlaying(v) { playing = v; $('#bPlay').textContent = v ? '❚❚' : '▶'; $('#bPlay').classList.toggle('on', v); $('#bPlay').setAttribute('aria-label', v ? 'Pause' : 'Play'); }
+$('#bPlay').onclick = () => setPlaying(!playing);
+$('#bSpeed').onclick = () => { speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]; $('#bSpeed').textContent = speed + '×'; };
+// tour: STEPS = [{t:'title', d:'html', cap:'stage caption html', go(){ /* set demo state */ }}]
+let tour = 0;
+function renderSteps() {
+  const ol = $('#steps'); ol.innerHTML = '';
+  STEPS.forEach((s, i) => { const li = document.createElement('li'); li.className = (i === tour ? 'on' : '') + (i < tour ? ' done' : ''); li.innerHTML = `<span class="t">${s.t}</span><span class="d">${s.d}</span>`; li.onclick = () => goStep(i); ol.appendChild(li); });
+  $('#tPrev').disabled = tour === 0; $('#tNext').textContent = tour === STEPS.length - 1 ? 'Start over ↺' : 'Next step →';
 }
-
-// Gamma/Beta sampling for Thompson (Marsaglia-Tsang)
-function randGamma(k){
-  if (k < 1){
-    var u = Math.random();
-    return randGamma(1+k) * Math.pow(u, 1/k);
-  }
-  var d = k - 1/3, c = 1/Math.sqrt(9*d);
-  for(;;){
-    var x, v;
-    do { x = gauss(); v = 1 + c*x; } while (v <= 0);
-    v = v*v*v;
-    var u2 = Math.random();
-    if (u2 < 1 - 0.0331*x*x*x*x) return d*v;
-    if (Math.log(u2) < 0.5*x*x + d*(1 - v + Math.log(v))) return d*v;
-  }
+function goStep(i) { tour = (i + STEPS.length) % STEPS.length; const s = STEPS[tour]; if (s.go) s.go(); $('#caption').innerHTML = s.cap || ''; renderSteps(); }
+$('#tPrev').onclick = () => goStep(Math.max(0, tour - 1));
+$('#tNext').onclick = () => goStep(tour + 1);
+// experiments: TRIES = [{q:'Predict…', run(){…}, why:'html'}]
+function renderTries() {
+  const p = $('#p-try'); p.innerHTML = '<p>Make a prediction first, then run it. Each experiment sets the demo up for you.</p>';
+  TRIES.forEach(x => { const c = document.createElement('div'); c.className = 'card'; c.innerHTML = `<div class="q">${x.q}</div><div class="row"><button class="btn primary">Run it</button><button class="btn">Show why</button></div><div class="why">${x.why}</div>`; const [run, why] = c.querySelectorAll('button'); run.onclick = () => { x.run(); setPlaying(true); }; why.onclick = () => c.classList.toggle('revealed'); p.appendChild(c); });
 }
-var spare = null;
-function gauss(){
-  if (spare !== null){ var s = spare; spare = null; return s; }
-  var u, v, s2;
-  do { u = Math.random()*2-1; v = Math.random()*2-1; s2 = u*u+v*v; } while (s2 >= 1 || s2 === 0);
-  var m = Math.sqrt(-2*Math.log(s2)/s2);
-  spare = v*m; return u*m;
+// controls helpers
+function slider(parent, id, label, min, max, step, value, fmt, onInput) {
+  const d = document.createElement('div'); d.className = 'ctrl';
+  d.innerHTML = `<label for="${id}">${label}</label><output id="${id}o"></output><input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${value}">`;
+  parent.appendChild(d); const inp = d.querySelector('input'), out = d.querySelector('output');
+  const upd = () => { out.textContent = fmt(+inp.value); onInput(+inp.value); }; inp.oninput = upd; upd();
+  return { set(v) { inp.value = v; upd(); }, get: () => +inp.value };
 }
-function randBeta(a,b){
-  var x = randGamma(a), y = randGamma(b);
-  return x/(x+y);
+function seg(parent, options, value, onPick) {
+  const d = document.createElement('div'); d.className = 'seg'; parent.appendChild(d);
+  const bs = options.map(([v, label]) => { const b = document.createElement('button'); b.textContent = label; b.setAttribute('aria-pressed', v === value); b.onclick = () => set(v); d.appendChild(b); return [v, b]; });
+  function set(v) { bs.forEach(([k, b]) => b.setAttribute('aria-pressed', k === v)); onPick(v); }
+  return { set };
 }
-
-function chooseArm(ag, si){
-  var i;
-  for (i=0;i<K;i++) if (ag.n[i] === 0) return i;   // one pull each first
-  if (si === 0){ // epsilon-greedy with a constant epsilon -> LINEAR regret
-    if (Math.random() < EPSILON) return (Math.random()*K)|0;
-    var b0 = 0;
-    for (i=1;i<K;i++) if (ag.est[i] > ag.est[b0]) b0 = i;
-    return b0;
-  }
-  if (si === 1){ // UCB1-tuned (Auer, Cesa-Bianchi & Fischer 2002) -> LOG regret
-    var lt = Math.log(ag.t + 1);
-    var bi = 0, bv = -1e9;
-    for (i=0;i<K;i++){
-      var varEst = ag.est[i]*(1 - ag.est[i]) + Math.sqrt(2*lt/ag.n[i]);
-      var v = ag.est[i] + Math.sqrt((lt/ag.n[i]) * Math.min(0.25, varEst));
-      if (v > bv){ bv = v; bi = i; }
-    }
-    return bi;
-  }
-  // Thompson sampling
-  var ti = 0, tv = -1;
-  for (i=0;i<K;i++){
-    var s = randBeta(ag.a[i], ag.b[i]);
-    if (s > tv){ tv = s; ti = i; }
-  }
-  return ti;
-}
-
-function pull(ag, si){
-  var arm = chooseArm(ag, si);
-  var win = Math.random() < truth[arm] ? 1 : 0;
-  ag.n[arm]++; ag.sum[arm] += win;
-  ag.est[arm] = ag.sum[arm]/ag.n[arm];
-  if (win) ag.a[arm]++; else ag.b[arm]++;
-  ag.t++; ag.reward += win;
-  ag.regret += bestP - truth[arm];
-  ag.flash[arm] = 1;
-  ag.last = arm;
-  if (ag.t % 4 === 0){
-    ag.curve.push(ag.regret);
-    if (ag.curve.length > 900) ag.curve.shift();
-  }
-  if (win) spawnCoins(si, arm);
-}
-
-function spawnCoins(si, arm){
-  if (particles.length > 260) return;
-  var g = geom();
-  var cx = g.armX(arm) + g.armW/2;
-  var cy = g.laneY(si) + g.laneH*0.42;
-  var n = 2 + (Math.random()*2|0);
-  for (var i=0;i<n;i++){
-    particles.push({
-      x: cx + (Math.random()-0.5)*g.armW*0.5, y: cy,
-      vx: (Math.random()-0.5)*1.4, vy: -1.6 - Math.random()*1.6,
-      life: 1, c: STRATS[si].color
-    });
-  }
-}
-
-// ---------- layout ----------
-var dpr=1, cw=0, ch=0;
-function resize(){
-  dpr = Math.min(2, window.devicePixelRatio || 1);
-  cw = window.innerWidth; ch = window.innerHeight;
-  cv.width = Math.floor(cw*dpr); cv.height = Math.floor(ch*dpr);
-  cv.style.width = cw+'px'; cv.style.height = ch+'px';
-  ctx.setTransform(dpr,0,0,dpr,0,0);
-}
-window.addEventListener('resize', resize);
-
-function geom(){
-  var left = 380, right = 30, top = 40;
-  if (cw < 900) left = 24, top = 220;
-  var graphH = Math.min(230, ch*0.30);
-  var areaW = cw - left - right;
-  var lanesTop = top;
-  var lanesH = ch - top - graphH - 60;
-  var laneH = lanesH/3;
-  var armPad = 12;
-  var armW = (areaW - armPad*(K+1))/K;
-  return {
-    left:left, top:top, areaW:areaW, laneH:laneH, graphH:graphH,
-    armW:armW, armPad:armPad,
-    laneY:function(i){ return lanesTop + i*laneH; },
-    armX:function(i){ return left + armPad + i*(armW+armPad); },
-    graphY: ch - graphH - 26
-  };
-}
-
-function draw(now){
-  var time = now*0.001;
-  ctx.fillStyle = '#06050c';
-  ctx.fillRect(0,0,cw,ch);
-  var g = geom();
-
-  for (var si=0; si<3; si++){
-    var ag = agents[si], def = STRATS[si];
-    var dim = (spotlight >= 0 && spotlight !== si) ? 0.22 : 1;
-    var ly = g.laneY(si);
-
-    // lane background
-    ctx.fillStyle = 'rgba(255,255,255,'+(0.016*dim+0.006)+')';
-    ctx.fillRect(g.left, ly+2, g.areaW, g.laneH-8);
-    ctx.strokeStyle = hexA(def.color, 0.16*dim);
-    ctx.lineWidth = 1;
-    ctx.strokeRect(g.left+.5, ly+2.5, g.areaW-1, g.laneH-9);
-
-    // lane label
-    ctx.save();
-    ctx.globalAlpha = dim;
-    ctx.fillStyle = def.color;
-    ctx.font = 'bold 13px ui-monospace,monospace';
-    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-    ctx.shadowColor = def.color; ctx.shadowBlur = 10;
-    ctx.fillText((si+1)+'  '+def.name, g.left+6, ly+7);
-    ctx.shadowBlur = 0;
-    ctx.font = '11px ui-monospace,monospace';
-    ctx.fillStyle = 'rgba(220,225,245,'+(0.7*dim)+')';
-    ctx.textAlign = 'right';
-    ctx.fillText('pulls '+ag.t+'   regret '+ag.regret.toFixed(1)+'   win% '+(ag.t? (100*ag.reward/ag.t).toFixed(1):'0.0'),
-                 g.left+g.areaW-8, ly+8);
-    ctx.restore();
-
-    // arms
-    var barTop = ly + 28, barH = g.laneH - 46;
-    for (var k=0;k<K;k++){
-      var x = g.armX(k), w = g.armW;
-      var isBest = (k === best);
-      var fl = ag.flash[k];
-      ag.flash[k] = Math.max(0, fl - 0.055);
-
-      // ghost outline = hidden truth
-      var th = barH * truth[k];
-      ctx.strokeStyle = 'rgba(255,255,255,'+(0.30*dim)+')';
-      ctx.setLineDash([4,3]);
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(x, barTop + barH - th);
-      ctx.lineTo(x+w, barTop + barH - th);
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      // frame
-      ctx.strokeStyle = 'rgba(160,170,210,'+(0.16*dim)+')';
-      ctx.strokeRect(x+.5, barTop+.5, w-1, barH-1);
-
-      // estimate bar
-      var eh = barH * Math.max(0, Math.min(1, ag.est[k]));
-      var grad = ctx.createLinearGradient(0, barTop+barH, 0, barTop);
-      grad.addColorStop(0, hexA(def.color, 0.20*dim));
-      grad.addColorStop(1, hexA(def.color, 0.85*dim));
-      ctx.fillStyle = grad;
-      ctx.fillRect(x+1, barTop+barH-eh, w-2, eh);
-
-      // flash on pull
-      if (fl > 0.01){
-        ctx.fillStyle = hexA('#ffffff', fl*0.5*dim);
-        ctx.fillRect(x+1, barTop+1, w-2, barH-2);
-        ctx.save();
-        ctx.shadowColor = def.color; ctx.shadowBlur = 24*fl;
-        ctx.strokeStyle = hexA(def.color, dim);
-        ctx.lineWidth = 2;
-        ctx.strokeRect(x+1, barTop+1, w-2, barH-2);
-        ctx.restore();
-      }
-      if (isBest){
-        ctx.strokeStyle = 'rgba(120,255,190,'+(0.5*dim)+')';
-        ctx.lineWidth = 1.5;
-        ctx.strokeRect(x-1.5, barTop-1.5, w+3, barH+3);
-      }
-
-      // labels
-      ctx.save();
-      ctx.globalAlpha = dim;
-      ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-      ctx.font = '10px ui-monospace,monospace';
-      ctx.fillStyle = 'rgba(230,235,255,.85)';
-      ctx.fillText(ag.est[k].toFixed(2), x+w/2, barTop+barH+3);
-      ctx.fillStyle = 'rgba(170,180,215,.6)';
-      ctx.fillText('n='+ag.n[k], x+w/2, barTop+barH+15);
-      if (si === 0){
-        ctx.fillStyle = 'rgba(255,255,255,.35)';
-        ctx.textBaseline = 'bottom';
-        ctx.fillText('p='+truth[k].toFixed(2), x+w/2, barTop-3);
-      }
-      ctx.restore();
-    }
-  }
-
-  drawRegret(g);
-  drawParticles();
-}
-
-function drawRegret(g){
-  var gx = g.left, gy = g.graphY, gw = g.areaW, gh = g.graphH;
-  ctx.fillStyle = 'rgba(14,10,26,.72)';
-  ctx.fillRect(gx, gy, gw, gh);
-  ctx.strokeStyle = 'rgba(200,120,255,.22)';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(gx+.5, gy+.5, gw-1, gh-1);
-
-  var mx = 1;
-  for (var s=0;s<3;s++) if (agents[s].regret > mx) mx = agents[s].regret;
-  mx *= 1.1;
-  var maxLen = 1;
-  for (s=0;s<3;s++) if (agents[s].curve.length > maxLen) maxLen = agents[s].curve.length;
-
-  // gridlines
-  ctx.strokeStyle = 'rgba(255,255,255,.06)';
-  for (var i=1;i<4;i++){
-    var yy = gy + gh*(i/4);
-    ctx.beginPath(); ctx.moveTo(gx,yy); ctx.lineTo(gx+gw,yy); ctx.stroke();
-  }
-
-  for (s=0;s<3;s++){
-    var ag = agents[s], c = agents[s].def.color;
-    var dim = (spotlight >= 0 && spotlight !== s) ? 0.2 : 1;
-    if (ag.curve.length < 2) continue;
-    ctx.beginPath();
-    for (i=0;i<ag.curve.length;i++){
-      var px = gx + (i/(maxLen-1))*(gw-8) + 4;
-      var py = gy + gh - 8 - (ag.curve[i]/mx)*(gh-22);
-      if (i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
-    }
-    ctx.strokeStyle = hexA(c, dim);
-    ctx.lineWidth = 2;
-    ctx.shadowColor = c; ctx.shadowBlur = 9*dim;
-    ctx.stroke();
-    ctx.shadowBlur = 0;
-    // end label
-    var lx = gx + ((ag.curve.length-1)/(maxLen-1))*(gw-8) + 6;
-    var ly = gy + gh - 8 - (ag.regret/mx)*(gh-22);
-    ctx.fillStyle = hexA(c, dim);
-    ctx.font = '11px ui-monospace,monospace';
-    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-    ctx.fillText(ag.def.short+' '+ag.regret.toFixed(1), Math.min(lx, gx+gw-70), ly);
-  }
-
-  ctx.fillStyle = 'rgba(200,190,225,.7)';
-  ctx.font = '11px ui-monospace,monospace';
-  ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-  ctx.fillText('cumulative regret (lower = better) — reward given up vs always playing arm '+(best+1)+
-               '   |   straight line = linear regret, flattening = logarithmic regret',
-               gx+8, gy+6);
-}
-
-function drawParticles(){
-  for (var i=particles.length-1;i>=0;i--){
-    var p = particles[i];
-    p.x += p.vx; p.y += p.vy; p.vy += 0.13; p.life -= 0.022;
-    if (p.life <= 0){ particles.splice(i,1); continue; }
-    ctx.fillStyle = hexA(p.c, p.life);
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, 2.4*p.life+0.8, 0, 6.2832);
-    ctx.fill();
-  }
-}
-
-function hexA(hex, a){
-  var h = hex.replace('#','');
-  var r = parseInt(h.substr(0,2),16), g = parseInt(h.substr(2,2),16), b = parseInt(h.substr(4,2),16);
-  return 'rgba('+r+','+g+','+b+','+Math.max(0,Math.min(1,a))+')';
-}
-
-function updateStats(){
-  var s = 'true best: arm <b>'+(best+1)+'</b> (p='+bestP.toFixed(2)+')<br>';
-  for (var i=0;i<3;i++){
-    var ag = agents[i];
-    var pick = 0;
-    for (var k=1;k<K;k++) if (ag.est[k] > ag.est[pick]) pick = k;
-    var share = ag.t ? (100*ag.n[best]/ag.t) : 0;
-    s += '<span style="color:'+STRATS[i].color+'">'+STRATS[i].name+'</span> '+
-         'regret <b>'+ag.regret.toFixed(1)+'</b> &nbsp; on-best <b>'+share.toFixed(0)+'%</b><br>';
-  }
-  s += (paused?'<b>PAUSED</b> ':'')+(fast?'<b>FAST</b> ':'')+
-       (spotlight>=0?'spotlight '+(spotlight+1):'');
-  statsEl.innerHTML = s;
-}
-
-var frame = 0;
-function loop(now){
-  if (!paused){
-    var pulls = fast ? 24 : 3;
-    for (var i=0;i<pulls;i++)
-      for (var s=0;s<3;s++) pull(agents[s], s);
-  }
-  draw(now);
-  if ((frame++ % 5) === 0) updateStats();
+function stat(id, label) { const d = document.createElement('div'); d.className = 'stat'; d.innerHTML = `<div class="k">${label}</div><div class="v" id="${id}">–</div>`; $('#stats').appendChild(d); }
+const setText = (id, v) => { const e = document.getElementById(id); if (e && e.textContent !== v) e.textContent = v; };
+// keyboard
+addEventListener('keydown', e => {
+  if (e.target.matches('input,select,textarea')) return;
+  if (e.code === 'Space') { setPlaying(!playing); e.preventDefault(); }
+  else if (e.key === 'ArrowRight') goStep(tour + 1);
+  else if (e.key === 'ArrowLeft') goStep(Math.max(0, tour - 1));
+  else if (e.key === 'r' || e.key === 'R') $('#bReset').click();
+});
+// wall-clock-locked loop (dt clamped to [0, 0.1] — rAF timestamps can precede performance.now())
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.1, Math.max(0, (now - last) / 1000)); last = now;
+  try { frame(playing ? dt * speed : 0, dt); } catch (err) { window.onerror(err.message, '', 0); return; }
   requestAnimationFrame(loop);
 }
 
-window.addEventListener('keydown', function(ev){
-  var k = ev.key.toLowerCase();
-  if (k === 'r') reroll();
-  else if (k === '1') spotlight = spotlight===0?-1:0;
-  else if (k === '2') spotlight = spotlight===1?-1:1;
-  else if (k === '3') spotlight = spotlight===2?-1:2;
-  else if (k === '0') spotlight = -1;
-  else if (k === 'f') fast = !fast;
-  else if (k === ' ' || ev.code === 'Space'){ paused = !paused; ev.preventDefault(); }
+// ===== DEMO CODE: Multi-Armed Bandit =====
+/*CORE-START*/
+// ---- seeded randomness ----
+function rng32(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+function gauss(r) { let u = 0; while (!u) u = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(6.283185307179586 * r()); }
+function randGamma(k, r) { // Marsaglia–Tsang
+  if (k < 1) return randGamma(k + 1, r) * Math.pow(r() || 1e-12, 1 / k);
+  const d = k - 1 / 3, c = 1 / Math.sqrt(9 * d);
+  for (;;) {
+    let x, v; do { x = gauss(r); v = 1 + c * x; } while (v <= 0);
+    v = v * v * v; const u = r();
+    if (u < 1 - 0.0331 * x ** 4 || Math.log(u) < 0.5 * x * x + d * (1 - v + Math.log(v))) return d * v;
+  }
+}
+function randBeta(a, b, r) { const x = randGamma(a, r); return x / (x + randGamma(b, r)); }
+// ---- Beta density (Lanczos log-gamma) ----
+const LZ = [0.99999999999980993, 676.5203681218851, -1259.1392167224028, 771.32342877765313, -176.61502916214059, 12.507343278686905, -0.13857109526572012, 9.9843695780195716e-6, 1.5056327351493116e-7];
+function lgamma(x) {
+  if (x < 0.5) return Math.log(Math.PI / Math.sin(Math.PI * x)) - lgamma(1 - x);
+  x -= 1; let s = LZ[0]; for (let i = 1; i < 9; i++) s += LZ[i] / (x + i);
+  const t = x + 7.5; return 0.9189385332046727 + (x + 0.5) * Math.log(t) - t + Math.log(s);
+}
+const logBetaFn = (a, b) => lgamma(a) + lgamma(b) - lgamma(a + b);
+function betaPdf(x, a, b, lb = logBetaFn(a, b)) { return x <= 0 || x >= 1 ? 0 : Math.exp((a - 1) * Math.log(x) + (b - 1) * Math.log(1 - x) - lb); }
+// ---- Lai–Robbins: asymptotic regret >= C ln T with C = sum_k gap_k / KL(p_k || p*) ----
+function klBern(p, q) { const e = 1e-9; p = Math.min(1 - e, Math.max(e, p)); q = Math.min(1 - e, Math.max(e, q)); return p * Math.log(p / q) + (1 - p) * Math.log((1 - p) / (1 - q)); }
+function lrConst(p) { const ps = Math.max(...p); let c = 0; for (const q of p) if (q < ps - 1e-9) c += (ps - q) / klBern(q, ps); return c; }
+// ---- the world: hidden Bernoulli rates + common random numbers (n-th pull of arm k sees the same draw for every strategy) ----
+function makeWorld(p, seed) { const w = { p: p.slice(), u: p.map(() => []), rs: p.map((_, k) => rng32(seed * 7919 + k * 104729 + 1)), best: 0, pstar: 0 }; retarget(w); return w; }
+function retarget(w) { w.best = 0; for (let k = 1; k < w.p.length; k++) if (w.p[k] > w.p[w.best]) w.best = k; w.pstar = w.p[w.best]; }
+function outcome(w, k, n) { const u = w.u[k]; while (u.length <= n) u.push(w.rs[k]()); return u[n] < w.p[k] ? 1 : 0; }
+function randomRates(K, r) { const p = []; for (let k = 0; k < K; k++) p.push(0.1 + r() * 0.5); p[(r() * K) | 0] = 0.7 + r() * 0.2; return p.map(v => Math.round(v * 100) / 100); }
+// ---- strategies ----
+const KINDS = ['eps', 'ucb', 'ts', 'you'];
+const agentSeed = (seed, kind) => seed * 10 + KINDS.indexOf(kind) + 1;
+function makeAgent(kind, K, seed, T) { return { kind, K, rng: rng32(seed), n: new Float64Array(K), s: new Float64Array(K), theta: new Float64Array(K), t: 0, regret: 0, onBest: 0, rand: 0, last: -1, curve: new Float32Array(T + 1) }; }
+const mean = (ag, k) => ag.n[k] ? ag.s[k] / ag.n[k] : 0;
+function ucbIndex(ag, k) { // UCB1-Tuned (Auer, Cesa-Bianchi & Fischer 2002)
+  if (!ag.n[k]) return Infinity;
+  const lt = Math.log(Math.max(ag.t, 1)), m = mean(ag, k), n = ag.n[k];
+  return m + Math.sqrt(lt / n * Math.min(0.25, m * (1 - m) + Math.sqrt(2 * lt / n)));
+}
+function argmax(v, r) { let best = -Infinity, pick = 0, ties = 0; for (let k = 0; k < v.length; k++) { if (v[k] > best + 1e-12) { best = v[k]; pick = k; ties = 1; } else if (Math.abs(v[k] - best) <= 1e-12 && r() * ++ties < 1) pick = k; } return pick; }
+function choose(ag, eps) {
+  const K = ag.K, r = ag.rng;
+  if (ag.kind === 'ts') { for (let k = 0; k < K; k++) ag.theta[k] = randBeta(1 + ag.s[k], 1 + ag.n[k] - ag.s[k], r); return argmax(ag.theta, r); }
+  for (let k = 0; k < K; k++) if (!ag.n[k]) return k; // try every arm once
+  if (ag.kind === 'ucb') { for (let k = 0; k < K; k++) ag.theta[k] = ucbIndex(ag, k); return argmax(ag.theta, r); }
+  if (r() < eps) { ag.rand++; return (r() * K) | 0; } // explore blindly
+  for (let k = 0; k < K; k++) ag.theta[k] = mean(ag, k);
+  return argmax(ag.theta, r);
+}
+function apply(ag, w, k) { // pull arm k, update counts (Beta posterior = 1 + wins, 1 + losses) and pseudo-regret
+  const r = outcome(w, k, ag.n[k]);
+  ag.n[k]++; ag.s[k] += r; ag.t++; ag.last = k;
+  ag.regret += w.pstar - w.p[k]; if (k === w.best) ag.onBest++;
+  if (ag.t < ag.curve.length) ag.curve[ag.t] = ag.regret;
+  return r;
+}
+function simulate(kind, p, T, seed, eps = 0.1) { const w = makeWorld(p, seed), ag = makeAgent(kind, p.length, agentSeed(seed, kind), T); for (let t = 0; t < T; t++) apply(ag, w, choose(ag, eps)); return ag; }
+/*CORE-END*/
+
+// ---- palette (shared ML semantics) + strategy colours ----
+const A = '#ff7a6b', B = '#3fd0c0', HL = '#ffc857', GR = '#a78bfa', DATA = '#c7cbe0', INK = '#e9ecfa', DIM = '#a2a9c8', FAINT = '#6b7396';
+const COL = { eps: '#9aa7ff', ucb: '#7ee787', ts: '#ff6fd8', you: '#e9ecfa' };
+const NAME = { eps: 'ε-greedy', ucb: 'UCB1-Tuned', ts: 'Thompson', you: 'You' };
+const SHORT = { eps: 'ε', ucb: 'UCB', ts: 'TS', you: 'You' }, CH = { eps: 'ε-greedy', ucb: 'UCB1-T', ts: 'Thompson', you: 'You' };
+const SANS = 'ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif', MONO = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace';
+const YOU_T = 50, P1 = [0.35, 0.58, 0.22, 0.8, 0.47, 0.3];
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const fx2 = v => v.toFixed(2).replace(/^0\./, '.');
+
+// ---- state ----
+const st = { K: 6, T: 2000, eps: 0.1, seed: 1, armSeed: 11, p: P1.slice(), lens: 'ts', you: false, reveal: true, logx: false, bound: false,
+  annot: null, event: null, pin: -1, hover: -1, done: false, hold: 0, acc: 0, xmax: 60, ymax: 5, pf: 0 };
+let world, agents, G, pills = [], drag = -1;
+const flash = new Float32Array(8), flashR = new Uint8Array(8), coins = [], cosm = rng32(99);
+const horizon = () => st.you ? YOU_T : st.T;
+const bots = () => ['eps', 'ucb', 'ts'].map(k => agents[k]);
+const secret = () => st.you && !st.done; // You mode: hide regret, bot pulls and anything else that leaks the odds
+// a seed on which pure greedy locks onto a worse machine (used by tour step 2)
+const STUCK = (() => { for (let s = 1; s < 400; s++) { const g = simulate('eps', P1, 400, s, 0); if (g.onBest / g.t < 0.03) return s; } return 1; })();
+
+function newRace() {
+  world = makeWorld(st.p, st.seed); agents = {};
+  for (const k of st.you ? KINDS : KINDS.slice(0, 3)) agents[k] = makeAgent(k, st.K, agentSeed(st.seed, k), Math.max(st.T, YOU_T));
+  st.done = false; st.hold = 0; st.acc = 0; st.xmax = st.you ? YOU_T : 60; st.ymax = 5; flash.fill(0); coins.length = 0;
+}
+function newArms() { st.p = randomRates(st.K, rng32(st.armSeed++)); st.event = null; st.annot = null; st.pin = -1; newRace(); }
+function fx(k, r) { flash[k] = 1; flashR[k] = r; if (r && st.pf < 4 && coins.length < 30 && G) coins.push({ x: colC(k) + (cosm() - 0.5) * 14, y: G.top + G.headH * 0.5, vy: -40 - 30 * cosm(), life: 1 }); }
+function stepAll(yk) {
+  if (st.done) return;
+  if (st.event && agents.ts.t === st.event.t) { world.p[st.event.k] = st.event.p; retarget(world); }
+  for (const ag of bots()) { const k = choose(ag, st.eps), r = apply(ag, world, k); if (ag.kind === st.lens) fx(k, r); }
+  if (st.you) fx(yk, apply(agents.you, world, yk));
+  st.pf++;
+  if (agents.ts.t >= horizon()) { st.done = true; st.hold = 0; }
+}
+function youPull(k) { if (st.done) { newArms(); return; } stepAll(k); }
+
+// ---- layout: everything inside the safe rect {16, 84, W-32, H-160} ----
+function geo() {
+  const ph = W < 560, x0 = 16, capEl = $('#caption'), y0 = Math.max(84, capEl.textContent ? capEl.offsetTop + capEl.offsetHeight + 6 : 0), w = W - 32, h = H - 160, ax = ph ? 24 : 34, pillH = ph ? 24 : 28;
+  const top = y0 + pillH + (ph ? 8 : 14), armsH = Math.round((y0 + h - top) * (ph ? 0.55 : 0.56));
+  const headH = ph ? 20 : 34, cntH = ph ? 22 : 40, cntB = top + armsH;
+  return { ph, x0, y0, w, h, ax, pillH, top, headH, cntH, cntB, cntT: cntB - cntH, plotT: top + headH + (ph ? 6 : 10), plotB: cntB - cntH - (ph ? 6 : 10),
+    cx0: x0 + ax, cw: (w - ax) / st.K, chT: cntB + (ph ? 14 : 24), chB: y0 + h, chL: x0 + ax, chR: x0 + w - (ph ? 62 : 150) };
+}
+const py = p => G.plotB - p * (G.plotB - G.plotT);
+const colX = k => G.cx0 + k * G.cw, colC = k => colX(k) + G.cw / 2;
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function glowLine(pts, color, w) { for (const [lw, a] of [[w + 5, 0.14], [w, 1]]) { ctx.globalAlpha = a; ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.stroke(); } ctx.globalAlpha = 1; }
+function tag(ax, ay, lines, color, dir = 1) { // annotation box with a leader line, kept inside the safe rect
+  const fs = G.ph ? 11 : 12, lh = fs + 4; ctx.font = `${fs}px ${SANS}`;
+  const L = lines.map(l => Array.isArray(l) ? l : [l, INK]), bw = Math.max(...L.map(l => ctx.measureText(l[0]).width)) + 14, bh = L.length * lh + 8;
+  let bx = dir > 0 ? ax + 16 : ax - 16 - bw; if (bx + bw > G.x0 + G.w) bx = ax - 16 - bw; if (bx < G.x0) bx = ax + 16; bx = clamp(bx, G.x0, G.x0 + G.w - bw);
+  const by = clamp(ay - bh / 2, G.plotT + 2, G.y0 + G.h - bh), ex = bx > ax ? bx : bx + bw;
+  ctx.strokeStyle = color; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ex, by + bh / 2); ctx.stroke();
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(ax, ay, 3, 0, 6.29); ctx.fill();
+  rr(bx, by, bw, bh, 7); ctx.fillStyle = 'rgba(10,12,26,.93)'; ctx.fill(); ctx.stroke();
+  ctx.textAlign = 'left'; ctx.textBaseline = 'top'; L.forEach(([t, c], i) => { ctx.fillStyle = c; ctx.fillText(t, bx + 7, by + 5 + i * lh); });
+}
+
+// ---- drawing ----
+function draw() {
+  G = geo(); ctx.clearRect(0, 0, W, H);
+  drawPills(); drawArms(); drawChart(); drawAnnot(); drawPin(); drawCoins();
+}
+function drawPills() {
+  const { x0, y0, pillH, ph } = G; let x = x0; pills = [];
+  ctx.font = `600 ${ph ? 11 : 12}px ${SANS}`; ctx.textBaseline = 'middle';
+  for (const k of KINDS) {
+    const label = k === 'eps' ? (st.eps === 0 ? 'Greedy' : 'ε-greedy') : k === 'ucb' ? (ph ? 'UCB' : 'UCB1-Tuned') : k === 'ts' ? 'Thompson' : (ph ? 'You' : 'You play');
+    const w = ctx.measureText(label).width + (ph ? 24 : 30), on = st.lens === k;
+    rr(x, y0, w, pillH, pillH / 2); ctx.fillStyle = on ? COL[k] + '30' : 'rgba(255,255,255,.04)'; ctx.fill();
+    ctx.strokeStyle = on ? COL[k] : 'rgba(190,200,255,.18)'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = COL[k]; ctx.beginPath(); ctx.arc(x + (ph ? 10 : 13), y0 + pillH / 2, 3.5, 0, 6.29); ctx.fill();
+    ctx.fillStyle = on ? INK : DIM; ctx.textAlign = 'left'; ctx.fillText(label, x + (ph ? 17 : 21), y0 + pillH / 2 + 0.5);
+    pills.push({ kind: k, x, y: y0, w, h: pillH }); x += w + 6;
+  }
+  if (!ph && x < x0 + G.w - 330) {
+    ctx.font = `12px ${SANS}`; ctx.fillStyle = FAINT; ctx.textAlign = 'right';
+    ctx.fillText(st.you ? 'tap a machine (or keys 1–' + st.K + ') to pull it' : 'click a machine to inspect · drag a dashed line to change its odds', x0 + G.w, y0 + pillH / 2);
+  }
+}
+function drawArms() {
+  const { cw, top, headH, plotT, plotB, cntT, cntB, ph, cx0 } = G, ag = agents[st.lens], pad = ph ? 3 : 6, iw = cw - 2 * pad;
+  // p axis
+  ctx.font = `10px ${MONO}`; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  for (const v of [0, 0.5, 1]) { ctx.fillStyle = FAINT; ctx.fillText(v === 0.5 ? '.5' : String(v), cx0 - 5, py(v)); ctx.fillStyle = 'rgba(190,200,255,.06)'; ctx.fillRect(cx0, py(v), cw * st.K, 1); }
+  if (!ph) { ctx.save(); ctx.translate(G.x0 + 6, (plotT + plotB) / 2); ctx.rotate(-Math.PI / 2); ctx.textAlign = 'center'; ctx.fillStyle = FAINT; ctx.fillText('P(win)', 0, 0); ctx.translate(-(cntT + cntB) / 2 + (plotT + plotB) / 2, 0); ctx.fillText('pulls', 0, 0); ctx.restore(); }
+  const pick = st.lens === 'ucb' ? argmax(Array.from({ length: st.K }, (_, k) => ucbIndex(ag, k)), () => 1) : st.lens === 'ts' ? argmax(ag.theta, () => 1) : st.lens === 'eps' ? argmax(Array.from({ length: st.K }, (_, k) => mean(ag, k)), () => 1) : -1;
+  const list = secret() ? ['you'] : KINDS.filter(k => agents[k]);
+  for (let k = 0; k < st.K; k++) {
+    const x = colX(k) + pad, c = colC(k), f = flash[k];
+    if (k === st.hover || k === st.pin) { rr(x - 2, top - 3, iw + 4, cntB - top + 6, 9); ctx.fillStyle = k === st.pin ? 'rgba(255,200,87,.07)' : 'rgba(255,255,255,.035)'; ctx.fill(); }
+    // machine head (flash: coral = win, teal = loss)
+    rr(x, top, iw, headH, 7); ctx.fillStyle = '#161a33'; ctx.fill();
+    if (f > 0.02) { if (flashR[k]) { ctx.globalAlpha = 0.6 * f; ctx.fillStyle = A; ctx.fill(); } else { ctx.globalAlpha = f; ctx.strokeStyle = B; ctx.lineWidth = 2; ctx.stroke(); } ctx.globalAlpha = 1; }
+    ctx.strokeStyle = st.you && k === st.hover ? INK : 'rgba(190,200,255,.18)'; ctx.lineWidth = 1; rr(x, top, iw, headH, 7); ctx.stroke();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = INK; ctx.font = `600 ${ph ? 11 : 13}px ${MONO}`;
+    ctx.fillText(ph || iw < 70 ? String(k + 1) : 'ARM ' + (k + 1), c, top + headH / 2 + 0.5);
+    rr(x, plotT, iw, plotB - plotT, 6); ctx.fillStyle = 'rgba(255,255,255,.022)'; ctx.fill();
+    drawBelief(ag, k, x, c, iw, k === pick);
+    // hidden truth
+    if (st.reveal) {
+      const y = py(world.p[k]); ctx.setLineDash([5, 4]); ctx.strokeStyle = DATA; ctx.globalAlpha = 0.8; ctx.lineWidth = 1.3;
+      ctx.beginPath(); ctx.moveTo(x + 2, y); ctx.lineTo(x + iw - 2, y); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+      ctx.font = `10px ${MONO}`; ctx.fillStyle = DATA; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
+      ctx.fillText((k === world.best ? '★' : '') + fx2(world.p[k]), x + iw - 3, y - 2);
+    } else { ctx.font = `600 ${ph ? 13 : 16}px ${SANS}`; ctx.fillStyle = FAINT; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText('?', c, plotT + 5); }
+    if (!ph || iw > 44) { ctx.font = `10px ${MONO}`; ctx.fillStyle = FAINT; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom'; ctx.fillText('n ' + ag.n[k], x + 4, plotB - 3); }
+    // pull counts: share of each strategy's pulls that went to this arm
+    const bw = Math.min(ph ? 6 : 11, (iw - 8) / list.length - 2), tot = list.length * (bw + 2) - 2;
+    ctx.fillStyle = 'rgba(190,200,255,.14)'; ctx.fillRect(x + 2, cntB, iw - 4, 1);
+    list.forEach((kind, i) => { const a = agents[kind], hh = Math.max(1, (a.t ? a.n[k] / a.t : 0) * (cntB - cntT)); ctx.globalAlpha = kind === st.lens ? 1 : 0.42; ctx.fillStyle = COL[kind]; ctx.fillRect(c - tot / 2 + i * (bw + 2), cntB - hh, bw, hh); });
+    ctx.globalAlpha = 1;
+  }
+}
+function drawBelief(ag, k, x, c, iw, isPick) {
+  const col = COL[ag.kind];
+  if (ag.kind === 'ts') { // Beta posterior drawn as a violin along the p axis
+    const a = 1 + ag.s[k], b = 1 + ag.n[k] - ag.s[k], m = a / (a + b), sd = Math.sqrt(a * b / ((a + b) ** 2 * (a + b + 1))), lb = logBetaFn(a, b);
+    const lo = Math.max(0, m - 5 * sd), hi = Math.min(1, m + 5 * sd), N = 44, ps = [], ds = [];
+    for (let i = 0; i <= N; i++) { const p = lo + (hi - lo) * i / N; ps.push(p); ds.push(ag.n[k] ? betaPdf(clamp(p, 1e-6, 1 - 1e-6), a, b, lb) : 1); }
+    const mx = Math.max(...ds) || 1, half = iw * 0.4;
+    ctx.beginPath(); ps.forEach((p, i) => ctx.lineTo(c - half * ds[i] / mx, py(p))); for (let i = N; i >= 0; i--) ctx.lineTo(c + half * ds[i] / mx, py(ps[i])); ctx.closePath();
+    ctx.fillStyle = col + '33'; ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 1.4; ctx.stroke();
+    const y = py(ag.theta[k]); ctx.strokeStyle = HL; ctx.lineWidth = isPick ? 2.5 : 1.6; ctx.beginPath(); ctx.moveTo(c - iw * 0.3, y); ctx.lineTo(c + iw * 0.3, y); ctx.stroke();
+    if (isPick) ring(c, y);
+  } else if (ag.kind === 'ucb') { // confidence bar: estimate ± bonus, amber cap = optimistic index
+    if (!ag.n[k]) { ctx.fillStyle = HL; ctx.font = `600 13px ${MONO}`; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText('∞', c, G.plotT + 2); return; }
+    const m = mean(ag, k), u = ucbIndex(ag, k), w = G.ph ? 7 : 12, yT = py(Math.min(1, u)), yB = py(Math.max(0, 2 * m - u));
+    rr(c - w / 2, yT, w, Math.max(2, yB - yT), w / 2); ctx.fillStyle = col + '38'; ctx.fill(); ctx.strokeStyle = col + 'aa'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(c, py(m), 3.5, 0, 6.29); ctx.fill();
+    ctx.strokeStyle = HL; ctx.lineWidth = isPick ? 3 : 2; ctx.beginPath(); ctx.moveTo(c - w, yT); ctx.lineTo(c + w, yT); ctx.stroke();
+    if (u > 1) { ctx.fillStyle = HL; ctx.beginPath(); ctx.moveTo(c, yT - 7); ctx.lineTo(c - 4, yT - 1); ctx.lineTo(c + 4, yT - 1); ctx.fill(); }
+    if (isPick) ring(c, yT);
+  } else { // ε-greedy and you: just the running average (no notion of uncertainty)
+    if (!ag.n[k]) { if (ag.kind === 'you') { ctx.fillStyle = DIM; ctx.font = `11px ${SANS}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('tap', c, (G.plotT + G.plotB) / 2); } return; }
+    const y = py(mean(ag, k)); ctx.fillStyle = col; ctx.beginPath(); ctx.arc(c, y, 4.5, 0, 6.29); ctx.fill();
+    if (ag.kind === 'you') { ctx.font = `10px ${MONO}`; ctx.fillStyle = INK; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText(ag.s[k] + '/' + ag.n[k], c, y + 7); }
+    if (isPick) ring(c, y);
+  }
+}
+function ring(x, y) { ctx.strokeStyle = HL; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(x, y, 8, 0, 6.29); ctx.stroke(); }
+function drawChart() {
+  const { chT, chB, chL, chR, x0, w, ph } = G, hz = horizon(), t = agents.ts.t;
+  rr(x0, chT - 6, w, chB - chT + 6, 10); ctx.fillStyle = 'rgba(12,14,30,.55)'; ctx.fill(); ctx.strokeStyle = 'rgba(190,200,255,.10)'; ctx.lineWidth = 1; ctx.stroke();
+  const cT = chT + 22, cB = chB - 20;
+  const X = st.you || st.done ? hz : Math.min(hz, Math.max(60, t * 1.12)); st.xmax += (X - st.xmax) * 0.25;
+  const lx = Math.log1p(st.xmax), xm = tt => chL + (chR - chL) * (st.logx ? Math.log1p(tt) / lx : tt / st.xmax), inv = px => st.logx ? Math.expm1(px * lx) : px * st.xmax;
+  // Lai–Robbins guide: slope C per unit of ln t, drawn through Thompson's current point (C·ln T is asymptotic, so only its slope is comparable)
+  const C = lrConst(world.p), ts = agents.ts, lr = st.bound && ts.t >= 20 ? tt => ts.regret + C * Math.log(tt / ts.t) : null;
+  let top = 4; for (const k in agents) top = Math.max(top, agents[k].regret); if (lr) top = Math.max(top, lr(st.xmax));
+  st.ymax = Math.max(top * 1.15, st.ymax + (top * 1.15 - st.ymax) * 0.2); const ym = v => cB - (cB - cT) * v / st.ymax;
+  // axes + ticks
+  ctx.font = `10px ${MONO}`; ctx.fillStyle = FAINT; ctx.textBaseline = 'middle'; ctx.textAlign = 'right';
+  const yStep = niceStep(st.ymax / 3);
+  for (let v = 0; v <= st.ymax; v += yStep) { ctx.fillStyle = 'rgba(190,200,255,.06)'; ctx.fillRect(chL, ym(v), chR - chL, 1); ctx.fillStyle = FAINT; ctx.fillText(String(Math.round(v)), chL - 5, ym(v)); }
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  const ticks = st.logx ? [1, 10, 100, 1000, 10000].filter(v => v <= st.xmax * 1.01) : [0, 0.5, 1].map(f => Math.floor(st.xmax * f / 10) * 10);
+  ticks.forEach((v, i) => { ctx.fillStyle = 'rgba(190,200,255,.12)'; ctx.fillRect(xm(v), cB, 1, 4); ctx.fillStyle = FAINT; ctx.textAlign = xm(v) > chR - 16 ? 'right' : 'center'; ctx.fillText(String(v), xm(v), cB + 5); });
+  ctx.font = `600 ${ph ? 11 : 12}px ${SANS}`; ctx.textAlign = 'left'; ctx.fillStyle = DIM;
+  ctx.fillText(ph ? 'Regret so far' : 'Cumulative regret — reward lost vs always playing the best machine', chL, chT - 1);
+  ctx.font = `10px ${SANS}`; ctx.textAlign = 'left'; ctx.fillStyle = FAINT; ctx.fillText(ph ? (st.logx ? 'log pulls' : 'pulls') : st.logx ? 'pulls, log scale (click)' : 'pulls (click: log time)', chR + 8, cB + 5);
+  // Lai–Robbins reference and world-change marker
+  if (lr) { const pts = []; for (let px = 0; px <= 1.0001; px += 0.01) { const tt = Math.max(1, inv(px)), v = lr(tt); if (v >= 0) pts.push([xm(tt), ym(v)]); } ctx.setLineDash([6, 5]); if (pts.length > 1) glowLine(pts, GR, 1.5); ctx.setLineDash([]); }
+  if (st.event && st.event.t <= st.xmax) { const ex = xm(st.event.t); ctx.fillStyle = HL + '99'; ctx.fillRect(ex, cT, 1, cB - cT); ctx.font = `11px ${SANS}`; ctx.fillStyle = HL; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText('best machine goes cold', ex + 5, cT); }
+  // regret curves (sampled per 2 px, exact end point)
+  const ends = [];
+  for (const k of KINDS) {
+    const ag = agents[k]; if (!ag) continue; const pts = [[xm(0), ym(0)]];
+    if (k === 'you' && secret()) { ends.push({ k, y: cB, ag, hidden: true }); continue; } // your regret would leak the hidden odds
+    for (let px = 0; px <= chR - chL; px += 2) { const tt = Math.round(inv(px / (chR - chL))); if (tt >= ag.t) break; if (tt > 0) pts.push([chL + px, ym(ag.curve[tt])]); }
+    pts.push([xm(ag.t), ym(ag.regret)]); glowLine(pts, COL[k], k === st.lens ? 2.6 : 1.7);
+    ends.push({ k, x: xm(ag.t), y: ym(ag.regret), ag });
+  }
+  if (lr) ends.push({ k: 'lr', y: ym(lr(st.xmax)) });
+  // de-overlap end labels: push down from the top, then back up from the bottom so none leave the chart
+  ends.sort((a, b) => a.y - b.y); ends.forEach((e, i) => { e.y = Math.max(e.y, cT + 4, i ? ends[i - 1].y + 14 : 0); });
+  for (let i = ends.length - 1; i >= 0; i--) ends[i].y = Math.min(ends[i].y, i < ends.length - 1 ? ends[i + 1].y - 14 : cB - 8);
+  ctx.font = `${ph ? 10 : 11}px ${MONO}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  for (const e of ends) {
+    const lx0 = chR + 8;
+    if (e.k === 'lr') { ctx.fillStyle = GR; ctx.fillText(ph ? 'bound' : 'Lai–Robbins slope', lx0, e.y); continue; }
+    const pct = e.ag.t ? Math.round(100 * e.ag.onBest / e.ag.t) : 0, nm = e.k === 'eps' && st.eps === 0 ? 'Greedy' : CH[e.k];
+    ctx.fillStyle = COL[e.k]; ctx.globalAlpha = e.k === st.lens || st.you ? 1 : 0.8;
+    ctx.fillText(e.hidden ? (ph ? 'You ?' : `${nm.padEnd(8)}      ?    ?`) : ph ? `${SHORT[e.k]} ${e.ag.regret.toFixed(0)}` : `${nm.padEnd(8)} ${e.ag.regret.toFixed(1).padStart(6)} ${String(pct).padStart(3)}%`, lx0, e.y); ctx.globalAlpha = 1;
+  }
+  if (secret()) { ctx.font = `${ph ? 10 : 11}px ${SANS}`; ctx.fillStyle = DIM; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText(ph ? 'Your regret: shown at the end' : 'Your regret stays hidden until the last pull — it would give away the odds', chL + 6, cT + 2); }
+  if (!ph) { ctx.fillStyle = FAINT; ctx.font = `10px ${MONO}`; ctx.textBaseline = 'top'; ctx.fillText(''.padEnd(8) + ' ' + 'regret'.padStart(6) + ' ' + 'best'.padStart(4), chR + 8, chT - 1); }
+  if (st.done) {
+    const msg = st.you ? (agents.you.regret <= agents.ts.regret ? `You beat Thompson (${agents.you.regret.toFixed(1)} vs ${agents.ts.regret.toFixed(1)}) — tap to play again` : `Thompson wins (${agents.ts.regret.toFixed(1)} vs your ${agents.you.regret.toFixed(1)}) — tap a machine to play again`) : 'Race over — next race in a moment';
+    ctx.font = `600 12px ${SANS}`; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillStyle = HL; ctx.fillText(msg, chL + 6, cT + (st.event ? 16 : 2));
+  }
+}
+function niceStep(v) { const p = 10 ** Math.floor(Math.log10(Math.max(v, 1e-9))), m = v / p; return (m < 1.5 ? 1 : m < 3.5 ? 2 : m < 7.5 ? 5 : 10) * p; }
+function drawAnnot() { // tour highlight for the current step
+  const ag = agents[st.lens], K = st.K; if (!st.annot || !ag || !ag.t) return;
+  const side = k => k < K / 2 ? 1 : -1;
+  if (st.annot === 'stuck' && st.lens === 'eps') { const k = world.best; tag(colC(k), py(world.p[k]), [`Best machine: pulled only ${ag.n[k]}×`, [`${ag.s[k]} win${ag.s[k] === 1 ? '' : 's'} so far — greedy gave up on it`, DIM]], HL, side(k)); }
+  if (st.annot === 'blind' && st.lens === 'eps') { let k = 0; for (let i = 1; i < K; i++) if (world.p[i] < world.p[k]) k = i; tag(colC(k), py(mean(ag, k)), [`Worst machine, pulled ${ag.n[k]}×`, [`ε keeps paying for it forever`, DIM]], HL, -side(k)); }
+  if (st.annot === 'ucb' && st.lens === 'ucb' && ag.t >= K) { const u = Array.from({ length: K }, (_, i) => ucbIndex(ag, i)), k = argmax(u, () => 1); tag(colC(k), py(Math.min(1, u[k])), ['Highest optimistic top', ['→ this machine is pulled next', DIM]], HL, side(k)); }
+  if (st.annot === 'ts' && st.lens === 'ts') {
+    const k = argmax(ag.theta, () => 1); let wk = 0; for (let i = 1; i < K; i++) if (ag.n[i] < ag.n[wk]) wk = i;
+    tag(colC(k), py(ag.theta[k]), ['Highest random guess', ['→ pulled this time', DIM]], HL, side(k));
+    if (wk !== k) tag(colC(wk) + G.cw * 0.2, py((1 + ag.s[wk]) / (2 + ag.n[wk])), ['Wide curve = unsure', ['so it can still guess high', DIM]], COL.ts, -side(k));
+  }
+}
+function drawPin() {
+  const k = st.pin; if (k < 0 || k >= st.K) return;
+  const L = [[`Machine ${k + 1}` + (st.reveal ? ` · true p ${fx2(world.p[k])}` : ''), INK]];
+  for (const kind of KINDS) { const a = agents[kind]; if (!a) continue; const n = a.n[k], m = mean(a, k);
+    L.push([kind === 'ts' ? `Thompson  Beta(${1 + a.s[k]}, ${1 + n - a.s[k]})` : kind === 'ucb' ? `UCB  n ${n} · μ̂ ${fx2(m)} · top ${n ? fx2(ucbIndex(a, k)) : '∞'}` : `${NAME[kind]}  n ${n} · μ̂ ${fx2(m)}`, COL[kind]]); }
+  tag(colC(k), G.plotT + 14, L, HL, k < st.K / 2 ? 1 : -1);
+}
+function drawCoins() { ctx.fillStyle = A; for (const c of coins) { ctx.globalAlpha = c.life; ctx.beginPath(); ctx.arc(c.x, c.y, 1.5 + 2.5 * c.life, 0, 6.29); ctx.fill(); } ctx.globalAlpha = 1; }
+
+// ---- frame loop: pulls on an accelerating clock (slow enough to watch at first, fast enough to see log regret) ----
+function frame(dt, realDt) {
+  st.pf = 0;
+  if (!st.you && !st.done && dt > 0) { st.acc += dt * 14 * (1 + agents.ts.t / 30); let n = 0; while (st.acc >= 1 && n < 500 && !st.done) { st.acc -= 1; stepAll(); n++; } if (n >= 500) st.acc = 0; }
+  if (st.done && !st.you && dt > 0 && (st.hold += realDt) > 3.5) { if (st.annot !== 'stuck') st.seed++; newRace(); }
+  for (let k = 0; k < 8; k++) flash[k] = Math.max(0, flash[k] - realDt * 2.5);
+  for (let i = coins.length - 1; i >= 0; i--) { const c = coins[i]; c.y += c.vy * realDt; c.vy += 90 * realDt; if ((c.life -= realDt * 2.6) <= 0) coins.splice(i, 1); }
+  draw(); updateText();
+}
+let textTick = 0;
+function updateText() {
+  const ag = agents[st.lens], hz = horizon();
+  const hide = secret();
+  setText('sT', String(ag.t)); setText('sR', hide ? '?' : ag.regret.toFixed(1)); setText('sB', hide ? '?' : (ag.t ? Math.round(100 * ag.onBest / ag.t) : 0) + '%');
+  if (textTick++ % 6) return;
+  if (hide) { for (const id of ['mR', 'mU', 'mTs']) setText(id, 'hidden until your last pull'); for (const id of ['mTk', 'mA', 'mB']) setText(id, '?'); }
+  const gaps = world.p.map(p => world.pstar - p), terms = gaps.map((g, k) => [g * ag.n[k], g, ag.n[k]]).filter(x => x[0] > 0).sort((a, b) => b[0] - a[0]);
+  const sum = terms.reduce((a, x) => a + x[0], 0);
+  if (!hide) setText('mR', Math.abs(sum - ag.regret) > 0.05 ? `${ag.regret.toFixed(1)} (odds changed mid-race: each pull is charged the gap at that moment)` : (terms.slice(0, 3).map(([, g, n]) => `${fx2(g)}·${n}`).join(' + ') || '0') + (terms.length > 3 ? ' + …' : '') + ` = ${ag.regret.toFixed(1)}`);
+  const mg = gaps.reduce((s, g) => s + g, 0) / st.K;
+  setText('mE', st.eps.toFixed(2)); setText('mES', `${st.eps.toFixed(2)} × ${fx2(mg)} = ${(st.eps * mg).toFixed(3)} per pull → ${(st.eps * mg * hz).toFixed(0)} over ${hz}`);
+  const C = lrConst(world.p); setText('mC', C.toFixed(1)); setText('mCT', `${C.toFixed(1)} × ln ${hz} = ${(C * Math.log(hz)).toFixed(1)}`);
+  if (hide) return;
+  const u = agents.ucb, ui = Array.from({ length: st.K }, (_, k) => ucbIndex(u, k)), uk = argmax(ui, () => 1);
+  setText('mU', u.t >= st.K ? `arm ${uk + 1}: ${fx2(mean(u, uk))} + ${fx2(ui[uk] - mean(u, uk))} = ${fx2(ui[uk])}  (n = ${u.n[uk]}, ln t = ${Math.log(u.t).toFixed(1)})` : 'trying every arm once…');
+  const s = agents.ts, bk = world.best, a = 1 + s.s[bk], b = 1 + s.n[bk] - s.s[bk];
+  setText('mA', String(a)); setText('mB', String(b)); setText('mTk', String(bk + 1));
+  setText('mTs', `mean ${fx2(a / (a + b))} ± ${fx2(Math.sqrt(a * b / ((a + b) ** 2 * (a + b + 1))))}`);
+}
+const TILE = { eps: 'ε', ucb: 'UCB', ts: 'TS', you: 'YOU' };
+function syncStatLabel() {
+  for (const [id, l] of [['sR', 'REGRET · '], ['sB', 'ON BEST · ']]) { const k = $('#' + id).previousElementSibling; k.style.textTransform = 'none'; k.textContent = l + TILE[st.lens]; $('#' + id).style.color = COL[st.lens]; }
+  $('#sT').previousElementSibling.textContent = 'Pulls of ' + horizon();
+}
+
+// ---- lens / setup ----
+function setLens(v) {
+  if (v === st.lens) return;
+  const was = st.you; st.lens = v; st.you = v === 'you'; st.pin = -1; st.annot = null;
+  if (st.you) { st.reveal = false; ctl.reveal.set(false); st.event = null; newArms(); } else if (was) newRace();
+  cap(LENS_CAP[v].replace('1–6', '1–' + st.K)); syncStatLabel();
+}
+const cap = html => { $('#caption').innerHTML = html; };
+const LENS_CAP = { eps: '<b>ε-greedy’s view:</b> dot = running average. It pulls the highest dot — or, with probability ε, a random machine.',
+  ucb: '<b>UCB’s view:</b> bar = estimate ± uncertainty bonus. It pulls the machine with the highest amber top.',
+  ts: '<b>Thompson’s view:</b> violin = Beta belief, amber = this pull’s random guess. The highest guess is pulled.',
+  you: '<b>Your turn:</b> tap machines (keys 1–6), 50 pulls. Bots pull alongside you — lowest regret wins.' };
+function setup(o) {
+  o = Object.assign({ lens: 'ts', p: P1, seed: 1, T: 2000, eps: 0.1, reveal: true, logx: false, bound: false, annot: null, event: null, pre: 0 }, o);
+  Object.assign(st, { lens: o.lens, you: o.lens === 'you', K: o.p.length, p: o.p.slice(), seed: o.seed, T: o.T, eps: o.eps, reveal: o.reveal, logx: o.logx, bound: o.bound, annot: o.annot, pin: -1 });
+  st.event = o.event ? { t: o.event.t, k: o.p.indexOf(Math.max(...o.p)), p: o.event.p } : null;
+  ctl.lens.set(st.lens); ctl.eps.set(st.eps); ctl.K.set(st.K); ctl.T.set(st.T); ctl.reveal.set(st.reveal); ctl.axis.set(st.logx); ctl.bound.set(st.bound);
+  newRace();
+  const pre = st.you ? 0 : REDUCED ? Math.max(o.pre, 400) : o.pre; for (let i = 0; i < pre; i++) stepAll();
+  syncStatLabel(); setPlaying(!REDUCED);
+}
+
+// ---- lesson content ----
+const STEPS = [
+  { t: 'The dilemma', d: 'Six slot machines each pay out with a hidden probability. Every pull spent on a worse machine is <b>regret</b>. Do you exploit the best-looking one, or explore to learn more?',
+    cap: '<b>Three strategies, same six machines.</b> Dashed = odds they can’t see. Early leader ≠ winner.', go() { setup({}); } },
+  { t: 'Pure greedy gets stuck', d: 'With ε = 0, always pull the machine with the best average so far. One unlucky loss on the best machine makes its average 0 — and greedy never looks at it again.',
+    cap: '<b>Greedy (ε = 0) locked onto a worse machine</b> — it never re-checks the best, so regret climbs straight.', go() { setup({ lens: 'eps', eps: 0, seed: STUCK, annot: 'stuck', pre: 150 }); } },
+  { t: 'ε-greedy explores blindly', d: 'With ε = 0.1, one pull in ten goes to a random machine. That rescues it from getting stuck — but it keeps paying for machines it already knows are bad, forever.',
+    cap: '<b>ε-greedy found the best machine</b>, yet 1 pull in 10 stays random — regret never stops climbing.', go() { setup({ lens: 'eps', annot: 'blind', pre: 1000 }); } },
+  { t: 'UCB: optimism under uncertainty', d: 'UCB gives each machine a bonus that is large when it has few pulls: the bar reaches up to the best the machine <i>could plausibly</i> be. Always pull the highest top. Pulls shrink bars, so untested machines get checked, then dropped.',
+    cap: '<b>Pull the highest amber top.</b> Few pulls → tall bar → UCB checks it. Pulls shrink the bar.', go() { setup({ lens: 'ucb', annot: 'ucb', pre: 40 }); } },
+  { t: 'Thompson: sample your beliefs', d: 'Each violin is a <b>Beta posterior</b>: what Thompson believes about a machine given its wins (α) and losses (β). Every pull it draws one guess per machine (amber) and plays the highest. Wide = unsure = sometimes guesses high.',
+    cap: '<b>Violins = beliefs, amber = random guesses.</b> The highest guess is pulled. Watch violins shrink.', go() { setup({ annot: 'ts', pre: 50 }); } },
+  { t: 'Regret grows like log t', d: 'On a log time axis UCB and Thompson are straight lines: each 10× more pulls costs only a fixed extra amount. ε-greedy bends upward — linear regret. The dashed violet guide, drawn through Thompson’s curve, has the Lai–Robbins slope — the lowest rate any strategy can sustain in the long run.',
+    cap: '<b>Log time:</b> good strategies are straight lines — 10× pulls, fixed extra cost. Violet guide = best possible slope.', go() { setup({ T: 5000, logx: true, bound: true, pre: 300 }); } },
+  { t: 'When it breaks: the world changes', d: 'These methods assume the odds never change. At pull 600 the best machine goes cold. Hundreds of old wins keep it looking good, so regret climbs again until the evidence catches up. Real systems use sliding windows or discounting.',
+    cap: '<b>Pull 600: the best machine drops to 0.30.</b> Old wins keep it looking good. <b>Drag a dashed line.</b>', go() { setup({ event: { t: 600, p: 0.3 }, pre: 480 }); } },
+];
+const TRIES = [
+  { q: 'You vs the bots: 50 pulls on hidden machines. Predict — will you end with less regret than Thompson?', run() { setup({ lens: 'you', reveal: false, p: randomRates(6, rng32(st.armSeed++)) }); cap(LENS_CAP.you); },
+    why: 'Most people either lock in after a couple of lucky wins (that is greedy) or keep “just checking” bad machines (that is ε-greedy). Thompson explores exactly as much as its uncertainty justifies, and its lead grows with the horizon. Hit <b>Reveal</b> to see what you were chasing.' },
+  { q: 'An easy race (0.9 vs 0.1) costs Thompson about 3 regret over 2000 pulls. Predict: a close race, 0.55 vs 0.45, where each mistake is 8× cheaper — more or less regret?', run() { setup({ p: [0.45, 0.55], bound: true }); cap('<b>Close race: 0.45 vs 0.55.</b> Compare Thompson’s final regret with the easy race’s ≈3.'); },
+    why: '<b>More</b> — about 4× (≈13 vs ≈3, averaged over seeds). Telling 0.55 from 0.45 takes on the order of 1/Δ² pulls, so the cheap mistakes pile up: regret scales like ln T / Δ. Difficulty is set by the gap between machines, not by how good the best one is.' },
+  { q: 'Give ε-greedy more curiosity: ε = 0.3. Predict — does exploring more help it catch UCB and Thompson?', run() { setup({ lens: 'eps', eps: 0.3 }); cap('<b>ε = 0.3:</b> watch the slope of ε-greedy’s regret line against UCB and Thompson.'); },
+    why: 'It gets <b>worse</b>. Blind exploration costs ε × (average gap) on every pull, forever — tripling ε triples the slope. Exploration only pays when it is aimed (UCB) or fades as you learn (Thompson). A decaying ε ∝ 1/t can reach log regret, but only with a well-tuned schedule.' },
+];
+
+// ---- panes ----
+$('#p-math').innerHTML = `
+<h3>Regret — the score</h3>
+<div class="eq">R<sub>T</sub> = Σ<sub>t</sub> (p* − p<sub>a<sub>t</sub></sub>) = Σ<sub>k</sub> <span class="c-g">Δ<sub>k</sub></span>·n<sub>k</sub></div>
+<div class="eq">now: <span class="live" id="mR">–</span></div>
+<p><span style="color:var(--grad)">Δ<sub>k</sub> = p* − p<sub>k</sub></span> is how much worse machine k is. Regret counts mistakes weighted by how bad they were (pseudo-regret: expected loss, not luck).</p>
+<h3>ε-greedy</h3>
+<div class="eq">a<sub>t</sub> = argmax<sub>k</sub> μ̂<sub>k</sub> (prob 1−ε) · random arm (prob ε = <span class="live" id="mE">–</span>)</div>
+<div class="eq">blind-exploration cost ≈ ε · mean Δ = <span class="live" id="mES">–</span></div>
+<h3>UCB1-Tuned</h3>
+<div class="eq"><span class="c-hl">U<sub>k</sub></span> = μ̂<sub>k</sub> + √( ln t / n<sub>k</sub> · min(¼, V<sub>k</sub>) ),&nbsp; V<sub>k</sub> = μ̂<sub>k</sub>(1−μ̂<sub>k</sub>) + √(2 ln t / n<sub>k</sub>)</div>
+<div class="eq">top: <span class="live" id="mU">–</span></div>
+<h3>Thompson sampling</h3>
+<div class="eq"><span class="c-hl">θ<sub>k</sub></span> ~ Beta(<span class="c-a">α<sub>k</sub></span>, <span class="c-b">β<sub>k</sub></span>),&nbsp; <span class="c-a">α = 1 + wins</span>, <span class="c-b">β = 1 + losses</span>; pull argmax θ</div>
+<div class="eq">arm <span class="live" id="mTk">–</span>: Beta(<span class="c-a" id="mA">–</span>, <span class="c-b" id="mB">–</span>) → <span class="live" id="mTs">–</span></div>
+<h3>The floor (Lai–Robbins, 1985)</h3>
+<div class="eq">R<sub>T</sub> ≳ <span class="c-g">Σ<sub>k</sub> Δ<sub>k</sub> / KL(p<sub>k</sub> ‖ p*)</span> · ln T,&nbsp; C = <span class="live" id="mC">–</span></div>
+<div class="eq">C · ln T = <span class="live" id="mCT">–</span></div>
+<div class="note"><b>Asymptotic, not a wall:</b> over short runs a lucky strategy can sit under C·ln T. What no consistent strategy can beat is the <i>slope</i> on a log-time axis — which is why the violet guide on the chart has slope C and is drawn through Thompson’s curve, not from zero.</div>
+<div class="note"><b>Exploration is not waste:</b> UCB and Thompson explore less and less as evidence piles up; ε-greedy explores at the same rate forever. That, not “how much” exploring, is what separates log from linear regret.</div>`;
+$('.lede').innerHTML = 'Every pull is a trade-off: play the machine that <b>looks</b> best, or test one you are <b>unsure</b> about. Smart strategies explore less and less — so their regret grows only like log t.';
+$('.wild').innerHTML = `<li><b>Adaptive A/B tests:</b> instead of a fixed 50/50 split, Thompson sampling shifts traffic toward the winning variant as evidence arrives (ads, pricing, landing pages).</li>
+<li><b>Recommenders &amp; feeds:</b> contextual bandits such as LinUCB (Yahoo! front page) pick which article to show, using the user as context.</li>
+<li><b>Game-tree search:</b> AlphaGo-style MCTS chooses which move to explore with a UCB-style bonus (PUCT) — optimism under uncertainty again.</li>`;
+stat('sT', 'Pulls'); stat('sR', 'Regret'); stat('sB', 'On best arm');
+const ctl = {}, pc = $('#p-play');
+pc.innerHTML = '<h3>Whose beliefs to draw</h3>';
+ctl.lens = seg(pc, KINDS.map(k => [k, k === 'you' ? 'You play' : NAME[k]]), st.lens, setLens);
+pc.insertAdjacentHTML('beforeend', '<h3>The race</h3>');
+ctl.eps = slider(pc, 'cE', 'ε — share of ε-greedy’s pulls that are random', 0, 0.5, 0.01, st.eps, v => v.toFixed(2), v => { st.eps = v; });
+ctl.K = slider(pc, 'cK', 'Number of machines (arms)', 2, 8, 1, st.K, v => String(v), v => { if (v !== st.K && world) { st.K = v; newArms(); } });
+ctl.T = slider(pc, 'cT', 'Horizon — pulls per race', 200, 5000, 100, st.T, v => String(v), v => { if (v !== st.T && world) { st.T = v; if (!st.you) newRace(); syncStatLabel(); } });
+pc.insertAdjacentHTML('beforeend', '<h3>Speed</h3>');
+ctl.speed = seg(pc, SPEEDS.map(s => [s, s + '×']), speed, v => { speed = v; $('#bSpeed').textContent = v + '×'; });
+pc.insertAdjacentHTML('beforeend', '<h3>View</h3>');
+ctl.reveal = seg(pc, [[true, 'Odds revealed'], [false, 'Odds hidden']], st.reveal, v => { st.reveal = v; $('#bReveal').classList.toggle('on', v); });
+ctl.axis = seg(pc, [[false, 'Linear time'], [true, 'Log time']], st.logx, v => { st.logx = v; });
+ctl.bound = seg(pc, [[false, 'No bound'], [true, 'Lai–Robbins slope']], st.bound, v => { st.bound = v; });
+pc.insertAdjacentHTML('beforeend', '<div class="row" style="display:flex;gap:8px;margin-top:6px"><button class="btn primary" id="cNew">New machines</button><button class="btn" id="cRestart">Restart race</button></div>');
+$('#cNew').onclick = () => { newArms(); setPlaying(!st.you); };
+$('#cRestart').onclick = () => $('#bReset').click();
+
+// ---- input ----
+const bSpeedCycle = $('#bSpeed').onclick; $('#bSpeed').onclick = () => { bSpeedCycle(); ctl.speed.set(speed); };
+$('#bStep').onclick = () => { setPlaying(false); if (st.done && !st.you) newRace(); if (!st.you) stepAll(); };
+$('#bReset').onclick = () => { newRace(); };
+$('#bReveal').onclick = () => ctl.reveal.set(!st.reveal);
+function hit(x, y) {
+  for (const p of pills) if (x >= p.x && x <= p.x + p.w && y >= p.y && y <= p.y + p.h) return { pill: p.kind };
+  if (y >= G.top && y <= G.cntB + 4 && x >= G.cx0 && x < G.cx0 + G.cw * st.K) { const k = Math.floor((x - G.cx0) / G.cw); return { arm: k, line: st.reveal && Math.abs(y - py(world.p[k])) < (G.ph ? 16 : 11) }; }
+  if (y >= G.chT - 6 && y <= G.chB && x >= G.x0) return { chart: true };
+  return {};
+}
+const xy = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+cv.addEventListener('pointerdown', e => {
+  const [x, y] = xy(e), h = hit(x, y);
+  if (h.pill) ctl.lens.set(h.pill);
+  else if (h.arm != null) { if (h.line) { drag = h.arm; cv.setPointerCapture(e.pointerId); } else if (st.you) youPull(h.arm); else st.pin = st.pin === h.arm ? -1 : h.arm; }
+  else if (h.chart) ctl.axis.set(!st.logx);
+  else st.pin = -1;
+});
+cv.addEventListener('pointermove', e => {
+  const [x, y] = xy(e);
+  if (drag >= 0) { const p = Math.round(clamp((G.plotB - y) / (G.plotB - G.plotT), 0.02, 0.98) * 100) / 100; world.p[drag] = st.p[drag] = p; retarget(world); return; }
+  const h = hit(x, y); st.hover = h.arm ?? -1; cv.style.cursor = h.line ? 'ns-resize' : h.pill || h.arm != null || h.chart ? 'pointer' : 'default';
+});
+const endDrag = () => { drag = -1; }; cv.addEventListener('pointerup', endDrag); cv.addEventListener('pointercancel', endDrag);
+cv.addEventListener('pointerleave', () => { if (drag < 0) st.hover = -1; });
+addEventListener('keydown', e => {
+  if (e.target.matches('input,select,textarea')) return;
+  const d = +e.key;
+  if (d >= 1 && d <= st.K) { if (st.you) youPull(d - 1); else st.pin = st.pin === d - 1 ? -1 : d - 1; }
+  else if (e.key === 'v' || e.key === 'V') ctl.reveal.set(!st.reveal);
+  else if (e.key === 'n' || e.key === 'N') $('#cNew').click();
 });
 
-resize();
-reroll();
-requestAnimationFrame(loop);
+G = geo(); renderSteps(); renderTries(); goStep(0); requestAnimationFrame(loop);
+window.__demo = { goStep, setPlaying, setLens: v => ctl.lens.set(v), youPull, TRIES, state: () => ({ t: agents.ts.t, lens: st.lens, regret: Object.fromEntries(Object.entries(agents).map(([k, a]) => [k, +a.regret.toFixed(2)])), p: world.p.slice(), done: st.done }) };
 </script>
 </body>
+</html>

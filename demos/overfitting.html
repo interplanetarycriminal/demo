@@ -1,337 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Overfitting — Bias &amp; Variance, Felt</title>
+<title>Bias & Variance — ML Field Notes</title>
 <style>
-  html,body{margin:0;height:100%;background:#06060c;overflow:hidden}
-  canvas{touch-action:none;display:block;position:fixed;inset:0}
-  #ui{position:fixed;top:14px;left:14px;z-index:10;background:rgba(8,8,18,.64);
-      border:1px solid rgba(255,140,80,.28);border-radius:8px;padding:12px 14px;
-      font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#ffd7a8;
-      max-width:350px;backdrop-filter:blur(6px);max-height:52vh;overflow:auto}
-  #ui h1{margin:0 0 6px;font-size:14px;letter-spacing:.14em;color:#ffae5c;text-transform:uppercase}
-  #ui p{margin:0 0 8px;color:#b79a80}
-  #ui .k{color:#7dffb0}
-  #ui .row{color:#ffe9d2}
-  #ui a{color:#7dffb0;text-decoration:none}
-  #ui a:hover{text-decoration:underline}
-@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
+/* ===== ML Field Notes design system (shared by every ML/AI demo) =====
+   Colour means the same thing in every demo:
+   --a coral = class A / "positive"     --b teal = class B / "negative"
+   --hl amber = the model's current parameters / guess / selection
+   --grad violet = gradients, updates, errors flowing back
+   --accent = this demo's signature colour (set per demo) */
+:root{
+  --bg:#0c0e1a; --bg2:#10132a; --panel:#13162c; --panel2:#181c38; --line:rgba(190,200,255,.10); --line2:rgba(190,200,255,.18);
+  --ink:#e9ecfa; --dim:#a2a9c8; --faint:#6b7396;
+  --a:#ff7a6b; --b:#3fd0c0; --hl:#ffc857; --grad:#a78bfa; --good:#7ee787; --bad:#ff6b8a;
+  --accent:#6ea8ff;
+  --r:12px; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.5 var(--sans)}
+body{overflow:hidden}
+a{color:var(--accent)}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app{display:grid;grid-template-columns:minmax(0,1fr) 380px;grid-template-rows:48px minmax(0,1fr);height:100vh;height:100dvh}
+.top{grid-column:1/-1;display:flex;align-items:center;gap:12px;padding:0 14px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#11142a,#0d1020)}
+.top a.back{color:var(--dim);text-decoration:none;font-size:13px;white-space:nowrap}
+.top a.back:hover{color:var(--ink)}
+.top .chip{font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 45%,transparent);border-radius:99px;padding:5px 8px}
+.top h1{margin:0;font-size:15px;font-weight:650;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top .sp{flex:1}
+.top .keys{font:11px var(--mono);color:var(--faint);white-space:nowrap}
+.stage{position:relative;min-width:0;min-height:0;background:radial-gradient(ellipse at 50% 40%,#151a3a 0%,var(--bg) 70%)}
+.stage::before{content:"";position:absolute;inset:0;background-image:radial-gradient(rgba(190,200,255,.07) 1px,transparent 1.3px);background-size:24px 24px;pointer-events:none}
+.stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.caption{position:absolute;left:16px;right:16px;top:14px;max-width:640px;padding:10px 14px;border-radius:10px;background:rgba(12,14,30,.78);border:1px solid var(--line2);backdrop-filter:blur(6px);font-size:14px;line-height:1.45;pointer-events:none;transition:opacity .3s}
+.caption b{color:var(--accent)}
+.caption:empty{opacity:0}
+.dock{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;gap:6px;padding:6px;border-radius:99px;background:rgba(12,14,30,.82);border:1px solid var(--line2);backdrop-filter:blur(6px)}
+.dock button{border:0;background:transparent;border-radius:99px;min-width:36px;height:34px;padding:0 12px;cursor:pointer;color:var(--ink);white-space:nowrap}
+.dock button:hover{background:rgba(255,255,255,.08)}
+.dock button.on{background:color-mix(in srgb,var(--accent) 22%,transparent);color:var(--accent)}
+.lesson{border-left:1px solid var(--line);background:var(--panel);overflow:auto;min-height:0;display:flex;flex-direction:column}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border-bottom:1px solid var(--line)}
+.stat{background:var(--panel);padding:10px 12px}
+.stat .k{font:600 10px/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.stat .v{font:600 18px/1.3 var(--mono);font-variant-numeric:tabular-nums;margin-top:3px}
+.tabs{display:flex;gap:2px;padding:10px 12px 0;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);z-index:2}
+.tabs button{border:0;background:none;padding:9px 12px;color:var(--dim);cursor:pointer;border-bottom:2px solid transparent;font-weight:600}
+.tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent)}
+.pane{padding:14px 16px 22px;display:none}
+.pane.on{display:block}
+.pane h3{margin:14px 0 6px;font-size:13px;letter-spacing:.02em}
+.pane p{margin:0 0 10px;color:var(--dim)}
+.pane p b,.pane li b{color:var(--ink)}
+.lede{font-size:15px;color:var(--ink)!important}
+.steps{list-style:none;margin:10px 0 0;padding:0;counter-reset:s}
+.steps li{counter-increment:s;border:1px solid var(--line);border-radius:10px;margin:0 0 8px;padding:10px 12px 10px 40px;position:relative;cursor:pointer;color:var(--dim);background:var(--panel2)}
+.steps li::before{content:counter(s);position:absolute;left:12px;top:10px;width:18px;height:18px;border-radius:99px;display:grid;place-items:center;font:600 11px var(--mono);background:rgba(255,255,255,.07);color:var(--dim)}
+.steps li.on{border-color:color-mix(in srgb,var(--accent) 60%,transparent);color:var(--ink)}
+.steps li.on::before{background:var(--accent);color:#141414}
+.steps li.done::before{content:"✓";background:rgba(126,231,135,.2);color:var(--good)}
+.steps li .t{font-weight:650;color:var(--ink);display:block}
+.steps li .d{display:none;margin-top:4px}
+.steps li.on .d{display:block}
+.tournav{display:flex;gap:8px;margin-top:6px}
+.btn{border:1px solid var(--line2);background:var(--panel2);border-radius:9px;padding:7px 12px;cursor:pointer;color:var(--ink)}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:#15131a;border-color:transparent;font-weight:650}
+.card{border:1px solid var(--line);border-radius:12px;padding:12px;margin:0 0 10px;background:var(--panel2)}
+.card .q{color:var(--ink);font-weight:600;margin-bottom:8px}
+.card .why{display:none;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line2);color:var(--dim)}
+.card.revealed .why{display:block}
+.card .row{display:flex;gap:8px;flex-wrap:wrap}
+.eq{font:14px/1.7 var(--mono);background:#0e1124;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:6px 0 12px;overflow-x:auto;white-space:nowrap}
+.eq .c-a{color:var(--a)} .eq .c-b{color:var(--b)} .eq .c-hl{color:var(--hl)} .eq .c-g{color:var(--grad)} .eq .c-acc{color:var(--accent)}
+.live{font-variant-numeric:tabular-nums;color:var(--hl)}
+.ctrl{display:grid;grid-template-columns:1fr auto;gap:4px 10px;align-items:center;margin:10px 0}
+.ctrl label{color:var(--dim);font-size:13px}
+.ctrl output{font:12px var(--mono);color:var(--ink);font-variant-numeric:tabular-nums}
+.ctrl input[type=range]{grid-column:1/-1;width:100%;accent-color:var(--accent)}
+.seg{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 10px}
+.seg button{border:1px solid var(--line2);background:transparent;border-radius:99px;padding:5px 11px;cursor:pointer;color:var(--dim);font-size:13px}
+.seg button[aria-pressed=true]{background:color-mix(in srgb,var(--accent) 20%,transparent);color:var(--ink);border-color:color-mix(in srgb,var(--accent) 55%,transparent)}
+.note{border-left:3px solid var(--grad);padding:6px 10px;margin:8px 0 12px;color:var(--dim);background:rgba(167,139,250,.06);border-radius:0 8px 8px 0}
+.wild li{margin-bottom:6px;color:var(--dim)}
+.k-tr{color:var(--b)} .k-te{color:var(--a)} .k-fit{color:var(--hl)} .k-bias{color:var(--accent)} .k-var{color:var(--grad)}
+.k-tr,.k-te,.k-fit,.k-bias,.k-var{font-weight:650}
+.eq .c-n{color:#c7cbe0}
+.eq{white-space:normal} /* long equations wrap instead of hiding their live values behind a scrollbar */
+.btn{margin-top:4px}
+@media (max-width:880px){
+  body{overflow:auto}
+  .app{grid-template-columns:1fr;grid-template-rows:48px 58vh auto;height:auto}
+  .stage{height:58vh}
+  .lesson{border-left:0;border-top:1px solid var(--line)}
+  .top .keys{display:none}
+  .caption{font-size:13px;top:10px;left:10px;right:10px}
+  .stats{grid-template-columns:repeat(3,1fr)}
+  .stat .v{font-size:15px}
+}
+@media (prefers-reduced-motion:reduce){.caption{transition:none}}
 </style>
+</head>
 <body>
-<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
-<canvas id="c"></canvas>
-<div id="ui">
-  <h1>Overfitting</h1>
-  <p>Raise the polynomial degree and watch train error fall forever while test error turns back up.</p>
-  <div class="row"><span class="k">← →</span> degree &nbsp; <span class="k">A</span> auto-sweep &nbsp; <span class="k">R</span> data &nbsp; <span class="k">N</span> noise</div>
-  <div class="row" id="s1">degree d = 5</div>
-  <div class="row" id="s2">train RMSE 0.000</div>
-  <div class="row" id="s3">test&nbsp; RMSE 0.000</div>
-  <div class="row" id="s4">noise σ 0.12 · sweep on</div>
-  <div class="row" id="s5">verdict: —</div>
-  <a href="index.html">← gallery</a>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace;max-width:100vw;white-space:pre-wrap';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div class="app">
+  <header class="top">
+    <a class="back" href="index.html">← Gallery</a>
+    <span class="chip">ML / AI</span>
+    <h1>Bias &amp; Variance</h1>
+    <span class="sp"></span>
+    <span class="keys">Space play · ←/→ tour · R reset</span>
+  </header>
+  <section class="stage" id="stage">
+    <canvas id="c" role="img" aria-label="Noisy training points (filled) and held-out test points (hollow) with a fitted polynomial and the dashed true curve; below, train and test error against polynomial degree forming a U-curve, and a bar splitting expected test error into bias squared, variance and noise."></canvas>
+    <div class="caption" id="caption" aria-live="polite"></div>
+    <div class="dock" role="group" aria-label="Simulation controls">
+      <button id="bPlay" class="on" aria-label="Pause">❚❚</button>
+      <button id="bStep" aria-label="Step once">Step</button>
+      <button id="bReset" aria-label="Reset">Reset</button>
+      <button id="bSpeed" aria-label="Speed">1×</button>
+    </div>
+  </section>
+  <aside class="lesson">
+    <div class="stats" id="stats"><!-- 3 stat tiles: .stat > .k + .v#id --></div>
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-tab="learn">Learn</button>
+      <button role="tab" aria-selected="false" data-tab="try">Try this</button>
+      <button role="tab" aria-selected="false" data-tab="math">The math</button>
+      <button role="tab" aria-selected="false" data-tab="play">Controls</button>
+    </div>
+    <div class="pane on" id="p-learn">
+      <p class="lede">A model can be wrong in two ways: too stiff to follow the truth (<span class="k-bias">bias</span>), or so bendy it follows the noise and changes with every new sample (<span class="k-var">variance</span>). Test error is the two added together, plus noise nothing can remove.</p>
+      <ol class="steps" id="steps"></ol>
+      <div class="tournav"><button class="btn" id="tPrev">← Back</button><button class="btn primary" id="tNext">Next step →</button></div>
+      <h3>In the wild</h3>
+      <ul class="wild">
+        <li><b>Every validation curve.</b> Train/validation splits and early stopping in deep learning read this same U — training steps or model size play the role of degree.</li>
+        <li><b>Weight decay.</b> AdamW's decay term in LLM and vision training is the λ knob: a smooth dial on effective complexity.</li>
+        <li><b>Bagging & random forests</b> average many high-variance models — literally the blue average-of-resamples curve — to cancel variance.</li>
+      </ul>
+    </div>
+    <div class="pane" id="p-try"><!-- .card experiments: predict → run → why --></div>
+    <div class="pane" id="p-math">
+      <h3>1 · The model and how it is fitted</h3>
+      <div class="eq"><span class="c-hl">ŷ(x)</span> = Σ<sub>k=0…d</sub> w<sub>k</sub> P<sub>k</sub>(x) &nbsp; d = <span class="live" id="mD">–</span></div>
+      <div class="eq">w = argmin Σ<sub>i</sub> (y<sub>i</sub> − <span class="c-hl">ŷ(x<sub>i</sub>)</span>)² +&nbsp;λ&nbsp;Σ<sub>k≥1</sub>&nbsp;w<sub>k</sub>² &nbsp; λ&nbsp;= <span class="live" id="mL">–</span></div>
+      <p>P<sub>k</sub> are Legendre polynomials: the same curves as 1, x, …, x<sup>d</sup>, but numerically stable. Solved exactly: (ΦᵀΦ + λI′)w = Φᵀy, where I′ is the identity with a 0 for the intercept w<sub>0</sub>.</p>
+      <h3>2 · Two errors, one sample</h3>
+      <div class="eq"><span class="c-b">train MSE</span> = <span class="live" id="mTr">–</span> &nbsp; <span class="c-a">test MSE</span> = <span class="live" id="mTe">–</span></div>
+      <div class="note">Training error can never tell you when to stop: with λ = 0 it is <b>non-increasing in d</b>, because a degree-d curve is just a degree-(d+1) curve with its last weight set to 0.</div>
+      <h3>3 · Where test error comes from</h3>
+      <div class="eq">E[(y − <span class="c-hl">ŷ</span>)²] = <span class="c-acc">(f − E<span class="c-hl">ŷ</span>)²</span> + <span class="c-g">E[(<span class="c-hl">ŷ</span> − E<span class="c-hl">ŷ</span>)²]</span> + <span class="c-n">σ²</span></div>
+      <div class="eq"><span class="c-a"><span class="live" id="mTot">–</span></span> = <span class="c-acc">bias² <span class="live" id="mB">–</span></span> + <span class="c-g">var <span class="live" id="mV">–</span></span> + <span class="c-n">σ² <span class="live" id="mN">–</span></span></div>
+      <p>E is over K = 160 training sets of n = <span class="live" id="mN2">–</span> points redrawn from the same world, and over x across [−1, 1]. f is the hidden truth (dashed). The bar on the stage is this line.</p>
+      <div class="note"><b>Variance is not the noise in the data.</b> It measures how much the fitted curve itself would change if you had drawn a different sample. σ² is the floor no model can beat.</div>
+      <div class="note"><b>Beyond the U — double descent.</b> Set n below 16 in Controls: error spikes at d = n − 1, where the curve can pass exactly through every point, and can fall again past it. Giant neural nets live on that far side.</div>
+    </div>
+    <div class="pane" id="p-play"><!-- .ctrl sliders, .seg segmented choices --></div>
+  </aside>
 </div>
 <script>
-(function(){
-"use strict";
-var cv=document.getElementById('c'),ctx=cv.getContext('2d');
-var W=0,H=0,DPR=1;
-function resize(){
-  DPR=Math.min(2,window.devicePixelRatio||1);
-  W=window.innerWidth;H=window.innerHeight;
-  cv.width=Math.floor(W*DPR);cv.height=Math.floor(H*DPR);
-  cv.style.width=W+'px';cv.style.height=H+'px';
-  ctx.setTransform(DPR,0,0,DPR,0,0);
+'use strict';
+/* ===== shell helpers (keep) ===== */
+const $ = s => document.querySelector(s);
+const cv = $('#c'), ctx = cv.getContext('2d'), stage = $('#stage');
+let W = 0, H = 0, DPR = 1;
+function resize() {
+  const r = stage.getBoundingClientRect(); DPR = Math.min(2, devicePixelRatio || 1);
+  W = Math.max(1, r.width); H = Math.max(1, r.height);
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR); ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  if (typeof onResize === 'function') onResize();
 }
-window.addEventListener('resize',resize);resize();
-
-var MAXD=15;
-var noise=0.13, nTrain=18, nTest=14;
-var train=[], test=[], truth=null;
-
-function gauss(){var u=0,v=0;while(u===0)u=Math.random();while(v===0)v=Math.random();
-  return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
-
-function makeTruth(){
-  var a=0.6+Math.random()*0.9, b=1.2+Math.random()*2.2, c=(Math.random()-0.5)*1.4,
-      dd=0.4+Math.random()*0.8, ee=(Math.random()-0.5)*2;
-  return function(x){ return a*Math.sin(b*x+c) + dd*Math.cos(x*1.7+ee) + 0.18*x; };
-}
-function sample(n){
-  var out=[];
-  for(var i=0;i<n;i++){
-    var x=-3+6*(i+0.5+ (Math.random()-0.5)*0.7)/n;
-    out.push({x:x, y:truth(x)+gauss()*noise, fy:0});
-  }
-  return out;
-}
-function newData(){
-  truth=makeTruth();
-  train=sample(nTrain);
-  test=sample(nTest);
-  fitAll();
-}
-function reNoise(){
-  noise=[0.03,0.08,0.13,0.22,0.35][(noiseIdx=(noiseIdx+1)%5)];
-  for(var i=0;i<train.length;i++)train[i].y=truth(train[i].x)+gauss()*noise;
-  for(i=0;i<test.length;i++)test[i].y=truth(test[i].x)+gauss()*noise;
-  fitAll();
-}
-var noiseIdx=2;
-
-// ---- least squares polyfit via normal equations + gaussian elimination ----
-function polyfit(data,d){
-  var m=d+1, A=[], i,j,k;
-  // scale x into [-1,1] for conditioning
-  for(i=0;i<m;i++){A.push(new Float64Array(m+1));}
-  var pw=new Float64Array(2*m);
-  for(k=0;k<data.length;k++){
-    var xs=data[k].x/3, y=data[k].y, p=1;
-    for(i=0;i<2*m;i++){pw[i]=p;p*=xs;}
-    for(i=0;i<m;i++){
-      for(j=0;j<m;j++)A[i][j]+=pw[i+j];
-      A[i][m]+=pw[i]*y;
-    }
-  }
-  // tiny ridge for numerical stability at high degree
-  for(i=0;i<m;i++)A[i][i]+=1e-9;
-  // gaussian elimination with partial pivoting
-  for(i=0;i<m;i++){
-    var piv=i;
-    for(k=i+1;k<m;k++) if(Math.abs(A[k][i])>Math.abs(A[piv][i])) piv=k;
-    var t=A[i];A[i]=A[piv];A[piv]=t;
-    if(Math.abs(A[i][i])<1e-14) A[i][i]=1e-14;
-    for(k=i+1;k<m;k++){
-      var f=A[k][i]/A[i][i];
-      if(f===0)continue;
-      for(j=i;j<=m;j++)A[k][j]-=f*A[i][j];
-    }
-  }
-  var c=new Float64Array(m);
-  for(i=m-1;i>=0;i--){
-    var s=A[i][m];
-    for(j=i+1;j<m;j++)s-=A[i][j]*c[j];
-    c[i]=s/A[i][i];
-  }
-  return c;
-}
-function evalp(c,x){
-  var xs=x/3, r=0;
-  for(var i=c.length-1;i>=0;i--) r=r*xs+c[i];
-  return r;
-}
-function rmse(c,data){
-  var s=0;
-  for(var i=0;i<data.length;i++){var e=evalp(c,data[i].x)-data[i].y;s+=e*e;}
-  return Math.sqrt(s/data.length);
-}
-
-var coefsByD=[], trErr=[], teErr=[];
-function fitAll(){
-  coefsByD=[];trErr=[];teErr=[];
-  for(var d=1;d<=MAXD;d++){
-    var c=polyfit(train,d);
-    coefsByD[d]=c;
-    trErr[d]=rmse(c,train);
-    teErr[d]=rmse(c,test);
-  }
-}
-
-// ---- animated degree ----
-var degree=5, shownD=5, sweep=true, sweepDir=1, sweepAcc=0;
-var curC=null, tgtC=null, blend=1;
-function setDegree(d){
-  d=Math.max(1,Math.min(MAXD,d));
-  if(d===degree)return;
-  var old=sampleCurve(degree);
-  degree=d;
-  prevCurve=old; blend=0;
-}
-var prevCurve=null;
-var CURVN=260;
-function sampleCurve(d){
-  var c=coefsByD[d]||polyfit(train,d), arr=new Float64Array(CURVN);
-  for(var i=0;i<CURVN;i++){
-    var x=-3.2+6.4*i/(CURVN-1);
-    arr[i]=evalp(c,x);
-  }
-  return arr;
-}
-
-window.addEventListener('keydown',function(e){
-  if(e.key==='ArrowRight'){sweep=false;setDegree(degree+1);}
-  else if(e.key==='ArrowLeft'){sweep=false;setDegree(degree-1);}
-  else if(e.key==='a'||e.key==='A'){sweep=!sweep;}
-  else if(e.key==='r'||e.key==='R'){newData();prevCurve=null;blend=1;}
-  else if(e.key==='n'||e.key==='N'){reNoise();prevCurve=null;blend=1;}
+new ResizeObserver(resize).observe(stage); resize();
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+// tabs
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', x === b));
+  document.querySelectorAll('.pane').forEach(p => p.classList.toggle('on', p.id === 'p-' + b.dataset.tab));
 });
-
-var els={s1:document.getElementById('s1'),s2:document.getElementById('s2'),
-  s3:document.getElementById('s3'),s4:document.getElementById('s4'),s5:document.getElementById('s5')};
-
-newData();
-
-// layout
-function plotBox(){
-  var gw=Math.min(380,W*0.30), pad=26, left=Math.min(200,W*0.20);
-  return {px:pad+left, py:70, pw:Math.max(140,W-gw-pad*3-left-10), ph:Math.max(160,H-140),
-          gx:W-gw-pad, gy:H-pad-Math.min(300,H*0.42), gw:gw, gh:Math.min(300,H*0.42)};
+// playback
+let playing = !REDUCED, speed = 1;
+const SPEEDS = [0.25, 0.5, 1, 2, 4];
+function setPlaying(v) { playing = v; $('#bPlay').textContent = v ? '❚❚' : '▶'; $('#bPlay').classList.toggle('on', v); $('#bPlay').setAttribute('aria-label', v ? 'Pause' : 'Play'); }
+$('#bPlay').onclick = () => setPlaying(!playing);
+$('#bSpeed').onclick = () => { speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]; $('#bSpeed').textContent = speed + '×'; };
+// tour: STEPS = [{t:'title', d:'html', cap:'stage caption html', go(){ /* set demo state */ }}]
+let tour = 0;
+function renderSteps() {
+  const ol = $('#steps'); ol.innerHTML = '';
+  STEPS.forEach((s, i) => { const li = document.createElement('li'); li.className = (i === tour ? 'on' : '') + (i < tour ? ' done' : ''); li.innerHTML = `<span class="t">${s.t}</span><span class="d">${s.d}</span>`; li.onclick = () => goStep(i); ol.appendChild(li); });
+  $('#tPrev').disabled = tour === 0; $('#tNext').textContent = tour === STEPS.length - 1 ? 'Start over ↺' : 'Next step →';
 }
-var YR=4.2;
-function X2S(x,B){return B.px+(x+3.2)/6.4*B.pw;}
-function Y2S(y,B){return B.py+B.ph/2 - y/YR*B.ph/2;}
+function goStep(i) { tour = (i + STEPS.length) % STEPS.length; const s = STEPS[tour]; if (s.go) s.go(); $('#caption').innerHTML = s.cap || ''; renderSteps(); }
+$('#tPrev').onclick = () => goStep(Math.max(0, tour - 1));
+$('#tNext').onclick = () => goStep(tour + 1);
+// experiments: TRIES = [{q:'Predict…', run(){…}, why:'html'}]
+function renderTries() {
+  const p = $('#p-try'); p.innerHTML = '<p>Make a prediction first, then run it. Each experiment sets the demo up for you.</p>';
+  TRIES.forEach(x => { const c = document.createElement('div'); c.className = 'card'; c.innerHTML = `<div class="q">${x.q}</div><div class="row"><button class="btn primary">Run it</button><button class="btn">Show why</button></div><div class="why">${x.why}</div>`; const [run, why] = c.querySelectorAll('button'); run.onclick = () => { x.run(); setPlaying(true); }; why.onclick = () => c.classList.toggle('revealed'); p.appendChild(c); });
+}
+// controls helpers
+function slider(parent, id, label, min, max, step, value, fmt, onInput) {
+  const d = document.createElement('div'); d.className = 'ctrl';
+  d.innerHTML = `<label for="${id}">${label}</label><output id="${id}o"></output><input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${value}">`;
+  parent.appendChild(d); const inp = d.querySelector('input'), out = d.querySelector('output');
+  const upd = () => { out.textContent = fmt(+inp.value); onInput(+inp.value); }; inp.oninput = upd; upd();
+  return { set(v) { inp.value = v; upd(); }, get: () => +inp.value };
+}
+function seg(parent, options, value, onPick) {
+  const d = document.createElement('div'); d.className = 'seg'; parent.appendChild(d);
+  const bs = options.map(([v, label]) => { const b = document.createElement('button'); b.textContent = label; b.setAttribute('aria-pressed', v === value); b.onclick = () => set(v); d.appendChild(b); return [v, b]; });
+  function set(v) { bs.forEach(([k, b]) => b.setAttribute('aria-pressed', k === v)); onPick(v); }
+  return { set };
+}
+function stat(id, label) { const d = document.createElement('div'); d.className = 'stat'; d.innerHTML = `<div class="k">${label}</div><div class="v" id="${id}">–</div>`; $('#stats').appendChild(d); }
+const setText = (id, v) => { const e = document.getElementById(id); if (e && e.textContent !== v) e.textContent = v; };
+// keyboard
+addEventListener('keydown', e => {
+  if (e.target.matches('input,select,textarea')) return;
+  if (e.code === 'Space') { setPlaying(!playing); e.preventDefault(); }
+  else if (e.key === 'ArrowRight') goStep(tour + 1);
+  else if (e.key === 'ArrowLeft') goStep(Math.max(0, tour - 1));
+  else if (e.key === 'r' || e.key === 'R') $('#bReset').click();
+});
+// wall-clock-locked loop (dt clamped to [0, 0.1] — rAF timestamps can precede performance.now())
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.1, Math.max(0, (now - last) / 1000)); last = now;
+  try { frame(playing ? dt * speed : 0, dt); } catch (err) { window.onerror(err.message, '', 0); return; }
+  requestAnimationFrame(loop);
+}
 
-var last=0, uiAcc=0;
-function frame(ts){
-  var dt=Math.min(0.05,(ts-last)/1000||0.016);last=ts;
-  var B=plotBox();
-
-  if(sweep){
-    sweepAcc+=dt;
-    if(sweepAcc>0.55){
-      sweepAcc=0;
-      var nd=degree+sweepDir;
-      if(nd>MAXD){nd=MAXD-1;sweepDir=-1;}
-      if(nd<1){nd=2;sweepDir=1;}
-      var old=sampleCurve(degree);
-      degree=nd;prevCurve=old;blend=0;
+/*CORE-START*/
+// Seeded RNG (mulberry32) + Box–Muller normal
+function rng(seed) { let a = seed >>> 0; return () => { a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function gauss(r) { let u = 0; while (!u) u = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * r()); }
+const MAXD = 15, K = 160, GRID = 128, BASE_RIDGE = 1e-9;
+// the hidden "true" function the data comes from, x in [-1, 1]
+const truth = x => 0.85 * Math.sin(3.3 * x) + 0.35 * x + 0.25 * Math.cos(5.5 * x + 0.4);
+// Legendre features P0..Pd(x): same span as 1, x, …, x^d but far better conditioned
+function feats(x, d, out) { out[0] = 1; if (d > 0) out[1] = x; for (let k = 1; k < d; k++) out[k + 1] = ((2 * k + 1) * x * out[k] - k * out[k - 1]) / (k + 1); return out; }
+// a dataset: stratified-jittered x, unit noise draws e (y = f(x) + σ·e, so σ can be scaled smoothly)
+function makeSet(n, seed, uniform) {
+  const r = rng(seed), x = new Float64Array(n), e = new Float64Array(n);
+  for (let i = 0; i < n; i++) { x[i] = uniform ? -1 + 2 * r() : -1 + 2 * (i + 0.5 + (r() - 0.5) * 0.9) / n; e[i] = gauss(r); }
+  return { x, e };
+}
+const ys = (set, sigma) => set.x.map((x, i) => truth(x) + sigma * set.e[i]);
+// Gram matrix ΦᵀΦ and Φᵀy for the full degree; any degree d uses its leading (d+1)×(d+1) block
+function gram(X, Y) {
+  const m = MAXD + 1, G = new Float64Array(m * m), b = new Float64Array(m), f = new Float64Array(m);
+  for (let i = 0; i < X.length; i++) { feats(X[i], MAXD, f); for (let a = 0; a < m; a++) { b[a] += f[a] * Y[i]; for (let c = 0; c <= a; c++) G[a * m + c] += f[a] * f[c]; } }
+  for (let a = 0; a < m; a++) for (let c = 0; c < a; c++) G[c * m + a] = G[a * m + c];
+  return { G, b };
+}
+// ridge solve (ΦᵀΦ + λI′)w = Φᵀy by Cholesky; λ does not penalise the intercept w0
+function solve(gb, d, lam) {
+  const m = MAXD + 1, p = d + 1, L = new Float64Array(p * p), w = new Float64Array(p), z = new Float64Array(p);
+  for (let i = 0; i < p; i++) for (let j = 0; j <= i; j++) {
+    let s = gb.G[i * m + j] + (i === j ? BASE_RIDGE + (i ? lam : 0) : 0);
+    for (let k = 0; k < j; k++) s -= L[i * p + k] * L[j * p + k];
+    L[i * p + j] = i === j ? Math.sqrt(Math.max(s, 1e-300)) : s / L[j * p + j];
+  }
+  for (let i = 0; i < p; i++) { let s = gb.b[i]; for (let k = 0; k < i; k++) s -= L[i * p + k] * z[k]; z[i] = s / L[i * p + i]; }
+  for (let i = p - 1; i >= 0; i--) { let s = z[i]; for (let k = i + 1; k < p; k++) s -= L[k * p + i] * w[k]; w[i] = s / L[i * p + i]; }
+  return w;
+}
+const _f = new Float64Array(MAXD + 1);
+function predict(w, x) { feats(x, w.length - 1, _f); let s = 0; for (let k = 0; k < w.length; k++) s += w[k] * _f[k]; return s; }
+function mse(w, X, Y) { let s = 0; for (let i = 0; i < X.length; i++) { const r = predict(w, X[i]) - Y[i]; s += r * r; } return s / X.length; }
+const penalty = (w, lam) => { let s = 0; for (let k = 1; k < w.length; k++) s += w[k] * w[k]; return lam * s; };
+// Bias–variance decomposition over K resampled training sets, integrated on a grid over x ∈ [-1, 1]:
+// E[(y − ŷ(x))²] = (f(x) − Eŷ(x))²  +  E[(ŷ(x) − Eŷ(x))²]  +  σ²
+function decompose(n, sigma, lam, seed) {
+  const gx = Array.from({ length: GRID }, (_, g) => -1 + 2 * (g + 0.5) / GRID);
+  const sets = [], W = [], S1 = [], S2 = [];
+  for (let d = 0; d <= MAXD; d++) { S1.push(new Float64Array(GRID)); S2.push(new Float64Array(GRID)); }
+  for (let k = 0; k < K; k++) {
+    const set = makeSet(n, seed + 7919 * (k + 1)), gb = gram(set.x, ys(set, sigma)), wk = [];
+    sets.push(set);
+    for (let d = 0; d <= MAXD; d++) {
+      const w = solve(gb, d, lam); wk.push(w);
+      for (let g = 0; g < GRID; g++) { const v = predict(w, gx[g]); S1[d][g] += v; S2[d][g] += v * v; }
     }
+    W.push(wk);
   }
-  blend=Math.min(1,blend+dt*2.6);
-  var target=sampleCurve(degree);
-  var curve=new Float64Array(CURVN);
-  var e=blend<1?(blend*blend*(3-2*blend)):1;
-  for(var i=0;i<CURVN;i++){
-    var a=prevCurve?prevCurve[i]:target[i];
-    curve[i]=a+(target[i]-a)*e;
+  const bias2 = [], vari = [], expTest = [];
+  for (let d = 0; d <= MAXD; d++) {
+    // unbiased estimates: s² uses 1/(K−1); (mean − f)² over-counts bias² by s²/K, so subtract it
+    let b = 0, v = 0;
+    for (let g = 0; g < GRID; g++) { const m = S1[d][g] / K, s2 = Math.max(0, S2[d][g] / K - m * m) * K / (K - 1); b += (m - truth(gx[g])) ** 2 - s2 / K; v += s2; }
+    b = Math.max(0, b / GRID); v /= GRID; // the unbiased bias² estimate can dip below 0 when bias² ≈ 0
+    bias2.push(b); vari.push(v); expTest.push(b + v + sigma * sigma);
   }
+  return { sets, W, bias2, vari, expTest, noise: sigma * sigma, gx };
+}
+// errors of one dataset's fits at every degree
+function curves(X, Y, TX, TY, lam) {
+  const gb = gram(X, Y), W = [], train = [], test = [];
+  for (let d = 0; d <= MAXD; d++) { const w = solve(gb, d, lam); W.push(w); train.push(mse(w, X, Y)); test.push(mse(w, TX, TY)); }
+  return { W, train, test };
+}
+/*CORE-END*/
+// ===== DEMO: Bias & Variance =====
+/* ---------- state ---------- */
+const COL = { a: '#ff7a6b', b: '#3fd0c0', hl: '#ffc857', g: '#a78bfa', acc: '#6ea8ff', data: '#c7cbe0', ink: '#e9ecfa', dim: '#a2a9c8', faint: '#6b7396', bg: '#0c0e1a' };
+const KSHOW = 40, NX = 150, YR = 2.2;
+const TEST = makeSet(40, 999, true);                   // fixed held-out x's (hollow points)
+const S = { d: 0, n: 24, sigma: 0.3, lamExp: -8, seed: 77, view: 'one', anim: 'sweep', focus: null, cur: 0 };
+const lam = () => S.lamExp <= -8 ? 0 : 10 ** S.lamExp;
+let D = null, C = null, shown = null, testY = null;
+const dirty = { decomp: true, fit: true, curve: true };
+let instant = true, sweepDir = 1, acc = 0, T = 0, gCount = 0, toast = null, drag = null, L = null;
+// draw grid with a precomputed Legendre table, so evaluating any fit is a dot product per x
+const XS = Float64Array.from({ length: NX }, (_, i) => -1 + 2 * i / (NX - 1));
+const FT = new Float64Array(NX * (MAXD + 1));
+XS.forEach((x, i) => FT.set(feats(x, MAXD, new Float64Array(MAXD + 1)), i * (MAXD + 1)));
+const TRUTH = XS.map(truth);
+function evalGrid(w, out) { for (let i = 0; i < NX; i++) { let s = 0; for (let k = 0; k < w.length; k++) s += w[k] * FT[i * (MAXD + 1) + k]; out[i] = s; } return out; }
+const mk = () => ({ fit: new Float64Array(NX), mean: new Float64Array(NX), sd: new Float64Array(NX) });
+const disp = mk(), from = mk(), to = mk(), tmp = new Float64Array(NX);
+const ghosts = Array.from({ length: KSHOW }, () => new Float64Array(NX));
+let tw = 1;
 
-  ctx.fillStyle='#06060c';ctx.fillRect(0,0,W,H);
+/* ---------- model updates (coalesced once per frame) ---------- */
+function resetShown() { const s = D.sets[S.cur]; shown = { x: Float64Array.from(s.x), y: ys(s, S.sigma) }; dirty.fit = true; }
+function updateModel() {
+  if (dirty.decomp) { D = decompose(S.n, S.sigma, lam(), S.seed); dirty.decomp = false; resetShown(); }
+  if (dirty.fit) { testY = ys(TEST, S.sigma); C = curves(shown.x, shown.y, TEST.x, testY, lam()); dirty.fit = false; dirty.curve = true; }
+  if (!dirty.curve) return;
+  dirty.curve = false;
+  for (const k in disp) from[k].set(disp[k]);
+  evalGrid(C.W[S.d], to.fit); to.mean.fill(0); to.sd.fill(0);
+  for (let k = 0; k < K; k++) {
+    evalGrid(D.W[k][S.d], tmp); if (k < KSHOW) ghosts[k].set(tmp);
+    for (let i = 0; i < NX; i++) { to.mean[i] += tmp[i]; to.sd[i] += tmp[i] * tmp[i]; }
+  }
+  for (let i = 0; i < NX; i++) { const m = to.mean[i] / K; to.sd[i] = Math.sqrt(Math.max(0, to.sd[i] / K - m * m)); to.mean[i] = m; }
+  tw = instant ? 1 : 0; instant = false;
+}
+function tweenStep(rdt) {
+  tw = Math.min(1, tw + rdt * 4.5); const e = tw * tw * (3 - 2 * tw);
+  for (const k in disp) for (let i = 0; i < NX; i++) disp[k][i] = from[k][i] + (to[k][i] - from[k][i]) * e;
+}
+const bestD = arr => arr.reduce((b, v, i) => v < arr[b] ? i : b, 0);
+const fmt = v => !isFinite(v) ? '∞' : v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v >= 1 ? v.toFixed(2) : v.toFixed(3);
+const clampY = v => Math.max(-9, Math.min(9, v));
 
-  // ---- main plot frame ----
-  ctx.save();
-  ctx.strokeStyle='rgba(120,140,190,.16)';ctx.lineWidth=1;
-  ctx.strokeRect(B.px,B.py,B.pw,B.ph);
-  ctx.setLineDash([3,6]);
-  ctx.beginPath();ctx.moveTo(B.px,Y2S(0,B));ctx.lineTo(B.px+B.pw,Y2S(0,B));ctx.stroke();
+/* ---------- layout (safe rect: below caption, above dock) ---------- */
+function layout() {
+  const phone = W < 560, sx = 16, sy = Math.max(84, capB), sw = W - 32, sh = H - 76 - sy, fs = phone ? 10.5 : 12;
+  const F = { x: sx, y: sy, w: sw, h: Math.round(sh * (phone ? 0.52 : 0.56)) };
+  const bw = phone ? 112 : Math.min(220, Math.round(sw * 0.25)), top = F.y + F.h + (phone ? 18 : 28);
+  const pad = phone ? 30 : 40, Uw = sw - bw - pad - (phone ? 10 : 24);
+  // legend rows for the error chart (wraps on narrow screens)
+  const items = [['train', COL.b, 0], ['test (held-out)', COL.a, 0]];
+  if (S.view === 'many') items.push(['expected test', COL.a, 1], ['bias²', COL.acc, 0], ['variance', COL.g, 0], ['noise σ²', COL.data, 1]);
+  ctx.font = `${fs}px ${FONT}`;
+  const rows = [[]]; let x = 0;
+  for (const it of items) { const w = ctx.measureText(it[0]).width + 26; if (x + w > Uw + pad && rows[rows.length - 1].length) { rows.push([]); x = 0; } rows[rows.length - 1].push([...it, x]); x += w; }
+  const lh = fs + 6, uy = top + rows.length * lh + 6, ub = sy + sh - (phone ? 14 : 18);
+  return { phone, fs, F, legend: { x: sx, y: top, rows, lh }, U: { x: sx + pad, y: uy, w: Uw, h: ub - uy }, B: { x: sx + sw - bw, y: top, w: bw, h: sy + sh - top } };
+}
+const FONT = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace';
+const CAP = $('#caption'); let capB = 0;
+new ResizeObserver(() => { capB = CAP.textContent ? CAP.offsetTop + CAP.offsetHeight + 6 : 0; }).observe(CAP);
+const fx = x => L.F.x + 10 + (x + 1) / 2 * (L.F.w - 20), ifx = px => (px - L.F.x - 10) / (L.F.w - 20) * 2 - 1;
+const fy = y => L.F.y + L.F.h / 2 - clampY(y) / YR * (L.F.h / 2 - 8), ify = py => (L.F.y + L.F.h / 2 - py) / (L.F.h / 2 - 8) * YR;
+let ymax = 1;
+const ux = d => L.U.x + d / MAXD * L.U.w, uy = v => L.U.y + L.U.h - Math.min(v, ymax) / ymax * L.U.h;
+const inR = (p, r, m = 0) => p.x >= r.x - m && p.x <= r.x + r.w + m && p.y >= r.y - m && p.y <= r.y + r.h + m;
+
+/* ---------- drawing helpers ---------- */
+function path(arr, X, Y) { ctx.beginPath(); for (let i = 0; i < arr.length; i++) { const px = X(i), py = Y(arr[i]); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); } }
+function glow(col, w) { ctx.strokeStyle = col; ctx.globalAlpha = 0.18; ctx.lineWidth = w * 3.2; ctx.stroke(); ctx.globalAlpha = 1; ctx.lineWidth = w; ctx.stroke(); }
+function label(txt, x, y, col, align = 'left', bgA = 0.78) {
+  ctx.font = `${L.fs}px ${FONT}`; const w = ctx.measureText(txt).width, h = L.fs + 6, lx = align === 'right' ? x - w : align === 'center' ? x - w / 2 : x;
+  ctx.fillStyle = `rgba(12,14,26,${bgA})`; ctx.beginPath(); ctx.roundRect(lx - 5, y - h / 2, w + 10, h, 5); ctx.fill();
+  ctx.fillStyle = col; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(txt, lx, y + 0.5);
+  return { x: lx - 5, y: y - h / 2, w: w + 10, h };
+}
+function leader(ax, ay, lx, ly, txt, col) {
+  ctx.strokeStyle = col; ctx.globalAlpha = 0.7; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(lx, ly); ctx.stroke(); ctx.globalAlpha = 1;
+  ctx.fillStyle = col; ctx.beginPath(); ctx.arc(ax, ay, 2.5, 0, 7); ctx.fill();
+  return label(txt, lx + (lx < ax ? -4 : 4), ly, col, lx < ax ? 'right' : 'left');
+}
+function ring(x, y, r) {
+  const k = 0.5 + 0.5 * Math.sin(T * 4);
+  ctx.strokeStyle = COL.ink; ctx.globalAlpha = 0.25 + 0.35 * k; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(x, y, r + 3 * k, 0, 7); ctx.stroke(); ctx.globalAlpha = 1;
+}
+function panel(r) { ctx.fillStyle = 'rgba(255,255,255,.022)'; ctx.strokeStyle = 'rgba(190,200,255,.10)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill(); ctx.stroke(); }
+
+/* ---------- fit panel: data, truth, fit, resampled ghosts ---------- */
+function drawFit() {
+  const F = L.F, many = S.view === 'many', d = S.d, X = i => fx(XS[i]);
+  panel(F);
+  ctx.save(); ctx.beginPath(); ctx.roundRect(F.x, F.y, F.w, F.h, 10); ctx.clip();
+  ctx.strokeStyle = 'rgba(190,200,255,.07)'; ctx.setLineDash([2, 5]); ctx.beginPath(); ctx.moveTo(F.x, fy(0)); ctx.lineTo(F.x + F.w, fy(0)); ctx.stroke(); ctx.setLineDash([]);
+  if (many) {
+    const n = Math.floor(gCount);
+    ctx.strokeStyle = COL.hl; ctx.globalAlpha = 0.16; ctx.lineWidth = 1; ctx.beginPath();
+    for (let k = 0; k < n; k++) { const g = ghosts[k]; for (let i = 0; i < NX; i++) { const px = X(i), py = fy(g[i]); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); } }
+    ctx.stroke(); ctx.globalAlpha = 1;
+    // variance band: mean ± 1 sd across resamples
+    ctx.beginPath(); for (let i = 0; i < NX; i++) ctx.lineTo(X(i), fy(disp.mean[i] + disp.sd[i]));
+    for (let i = NX - 1; i >= 0; i--) ctx.lineTo(X(i), fy(disp.mean[i] - disp.sd[i]));
+    ctx.fillStyle = 'rgba(167,139,250,.16)'; ctx.fill();
+    // bias gap: between the average fit and the truth
+    ctx.beginPath(); for (let i = 0; i < NX; i++) ctx.lineTo(X(i), fy(disp.mean[i]));
+    for (let i = NX - 1; i >= 0; i--) ctx.lineTo(X(i), fy(TRUTH[i]));
+    ctx.fillStyle = 'rgba(110,168,255,.28)'; ctx.fill();
+  }
+  ctx.setLineDash([7, 6]); path(TRUTH, X, fy); ctx.strokeStyle = 'rgba(199,203,224,.55)'; ctx.lineWidth = 2; ctx.stroke(); ctx.setLineDash([]);
+  if (many) { path(disp.mean, X, fy); glow(COL.acc, 2.2); }
+  if (!many) { // residual whiskers
+    ctx.lineWidth = 1.2;
+    const wh = (xs, yv, col) => { ctx.strokeStyle = col; ctx.beginPath(); for (let i = 0; i < xs.length; i++) { const px = fx(xs[i]); ctx.moveTo(px, fy(yv[i])); ctx.lineTo(px, fy(predict(C.W[d], xs[i]))); } ctx.stroke(); };
+    wh(TEST.x, testY, 'rgba(255,122,107,.35)'); wh(shown.x, shown.y, 'rgba(63,208,192,.35)');
+  }
+  path(disp.fit, X, fy); glow(COL.hl, many ? 2 : 2.6);
+  // held-out test points (hollow) and training points (filled, draggable)
+  ctx.lineWidth = 1.6; ctx.strokeStyle = COL.a;
+  for (let i = 0; i < TEST.x.length; i++) { ctx.beginPath(); ctx.arc(fx(TEST.x[i]), fy(testY[i]), 3.6, 0, 7); ctx.stroke(); }
+  for (let i = 0; i < shown.x.length; i++) {
+    const px = fx(shown.x[i]), py = fy(shown.y[i]), hot = drag && drag.i === i;
+    ctx.fillStyle = COL.bg; ctx.beginPath(); ctx.arc(px, py, hot ? 7.5 : 5.6, 0, 7); ctx.fill();
+    ctx.fillStyle = COL.b; ctx.beginPath(); ctx.arc(px, py, hot ? 6 : 4.3, 0, 7); ctx.fill();
+  }
   ctx.restore();
-
-  // ---- true curve (ghost) ----
-  ctx.save();
-  ctx.strokeStyle='rgba(200,220,255,.20)';ctx.lineWidth=2.6;ctx.setLineDash([7,7]);
-  ctx.beginPath();
-  for(i=0;i<CURVN;i++){
-    var x=-3.2+6.4*i/(CURVN-1);
-    var sxp=X2S(x,B), syp=Y2S(truth(x),B);
-    i?ctx.lineTo(sxp,syp):ctx.moveTo(sxp,syp);
+  // legend (top-left) and degree tag + hint (bottom-right)
+  const ly = F.y + 14; let lx = F.x + 12;
+  ctx.font = `${L.fs}px ${FONT}`; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  const leg = [['●', COL.b, 'train'], ['○', COL.a, 'test'], ['┄', COL.data, 'truth'], ['—', COL.hl, 'fit']];
+  if (many) leg.push(['—', COL.acc, 'avg fit'], ['▒', COL.g, 'spread']);
+  const items = [];
+  for (const [g, c, t] of leg) { if (lx > F.x + F.w - 70) break; items.push([g, c, t, lx]); lx += ctx.measureText(t).width + 28; }
+  ctx.fillStyle = 'rgba(12,14,26,.72)'; ctx.beginPath(); ctx.roundRect(F.x + 6, ly - L.fs / 2 - 4, lx - F.x - 14, L.fs + 8, 6); ctx.fill();
+  for (const [g, c, t, x] of items) { ctx.fillStyle = c; ctx.fillText(g, x, ly); ctx.fillStyle = COL.dim; ctx.fillText(t, x + 14, ly); }
+  ctx.textAlign = 'right'; ctx.fillStyle = COL.hl; ctx.font = `600 ${L.fs + 2}px ${FONT}`;
+  ctx.fillText(`degree ${d} · ${d + 1} weight${d ? 's' : ''}`, F.x + F.w - 12, F.y + F.h - 14);
+  label(L.phone ? 'drag dots · tap: resample' : 'drag a dot · click empty space to draw a new sample', F.x + 12, F.y + F.h - 14, COL.faint, 'left', 0.6);
+  if (many) annotateMany();
+}
+function annotateMany() {
+  const F = L.F, lo = 12, hi = NX - 12, vis = v => Math.abs(v) < YR * 0.92;
+  let iS = -1, iG = -1;
+  for (let i = lo; i < hi; i++) {
+    if (vis(disp.mean[i] + disp.sd[i]) && (iS < 0 || disp.sd[i] > disp.sd[iS])) iS = i;
+    if (vis(disp.mean[i]) && (iG < 0 || Math.abs(disp.mean[i] - TRUTH[i]) > Math.abs(disp.mean[iG] - TRUTH[iG]))) iG = i;
   }
-  ctx.stroke();ctx.restore();
-
-  // ---- residual whiskers ----
-  function whisk(arr,col){
-    ctx.strokeStyle=col;ctx.lineWidth=1.2;
-    for(var k=0;k<arr.length;k++){
-      var p=arr[k], fy=evalp(coefsByD[degree],p.x);
-      ctx.beginPath();
-      ctx.moveTo(X2S(p.x,B),Y2S(p.y,B));
-      ctx.lineTo(X2S(p.x,B),Y2S(Math.max(-YR,Math.min(YR,fy)),B));
-      ctx.stroke();
-    }
+  const boxes = [], place = (ax, ay, dy, txt, col) => {
+    const lx = ax + (ax > F.x + F.w * 0.6 ? -46 : 46); let ly = Math.max(F.y + 36, Math.min(F.y + F.h - 36, ay + dy));
+    for (const b of boxes) if (Math.abs(b - ly) < L.fs + 10) ly = b + (ly > b ? 1 : -1) * (L.fs + 12);
+    boxes.push(ly); leader(ax, ay, lx, ly, txt, col); return [ax, ay];
+  };
+  const out = {};
+  if (iS >= 0) out.spread = place(fx(XS[iS]), fy(disp.mean[iS] + disp.sd[iS]), -34, disp.sd[iS] > 0.03 ? 'spread = variance' : 'fits agree → variance ≈ 0', COL.g);
+  if (iG >= 0) {
+    const gap = Math.abs(disp.mean[iG] - TRUTH[iG]) > 0.06;
+    out.gap = place(fx(XS[iG]), fy((disp.mean[iG] + TRUTH[iG]) / 2), 40, gap ? 'gap to truth = bias' : 'avg fit ≈ truth → low bias', COL.acc);
   }
-  whisk(train,'rgba(125,255,176,.35)');
-  whisk(test,'rgba(255,110,150,.35)');
+  L.anno = out;
+}
 
-  // ---- fitted polynomial (glowing) ----
-  ctx.save();
-  ctx.lineWidth=3;ctx.strokeStyle='#ffae5c';ctx.shadowColor='#ff8a2b';ctx.shadowBlur=18;
-  ctx.beginPath();
-  var pen=false;
-  for(i=0;i<CURVN;i++){
-    x=-3.2+6.4*i/(CURVN-1);
-    var yv=curve[i];
-    if(!isFinite(yv)||Math.abs(yv)>YR*1.6){pen=false;continue;}
-    var X=X2S(x,B),Y=Y2S(yv,B);
-    if(!pen){ctx.moveTo(X,Y);pen=true;}else ctx.lineTo(X,Y);
-  }
-  ctx.stroke();ctx.restore();
-
-  // ---- points ----
-  function dots(arr,col,r){
-    for(var k=0;k<arr.length;k++){
-      var p=arr[k];
-      ctx.fillStyle=col;ctx.shadowColor=col;ctx.shadowBlur=9;
-      ctx.beginPath();ctx.arc(X2S(p.x,B),Y2S(p.y,B),r,0,6.2832);ctx.fill();
-    }
-    ctx.shadowBlur=0;
-  }
-  dots(train,'#7dffb0',4.2);
-  dots(test,'#ff6e96',4.2);
-
+/* ---------- error chart: train/test (this sample) + decomposition (all samples) ---------- */
+function drawU() {
+  const U = L.U, many = S.view === 'many', fs = L.fs;
+  ymax = Math.max(D.expTest[0], C.test[0], C.train[0], 0.05) * 1.18;
   // legend
-  ctx.save();ctx.font='12px ui-monospace,monospace';
-  ctx.fillStyle='#7dffb0';ctx.fillText('● train',B.px+8,B.py+18);
-  ctx.fillStyle='#ff6e96';ctx.fillText('● test (held out)',B.px+8,B.py+34);
-  ctx.fillStyle='rgba(200,220,255,.45)';ctx.fillText('-- hidden true curve',B.px+8,B.py+50);
-  ctx.fillStyle='#ffae5c';ctx.font='bold 30px ui-monospace,monospace';
-  ctx.shadowColor='#ff8a2b';ctx.shadowBlur=14;
-  ctx.fillText('d = '+degree,B.px+B.pw-140,B.py+40);
-  ctx.restore();
-
-  // ---- error curves side graph ----
-  var gx=B.gx,gy=B.gy,gw=B.gw,gh=B.gh;
-  ctx.save();
-  ctx.fillStyle='rgba(255,255,255,.025)';ctx.fillRect(gx,gy,gw,gh);
-  ctx.strokeStyle='rgba(120,140,190,.22)';ctx.lineWidth=1;ctx.strokeRect(gx,gy,gw,gh);
-  var mx=0;
-  for(var d=1;d<=MAXD;d++){mx=Math.max(mx,trErr[d],Math.min(teErr[d],noise*9+1.4));}
-  mx=Math.max(mx,0.2)*1.12;
-  function GX(d){return gx+ (d-1)/(MAXD-1)*gw;}
-  function GY(v){return gy+gh - Math.min(1,v/mx)*gh;}
-  function line(arr,col){
-    ctx.strokeStyle=col;ctx.lineWidth=2.2;ctx.shadowColor=col;ctx.shadowBlur=10;
-    ctx.beginPath();
-    for(var d=1;d<=MAXD;d++){
-      var Y=GY(arr[d]);
-      d===1?ctx.moveTo(GX(d),Y):ctx.lineTo(GX(d),Y);
-    }
-    ctx.stroke();ctx.shadowBlur=0;
-    for(d=1;d<=MAXD;d++){ctx.fillStyle=col;ctx.beginPath();ctx.arc(GX(d),GY(arr[d]),2.2,0,6.2832);ctx.fill();}
-  }
-  line(trErr,'#7dffb0');
-  line(teErr,'#ff6e96');
-  // best degree marker
-  var best=1;for(d=2;d<=MAXD;d++) if(teErr[d]<teErr[best]) best=d;
-  ctx.strokeStyle='rgba(255,255,255,.30)';ctx.setLineDash([3,4]);ctx.lineWidth=1;
-  ctx.beginPath();ctx.moveTo(GX(best),gy);ctx.lineTo(GX(best),gy+gh);ctx.stroke();
-  ctx.setLineDash([]);
-  // current degree marker
-  ctx.strokeStyle='#ffae5c';ctx.lineWidth=2;ctx.shadowColor='#ff8a2b';ctx.shadowBlur=12;
-  ctx.beginPath();ctx.moveTo(GX(degree),gy);ctx.lineTo(GX(degree),gy+gh);ctx.stroke();
-  ctx.shadowBlur=0;
-  ctx.font='11px ui-monospace,monospace';
-  ctx.fillStyle='rgba(220,230,255,.7)';
-  ctx.fillText('error vs degree',gx+6,gy-8);
-  ctx.fillText('1',gx+2,gy+gh+14);ctx.fillText(''+MAXD,gx+gw-14,gy+gh+14);
-  ctx.fillStyle='rgba(255,255,255,.55)';
-  ctx.fillText('sweet spot d='+best,GX(best)-30,gy+gh+28);
-  ctx.fillStyle='#7dffb0';ctx.fillText('train',gx+gw-52,gy+16);
-  ctx.fillStyle='#ff6e96';ctx.fillText('test',gx+gw-52,gy+30);
-  ctx.restore();
-
-  uiAcc+=dt;
-  if(uiAcc>0.1){
-    uiAcc=0;
-    var tr=trErr[degree],te=teErr[degree];
-    els.s1.textContent='degree d = '+degree+'  ('+(degree+1)+' coefficients, '+nTrain+' train pts)';
-    els.s2.textContent='train RMSE '+tr.toFixed(4);
-    els.s3.textContent='test  RMSE '+te.toFixed(4)+'   ratio ×'+(te/Math.max(tr,1e-6)).toFixed(1);
-    els.s4.textContent='noise σ '+noise.toFixed(2)+' · sweep '+(sweep?'ON':'off')+' · best d='+best;
-    var verdict = degree<best-1 ? 'UNDERFIT — high bias' :
-                  (degree>best+1 ? 'OVERFIT — high variance' : 'GOOD FIT — balanced');
-    els.s5.textContent='verdict: '+verdict;
-    els.s5.style.color = degree<best-1?'#8fb4ff':(degree>best+1?'#ff6e96':'#7dffb0');
-  }
-  requestAnimationFrame(frame);
+  ctx.font = `${fs}px ${FONT}`; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  L.legend.rows.forEach((row, r) => row.forEach(([t, c, dash, x]) => {
+    const y = L.legend.y + r * L.legend.lh + fs / 2 + 1, x0 = L.legend.x + x;
+    ctx.strokeStyle = c; ctx.lineWidth = 2; ctx.setLineDash(dash ? [4, 3] : []); ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x0 + 16, y); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = COL.dim; ctx.fillText(t, x0 + 21, y);
+  }));
+  // axes + ticks
+  ctx.strokeStyle = 'rgba(190,200,255,.16)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(U.x, U.y); ctx.lineTo(U.x, U.y + U.h); ctx.lineTo(U.x + U.w, U.y + U.h); ctx.stroke();
+  ctx.fillStyle = COL.faint; ctx.textAlign = 'right';
+  for (const f of [0.5, 1]) { const v = ymax / 1.18 * f, y = uy(v); ctx.fillText(fmt(v), U.x - 5, y); ctx.strokeStyle = 'rgba(190,200,255,.06)'; ctx.beginPath(); ctx.moveTo(U.x, y); ctx.lineTo(U.x + U.w, y); ctx.stroke(); }
+  ctx.fillText('MSE', U.x - 5, U.y - 2);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  // x-axis row: "0 ← underfit" · "▲ best" · "overfit → 15" (zone words drop out if the best tag needs the room)
+  const best = bestD(many ? D.expTest : C.test), by = U.y + U.h + 4;
+  const lt = U.w > 200 ? '0  ← underfit' : '0', rt = U.w > 200 ? `overfit →  ${MAXD}` : String(MAXD), bt = `▲ best d=${best}`;
+  const wl = ctx.measureText(lt).width, wr = ctx.measureText(rt).width, wb = ctx.measureText(bt).width;
+  const bx = Math.max(U.x + wb / 2 - 4, Math.min(U.x + U.w - wb / 2 + 4, ux(best)));
+  ctx.textAlign = 'left'; ctx.fillText(bx - wb / 2 < U.x + wl + 8 ? '0' : lt, U.x - 3, by);
+  ctx.textAlign = 'right'; ctx.fillText(bx + wb / 2 > U.x + U.w - wr - 8 ? String(MAXD) : rt, U.x + U.w + 3, by);
+  ctx.textAlign = 'center'; ctx.fillStyle = COL.good; ctx.fillText(bt, bx, by);
+  ctx.textBaseline = 'middle';
+  // series
+  const ser = (arr, col, w, dash, dots) => {
+    ctx.save(); ctx.beginPath(); ctx.rect(U.x - 4, U.y - 6, U.w + 8, U.h + 8); ctx.clip();
+    ctx.setLineDash(dash ? [5, 4] : []); path(arr, ux, uy); ctx.strokeStyle = col; ctx.lineWidth = w; ctx.stroke(); ctx.setLineDash([]);
+    if (dots) { ctx.fillStyle = col; arr.forEach((v, d) => { ctx.beginPath(); v > ymax ? (ctx.moveTo(ux(d) - 3.5, U.y + 1), ctx.lineTo(ux(d) + 3.5, U.y + 1), ctx.lineTo(ux(d), U.y - 5)) : ctx.arc(ux(d), uy(v), 2.4, 0, 7); ctx.fill(); }); }
+    ctx.restore();
+  };
+  if (many) { ser(D.bias2, COL.acc, 1.8); ser(D.vari, COL.g, 1.8); ser(D.expTest.map(() => D.noise), COL.data, 1.2, 1); ser(D.expTest, COL.a, 2.4, 1); }
+  ser(C.train, COL.b, 2.2, 0, 1); ser(C.test, COL.a, 2.2, 0, 1);
+  // current degree: amber line + draggable handle
+  const hx = ux(S.d); ctx.strokeStyle = COL.hl; ctx.globalAlpha = 0.8; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(hx, U.y); ctx.lineTo(hx, U.y + U.h); ctx.stroke(); ctx.globalAlpha = 1;
+  const hb = label(`d = ${S.d}`, Math.max(U.x + 22, Math.min(U.x + U.w - 22, hx)), U.y + U.h * 0.5, COL.hl, 'center', 0.92);
+  ctx.strokeStyle = COL.hl; ctx.lineWidth = 1; ctx.beginPath(); ctx.roundRect(hb.x, hb.y, hb.w, hb.h, 5); ctx.stroke();
+  L.handle = [hb.x + hb.w / 2, U.y + U.h * 0.5]; L.best = [ux(best), uy((many ? D.expTest : C.test)[best])];
 }
-requestAnimationFrame(frame);
-})();
+
+/* ---------- bar: what the expected test error is made of ---------- */
+function drawBar() {
+  const B = L.B, d = S.d, fs = L.fs, b = D.bias2[d], v = D.vari[d], nz = D.noise, tot = b + v + nz;
+  ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.font = `600 ${fs}px ${FONT}`; ctx.fillStyle = COL.a;
+  ctx.fillText(`test ≈ ${fmt(D.expTest[d])}`, B.x, B.y + fs / 2 + 1);
+  ctx.font = `${fs}px ${FONT}`; ctx.fillStyle = COL.faint;
+  ctx.fillText(L.phone ? `avg of ${K} fits` : `expected, avg of ${K} fits`, B.x, B.y + fs * 1.5 + 5);
+  const bx = B.x + 2, bw = L.phone ? 16 : 24, top = B.y + fs * 2 + 16, bot = B.y + B.h - (L.phone ? 8 : 24), hh = bot - top;
+  const segs = [['noise σ²', 'σ²', nz, COL.data], ['bias²', 'bias²', b, COL.acc], ['variance', 'var', v, COL.g]];
+  let y = bot; const mids = [];
+  ctx.fillStyle = 'rgba(255,255,255,.04)'; ctx.fillRect(bx, top, bw, hh);
+  for (const [, , val, col] of segs) { const h = tot > 1e-6 ? val / tot * hh : 0; ctx.fillStyle = col; ctx.globalAlpha = col === COL.data ? 0.55 : 0.9; ctx.fillRect(bx, y - h, bw, h); ctx.globalAlpha = 1; mids.push(y - h / 2); y -= h; }
+  // fixed label rows (top→bottom: variance, bias², noise) with leader lines to each segment
+  const lx = bx + bw + (L.phone ? 12 : 20);
+  segs.slice().reverse().forEach(([name, short, val, col], j) => {
+    const ly = top + hh * (j + 0.5) / 3, my = mids[2 - j];
+    ctx.strokeStyle = col; ctx.globalAlpha = 0.6; ctx.beginPath(); ctx.moveTo(bx + bw + 2, my); ctx.lineTo(lx - 3, ly); ctx.stroke(); ctx.globalAlpha = 1;
+    ctx.fillStyle = col; ctx.fillText(`${L.phone ? short : name} ${fmt(val)}`, lx, ly);
+    if (tot > 1e-6) { ctx.fillStyle = COL.faint; ctx.fillText(`${Math.round(val / tot * 100)}%`, lx, ly + fs + 3); }
+  });
+  if (!L.phone) { ctx.fillStyle = COL.faint; ctx.fillText(`this sample: ${fmt(C.test[d])}`, B.x, B.y + B.h - 4); }
+  L.barR = { x: B.x - 4, y: top - 4, w: B.w, h: hh + 8 };
+}
+
+/* ---------- focus ring for the current tour step ---------- */
+function drawFocus() {
+  const f = S.focus; if (!f) return;
+  if (f === 'bar') { const r = L.barR, k = 0.5 + 0.5 * Math.sin(T * 4); ctx.strokeStyle = COL.ink; ctx.globalAlpha = 0.2 + 0.35 * k; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.roundRect(r.x - 3 * k, r.y - 3 * k, r.w + 6 * k, r.h + 6 * k, 10); ctx.stroke(); ctx.globalAlpha = 1; return; }
+  if (f === 'best') return ring(...L.best, 11);
+  if (f === 'handle') return ring(...L.handle, 22);
+  if ((f === 'spread' || f === 'gap') && L.anno && L.anno[f]) return ring(...L.anno[f], 14);
+  if (f === 'miss') { // where the current fit misses the truth most
+    let im = 12; for (let i = 12; i < NX - 12; i++) if (Math.abs(disp.fit[i] - TRUTH[i]) > Math.abs(disp.fit[im] - TRUTH[im])) im = i;
+    return ring(fx(XS[im]), fy((disp.fit[im] + TRUTH[im]) / 2), 22);
+  }
+  if (f === 'test') { // the held-out point the fit gets most wrong (that is still on screen)
+    let it = -1, e = -1; TEST.x.forEach((x, i) => { const p = predict(C.W[S.d], x), r = Math.abs(p - testY[i]); if (Math.abs(p) < YR && r > e) { e = r; it = i; } });
+    if (it >= 0) ring(fx(TEST.x[it]), fy(testY[it]), 12);
+  }
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H); L = layout(); L.anno = null;
+  drawFit(); drawU(); drawBar(); drawFocus();
+  if (toast && T - toast.t < 1.4) { ctx.globalAlpha = 1 - (T - toast.t) / 1.4; label(toast.txt, toast.x, toast.y, COL.ink, 'center'); ctx.globalAlpha = 1; }
+}
+
+/* ---------- live readouts ---------- */
+function readouts() {
+  const d = S.d;
+  setText('sD', String(d)); setText('sTr', fmt(C.train[d])); setText('sTe', fmt(C.test[d]));
+  setText('mD', String(d)); setText('mL', lam() ? lam().toPrecision(2) : '0'); setText('mTr', fmt(C.train[d])); setText('mTe', fmt(C.test[d]));
+  setText('mB', fmt(D.bias2[d])); setText('mV', fmt(D.vari[d])); setText('mN', fmt(D.noise)); setText('mTot', fmt(D.expTest[d])); setText('mN2', String(S.n));
+}
+
+/* ---------- animation: sweep degree or redraw the data ---------- */
+function tick() {
+  if (S.anim === 'sweep') { let nd = S.d + sweepDir; if (nd > MAXD || nd < 0) { sweepDir *= -1; nd = S.d + sweepDir; } ctl.d.set(nd); }
+  else nextSample();
+}
+function nextSample(p) {
+  S.cur = (S.cur + 1) % KSHOW; resetShown();
+  if (p) toast = { txt: `new sample #${S.cur + 1} from the same world`, x: p.x, y: Math.max(L.F.y + 40, p.y - 24), t: T };
+}
+function frame(dt, rdt) {
+  T += rdt;
+  if (dt > 0 && !drag && S.anim !== 'hold') { acc += dt; if (acc >= (S.anim === 'sweep' ? 0.75 : 1.1)) { acc = 0; tick(); } }
+  if (S.view === 'many') gCount = Math.min(KSHOW, gCount + rdt * 14); else gCount = 0;
+  updateModel(); tweenStep(rdt); draw(); readouts();
+}
+
+/* ---------- direct manipulation ---------- */
+const pos = e => { const r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+function hitPoint(p, touch) { let best = -1, bd = touch ? 22 : 13; shown.x.forEach((x, i) => { const dd = Math.hypot(fx(x) - p.x, fy(shown.y[i]) - p.y); if (dd < bd) { bd = dd; best = i; } }); return best; }
+const inU = p => L && inR(p, L.U, 14);
+const setDegFromX = px => ctl.d.set(Math.round(Math.max(0, Math.min(MAXD, (px - L.U.x) / L.U.w * MAXD))));
+cv.addEventListener('pointerdown', e => {
+  if (!L) return; const p = pos(e), i = inR(p, L.F) ? hitPoint(p, e.pointerType === 'touch') : -1;
+  try { cv.setPointerCapture(e.pointerId); } catch (_) { /* synthetic events */ }
+  if (i >= 0) drag = { i };
+  else if (inU(p)) { drag = { deg: 1 }; if (S.anim === 'sweep') ctl.anim.set('hold'); setDegFromX(p.x); }
+  else drag = { tap: p };
+});
+cv.addEventListener('pointermove', e => {
+  if (!L) return; const p = pos(e);
+  if (drag && drag.i != null) { shown.x[drag.i] = Math.max(-1, Math.min(1, ifx(p.x))); shown.y[drag.i] = Math.max(-YR, Math.min(YR, ify(p.y))); dirty.fit = true; instant = true; }
+  else if (drag && drag.deg) setDegFromX(p.x);
+  else if (!drag) cv.style.cursor = inR(p, L.F) && hitPoint(p) >= 0 ? 'grab' : inU(p) ? 'ew-resize' : inR(p, L.F) || inR(p, L.B) ? 'pointer' : 'default';
+});
+cv.addEventListener('pointerup', e => {
+  const p = pos(e);
+  if (drag && drag.tap && Math.hypot(p.x - drag.tap.x, p.y - drag.tap.y) < 8) {
+    if (inR(p, L.F)) nextSample(p); else if (inR(p, L.B)) ctl.view.set(S.view === 'many' ? 'one' : 'many');
+  }
+  drag = null;
+});
+cv.addEventListener('pointercancel', () => { drag = null; });
+
+/* ---------- controls ---------- */
+const ctl = {}, pp = $('#p-play');
+pp.innerHTML = '<p>Everything on the stage responds live. Drag training dots on the stage; drag the amber <b>d</b> handle on the error chart.</p>';
+ctl.d = slider(pp, 'cD', 'Degree d — how bendy the curve may be', 0, MAXD, 1, S.d, v => `${v} (${v + 1} weights)`, v => { if (v !== S.d) { S.d = v; dirty.curve = true; } });
+ctl.sigma = slider(pp, 'cS', 'Noise σ — how far labels scatter from the truth', 0, 0.6, 0.02, S.sigma, v => v.toFixed(2), v => { S.sigma = v; dirty.decomp = true; });
+ctl.n = slider(pp, 'cN', 'Training points n — how much data each fit sees', 8, 96, 1, S.n, v => String(v), v => { S.n = v; dirty.decomp = true; });
+ctl.lam = slider(pp, 'cL', 'Ridge λ — penalty on large weights (weight decay)', -8, 2, 0.25, S.lamExp, v => v <= -8 ? '0 (off)' : (10 ** v).toPrecision(2), v => { S.lamExp = v; dirty.decomp = true; });
+pp.insertAdjacentHTML('beforeend', '<h3>Show</h3>');
+ctl.view = seg(pp, [['one', 'One fit'], ['many', 'Resamples → bias & variance']], S.view, v => { S.view = v; });
+pp.insertAdjacentHTML('beforeend', '<h3>Animate (▶ / Space)</h3>');
+ctl.anim = seg(pp, [['sweep', 'Sweep degree'], ['resample', 'Redraw the data'], ['hold', 'Hold']], S.anim, v => { S.anim = v; acc = 0; });
+const nw = document.createElement('button'); nw.className = 'btn'; nw.textContent = 'New world (reseed every sample)'; pp.appendChild(nw);
+nw.onclick = () => { S.seed += 101; S.cur = 0; dirty.decomp = true; };
+$('#bStep').onclick = () => { setPlaying(false); if (S.anim === 'hold') nextSample(); else tick(); };
+$('#bReset').onclick = () => goStep(tour);
+stat('sD', 'Degree d'); stat('sTr', 'Train MSE'); stat('sTe', 'Test MSE');
+$('#sTr').style.color = COL.b; $('#sTe').style.color = COL.a; $('#sD').style.color = COL.hl;
+
+/* ---------- guided tour + experiments ---------- */
+function setup(o) {
+  const c = { d: 4, n: 24, sigma: 0.3, lamExp: -8, view: 'one', anim: 'hold', focus: null, seed: 77, cur: 0, ...o };
+  if (c.seed !== S.seed || c.cur !== S.cur) { S.seed = c.seed; S.cur = c.cur; dirty.decomp = true; }
+  ctl.n.set(c.n); ctl.sigma.set(c.sigma); ctl.lam.set(c.lamExp); ctl.view.set(c.view); ctl.anim.set(c.anim); ctl.d.set(c.d);
+  S.focus = c.focus; sweepDir = 1; acc = 0; gCount = REDUCED ? KSHOW : 0;
+  if (c.anim !== 'hold' && !REDUCED) setPlaying(true);
+}
+const tr = '<span class="k-tr">', te = '<span class="k-te">', fi = '<span class="k-fit">', bi = '<span class="k-bias">', va = '<span class="k-var">', x_ = '</span>';
+const STEPS = [
+  { t: 'The U-curve', d: `The degree is sweeping 0 → 15. ${tr}Training error${x_} only ever falls — a bendier curve always fits the dots it was trained on better. ${te}Test error${x_} on held-out points falls, bottoms out, then climbs.`,
+    cap: `Degree is sweeping 0 → 15. ${tr}Train error${x_} only falls; ${te}test error${x_} on held-out points dips, then climbs — the <b>U-curve</b>.`,
+    go: () => setup({ d: REDUCED ? 7 : 0, anim: 'sweep', focus: 'handle' }) },
+  { t: 'Underfit: high bias', d: 'A straight line cannot bend, so it misses the dashed truth in whole regions — above it here, below it there — on training and test points alike. More data would not help: it is the <b>wrong shape</b>.',
+    cap: `Degree 1: a straight line can't bend, so it misses the truth in whole regions, on train and test alike. That systematic miss is <b>bias</b>.`,
+    go: () => setup({ d: 1, focus: 'miss' }) },
+  { t: 'The sweet spot', d: 'Around degree 3–5 the curve is flexible enough to follow the truth but too stiff to chase individual noisy dots. Test error sits at the bottom of the U.',
+    cap: `Degree 3: bendy enough to follow the truth, too stiff to chase the noise. ${te}Test error${x_} is at the bottom of the U.`,
+    go: () => setup({ d: 3, focus: 'best' }) },
+  { t: 'Overfit: chasing noise', d: `Degree 13 has 14 weights for 24 dots. It threads almost every training dot (${tr}train error${x_} ≈ 0.02) by swinging between them, so the hollow test points land far from the curve.`,
+    cap: `Degree 13 threads nearly every training dot — but swings wildly between them. The hollow ${te}test points${x_} expose it.`,
+    go: () => setup({ d: 13, focus: 'test' }) },
+  { t: 'Variance = spread across samples', d: `Now we redraw the 24 training dots from the same world again and again and refit. Each degree-13 fit (${fi}amber ghosts${x_}) wiggles differently: that ${va}spread is variance${x_}. Their average (${bi}blue${x_}) hugs the truth, so bias is tiny. The bar splits the expected test error into the three parts.`,
+    cap: `Same model, new samples: each fit wiggles differently. That ${va}spread is variance${x_}. Their ${bi}average${x_} hugs the truth — bias is tiny.`,
+    go: () => setup({ d: 13, view: 'many', anim: 'resample', focus: 'spread' }) },
+  { t: 'More data tames variance', d: 'Same degree-13 model, 4× the data. The ghosts collapse onto one curve and variance drops ~50×, so the sweet spot on the chart moves to a higher degree. Bias does not change with n.',
+    cap: `Same degree 13, but 96 points: the ghosts collapse. ${va}Variance${x_} shrinks with more data; the U's minimum slides right.`,
+    go: () => setup({ d: 13, n: 96, view: 'many', anim: 'resample', focus: 'bar' }) },
+  { t: 'Regularisation — and its limit', d: 'Back to 24 points, but now penalise large weights (ridge λ ≈ 0.3). The wiggles are tamed and variance falls ~20× while bias barely moves. Push λ higher in Controls and bias climbs back: regularisation moves you along the same trade-off, it does not escape it.',
+    cap: `24 points again, now with a weight penalty λ ≈ 0.3: wiggles tamed, ${va}variance${x_} collapses. Crank λ in Controls and ${bi}bias${x_} returns.`,
+    go: () => setup({ d: 13, lamExp: -0.5, view: 'many', anim: 'resample', focus: 'bar' }) },
+];
+const capt = h => { $('#caption').innerHTML = h; };
+const TRIES = [
+  { q: 'Predict: give a <b>straight line</b> (degree 1) 4× more data. Does its test error drop a lot?',
+    run: () => { setup({ d: 1, n: 96, view: 'many', anim: 'resample', focus: 'gap' }); capt(`Experiment: degree 1 with 96 points. Watch the ${bi}gap${x_} and the bar — does more data close it?`); },
+    why: `Barely. The ghosts tighten (${va}variance${x_} ≈ 0.008 → 0.002), but they are all the same wrong line: ${bi}bias²${x_} stays ≈ 0.15. More data cures variance, never bias — for bias you need a more flexible model.` },
+  { q: 'Predict: with <b>zero noise</b> (σ = 0), does degree 15 still overfit?',
+    run: () => { setup({ d: 15, sigma: 0, view: 'many', anim: 'resample', focus: 'bar' }); capt('Experiment: degree 15, zero noise. Do the resampled fits still disagree?'); },
+    why: 'No — train and test error both drop to ~0 and every ghost sits on the truth. Overfitting means memorising the <i>noise</i>; with clean labels there is nothing random to memorise. The noisier the data, the simpler the model you can afford.' },
+  { q: 'Predict: degree 15 with a huge weight penalty (λ ≈ 30), versus plain degree 3. Which one underfits?',
+    run: () => { setup({ d: 15, lamExp: 1.5, view: 'many', anim: 'hold', focus: 'gap' }); capt(`Experiment: degree 15 with λ ≈ 30. 16 weights — but look at the ${bi}gap to the truth${x_}.`); },
+    why: `The 16-weight model does: ${bi}bias²${x_} ≈ 0.39 versus 0.02 for degree 3. The penalty pins its weights near zero, so it behaves like a nearly flat line. Complexity is what a model is <i>allowed</i> to do, not how many parameters it has — the idea behind weight decay in huge neural nets.` },
+];
+window.__demo = { goStep, setPlaying, state: () => ({ ...S, lam: lam(), train: C && C.train[S.d], test: C && C.test[S.d], bias2: D && D.bias2[S.d], vari: D && D.vari[S.d], exp: D && D.expTest[S.d] }), runTry: i => { TRIES[i].run(); setPlaying(true); } };
+setPlaying(playing); // sync the ▶/❚❚ button with the reduced-motion start state
+renderSteps(); renderTries(); goStep(0); requestAnimationFrame(loop);
 </script>
+</body>
+</html>

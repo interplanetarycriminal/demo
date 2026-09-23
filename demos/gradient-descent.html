@@ -3,153 +3,663 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Optimizer Race — Gradient Descent</title>
+<title>Optimizer Race — ML Field Notes</title>
 <style>
-html,body{margin:0;height:100%;overflow:hidden;background:#05010f}
-canvas{display:block;position:fixed;inset:0;touch-action:none}
-#ui{position:fixed;top:12px;left:12px;z-index:10;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#cfe9ff;background:rgba(5,8,22,.74);border:1px solid rgba(80,220,255,.25);border-radius:10px;padding:10px 14px;max-width:350px;max-height:52vh;overflow:auto}
-#ui h1{margin:0 0 2px;font-size:14px;color:#7df9ff;text-shadow:0 0 8px #0ff}
-#ui .ex{color:#9fb4d8}
-#ui .hint{color:#6ee7a0;margin-top:4px}
-#ui a{color:#ff7ad9;text-decoration:none}
-#stats{margin-top:6px;color:#e8f6ff;white-space:pre-wrap}
-@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
+/* ===== ML Field Notes design system (shared by every ML/AI demo) =====
+   Colour means the same thing in every demo:
+   --a coral = class A / "positive"     --b teal = class B / "negative"
+   --hl amber = the model's current parameters / guess / selection
+   --grad violet = gradients, updates, errors flowing back
+   --accent = this demo's signature colour (set per demo) */
+:root{
+  --bg:#0c0e1a; --bg2:#10132a; --panel:#13162c; --panel2:#181c38; --line:rgba(190,200,255,.10); --line2:rgba(190,200,255,.18);
+  --ink:#e9ecfa; --dim:#a2a9c8; --faint:#6b7396;
+  --a:#ff7a6b; --b:#3fd0c0; --hl:#ffc857; --grad:#a78bfa; --good:#7ee787; --bad:#ff6b8a;
+  --accent:#7cc4ff;
+  --r:12px; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.5 var(--sans)}
+body{overflow:hidden}
+a{color:var(--accent)}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app{display:grid;grid-template-columns:minmax(0,1fr) 380px;grid-template-rows:48px minmax(0,1fr);height:100vh;height:100dvh}
+.top{grid-column:1/-1;display:flex;align-items:center;gap:12px;padding:0 14px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#11142a,#0d1020)}
+.top a.back{color:var(--dim);text-decoration:none;font-size:13px;white-space:nowrap}
+.top a.back:hover{color:var(--ink)}
+.top .chip{font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 45%,transparent);border-radius:99px;padding:5px 8px}
+.top h1{margin:0;font-size:15px;font-weight:650;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top .sp{flex:1}
+.top .keys{font:11px var(--mono);color:var(--faint);white-space:nowrap}
+.stage{position:relative;min-width:0;min-height:0;background:radial-gradient(ellipse at 50% 40%,#151a3a 0%,var(--bg) 70%)}
+.stage::before{content:"";position:absolute;inset:0;background-image:radial-gradient(rgba(190,200,255,.07) 1px,transparent 1.3px);background-size:24px 24px;pointer-events:none}
+.stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.caption{position:absolute;left:16px;right:16px;top:14px;max-width:640px;padding:10px 14px;border-radius:10px;background:rgba(12,14,30,.78);border:1px solid var(--line2);backdrop-filter:blur(6px);font-size:14px;line-height:1.45;pointer-events:none;transition:opacity .3s}
+.caption b{color:var(--accent)}
+.caption:empty{opacity:0}
+.dock{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;gap:6px;padding:6px;border-radius:99px;background:rgba(12,14,30,.82);border:1px solid var(--line2);backdrop-filter:blur(6px)}
+.dock button{border:0;background:transparent;border-radius:99px;min-width:36px;height:34px;padding:0 12px;cursor:pointer;color:var(--ink);white-space:nowrap}
+.dock button:hover{background:rgba(255,255,255,.08)}
+.dock button.on{background:color-mix(in srgb,var(--accent) 22%,transparent);color:var(--accent)}
+.lesson{border-left:1px solid var(--line);background:var(--panel);overflow:auto;min-height:0;display:flex;flex-direction:column}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border-bottom:1px solid var(--line)}
+.stat{background:var(--panel);padding:10px 12px}
+.stat .k{font:600 10px/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.stat .v{font:600 18px/1.3 var(--mono);font-variant-numeric:tabular-nums;margin-top:3px}
+.tabs{display:flex;gap:2px;padding:10px 12px 0;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);z-index:2}
+.tabs button{border:0;background:none;padding:9px 12px;color:var(--dim);cursor:pointer;border-bottom:2px solid transparent;font-weight:600}
+.tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent)}
+.pane{padding:14px 16px 22px;display:none}
+.pane.on{display:block}
+.pane h3{margin:14px 0 6px;font-size:13px;letter-spacing:.02em}
+.pane p{margin:0 0 10px;color:var(--dim)}
+.pane p b,.pane li b{color:var(--ink)}
+.lede{font-size:15px;color:var(--ink)!important}
+.steps{list-style:none;margin:10px 0 0;padding:0;counter-reset:s}
+.steps li{counter-increment:s;border:1px solid var(--line);border-radius:10px;margin:0 0 8px;padding:10px 12px 10px 40px;position:relative;cursor:pointer;color:var(--dim);background:var(--panel2)}
+.steps li::before{content:counter(s);position:absolute;left:12px;top:10px;width:18px;height:18px;border-radius:99px;display:grid;place-items:center;font:600 11px var(--mono);background:rgba(255,255,255,.07);color:var(--dim)}
+.steps li.on{border-color:color-mix(in srgb,var(--accent) 60%,transparent);color:var(--ink)}
+.steps li.on::before{background:var(--accent);color:#141414}
+.steps li.done::before{content:"✓";background:rgba(126,231,135,.2);color:var(--good)}
+.steps li .t{font-weight:650;color:var(--ink);display:block}
+.steps li .d{display:none;margin-top:4px}
+.steps li.on .d{display:block}
+.tournav{display:flex;gap:8px;margin-top:6px}
+.btn{border:1px solid var(--line2);background:var(--panel2);border-radius:9px;padding:7px 12px;cursor:pointer;color:var(--ink)}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:#15131a;border-color:transparent;font-weight:650}
+.card{border:1px solid var(--line);border-radius:12px;padding:12px;margin:0 0 10px;background:var(--panel2)}
+.card .q{color:var(--ink);font-weight:600;margin-bottom:8px}
+.card .why{display:none;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line2);color:var(--dim)}
+.card.revealed .why{display:block}
+.card .row{display:flex;gap:8px;flex-wrap:wrap}
+.eq{font:14px/1.7 var(--mono);background:#0e1124;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:6px 0 12px;overflow-x:auto;white-space:nowrap}
+.eq .c-a{color:var(--a)} .eq .c-b{color:var(--b)} .eq .c-hl{color:var(--hl)} .eq .c-g{color:var(--grad)} .eq .c-acc{color:var(--accent)}
+.live{font-variant-numeric:tabular-nums;color:var(--hl)}
+.ctrl{display:grid;grid-template-columns:1fr auto;gap:4px 10px;align-items:center;margin:10px 0}
+.ctrl label{color:var(--dim);font-size:13px}
+.ctrl output{font:12px var(--mono);color:var(--ink);font-variant-numeric:tabular-nums}
+.ctrl input[type=range]{grid-column:1/-1;width:100%;accent-color:var(--accent)}
+.seg{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 10px}
+.seg button{border:1px solid var(--line2);background:transparent;border-radius:99px;padding:5px 11px;cursor:pointer;color:var(--dim);font-size:13px}
+.seg button[aria-pressed=true]{background:color-mix(in srgb,var(--accent) 20%,transparent);color:var(--ink);border-color:color-mix(in srgb,var(--accent) 55%,transparent)}
+.note{border-left:3px solid var(--grad);padding:6px 10px;margin:8px 0 12px;color:var(--dim);background:rgba(167,139,250,.06);border-radius:0 8px 8px 0}
+.wild li{margin-bottom:6px;color:var(--dim)}
+@media (max-width:880px){
+  body{overflow:auto}
+  .app{grid-template-columns:1fr;grid-template-rows:48px 58vh auto;height:auto}
+  .stage{height:58vh}
+  .lesson{border-left:0;border-top:1px solid var(--line)}
+  .top .keys{display:none}
+  .caption{font-size:13px;top:10px;left:10px;right:10px}
+  .stats{grid-template-columns:repeat(3,1fr)}
+  .stat .v{font-size:15px}
+}
+@media (prefers-reduced-motion:reduce){.caption{transition:none}}
+.k-g{color:var(--grad);font-weight:650} .k-hl{color:var(--hl);font-weight:650}
 </style>
 </head>
 <body>
-<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
-<div id="ui">
-<h1>⚡ Optimizer Race</h1>
-<div class="ex">Four optimizers run their real update rules down the same bumpy loss surface f(x,y) — adaptive step sizes escape ravines and local minima differently.</div>
-<div class="hint">click: restart from there · ←/→: learning rate · R: new landscape</div>
-<div id="stats"></div>
-<div style="margin-top:4px"><a href="index.html">← gallery</a></div>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace;max-width:100vw;white-space:pre-wrap';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div class="app">
+  <header class="top">
+    <a class="back" href="index.html">← Gallery</a>
+    <span class="chip">ML / AI</span>
+    <h1>Optimizer Race</h1>
+    <span class="sp"></span>
+    <span class="keys">Space play · ←/→ tour · R reset</span>
+  </header>
+  <section class="stage" id="stage">
+    <canvas id="c" role="img" aria-label="Filled contour map of a loss landscape. Four optimizers (GD, Momentum, RMSProp, Adam) race from a shared start leaving coloured trails; a leaderboard ranks them and the selected racer shows its gradient arrow and its actual step arrow."></canvas>
+    <div class="caption" id="caption" aria-live="polite"></div>
+    <div class="dock" role="group" aria-label="Simulation controls">
+      <button id="bPlay" class="on" aria-label="Pause">❚❚</button>
+      <button id="bStep" aria-label="Step once">Step</button>
+      <button id="bReset" aria-label="Reset">Reset</button>
+      <button id="bSpeed" aria-label="Speed">1×</button>
+    </div>
+  </section>
+  <aside class="lesson">
+    <div class="stats" id="stats"><!-- 3 stat tiles: .stat > .k + .v#id --></div>
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-tab="learn">Learn</button>
+      <button role="tab" aria-selected="false" data-tab="try">Try this</button>
+      <button role="tab" aria-selected="false" data-tab="math">The math</button>
+      <button role="tab" aria-selected="false" data-tab="play">Controls</button>
+    </div>
+    <div class="pane on" id="p-learn">
+      <p class="lede">Every optimizer reads the same gradient — what differs is how it turns that arrow into a step.</p>
+      <ol class="steps" id="steps"></ol>
+      <div class="tournav"><button class="btn" id="tPrev">← Back</button><button class="btn primary" id="tNext">Next step →</button></div>
+      <h3>In the wild</h3>
+      <ul class="wild"><li><b>Adam / AdamW</b> trains virtually every transformer and LLM, paired with a learning-rate warm-up that does a similar job to bias correction.</li><li><b>SGD + momentum</b> is still the workhorse for many vision CNNs (ResNets), where it often generalizes a little better than Adam.</li><li><b>RMSProp</b> trained DeepMind's Atari DQN agents; memory-lean successors like Adafactor and Lion keep the same per-parameter scaling idea.</li></ul>
+    </div>
+    <div class="pane" id="p-try"><!-- .card experiments: predict → run → why --></div>
+    <div class="pane" id="p-math"><!-- .eq blocks with colour-coded terms + .live spans; .note for misconceptions --></div>
+    <div class="pane" id="p-play"><!-- .ctrl sliders, .seg segmented choices --></div>
+  </aside>
 </div>
-<canvas id="c"></canvas>
 <script>
 'use strict';
-const cv=document.getElementById('c'),ctx=cv.getContext('2d'),statsEl=document.getElementById('stats');
-let W=0,H=0,DPR=1,scale=1,field=null,fmin=0,fmax=1;
-let wells=[],sA=0,sF=0,sP1=0,sP2=0;
-let lrScale=1,stepCount=0,minL=1e9,maxL=-1e9,time=0,frame=0;
-const BASE_LR=0.02,MAXHIST=700;
-const rr=(a,b)=>a+Math.random()*(b-a);
-function f(x,y){
-  let v=0.06*(x*x+y*y)+sA*Math.sin(sF*x+sP1)*Math.sin(sF*y+sP2);
-  for(let i=0;i<wells.length;i++){const w=wells[i],dx=x-w.x,dy=y-w.y;v-=w.a*Math.exp(-(dx*dx+dy*dy)/(2*w.s*w.s));}
-  return v;
+/* ===== shell helpers (keep) ===== */
+const $ = s => document.querySelector(s);
+const cv = $('#c'), ctx = cv.getContext('2d'), stage = $('#stage');
+let W = 0, H = 0, DPR = 1;
+function resize() {
+  const r = stage.getBoundingClientRect(); DPR = Math.min(2, devicePixelRatio || 1);
+  W = Math.max(1, r.width); H = Math.max(1, r.height);
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR); ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  if (typeof onResize === 'function') onResize();
 }
-function grad(x,y){const h=1e-3;return[(f(x+h,y)-f(x-h,y))/(2*h),(f(x,y+h)-f(x,y-h))/(2*h)];}
-function newLandscape(){
-  wells=[];for(let i=0;i<5;i++)wells.push({x:rr(-2.3,2.3),y:rr(-2.3,2.3),a:rr(0.7,1.8),s:rr(0.45,0.85)});
-  sA=rr(0.15,0.3);sF=rr(2,3);sP1=rr(0,6.283);sP2=rr(0,6.283);
+new ResizeObserver(resize).observe(stage); resize();
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+// tabs
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', x === b));
+  document.querySelectorAll('.pane').forEach(p => p.classList.toggle('on', p.id === 'p-' + b.dataset.tab));
+});
+// playback
+let playing = !REDUCED, speed = 1;
+const SPEEDS = [0.25, 0.5, 1, 2, 4];
+function setPlaying(v) { playing = v; $('#bPlay').textContent = v ? '❚❚' : '▶'; $('#bPlay').classList.toggle('on', v); $('#bPlay').setAttribute('aria-label', v ? 'Pause' : 'Play'); }
+$('#bPlay').onclick = () => setPlaying(!playing);
+$('#bSpeed').onclick = () => { speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]; $('#bSpeed').textContent = speed + '×'; };
+// tour: STEPS = [{t:'title', d:'html', cap:'stage caption html', go(){ /* set demo state */ }}]
+let tour = 0;
+function renderSteps() {
+  const ol = $('#steps'); ol.innerHTML = '';
+  STEPS.forEach((s, i) => { const li = document.createElement('li'); li.className = (i === tour ? 'on' : '') + (i < tour ? ' done' : ''); li.innerHTML = `<span class="t">${s.t}</span><span class="d">${s.d}</span>`; li.onclick = () => goStep(i); ol.appendChild(li); });
+  $('#tPrev').disabled = tour === 0; $('#tNext').textContent = tour === STEPS.length - 1 ? 'Start over ↺' : 'Next step →';
 }
-const w2sx=x=>W/2+x*scale,w2sy=y=>H/2+y*scale,s2wx=px=>(px-W/2)/scale,s2wy=py=>(py-H/2)/scale;
-const PAL=[[8,6,38],[42,16,110],[24,62,180],[0,148,196],[16,205,150],[168,222,66],[255,160,48],[255,72,72]];
-function pal(t){t=Math.max(0,Math.min(1,t));const q=t*(PAL.length-1),i=Math.min(PAL.length-2,q|0),fr=q-i,a=PAL[i],b=PAL[i+1];
-  return[a[0]+(b[0]-a[0])*fr,a[1]+(b[1]-a[1])*fr,a[2]+(b[2]-a[2])*fr];}
-function renderField(){
-  fmin=1e9;fmax=-1e9;
-  for(let i=0;i<=64;i++)for(let j=0;j<=64;j++){const v=f(s2wx(i/64*W),s2wy(j/64*H));if(v<fmin)fmin=v;if(v>fmax)fmax=v;}
-  const ow=Math.max(2,Math.ceil(W/3)),oh=Math.max(2,Math.ceil(H/3));
-  field=document.createElement('canvas');field.width=ow;field.height=oh;
-  const fc=field.getContext('2d'),img=fc.createImageData(ow,oh),d=img.data;
-  for(let py=0;py<oh;py++)for(let px=0;px<ow;px++){
-    const x=s2wx((px+0.5)*W/ow),y=s2wy((py+0.5)*H/oh);
-    const t=(f(x,y)-fmin)/(fmax-fmin),c=pal(t);
-    const q=t*15,frq=q-Math.floor(q),m=frq<0.09?0.5:1;
-    const k=(py*ow+px)*4;d[k]=c[0]*m;d[k+1]=c[1]*m;d[k+2]=c[2]*m;d[k+3]=255;
-  }
-  fc.putImageData(img,0,0);
+function goStep(i) { tour = (i + STEPS.length) % STEPS.length; const s = STEPS[tour]; if (s.go) s.go(); $('#caption').innerHTML = s.cap || ''; renderSteps(); }
+$('#tPrev').onclick = () => goStep(Math.max(0, tour - 1));
+$('#tNext').onclick = () => goStep(tour + 1);
+// experiments: TRIES = [{q:'Predict…', run(){…}, why:'html'}]
+function renderTries() {
+  const p = $('#p-try'); p.innerHTML = '<p>Make a prediction first, then run it. Each experiment sets the demo up for you.</p>';
+  TRIES.forEach(x => { const c = document.createElement('div'); c.className = 'card'; c.innerHTML = `<div class="q">${x.q}</div><div class="row"><button class="btn primary">Run it</button><button class="btn">Show why</button></div><div class="why">${x.why}</div>`; const [run, why] = c.querySelectorAll('button'); run.onclick = () => { x.run(); setPlaying(true); }; why.onclick = () => c.classList.toggle('revealed'); p.appendChild(c); });
 }
-const opts=[
-  {name:'SGD',col:'#26d9ff'},
-  {name:'Momentum',col:'#ff4df2'},
-  {name:'RMSProp',col:'#ffc233'},
-  {name:'Adam',col:'#51ff9e'}
-];
-let start=[-2.3,-1.8];
-function restart(pt){
-  start=[pt[0],pt[1]];stepCount=0;minL=1e9;maxL=-1e9;
-  for(const o of opts){o.p=[start[0],start[1]];o.v=[0,0];o.s=[0,0];o.m=[0,0];o.v2=[0,0];o.t=0;o.trail=[[start[0],start[1]]];o.hist=[];o.stuck=false;}
+// controls helpers
+function slider(parent, id, label, min, max, step, value, fmt, onInput) {
+  const d = document.createElement('div'); d.className = 'ctrl';
+  d.innerHTML = `<label for="${id}">${label}</label><output id="${id}o"></output><input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${value}">`;
+  parent.appendChild(d); const inp = d.querySelector('input'), out = d.querySelector('output');
+  const upd = () => { out.textContent = fmt(+inp.value); onInput(+inp.value); }; inp.oninput = upd; upd();
+  return { set(v) { inp.value = v; upd(); }, get: () => +inp.value };
 }
-function stepOpt(o,idx){
-  const g=grad(o.p[0],o.p[1]),lr=BASE_LR*lrScale;
-  if(idx===0){o.p[0]-=lr*g[0];o.p[1]-=lr*g[1];}
-  else if(idx===1){for(let k=0;k<2;k++){o.v[k]=0.9*o.v[k]+g[k];o.p[k]-=lr*o.v[k];}}
-  else if(idx===2){for(let k=0;k<2;k++){o.s[k]=0.9*o.s[k]+0.1*g[k]*g[k];o.p[k]-=lr*g[k]/(Math.sqrt(o.s[k])+1e-8);}}
-  else{o.t++;for(let k=0;k<2;k++){
-    o.m[k]=0.9*o.m[k]+0.1*g[k];o.v2[k]=0.999*o.v2[k]+0.001*g[k]*g[k];
-    const mh=o.m[k]/(1-Math.pow(0.9,o.t)),vh=o.v2[k]/(1-Math.pow(0.999,o.t));
-    o.p[k]-=lr*mh/(Math.sqrt(vh)+1e-8);}}
-  o.p[0]=Math.max(-3.4,Math.min(3.4,o.p[0]));o.p[1]=Math.max(-3.4,Math.min(3.4,o.p[1]));
-  o.trail.push([o.p[0],o.p[1]]);if(o.trail.length>500)o.trail.shift();
-  if(o.hist.length<MAXHIST){const L=f(o.p[0],o.p[1]);o.hist.push(L);if(L<minL)minL=L;if(L>maxL)maxL=L;}
-  const tl=o.trail,n=tl.length;
-  if(n>40){const a=tl[n-1],b=tl[n-41];o.stuck=Math.hypot(a[0]-b[0],a[1]-b[1])<0.02;}else o.stuck=false;
+function seg(parent, options, value, onPick) {
+  const d = document.createElement('div'); d.className = 'seg'; parent.appendChild(d);
+  const bs = options.map(([v, label]) => { const b = document.createElement('button'); b.textContent = label; b.setAttribute('aria-pressed', v === value); b.onclick = () => set(v); d.appendChild(b); return [v, b]; });
+  function set(v) { bs.forEach(([k, b]) => b.setAttribute('aria-pressed', k === v)); onPick(v); }
+  return { set };
 }
-function drawChart(){
-  const pw=Math.min(300,W*0.34),ph=110,px=W-pw-14,py=H-ph-14;
-  ctx.fillStyle='rgba(4,7,20,.75)';ctx.fillRect(px,py,pw,ph);
-  ctx.strokeStyle='rgba(120,220,255,.3)';ctx.lineWidth=1;ctx.strokeRect(px,py,pw,ph);
-  ctx.fillStyle='#9fd8ff';ctx.font='10px ui-monospace,monospace';ctx.fillText('loss vs step',px+8,py+14);
-  const rng=(maxL-minL)||1;
-  for(const o of opts){const h=o.hist;if(!h||h.length<2)continue;
-    ctx.strokeStyle=o.col;ctx.globalAlpha=.95;ctx.lineWidth=1.3;ctx.beginPath();
-    for(let j=0;j<h.length;j++){
-      const X=px+4+(j/(MAXHIST-1))*(pw-8),Y=py+ph-6-((h[j]-minL)/rng)*(ph-24);
-      if(j)ctx.lineTo(X,Y);else ctx.moveTo(X,Y);}
-    ctx.stroke();}
-  ctx.globalAlpha=1;
-}
-function draw(){
-  ctx.drawImage(field,0,0,W,H);
-  ctx.strokeStyle='rgba(255,255,255,.8)';ctx.lineWidth=1.5;
-  ctx.beginPath();ctx.arc(w2sx(start[0]),w2sy(start[1]),7,0,6.283);ctx.stroke();
-  ctx.lineJoin='round';ctx.lineCap='round';
-  for(let i=0;i<4;i++){const o=opts[i],tl=o.trail;
-    for(const pass of[[6,0.13],[1.8,0.85]]){
-      ctx.strokeStyle=o.col;ctx.globalAlpha=pass[1];ctx.lineWidth=pass[0];ctx.beginPath();
-      ctx.moveTo(w2sx(tl[0][0]),w2sy(tl[0][1]));
-      for(let j=1;j<tl.length;j++)ctx.lineTo(w2sx(tl[j][0]),w2sy(tl[j][1]));
-      ctx.stroke();}
-    ctx.globalAlpha=1;
-    const pulse=o.stuck?2.5+2*Math.sin(time*9+i*1.3):0;
-    const bx=w2sx(o.p[0]),by=w2sy(o.p[1]);
-    ctx.fillStyle=o.col;ctx.beginPath();ctx.arc(bx,by,5.5+pulse,0,6.283);ctx.fill();
-    ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(bx,by,2,0,6.283);ctx.fill();
-    if(o.stuck){ctx.strokeStyle=o.col;ctx.globalAlpha=.5;ctx.beginPath();ctx.arc(bx,by,10+pulse*1.6,0,6.283);ctx.stroke();ctx.globalAlpha=1;}
-    ctx.font='11px ui-monospace,monospace';ctx.fillStyle=o.col;ctx.fillText(o.name,bx+9,by-8);
-  }
-  drawChart();
-}
-function stats(){
-  let s='lr = '+(BASE_LR*lrScale).toFixed(4)+'  (×'+lrScale.toFixed(2)+')   step '+stepCount+'\n';
-  for(const o of opts)
-    s+='<span style="color:'+o.col+'">■ '+o.name.padEnd(9)+' L='+f(o.p[0],o.p[1]).toFixed(3)+(o.stuck?'  · stuck (pulsing)':'')+'</span>\n';
-  statsEl.innerHTML=s;
-}
-function loop(ts){
-  time=ts/1000;
-  for(let s=0;s<2;s++){for(let i=0;i<4;i++)stepOpt(opts[i],i);stepCount++;}
-  draw();frame++;if(frame%6===0)stats();
+function stat(id, label) { const d = document.createElement('div'); d.className = 'stat'; d.innerHTML = `<div class="k">${label}</div><div class="v" id="${id}">–</div>`; $('#stats').appendChild(d); }
+const setText = (id, v) => { const e = document.getElementById(id); if (e && e.textContent !== v) e.textContent = v; };
+// keyboard
+addEventListener('keydown', e => {
+  if (e.target.matches('input,select,textarea')) return;
+  if (e.code === 'Space') { setPlaying(!playing); e.preventDefault(); }
+  else if (e.key === 'ArrowRight') goStep(tour + 1);
+  else if (e.key === 'ArrowLeft') goStep(Math.max(0, tour - 1));
+  else if (e.key === 'r' || e.key === 'R') $('#bReset').click();
+});
+// wall-clock-locked loop (dt clamped to [0, 0.1] — rAF timestamps can precede performance.now())
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.1, Math.max(0, (now - last) / 1000)); last = now;
+  try { frame(playing ? dt * speed : 0, dt); } catch (err) { window.onerror(err.message, '', 0); return; }
   requestAnimationFrame(loop);
 }
-function sizeOnly(){
-  DPR=Math.min(window.devicePixelRatio||1,2);W=innerWidth;H=innerHeight;
-  cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);
-  cv.style.width=W+'px';cv.style.height=H+'px';
-  ctx.setTransform(DPR,0,0,DPR,0,0);scale=Math.min(W,H)/6.8;
+
+// ===== DEMO CODE: Optimizer Race =====
+/*CORE-START*/
+// ---- landscapes: f, analytic gradient g, view box [x0,x1,y0,y1], default start, tuned base η per optimizer,
+//      tolerance on f − f*, ck = colour-scale knee (contours are spaced in log(1 + (f − f*)/ck)) ----
+const GS = (x, y, cx, cy, s) => Math.exp(-((x - cx) ** 2 + (y - cy) ** 2) / s);
+const BUMPS = [[1.5, 1.1, 0.7, 1.6], [-1.5, -0.5, 0.5, 1.0], [0.3, -1.5, 0.45, 1.2], [-0.9, 1.4, 0.35, 0.8]]; // cx, cy, width, depth
+const LAND = {
+  bowl:   { name: 'Bowl', f: (x, y) => 0.5 * (x * x + y * y), g: (x, y) => [x, y],
+            box: [-3, 3, -2.2, 2.2], start: [-2.5, 1.7], lr: { gd: 0.12, mom: 0.04, rms: 0.08, adam: 0.12 }, tol: 1e-3, ck: 0.12 },
+  ravine: { name: 'Ravine', f: (x, y) => 0.005 * x * x + 0.5 * y * y, g: (x, y) => [0.01 * x, y],
+            box: [-4, 4, -2.6, 2.6], start: [-3.7, 2.1], lr: { gd: 1.8, mom: 0.4, rms: 0.1, adam: 0.15 }, tol: 1e-3, ck: 0.06 },
+  rosen:  { name: 'Rosenbrock', f: (x, y) => (1 - x) ** 2 + 5 * (y - x * x) ** 2,
+            g: (x, y) => [-2 * (1 - x) - 20 * x * (y - x * x), 10 * (y - x * x)],
+            box: [-2, 2, -1, 3], start: [-1.6, 2.4], lr: { gd: 0.012, mom: 0.0025, rms: 0.02, adam: 0.06 }, tol: 1e-3, ck: 0.25 },
+  saddle: { name: 'Saddle', f: (x, y) => 0.5 * x * x + 0.25 * y ** 4 - 0.5 * y * y, g: (x, y) => [x, y ** 3 - y],
+            box: [-3, 3, -1.8, 1.8], start: [-2.6, 0.0001], lr: { gd: 0.1, mom: 0.02, rms: 0.05, adam: 0.08 }, tol: 1e-3, ck: 0.1,
+            mins: [[0, 1], [0, -1]], marks: [[0, 0, 'saddle: ∇f = 0']] },
+  bumpy:  { name: 'Many minima', f: (x, y) => { let v = 0.12 * (x * x + y * y) + 0.08 * Math.sin(2.5 * x) * Math.sin(2.5 * y); for (const [cx, cy, s, d] of BUMPS) v -= d * GS(x, y, cx, cy, s); return v; },
+            g: (x, y) => { let gx = 0.24 * x + 0.2 * Math.cos(2.5 * x) * Math.sin(2.5 * y), gy = 0.24 * y + 0.2 * Math.sin(2.5 * x) * Math.cos(2.5 * y);
+              for (const [cx, cy, s, d] of BUMPS) { const e = d * GS(x, y, cx, cy, s) * 2 / s; gx += e * (x - cx); gy += e * (y - cy); } return [gx, gy]; },
+            box: [-3, 3, -2.4, 2.4], start: [2.4, -1.0], lr: { gd: 0.1, mom: 0.03, rms: 0.04, adam: 0.08 }, tol: 1e-3, ck: 0.15 },
+};
+// global minimum: coarse grid, then plain-GD polish
+function findMin(L) {
+  const [x0, x1, y0, y1] = L.box; let bx = 0, by = 0, bf = Infinity;
+  for (let i = 0; i <= 120; i++) for (let j = 0; j <= 120; j++) { const x = x0 + (x1 - x0) * i / 120, y = y0 + (y1 - y0) * j / 120, v = L.f(x, y); if (v < bf) { bf = v; bx = x; by = y; } }
+  for (let k = 0; k < 4000; k++) { const [gx, gy] = L.g(bx, by); bx -= 0.01 * gx; by -= 0.01 * gy; }
+  return { x: bx, y: by, f: L.f(bx, by) };
 }
-addEventListener('resize',()=>{sizeOnly();renderField();});
-cv.addEventListener('click',e=>{restart([s2wx(e.clientX),s2wy(e.clientY)]);});
-addEventListener('keydown',e=>{
-  if(e.key==='ArrowLeft'){lrScale=Math.max(0.05,lrScale/1.25);e.preventDefault();}
-  else if(e.key==='ArrowRight'){lrScale=Math.min(30,lrScale*1.25);e.preventDefault();}
-  else if(e.key==='r'||e.key==='R'){newLandscape();renderField();restart(start);}
+// seeded RNG (mulberry32) + Gaussian, for reproducible gradient noise
+function mulberry(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function gauss(r) { return Math.sqrt(-2 * Math.log(1 - r())) * Math.cos(6.283185307 * r()); }
+// ---- the four update rules (+ Adam without bias correction). Each racer keeps its own state. ----
+const HP = { beta: 0.9, rho: 0.9, b1: 0.9, b2: 0.999, eps: 1e-8 };
+function makeRacer(kind, x, y) { return { kind, x, y, v: [0, 0], s: [0, 0], m: [0, 0], u: [0, 0], t: 0, g: [0, 0], d: [0, 0], lr: 0 }; }
+function stepRacer(r, L, lrMul, hp, noise) {
+  const lr = L.lr[r.kind === 'adamnb' ? 'adam' : r.kind] * lrMul, g = L.g(r.x, r.y), d = [0, 0];
+  if (noise) { g[0] += noise(); g[1] += noise(); }
+  r.t++;
+  for (let k = 0; k < 2; k++) {
+    if (r.kind === 'gd') d[k] = -lr * g[k];
+    else if (r.kind === 'mom') { r.v[k] = hp.beta * r.v[k] + g[k]; d[k] = -lr * r.v[k]; }
+    else if (r.kind === 'rms') { r.s[k] = hp.rho * r.s[k] + (1 - hp.rho) * g[k] * g[k]; d[k] = -lr * g[k] / (Math.sqrt(r.s[k]) + hp.eps); }
+    else {
+      r.m[k] = hp.b1 * r.m[k] + (1 - hp.b1) * g[k]; r.u[k] = hp.b2 * r.u[k] + (1 - hp.b2) * g[k] * g[k];
+      const bc = r.kind === 'adam', mh = bc ? r.m[k] / (1 - hp.b1 ** r.t) : r.m[k], vh = bc ? r.u[k] / (1 - hp.b2 ** r.t) : r.u[k];
+      d[k] = -lr * mh / (Math.sqrt(vh) + hp.eps);
+    }
+  }
+  r.x += d[0]; r.y += d[1]; r.g = g; r.d = d; r.lr = lr;
+  return d;
+}
+// largest eigenvalue of the local Hessian — plain GD is stable only while η·λmax < 2
+function lamMax(L, x, y) {
+  const h = 1e-4, a = L.g(x + h, y), b = L.g(x - h, y), c = L.g(x, y + h), e = L.g(x, y - h);
+  const hxx = (a[0] - b[0]) / (2 * h), hyy = (c[1] - e[1]) / (2 * h), hxy = (a[1] - b[1] + c[0] - e[0]) / (4 * h);
+  return (hxx + hyy) / 2 + Math.sqrt(((hxx - hyy) / 2) ** 2 + hxy * hxy);
+}
+/*CORE-END*/
+
+// ---- racers & shared state ----
+const RACERS = [
+  { kind: 'gd', name: 'GD', short: 'GD', col: '#e8ebf7' },
+  { kind: 'mom', name: 'Momentum', short: 'Mom', col: '#ff7a6b' },
+  { kind: 'rms', name: 'RMSProp', short: 'RMS', col: '#3fd0c0' },
+  { kind: 'adam', name: 'Adam', short: 'Adam', col: '#f38ad8' },
+  { kind: 'adamnb', name: 'Adam, no bias corr.', short: 'Adam†', col: '#f38ad8', dash: true },
+];
+const META = Object.fromEntries(RACERS.map(m => [m.kind, m]));
+const MINS = Object.fromEntries(Object.entries(LAND).map(([k, L]) => [k, findMin(L)]));
+const SPS = 30, MAXT = 800, VIOLET = '#a78bfa', AMBER = '#ffc857', INK = '#c7cbe0';
+const SANS = 'ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif', MONO = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace';
+const S = { land: 'ravine', start: [-3.7, 2.1], lrMul: 1, noise: 0, show: new Set(['gd', 'mom', 'rms', 'adam']), sel: 'gd',
+            racers: [], t: 0, acc: 0, over: false, hold: 0, drag: false, preview: null, quiet: false, arrowK: 1, rowHits: [], placed: [], frameN: 0 };
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const fmt = v => !isFinite(v) ? '∞' : v === 0 ? '0' : Math.abs(v) >= 1e4 || Math.abs(v) < 1e-3 ? v.toExponential(1) : v.toFixed(Math.abs(v) < 0.1 ? 4 : 3);
+const vec = a => `(${fmt(a[0])}, ${fmt(a[1])})`;
+
+function newRacers() {
+  const L = LAND[S.land], fs = MINS[S.land].f;
+  return RACERS.filter(m => S.show.has(m.kind)).map(m => {
+    const r = makeRacer(m.kind, S.start[0], S.start[1]), rg = mulberry(7 + RACERS.indexOf(m) * 101);
+    return Object.assign(r, { meta: m, noise: () => S.noise * gauss(rg), trail: [[r.x, r.y]], hist: [], e: L.f(r.x, r.y) - fs, fin: -1, div: false, still: 0, px: r.x, py: r.y });
+  });
+}
+function advance(r) {
+  if (r.div) return;
+  const L = LAND[S.land]; r.px = r.x; r.py = r.y;
+  const d = stepRacer(r, L, S.lrMul, HP, S.noise ? r.noise : null);
+  r.e = L.f(r.x, r.y) - MINS[S.land].f;
+  const [x0, x1, y0, y1] = L.box, bw = x1 - x0, bh = y1 - y0; // "diverged" = flung far outside the view
+  if (!isFinite(r.e) || r.x < x0 - bw || r.x > x1 + bw || r.y < y0 - bh || r.y > y1 + bh) { r.div = true; r.trail.push([r.x, r.y]); r.x = r.px; r.y = r.py; return; }
+  r.still = Math.hypot(d[0], d[1]) < 2e-4 ? r.still + 1 : 0;
+  if (r.fin < 0 && r.e < L.tol) r.fin = r.t;
+  r.trail.push([r.x, r.y]); r.hist.push(r.e);
+}
+function stepAll() {
+  if (S.over) return;
+  S.t++; S.racers.forEach(advance);
+  S.over = S.t >= MAXT || S.racers.every(r => r.div || r.fin > 0 || r.still > 90);
+}
+function reset() { S.racers = newRacers(); S.e0 = LAND[S.land].f(...S.start) - MINS[S.land].f; S.t = 0; S.acc = 0; S.over = false; S.hold = 0; }
+function preview() { const P = newRacers(); for (let i = 0; i < 160; i++) P.forEach(advance); S.preview = P; }
+const ranked = () => S.racers.slice().sort((a, b) => (a.fin > 0 ? a.fin : a.div ? 1e9 : 1e6 + a.e) - (b.fin > 0 ? b.fin : b.div ? 1e9 : 1e6 + b.e));
+const selR = () => S.racers.find(r => r.kind === S.sel);
+
+// ---- layout: map fitted inside the safe rect; leaderboard panel right (wide) or strip at bottom (phone) ----
+let MR, PANEL, sc = 1, ox = 0, oy = 0, field = null, contours = null;
+function layout() {
+  const top = 84, bot = 76;
+  if (W >= 700) { PANEL = { x: W - 16 - 228, y: top, w: 228, strip: false }; MR = { x: 16, y: top, w: W - 32 - 244, h: H - top - bot }; }
+  else { PANEL = { x: 12, y: H - bot - 42, w: W - 24, h: 38, strip: true }; MR = { x: 16, y: top, w: W - 32, h: H - top - bot - 50 }; }
+  const [x0, x1, y0, y1] = LAND[S.land].box;
+  sc = Math.min(MR.w / (x1 - x0), MR.h / (y1 - y0));
+  ox = MR.x + MR.w / 2 - (x0 + x1) / 2 * sc; oy = MR.y + MR.h / 2 + (y0 + y1) / 2 * sc;
+}
+const X = x => ox + x * sc, Y = y => oy - y * sc, IX = px => (px - ox) / sc, IY = py => (oy - py) / sc;
+const CX = v => clamp(v, -4000, 4000);
+
+// ---- filled contour field (⅓-res ImageData, upscaled smooth) + crisp iso-lines (marching squares → Path2D) ----
+const RAMP = [[0, 6, 8, 26], [0.25, 13, 22, 60], [0.5, 24, 42, 96], [0.75, 38, 64, 124], [1, 60, 88, 148]], NB = 14;
+function ramp(t) {
+  t = clamp(t, 0, 1); let i = 0; while (i < RAMP.length - 2 && t > RAMP[i + 1][0]) i++;
+  const a = RAMP[i], b = RAMP[i + 1], u = (t - a[0]) / (b[0] - a[0]);
+  return [a[1] + (b[1] - a[1]) * u, a[2] + (b[2] - a[2]) * u, a[3] + (b[3] - a[3]) * u];
+}
+function rebuildField() {
+  const L = LAND[S.land], fs = MINS[S.land].f, [x0, x1, y0, y1] = L.box;
+  let fm = -Infinity; for (let i = 0; i <= 40; i++) for (let j = 0; j <= 40; j++) fm = Math.max(fm, L.f(x0 + (x1 - x0) * i / 40, y0 + (y1 - y0) * j / 40));
+  const span = Math.log1p((fm - fs) / L.ck) / NB, tv = (x, y) => Math.log1p(Math.max(0, L.f(x, y) - fs) / L.ck) / span;
+  const ow = Math.ceil(W / 3), oh = Math.ceil(H / 3);
+  field = field || document.createElement('canvas'); field.width = ow; field.height = oh;
+  const fc = field.getContext('2d'), img = fc.createImageData(ow, oh), D = img.data;
+  for (let j = 0; j < oh; j++) for (let i = 0; i < ow; i++) {
+    const q = tv(IX((i + 0.5) * W / ow), IY((j + 0.5) * H / oh)), b = Math.floor(q), c = ramp((b + (q - b) * 0.35) / NB), k = (j * ow + i) * 4;
+    D[k] = c[0]; D[k + 1] = c[1]; D[k + 2] = c[2]; D[k + 3] = 255;
+  }
+  fc.putImageData(img, 0, 0);
+  vignette = ctx.createRadialGradient(MR.x + MR.w / 2, MR.y + MR.h / 2, Math.min(MR.w, MR.h) * 0.45, MR.x + MR.w / 2, MR.y + MR.h / 2, Math.hypot(W, H) * 0.62);
+  vignette.addColorStop(0, 'rgba(6,8,22,0)'); vignette.addColorStop(1, 'rgba(6,8,22,.62)');
+  const st = 6, nx = Math.ceil(W / st) + 1, ny = Math.ceil(H / st) + 1, T = new Float32Array(nx * ny);
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) T[j * nx + i] = tv(IX(i * st), IY(j * st));
+  contours = new Path2D(); const p = [];
+  for (let j = 0; j < ny - 1; j++) for (let i = 0; i < nx - 1; i++) {
+    const a = T[j * nx + i], b = T[j * nx + i + 1], c = T[(j + 1) * nx + i + 1], d = T[(j + 1) * nx + i];
+    const X0 = i * st, Y0 = j * st, X1 = X0 + st, Y1 = Y0 + st, hi = Math.floor(Math.max(a, b, c, d));
+    for (let l = Math.max(1, Math.ceil(Math.min(a, b, c, d))); l <= hi; l++) {
+      p.length = 0;
+      const e = (u, v, xa, ya, xb, yb) => { if ((u < l) !== (v < l)) { const s = (l - u) / (v - u); p.push(xa + (xb - xa) * s, ya + (yb - ya) * s); } };
+      e(a, b, X0, Y0, X1, Y0); e(b, c, X1, Y0, X1, Y1); e(c, d, X1, Y1, X0, Y1); e(d, a, X0, Y1, X0, Y0);
+      for (let q = 0; q + 3 < p.length; q += 4) { contours.moveTo(p[q], p[q + 1]); contours.lineTo(p[q + 2], p[q + 3]); }
+    }
+  }
+}
+let vignette = null;
+var onResize = () => { layout(); rebuildField(); }; // var: the shell's first resize() runs before this block
+
+// ---- drawing ----
+function circle(x, y, r) { ctx.beginPath(); ctx.arc(x, y, r, 0, 6.2832); ctx.fill(); }
+function pill(x, y, w, h, r, fill, stroke) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); ctx.fillStyle = fill; ctx.fill(); if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 1; ctx.stroke(); } }
+function tag(txt, x, y, col, font) { // text on a dark pill, x = left, y = middle
+  ctx.font = font || '600 12px ' + SANS; const w = ctx.measureText(txt).width + 10;
+  pill(x - 5, y - 9, w, 18, 6, 'rgba(8,10,24,.78)'); ctx.fillStyle = col; ctx.textBaseline = 'middle'; ctx.fillText(txt, x, y);
+  S.placed.push({ x: x - 5, y, w }); return w;
+}
+function arrow(x0, y0, x1, y1, col, w) {
+  const dx = x1 - x0, dy = y1 - y0, L = Math.hypot(dx, dy); if (L < 2) return;
+  const ux = dx / L, uy = dy / L, hl = Math.min(11, L * 0.5), bx = x1 - ux * hl, by = y1 - uy * hl;
+  for (const [c, lw] of [['rgba(5,6,16,.7)', w + 3], [col, w]]) {
+    ctx.strokeStyle = c; ctx.lineWidth = lw; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(bx, by); ctx.stroke();
+    ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(x1 + ux * (lw - w) * 0.6, y1 + uy * (lw - w) * 0.6);
+    ctx.lineTo(bx - uy * (hl * 0.55 + (lw - w) / 2), by + ux * (hl * 0.55 + (lw - w) / 2)); ctx.lineTo(bx + uy * (hl * 0.55 + (lw - w) / 2), by - ux * (hl * 0.55 + (lw - w) / 2)); ctx.fill();
+  }
+}
+function drawTrail(tr, m, alpha) {
+  ctx.setLineDash(m.dash ? [6, 5] : []); ctx.beginPath();
+  for (let i = 0; i < tr.length; i++) { const px = CX(X(tr[i][0])), py = CX(Y(tr[i][1])); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
+  ctx.strokeStyle = m.col; ctx.globalAlpha = 0.15 * alpha; ctx.lineWidth = 7; ctx.stroke();
+  ctx.globalAlpha = 0.95 * alpha; ctx.lineWidth = 1.7; ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle = m.col;
+  for (let i = 1, n = Math.min(tr.length, 500); i < n; i++) ctx.fillRect(CX(X(tr[i][0])) - 1.3, CX(Y(tr[i][1])) - 1.3, 2.6, 2.6);
+  ctx.globalAlpha = 1;
+}
+function drawMarkers() {
+  const L = LAND[S.land], mins = L.mins || [[MINS[S.land].x, MINS[S.land].y]];
+  ctx.lineWidth = 1.5; ctx.strokeStyle = INK;
+  for (const [mx, my] of mins) {
+    const px = X(mx), py = Y(my); ctx.globalAlpha = 0.8;
+    ctx.beginPath(); ctx.moveTo(px - 6, py); ctx.lineTo(px + 6, py); ctx.moveTo(px, py - 6); ctx.lineTo(px, py + 6); ctx.stroke(); ctx.globalAlpha = 1;
+    tag('min', px - 11, py + 25, INK, '600 11px ' + SANS); // below the cross: converged dots sit on it, labels go above
+  }
+  for (const [mx, my, txt] of L.marks || []) {
+    const px = X(mx), py = Y(my); ctx.setLineDash([3, 4]); ctx.strokeStyle = 'rgba(199,203,224,.7)';
+    ctx.beginPath(); ctx.arc(px, py, 16, 0, 6.2832); ctx.stroke(); ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(px + 12, py - 12); ctx.lineTo(px + 26, py - 26); ctx.stroke();
+    tag(txt, px + 30, py - 30, INK, '600 11px ' + SANS);
+  }
+  const sx = X(S.start[0]), sy = Y(S.start[1]);
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(sx, sy, 8, 0, 6.2832); ctx.stroke();
+  ctx.globalAlpha = 0.35; ctx.beginPath(); ctx.arc(sx, sy, 13, 0, 6.2832); ctx.stroke(); ctx.globalAlpha = 1;
+  tag(S.t < 40 || S.drag ? 'start · drag me' : 'start', sx - 20, sy + 24, '#fff', '600 11px ' + SANS);
+}
+function drawSelected() {
+  const r = selR(); if (!r || r.t === 0) return;
+  const hx = X(r.x), hy = Y(r.y);
+  ctx.strokeStyle = AMBER; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(hx, hy, 11 + Math.sin(performance.now() / 260) * 1.5, 0, 6.2832); ctx.stroke();
+  if (r.div || r.fin > 0) return; // arrows only while racing — once converged the steps are ~0
+  const a = [-r.lr * r.g[0], -r.lr * r.g[1]], b = r.d, big = Math.max(Math.hypot(a[0], a[1]), Math.hypot(b[0], b[1])) * sc || 1;
+  S.arrowK = Math.exp(Math.log(S.arrowK) * 0.8 + Math.log(clamp(78 / big, 1, 800)) * 0.2);
+  const k = S.arrowK * sc, x0 = X(r.px), y0 = Y(r.py), ax = x0 + a[0] * k, ay = y0 - a[1] * k, bx = x0 + b[0] * k, by = y0 - b[1] * k;
+  arrow(x0, y0, ax, ay, VIOLET, 4); arrow(x0, y0, bx, by, AMBER, 2.2);
+  if (Math.hypot(ax - bx, ay - by) < 24) tag(r.kind === 'gd' ? 'Δθ = −η∇f' : 'Δθ ≈ −η∇f', bx + 8, by - 10, AMBER);
+  else { tag('−η∇f', ax + (ax > x0 ? 6 : -52), ay + (ay > y0 ? 10 : -10), VIOLET); tag('Δθ', bx + (bx > x0 ? 6 : -30), by + (by > y0 ? 10 : -10), AMBER); }
+}
+function drawLabels() { // try right/left × above/below, stepping outward, until a slot is free of tags, dots and chrome
+  const maxX = PANEL.strip ? W - 16 : PANEL.x - 8, yMin = 96, yMax = PANEL.strip ? PANEL.y - 11 : H - 86;
+  const placed = S.placed.concat(S.racers.map(r => ({ x: X(r.x) - 7, y: Y(r.y), w: 14 })));
+  const free = (lx, ly, w) => ly >= yMin && ly <= yMax && !placed.some(p => lx - 5 < p.x + p.w && lx - 5 + w > p.x && Math.abs(ly - p.y) < 19);
+  ctx.font = '600 12px ' + SANS;
+  for (const r of S.racers) {
+    const txt = r.meta.name + (r.fin > 0 ? ' ✓' : r.div ? ' ✗ diverged' : r.still > 30 ? ' · stuck' : ''), w = ctx.measureText(txt).width + 10;
+    const hx = clamp(X(r.x), MR.x, W - 16), hy = clamp(Y(r.y), yMin, yMax), sx = [clamp(hx + 12, 21, maxX - w), clamp(hx - 5 - w, 21, maxX - w)];
+    let lx = sx[0], ly = clamp(hy - 14, yMin, yMax);
+    search: for (let k = 0; k < 7; k++) for (const dy of [-14 - 19 * k, 14 + 19 * k]) for (const x of sx) if (free(x, hy + dy, w)) { lx = x; ly = hy + dy; break search; }
+    if (Math.hypot(lx - hx, ly - hy) > 30) { ctx.strokeStyle = r.meta.col; ctx.globalAlpha = 0.5; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(lx < hx ? lx - 5 + w : lx - 5, ly); ctx.stroke(); ctx.globalAlpha = 1; }
+    tag(txt, lx, ly, r.meta.col); placed.push({ x: lx - 5, y: ly, w });
+  }
+}
+function drawPanel() {
+  const rows = ranked(); S.rowHits = [];
+  if (PANEL.strip) {
+    const n = Math.max(1, rows.length), cw = PANEL.w / n;
+    pill(PANEL.x, PANEL.y, PANEL.w, PANEL.h, 10, 'rgba(12,14,30,.84)', 'rgba(190,200,255,.18)');
+    rows.forEach((r, i) => {
+      const x = PANEL.x + i * cw; if (r.kind === S.sel) pill(x + 2, PANEL.y + 2, cw - 4, PANEL.h - 4, 8, 'rgba(255,200,87,.14)');
+      ctx.fillStyle = r.meta.col; circle(x + 10, PANEL.y + 12, 4);
+      ctx.font = '600 11px ' + SANS; ctx.textBaseline = 'middle'; ctx.fillText(r.meta.short, x + 18, PANEL.y + 12);
+      ctx.font = '11px ' + MONO; ctx.fillStyle = r.fin > 0 ? '#7ee787' : r.div ? '#ff6b8a' : INK;
+      ctx.fillText(r.fin > 0 ? '✓ ' + r.fin : r.div ? '✗' : fmt(r.e), x + 8, PANEL.y + 28);
+      S.rowHits.push({ x, y: PANEL.y, w: cw, h: PANEL.h, kind: r.kind });
+    });
+    return;
+  }
+  const x = PANEL.x, w = PANEL.w, rh = 22, chartH = 92, h = 34 + rows.length * rh + chartH + 76;
+  PANEL.h = h; pill(x, PANEL.y, w, h, 12, 'rgba(12,14,30,.84)', 'rgba(190,200,255,.18)');
+  ctx.textBaseline = 'middle'; ctx.font = '600 10px ' + MONO; ctx.fillStyle = '#6b7396';
+  ctx.fillText('RACE TO  f − f* < 10⁻³', x + 12, PANEL.y + 16); ctx.textAlign = 'right'; ctx.fillText('step ' + S.t, x + w - 12, PANEL.y + 16); ctx.textAlign = 'left';
+  rows.forEach((r, i) => {
+    const y = PANEL.y + 34 + i * rh;
+    if (r.kind === S.sel) pill(x + 4, y - 10, w - 8, 20, 6, 'rgba(255,200,87,.13)');
+    ctx.strokeStyle = r.meta.col; ctx.lineWidth = 2.5; ctx.setLineDash(r.meta.dash ? [3, 2] : []); ctx.beginPath(); ctx.moveTo(x + 12, y); ctx.lineTo(x + 24, y); ctx.stroke(); ctx.setLineDash([]);
+    ctx.font = '600 12px ' + SANS; ctx.fillStyle = r.meta.col; ctx.fillText(r.meta.short === 'Adam†' ? 'Adam†' : r.meta.name, x + 30, y);
+    ctx.font = '11px ' + MONO; ctx.textAlign = 'right'; ctx.fillStyle = INK; ctx.fillText(r.div ? '—' : fmt(r.e), x + 160, y);
+    ctx.fillStyle = r.fin > 0 ? '#7ee787' : r.div ? '#ff6b8a' : '#6b7396'; ctx.fillText(r.fin > 0 ? '✓ ' + r.fin : r.div ? '✗ div' : r.still > 30 ? 'stuck' : '…', x + w - 12, y); ctx.textAlign = 'left';
+    S.rowHits.push({ x, y: y - 11, w, h: rh, kind: r.kind });
+  });
+  // loss-vs-step chart, log scale
+  const cy0 = PANEL.y + 34 + rows.length * rh + 4, cx0 = x + 30, cw = w - 42, lo = -4;
+  const hi = Math.max(0, Math.ceil(Math.log10(S.e0))), n = Math.max(60, S.t), yy = v => cy0 + chartH - (clamp(Math.log10(Math.max(v, 1e-12)), lo, hi) - lo) / (hi - lo) * chartH;
+  ctx.font = '10px ' + MONO; ctx.fillStyle = '#6b7396'; ctx.textAlign = 'right';
+  for (let e = lo; e <= hi; e += 2) { ctx.fillText('1e' + e, cx0 - 4, yy(10 ** e)); }
+  ctx.textAlign = 'left'; ctx.strokeStyle = 'rgba(126,231,135,.45)'; ctx.setLineDash([3, 3]); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(cx0, yy(1e-3)); ctx.lineTo(cx0 + cw, yy(1e-3)); ctx.stroke(); ctx.setLineDash([]);
+  ctx.strokeStyle = 'rgba(190,200,255,.18)'; ctx.strokeRect(cx0, cy0, cw, chartH);
+  for (const r of S.racers) {
+    ctx.strokeStyle = r.meta.col; ctx.lineWidth = 1.5; ctx.setLineDash(r.meta.dash ? [4, 3] : []); ctx.beginPath(); ctx.moveTo(cx0, yy(S.e0));
+    for (let i = 0; i < r.hist.length; i++) ctx.lineTo(cx0 + (i + 1) / n * cw, yy(r.hist[i]));
+    ctx.stroke(); ctx.setLineDash([]);
+  }
+  ctx.fillStyle = '#6b7396'; ctx.fillText('loss vs step', cx0 + 4, cy0 + 10);
+  // arrow legend
+  const ly = cy0 + chartH + 18;
+  arrow(x + 12, ly, x + 40, ly, VIOLET, 3); ctx.font = '11px ' + SANS; ctx.fillStyle = '#a2a9c8'; ctx.fillText('−η∇f  what plain GD would step', x + 48, ly);
+  arrow(x + 12, ly + 20, x + 40, ly + 20, AMBER, 2); ctx.fillStyle = '#a2a9c8'; ctx.fillText('Δθ  the step it actually took', x + 48, ly + 20);
+  const r = selR(); ctx.font = '10px ' + MONO; ctx.fillStyle = '#6b7396';
+  ctx.fillText(r && r.t && !r.div && r.fin < 0 ? `on ${r.meta.short}, drawn ×${S.arrowK < 10 ? S.arrowK.toFixed(1) : Math.round(S.arrowK)} to be visible` : 'click a racer to see its arrows', x + 12, ly + 40);
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H); S.placed = [];
+  ctx.imageSmoothingEnabled = true; ctx.drawImage(field, 0, 0, W, H);
+  ctx.fillStyle = vignette; ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = 'rgba(200,214,255,.17)'; ctx.lineWidth = 1; ctx.stroke(contours);
+  drawMarkers();
+  ctx.lineJoin = ctx.lineCap = 'round';
+  ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, H); // clip trails out of the caption & dock boxes (a diverging trail would cross them)
+  const sb = stage.getBoundingClientRect();
+  for (const el of [$('#caption'), $('.dock')]) if (el.textContent.trim()) { const e = el.getBoundingClientRect(); ctx.rect(e.left - sb.left, e.top - sb.top, e.width, e.height); }
+  ctx.clip('evenodd');
+  if (S.drag && S.preview) for (const r of S.preview) drawTrail(r.trail, r.meta, 0.45);
+  else for (const r of S.racers) drawTrail(r.trail, r.meta, 1);
+  ctx.restore();
+  for (const r of S.racers) { const hx = X(r.x), hy = Y(r.y); ctx.fillStyle = '#080a18'; circle(hx, hy, 7.5); ctx.fillStyle = r.meta.col; circle(hx, hy, 5.5); }
+  drawSelected(); drawLabels(); drawPanel();
+}
+
+// ---- lesson panel: stats + live math ----
+stat('sStep', 'Step t'); stat('sLoss', 'GD  f − f*'); stat('sLead', 'Leader');
+function renderRule() {
+  const k = S.sel, nm = META[k].name, G = '<span class="c-g">g</span>', D = '<span class="c-hl">Δθ</span>', live = (id, c) => `<span class="live ${c || ''}" id="${id}">–</span>`;
+  let h = `<p><b style="color:${META[k].col}">${nm}</b> — values are from its most recent step.</p><div class="eq">${G} = ∇f(θ) = ${live('mG', 'c-g')}</div>`;
+  if (k === 'gd') h += `<div class="eq">${D} = −η·${G} = −${live('mLr')}·${G}<br>&nbsp;&nbsp; = ${live('mD', 'c-hl')}</div>`;
+  if (k === 'mom') h += `<div class="eq">v ← β·v + ${G} &nbsp;(β = ${live('mB')})<br>v = ${live('mV')}<br>${D} = −η·v = ${live('mD', 'c-hl')}</div>`;
+  if (k === 'rms') h += `<div class="eq">s ← ρ·s + (1−ρ)·${G}² = ${live('mS')}<br>per-axis rate η/√s<br>&nbsp;&nbsp; = ${live('mR', 'c-acc')}<br>${D} = −η·${G} / (√s + ε)<br>&nbsp;&nbsp; = ${live('mD', 'c-hl')}</div>`;
+  if (k === 'adam' || k === 'adamnb') h += `<div class="eq">m ← β₁m + (1−β₁)${G} = ${live('mM')}<br>v ← β₂v + (1−β₂)${G}² = ${live('mV')}<br>` +
+    (k === 'adam' ? `m̂ = m / (1−β₁ᵗ), &nbsp;1−β₁ᵗ = ${live('mC1')}<br>v̂ = v / (1−β₂ᵗ), &nbsp;1−β₂ᵗ = ${live('mC2')}<br>` : `m̂ = m, v̂ = v &nbsp;(no correction)<br>`) +
+    `${D} = −η·m̂ / (√v̂ + ε)<br>&nbsp;&nbsp; = ${live('mD', 'c-hl')}</div><p>At t = ${live('mT')} an uncorrected Adam step is <b>×${live('mX')}</b> the corrected one: (1−β₁ᵗ)/√(1−β₂ᵗ).</p>`;
+  $('#rule').innerHTML = h;
+  $('#sLoss').previousElementSibling.textContent = META[k].short + '  f − f*';
+}
+function updateUI() {
+  setText('sStep', String(S.t));
+  const r = selR(), top = ranked()[0];
+  setText('sLoss', r ? (r.div ? 'diverged' : fmt(r.e)) : 'hidden');
+  setText('sLead', top ? top.meta.short + (top.fin > 0 ? ' ✓' + top.fin : '') : '–');
+  const L = LAND[S.land];
+  setText('mEtas', RACERS.slice(0, 4).map(m => `${m.short} ${+(L.lr[m.kind] * S.lrMul).toPrecision(3)}`).join(' · '));
+  if (!r) return;
+  setText('mG', vec(r.g)); setText('mD', vec(r.d)); setText('mLr', fmt(r.lr)); setText('mB', HP.beta.toFixed(2)); setText('mT', String(r.t));
+  if (r.kind === 'mom') setText('mV', vec(r.v));
+  if (r.kind === 'rms') { setText('mS', vec(r.s)); setText('mR', vec(r.s.map(s => r.lr / (Math.sqrt(s) + HP.eps)))); }
+  if (r.kind === 'adam' || r.kind === 'adamnb') {
+    setText('mM', vec(r.m)); setText('mV', vec(r.u)); setText('mC1', fmt(1 - HP.b1 ** r.t)); setText('mC2', fmt(1 - HP.b2 ** r.t));
+    setText('mX', r.t ? ((1 - HP.b1 ** r.t) / Math.sqrt(1 - HP.b2 ** r.t)).toFixed(2) : '–');
+  }
+  const lam = lamMax(L, r.x, r.y), el = L.lr.gd * S.lrMul * lam;
+  setText('mL', fmt(lam)); setText('mEL', el.toFixed(2)); setText('mEV', el < 2 ? '< 2 → stable' : '> 2 → diverges');
+}
+$('#p-math').innerHTML = `<p>Every racer sees the <span style="color:var(--grad)">gradient</span> at its own position; only the rule that turns it into a <span style="color:var(--hl)">step</span> differs. Pick a racer (or click it on the map):</p>
+  <div id="selSeg"></div><div id="rule"></div>
+  <h3>When does a step blow up?</h3>
+  <div class="eq">λ<sub>max</sub> at the selected racer = <span class="live" id="mL">–</span><br>GD's η there: η·λ<sub>max</sub> = <span class="live c-acc" id="mEL">–</span> &nbsp;<span id="mEV"></span></div>
+  <p>Along each curvature axis GD multiplies the error by (1 − ηλ). If |1 − ηλ| &gt; 1, every bounce is bigger than the last.</p>
+  <div class="note"><b>Myth: one learning rate, fair race.</b> GD's step is η·|g| — it grows with the slope. Adam's is ≈ η per axis whatever |g| is. So each racer gets its own tuned base η here: <span class="live" id="mEtas"></span>.</div>
+  <div class="note"><b>Myth: bias correction boosts Adam's tiny first steps.</b> Both m and v start at 0, but v is far more biased and sits under a square root — uncorrected Adam actually lunges <b>3.2× too far</b> at t = 1 and ~6.6× near t = 12. The correction is a built-in warm-up.</div>`;
+const selSeg = seg($('#selSeg'), RACERS.map(m => [m.kind, m.short]), S.sel, k => {
+  S.sel = k; if (!S.show.has(k)) setShow(k, true); renderRule(); updateUI();
 });
-newLandscape();sizeOnly();renderField();restart([-2.3,-1.8]);
-requestAnimationFrame(loop);
+const select = k => selSeg.set(k);
+
+// ---- controls ----
+const P = $('#p-play');
+P.innerHTML = '<p>Click or drag anywhere on the map to move the shared start — while you drag, faint ghosts preview each racer\'s next 160 steps. Click a racer to inspect it.</p><h3>Landscape</h3>';
+const landSeg = seg(P, Object.entries(LAND).map(([k, L]) => [k, L.name]), S.land, v => {
+  S.land = v; S.start = LAND[v].start.slice(); layout(); rebuildField();
+  if (!S.quiet) { reset(); $('#caption').innerHTML = BLURB[v]; }
+});
+P.insertAdjacentHTML('beforeend', '<h3>Racers</h3>');
+const showRow = document.createElement('div'); showRow.className = 'seg'; P.appendChild(showRow);
+const showBtn = {};
+for (const m of RACERS) {
+  const b = document.createElement('button'); b.textContent = m.name; b.style.color = m.col; b.onclick = () => setShow(m.kind, !S.show.has(m.kind));
+  showRow.appendChild(b); showBtn[m.kind] = b;
+}
+function setShow(k, on) {
+  if (!on && S.show.size === 1 && S.show.has(k)) return;
+  on ? S.show.add(k) : S.show.delete(k); showBtn[k].setAttribute('aria-pressed', on);
+  if (!on && S.sel === k) select([...S.show][0]);
+  if (!S.quiet) reset();
+}
+P.insertAdjacentHTML('beforeend', '<h3>Hyper-parameters</h3>');
+const lrS = slider(P, 'lrMul', 'Learning-rate multiplier — scales every racer\'s η', 0.1, 3, 0.05, 1, v => '×' + v.toFixed(2), v => { S.lrMul = v; if (!S.quiet) reset(); });
+const betaS = slider(P, 'beta', 'Momentum β — fraction of velocity kept each step', 0, 0.99, 0.01, 0.9, v => v.toFixed(2), v => { HP.beta = v; if (!S.quiet) reset(); });
+const noiseS = slider(P, 'noise', 'Gradient noise σ — random kicks, like minibatch SGD', 0, 1.5, 0.05, 0, v => v.toFixed(2), v => { S.noise = v; if (!S.quiet) reset(); });
+
+const BLURB = {
+  bowl: '<b>Bowl</b>: equal curvature in every direction — the easy case. Does adaptivity even help here?',
+  ravine: '<b>Ravine</b>: 100× steeper across than along. The classic test of conditioning.',
+  rosen: '<b>Rosenbrock</b>: a curved, flat-bottomed valley. Finding it is easy; following it to (1, 1) is hard.',
+  saddle: '<b>Saddle</b>: a valley one way, a hilltop the other. Who lingers where ∇f ≈ 0?',
+  bumpy: '<b>Many minima</b>: which basin you land in depends on the start <i>and</i> the rule. Drag the start around.',
+};
+// configure a whole scene at once (tour steps & experiments)
+function setup(o) {
+  S.quiet = true;
+  landSeg.set(o.land); lrS.set(o.lr ?? 1); betaS.set(0.9); noiseS.set(o.noise ?? 0);
+  S.show = new Set(o.show || ['gd', 'mom', 'rms', 'adam']);
+  for (const m of RACERS) showBtn[m.kind].setAttribute('aria-pressed', S.show.has(m.kind));
+  if (o.start) S.start = o.start.slice();
+  select(o.sel || 'gd'); S.quiet = false; reset();
+  if (REDUCED && !playing) for (let i = 0; i < (o.pre || 70); i++) stepAll();
+}
+
+// ---- guided tour ----
+const K = (k, t) => `<span style="color:${META[k].col};font-weight:650">${t || META[k].name}</span>`, VG = t => `<span class="k-g">${t}</span>`, AM = t => `<span class="k-hl">${t}</span>`;
+const STEPS = [
+  { t: 'Same valley, four rules', d: 'All four racers leave one start in a narrow ravine and see the same gradient field. The leaderboard counts steps until the loss is within 10⁻³ of the minimum.',
+    cap: `One start, one <b>narrow ravine</b>: watch ${K('gd')} zig-zag, ${K('mom')} swing in arcs, and ${K('rms')} and ${K('adam')} slide to the floor.`, go: () => setup({ land: 'ravine' }) },
+  { t: 'Plain GD zig-zags', d: 'The ravine is 100× steeper across than along (condition number κ = 100). η has to be small enough for the steep axis, so progress along the flat floor is painfully slow.',
+    cap: `The ${VG('gradient')} points <b>across</b> the valley, not along it. ${K('gd')} overshoots wall to wall and only crawls toward the minimum.`, go: () => setup({ land: 'ravine', show: ['gd'], sel: 'gd' }) },
+  { t: 'Momentum smooths the path', d: 'v ← βv + g. With β = 0.9 the velocity remembers ~10 steps: across-valley pushes alternate in sign and cancel, along-valley pushes agree and add up.',
+    cap: `${K('mom')} averages past gradients: the jagged step-to-step zig-zag becomes a slow, smooth, damped swing, and its ${AM('step')} builds speed <b>down the valley</b>, a direction the raw ${VG('gradient')} barely points along.`, go: () => setup({ land: 'ravine', show: ['gd', 'mom'], sel: 'mom' }) },
+  { t: 'RMSProp rescales each axis', d: 'Dividing by √(running average of g²) gives every axis its own learning rate η/√s — small on the steep axis, large on the flat one. The math tab shows those rates live.',
+    cap: `${K('rms')} shrinks the steep axis and stretches the flat one, so its ${AM('step')} aims far more directly at the minimum.`, go: () => setup({ land: 'ravine', show: ['gd', 'rms'], sel: 'rms' }) },
+  { t: 'Adam = momentum + RMSProp', d: 'Adam keeps a momentum average m and an RMS average v, and divides both by (1 − βᵗ) to undo their zero start. On the curved Rosenbrock valley it follows the bend while GD creeps.',
+    cap: `${K('adam')} combines both ideas. On the curved <b>Rosenbrock banana</b> it tracks the valley; ${K('gd')} needs hundreds of steps.`, go: () => setup({ land: 'rosen', sel: 'adam' }) },
+  { t: 'Escaping a saddle', d: 'Near a saddle |g| ≈ 0, so GD\'s step ≈ 0. Adaptive methods divide by the gradient\'s own size, so a tiny but consistent gradient still gives a full-size step. In deep nets saddles are far more common than bad minima.',
+    cap: `A <b>saddle</b>: a valley left–right, a hilltop up–down. ${K('gd')} lingers where ∇f ≈ 0; ${K('rms')} and ${K('adam')} rescale the tiny slope and roll off.`, go: () => setup({ land: 'saddle', sel: 'gd' }) },
+  { t: 'Too big a step diverges', d: 'At ×1.25 GD\'s η·λmax = 2.25 > 2, so |1 − ηλ| > 1 and every bounce grows. The others survive ×1.25 because each has its own edge: momentum\'s is ηλ < 2(1+β) = 3.8 and its η is far below it, while RMSProp and Adam take ≈ η-sized steps per axis whatever the curvature. Try the learning-rate slider in Controls to find the edge.',
+    cap: `Learning rate ×1.25: now η·λ<sub>max</sub> = 2.25 &gt; 2 for ${K('gd')}. Each bounce overshoots more than the last — it <b>diverges</b>.`, go: () => setup({ land: 'ravine', lr: 1.25, sel: 'gd' }) },
+];
+
+// ---- predict → run → why ----
+const TRIES = [
+  { q: 'Start exactly on the saddle\'s ridge line (y = 0). Which optimizers escape to a minimum?',
+    run: () => { setup({ land: 'saddle', start: [-2.6, 0], sel: 'adam' }); $('#caption').innerHTML = 'Starting exactly on y = 0 — watch whether anyone rolls off the ridge.'; },
+    why: '<b>None.</b> On y = 0 the y-part of the gradient is exactly zero, and every rule here only averages or rescales gradients: zero in, zero out. Now raise <b>gradient noise</b> in Controls — random kicks (like minibatch SGD) break the symmetry and they all roll off. Noise is a feature, not just a nuisance.' },
+  { q: 'Switch off Adam\'s bias correction (dashed racer). Will its first steps be smaller or larger than real Adam\'s?',
+    run: () => { setup({ land: 'bowl', show: ['adam', 'adamnb'], sel: 'adamnb' }); $('#caption').innerHTML = `${K('adam')} vs ${K('adamnb', 'Adam without bias correction')} (dashed). Compare their first few steps.`; },
+    why: '<b>Larger</b> — 3.2× at t = 1, peaking at ~6.6× near t = 12. m\'s bias (1−β₁ᵗ) and v\'s (1−β₂ᵗ) don\'t cancel: v starts far more biased and sits under a square root in the denominator. Watch the dashed path lunge past the minimum and loop back. On this clean bowl it still finishes first, so the lunge is harmless here; with noisy minibatch gradients and a v estimated from only a few samples, a 3–6× lunge is what knocks early training off course. The correction works like a warm-up.' },
+  { q: 'On a perfectly round bowl, who reaches the bottom first — plain GD or Adam?',
+    run: () => { setup({ land: 'bowl', sel: 'adam' }); $('#caption').innerHTML = 'A round bowl: the same curvature in every direction. Who wins?'; },
+    why: '<b>GD</b>, in well under half of Adam\'s steps. With equal curvature everywhere there is nothing for adaptive scaling to fix, and Adam\'s ≈ η-per-axis step makes it overshoot and circle in. Adaptivity pays off on badly-conditioned problems — which real networks are.' },
+];
+
+// ---- pointer: click a racer to inspect; click/drag elsewhere to move the start ----
+const ptr = e => { const b = cv.getBoundingClientRect(); return { x: e.clientX - b.left, y: e.clientY - b.top }; };
+function hit(p) {
+  const row = S.rowHits.find(b => p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h); if (row) return row.kind;
+  let best = null, bd = 18; for (const r of S.racers) { const d = Math.hypot(X(r.x) - p.x, Y(r.y) - p.y); if (d < bd) { bd = d; best = r.kind; } }
+  return best;
+}
+function moveStart(p) {
+  const [x0, x1, y0, y1] = LAND[S.land].box, mx = (x1 - x0) * 0.3, my = (y1 - y0) * 0.3;
+  S.start = [clamp(IX(p.x), x0 - mx, x1 + mx), clamp(IY(p.y), y0 - my, y1 + my)]; reset(); preview();
+}
+cv.addEventListener('pointerdown', e => {
+  const p = ptr(e), k = hit(p); if (k) { select(k); return; }
+  if (!PANEL.strip && p.x > PANEL.x && p.y > PANEL.y && p.y < PANEL.y + (PANEL.h || 0)) return;
+  cv.setPointerCapture(e.pointerId); S.drag = true; moveStart(p);
+});
+cv.addEventListener('pointermove', e => { const p = ptr(e); if (S.drag) moveStart(p); else cv.style.cursor = hit(p) ? 'pointer' : 'crosshair'; });
+const endDrag = () => { if (!S.drag) return; S.drag = false; S.preview = null; reset(); setPlaying(true); };
+cv.addEventListener('pointerup', endDrag); cv.addEventListener('pointercancel', endDrag);
+
+// ---- loop ----
+function frame(dt) {
+  if (S.over) { S.hold += dt; if (S.hold > 2.5) reset(); }
+  else if (!S.drag) { S.acc += dt * SPS; let n = 0; while (S.acc >= 1 && n++ < 12) { stepAll(); S.acc -= 1; } if (S.acc > 1) S.acc = 0; }
+  draw();
+  if (++S.frameN % 4 === 0) updateUI();
+}
+$('#bStep').onclick = () => { setPlaying(false); if (S.over) reset(); stepAll(); updateUI(); };
+$('#bReset').onclick = () => { reset(); updateUI(); };
+layout(); rebuildField(); setPlaying(playing); // sync the dock icon (starts paused under reduced motion)
+renderSteps(); renderTries(); goStep(0); requestAnimationFrame(loop);
+window.__demo = { goStep, setPlaying, runTry: i => { TRIES[i].run(); setPlaying(true); }, state: () => ({ land: S.land, t: S.t, sel: S.sel, over: S.over, racers: S.racers.map(r => ({ k: r.kind, x: r.x, y: r.y, e: r.e, fin: r.fin, div: r.div })) }) };
 </script>
 </body>
 </html>

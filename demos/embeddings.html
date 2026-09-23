@@ -1,377 +1,823 @@
-<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
-<title>Word Embedding Space</title>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Word Embeddings — ML Field Notes</title>
 <style>
-  html,body{margin:0;padding:0;background:#04040b;overflow:hidden;height:100%}
-  canvas{display:block;position:fixed;inset:0;cursor:crosshair;touch-action:none}
-  #ui{position:fixed;top:0;left:0;margin:12px;padding:10px 12px;background:rgba(10,8,20,.62);
-      border:1px solid rgba(200,140,255,.24);border-radius:8px;color:#e5d6ff;
-      font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;max-width:340px;
-      backdrop-filter:blur(6px);z-index:10;max-height:52vh;overflow:auto}
-  #ui h1{margin:0 0 4px;font-size:14px;letter-spacing:.08em;color:#d99bff;text-transform:uppercase}
-  #ui .exp{color:#9a8cb5;margin-bottom:7px}
-  #ui .hint{color:#7d70a0;margin-top:6px}
-  #ui a{color:#7df9ff;text-decoration:none}
-  #ui a:hover{text-decoration:underline}
-  .row{display:flex;justify-content:space-between;gap:10px}
-  .k{color:#7d70a0}.v{color:#f4ecff}
-  input[type=range]{width:100%;accent-color:#d99bff;margin:4px 0 2px}
-  #nn{margin-top:6px;color:#a99ec4}
-  #nn b{color:#ffe08a;font-weight:600}
-@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
+/* ===== ML Field Notes design system (shared by every ML/AI demo) =====
+   Colour means the same thing in every demo:
+   --a coral = class A / "positive"     --b teal = class B / "negative"
+   --hl amber = the model's current parameters / guess / selection
+   --grad violet = gradients, updates, errors flowing back
+   --accent = this demo's signature colour (set per demo) */
+:root{
+  --bg:#0c0e1a; --bg2:#10132a; --panel:#13162c; --panel2:#181c38; --line:rgba(190,200,255,.10); --line2:rgba(190,200,255,.18);
+  --ink:#e9ecfa; --dim:#a2a9c8; --faint:#6b7396;
+  --a:#ff7a6b; --b:#3fd0c0; --hl:#ffc857; --grad:#a78bfa; --good:#7ee787; --bad:#ff6b8a;
+  --accent:#ff9ec7;
+  --r:12px; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.5 var(--sans)}
+body{overflow:hidden}
+a{color:var(--accent)}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app{display:grid;grid-template-columns:minmax(0,1fr) 380px;grid-template-rows:48px minmax(0,1fr);height:100vh;height:100dvh}
+.top{grid-column:1/-1;display:flex;align-items:center;gap:12px;padding:0 14px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#11142a,#0d1020)}
+.top a.back{color:var(--dim);text-decoration:none;font-size:13px;white-space:nowrap}
+.top a.back:hover{color:var(--ink)}
+.top .chip{font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 45%,transparent);border-radius:99px;padding:5px 8px}
+.top h1{margin:0;font-size:15px;font-weight:650;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top .sp{flex:1}
+.top .keys{font:11px var(--mono);color:var(--faint);white-space:nowrap}
+.stage{position:relative;min-width:0;min-height:0;background:radial-gradient(ellipse at 50% 40%,#151a3a 0%,var(--bg) 70%)}
+.stage::before{content:"";position:absolute;inset:0;background-image:radial-gradient(rgba(190,200,255,.07) 1px,transparent 1.3px);background-size:24px 24px;pointer-events:none}
+.stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.caption{position:absolute;left:16px;right:16px;top:14px;max-width:640px;padding:10px 14px;border-radius:10px;background:rgba(12,14,30,.78);border:1px solid var(--line2);backdrop-filter:blur(6px);font-size:14px;line-height:1.45;pointer-events:none;transition:opacity .3s}
+.caption b{color:var(--accent)}
+.caption:empty{opacity:0}
+.dock{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;gap:6px;padding:6px;border-radius:99px;background:rgba(12,14,30,.82);border:1px solid var(--line2);backdrop-filter:blur(6px)}
+.dock button{border:0;background:transparent;border-radius:99px;min-width:36px;height:34px;padding:0 12px;cursor:pointer;color:var(--ink);white-space:nowrap}
+.dock button:hover{background:rgba(255,255,255,.08)}
+.dock button.on{background:color-mix(in srgb,var(--accent) 22%,transparent);color:var(--accent)}
+.lesson{border-left:1px solid var(--line);background:var(--panel);overflow:auto;min-height:0;display:flex;flex-direction:column}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border-bottom:1px solid var(--line)}
+.stat{background:var(--panel);padding:10px 12px}
+.stat .k{font:600 10px/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.stat .v{font:600 18px/1.3 var(--mono);font-variant-numeric:tabular-nums;margin-top:3px}
+.tabs{display:flex;gap:2px;padding:10px 12px 0;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);z-index:2}
+.tabs button{border:0;background:none;padding:9px 12px;color:var(--dim);cursor:pointer;border-bottom:2px solid transparent;font-weight:600}
+.tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent)}
+.pane{padding:14px 16px 22px;display:none}
+.pane.on{display:block}
+.pane h3{margin:14px 0 6px;font-size:13px;letter-spacing:.02em}
+.pane p{margin:0 0 10px;color:var(--dim)}
+.pane p b,.pane li b{color:var(--ink)}
+.lede{font-size:15px;color:var(--ink)!important}
+.steps{list-style:none;margin:10px 0 0;padding:0;counter-reset:s}
+.steps li{counter-increment:s;border:1px solid var(--line);border-radius:10px;margin:0 0 8px;padding:10px 12px 10px 40px;position:relative;cursor:pointer;color:var(--dim);background:var(--panel2)}
+.steps li::before{content:counter(s);position:absolute;left:12px;top:10px;width:18px;height:18px;border-radius:99px;display:grid;place-items:center;font:600 11px var(--mono);background:rgba(255,255,255,.07);color:var(--dim)}
+.steps li.on{border-color:color-mix(in srgb,var(--accent) 60%,transparent);color:var(--ink)}
+.steps li.on::before{background:var(--accent);color:#141414}
+.steps li.done::before{content:"✓";background:rgba(126,231,135,.2);color:var(--good)}
+.steps li .t{font-weight:650;color:var(--ink);display:block}
+.steps li .d{display:none;margin-top:4px}
+.steps li.on .d{display:block}
+.tournav{display:flex;gap:8px;margin-top:6px}
+.btn{border:1px solid var(--line2);background:var(--panel2);border-radius:9px;padding:7px 12px;cursor:pointer;color:var(--ink)}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:#15131a;border-color:transparent;font-weight:650}
+.card{border:1px solid var(--line);border-radius:12px;padding:12px;margin:0 0 10px;background:var(--panel2)}
+.card .q{color:var(--ink);font-weight:600;margin-bottom:8px}
+.card .why{display:none;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line2);color:var(--dim)}
+.card.revealed .why{display:block}
+.card .row{display:flex;gap:8px;flex-wrap:wrap}
+.eq{font:14px/1.7 var(--mono);background:#0e1124;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:6px 0 12px;overflow-x:auto;white-space:nowrap}
+.eq .c-a{color:var(--a)} .eq .c-b{color:var(--b)} .eq .c-hl{color:var(--hl)} .eq .c-g{color:var(--grad)} .eq .c-acc{color:var(--accent)}
+.live{font-variant-numeric:tabular-nums;color:var(--hl)}
+.ctrl{display:grid;grid-template-columns:1fr auto;gap:4px 10px;align-items:center;margin:10px 0}
+.ctrl label{color:var(--dim);font-size:13px}
+.ctrl output{font:12px var(--mono);color:var(--ink);font-variant-numeric:tabular-nums}
+.ctrl input[type=range]{grid-column:1/-1;width:100%;accent-color:var(--accent)}
+.seg{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 10px}
+.seg button{border:1px solid var(--line2);background:transparent;border-radius:99px;padding:5px 11px;cursor:pointer;color:var(--dim);font-size:13px}
+.seg button[aria-pressed=true]{background:color-mix(in srgb,var(--accent) 20%,transparent);color:var(--ink);border-color:color-mix(in srgb,var(--accent) 55%,transparent)}
+.note{border-left:3px solid var(--grad);padding:6px 10px;margin:8px 0 12px;color:var(--dim);background:rgba(167,139,250,.06);border-radius:0 8px 8px 0}
+.wild li{margin-bottom:6px;color:var(--dim)}
+@media (max-width:880px){
+  body{overflow:auto}
+  .app{grid-template-columns:1fr;grid-template-rows:48px 58vh auto;height:auto}
+  .stage{height:58vh}
+  .lesson{border-left:0;border-top:1px solid var(--line)}
+  .top .keys{display:none}
+  .caption{font-size:13px;top:10px;left:10px;right:10px}
+  .stats{grid-template-columns:repeat(3,1fr)}
+  .stat .v{font-size:15px}
+}
+@media (prefers-reduced-motion:reduce){.caption{transition:none}}
 </style>
-
-<canvas id="c"></canvas>
-<div id="ui">
-  <h1>Word Embeddings</h1>
-  <div class="exp">Words become points in space, so meaning turns into arithmetic: king − man + woman lands on queen.</div>
-  <div class="row"><span class="k">analogy</span><span class="v" id="s-an">-</span></div>
-  <div class="row"><span class="k">nearest to result</span><span class="v" id="s-near">-</span></div>
-  <div class="row"><span class="k">cosine similarity</span><span class="v" id="s-cos">-</span></div>
-  <div class="row"><span class="k">hovering</span><span class="v" id="s-hov">—</span></div>
-  <div id="nn">hover a word for its similarity ranking</div>
-  <label class="k">speed <span class="v" id="s-spd">1.0x</span></label>
-  <input type="range" id="spd" min="20" max="300" value="100">
-  <div class="hint">drag any word to warp space · [space] pause · [r] reset positions · real embeddings are ~1000-D; this is the 2-D intuition · <a href="index.html">← gallery</a></div>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace;max-width:100vw;white-space:pre-wrap';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div class="app">
+  <header class="top">
+    <a class="back" href="index.html">← Gallery</a>
+    <span class="chip">ML / AI</span>
+    <h1>Word Embeddings</h1>
+    <span class="sp"></span>
+    <span class="keys">Space play · ←/→ tour · R reset</span>
+  </header>
+  <section class="stage" id="stage">
+    <canvas id="c" role="img" aria-label="A 2-D map of 40 word vectors coloured by category, with arrows showing vector arithmetic such as king minus man plus woman landing near queen, and a card ranking the nearest words by cosine similarity"></canvas>
+    <div class="caption" id="caption" aria-live="polite"></div>
+    <div class="dock" role="group" aria-label="Simulation controls">
+      <button id="bPlay" class="on" aria-label="Pause">❚❚</button>
+      <button id="bStep" aria-label="Step once">Step</button>
+      <button id="bReset" aria-label="Reset">Reset</button>
+      <button id="bSpeed" aria-label="Speed">1×</button>
+      <button id="bView" aria-label="Change 2-D view">PC1 · PC2</button>
+    </div>
+  </section>
+  <aside class="lesson">
+    <div class="stats" id="stats"><!-- 3 stat tiles: .stat > .k + .v#id --></div>
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-tab="learn">Learn</button>
+      <button role="tab" aria-selected="false" data-tab="try">Try this</button>
+      <button role="tab" aria-selected="false" data-tab="math">The math</button>
+      <button role="tab" aria-selected="false" data-tab="play">Controls</button>
+    </div>
+    <div class="pane on" id="p-learn">
+      <p class="lede">A word embedding turns each word into a list of numbers, so that similar meanings point in similar directions and relations become arrows you can add.</p>
+      <ol class="steps" id="steps"></ol>
+      <div class="tournav"><button class="btn" id="tPrev">← Back</button><button class="btn primary" id="tNext">Next step →</button></div>
+      <h3>In the wild</h3>
+      <ul class="wild"><li><b>Every LLM</b> starts with an embedding table: token id → row of learned numbers (thousands of them), and many reuse the same table to score the next token.</li><li><b>Semantic search and RAG</b> embed the query and every document, then return the top matches by cosine: the ranking card, at scale.</li><li><b>Recommenders</b> put users and items in one space; "more like this" is a nearest-neighbour lookup.</li></ul>
+    </div>
+    <div class="pane" id="p-try"><!-- .card experiments: predict → run → why --></div>
+    <div class="pane" id="p-math"><!-- .eq blocks with colour-coded terms + .live spans; .note for misconceptions --></div>
+    <div class="pane" id="p-play"><!-- .ctrl sliders, .seg segmented choices --></div>
+  </aside>
 </div>
 <script>
-(function(){
-"use strict";
-var cv=document.getElementById('c'),ctx=cv.getContext('2d'),W=0,H=0,DPR=1,SC=1,cx0=0,cy0=0;
-function resize(){
-  DPR=Math.min(2,window.devicePixelRatio||1);
-  W=window.innerWidth;H=window.innerHeight;
-  cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);
-  cv.style.width=W+'px';cv.style.height=H+'px';
-  ctx.setTransform(DPR,0,0,DPR,0,0);
-  // fit the semantic bounding box, leaving room for the overlay panel on wide screens
-  var bx=5.05,by=3.6;
-  var padL=(W<860)?24:372, padR=44, padT=52, padB=70;
-  var availW=Math.max(120,W-padL-padR), availH=Math.max(120,H-padT-padB);
-  SC=Math.min(availW/(bx*2),availH/(by*2));
-  cx0=padL+availW/2; cy0=padT+availH/2;
+'use strict';
+/* ===== shell helpers (keep) ===== */
+const $ = s => document.querySelector(s);
+const cv = $('#c'), ctx = cv.getContext('2d'), stage = $('#stage');
+let W = 0, H = 0, DPR = 1;
+function resize() {
+  const r = stage.getBoundingClientRect(); DPR = Math.min(2, devicePixelRatio || 1);
+  W = Math.max(1, r.width); H = Math.max(1, r.height);
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR); ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  if (typeof onResize === 'function') onResize();
 }
-window.addEventListener('resize',resize);
-function PX(x){return cx0+x*SC;} function PY(y){return cy0-y*SC;}
-function UX(sx){return (sx-cx0)/SC;} function UY(sy){return (cy0-sy)/SC;}
-
-// ---------- hand-crafted semantic space ----------
-// clusters: royalty/people, animals, babies, food, countries, capitals, verbs
-var CL={
-  royal:{name:'royalty & people',c:'#ff8ad0'},
-  animal:{name:'animals',c:'#7dffb0'},
-  baby:{name:'young animals',c:'#7de3ff'},
-  food:{name:'food',c:'#ffc46b'},
-  country:{name:'countries',c:'#9d9dff'},
-  capital:{name:'capitals',c:'#ffe08a'},
-  verb:{name:'verbs',c:'#ff9b7d'}
-};
-// gender axis roughly +x, "royal/status" axis roughly +y within the people cluster
-var RAW=[
-  ['man',-4.30,1.05,'royal'],['woman',-3.30,1.05,'royal'],
-  ['king',-4.30,2.30,'royal'],['queen',-3.30,2.30,'royal'],
-  ['prince',-4.55,1.72,'royal'],['princess',-3.10,1.72,'royal'],
-  ['boy',-4.62,0.42,'royal'],['girl',-3.05,0.42,'royal'],
-  ['uncle',-4.05,0.05,'royal'],['aunt',-3.42,0.02,'royal'],
-
-  ['dog',-1.15,-1.85,'animal'],['cat',-0.35,-1.55,'animal'],
-  ['wolf',-1.55,-2.45,'animal'],['lion',-0.55,-2.55,'animal'],
-  ['horse',-1.85,-1.30,'animal'],['bird',-0.10,-2.25,'animal'],
-
-  ['puppy',-1.15,-0.55,'baby'],['kitten',-0.35,-0.25,'baby'],
-  ['cub',-0.55,-1.05,'baby'],['foal',-1.85,0.00,'baby'],
-
-  ['bread',2.05,-2.05,'food'],['cheese',2.75,-2.35,'food'],
-  ['apple',1.60,-2.65,'food'],['rice',2.95,-1.70,'food'],
-  ['soup',2.30,-2.85,'food'],['sugar',3.30,-2.30,'food'],
-
-  ['france',0.85,2.55,'country'],['japan',1.55,3.10,'country'],
-  ['italy',0.55,3.05,'country'],['egypt',2.15,2.55,'country'],
-  ['germany',1.25,2.15,'country'],['spain',0.40,2.20,'country'],
-
-  ['paris',3.35,2.55,'capital'],['tokyo',4.05,3.10,'capital'],
-  ['rome',3.05,3.05,'capital'],['cairo',4.65,2.55,'capital'],
-  ['berlin',3.75,2.15,'capital'],['madrid',2.90,2.20,'capital'],
-
-  // verbs: walked - walk = (+0.80,-0.30) = swam - swim  (a clean parallelogram)
-  ['walk',-4.30,-2.60,'verb'],['walked',-3.50,-2.90,'verb'],
-  ['swim',-3.10,-1.95,'verb'],['swam',-2.30,-2.25,'verb']
-];
-
-var words=[],byName={};
-function resetPos(){
-  words=[];byName={};
-  for(var i=0;i<RAW.length;i++){
-    var r=RAW[i];
-    var o={n:r[0],x:r[1],y:r[2],hx:r[1],hy:r[2],cl:r[3],glow:0};
-    words.push(o);byName[r[0]]=o;
-  }
-}
-resetPos();resize();
-
-var ANALOGIES=[
-  ['king','man','woman','queen'],
-  ['paris','france','japan','tokyo'],
-  ['puppy','dog','cat','kitten'],
-  ['walked','walk','swim','swam'],
-  ['rome','italy','egypt','cairo'],
-  ['queen','woman','man','king']
-];
-
-function cos(ax,ay,bx,by){
-  var d=ax*bx+ay*by, m=Math.hypot(ax,ay)*Math.hypot(bx,by);
-  return m?d/m:0;
-}
-function nearest(x,y,exclude,k){
-  var arr=[];
-  for(var i=0;i<words.length;i++){
-    var wd=words[i];
-    if(exclude&&exclude.indexOf(wd.n)>=0)continue;
-    arr.push({w:wd,d:Math.hypot(wd.x-x,wd.y-y)});
-  }
-  arr.sort(function(a,b){return a.d-b.d;});
-  return arr.slice(0,k||3);
-}
-
-// ---------- state ----------
-var ai=0,t0=0,phase=0,speed=1,paused=false,tPrev=0;
-// phase timeline (seconds of "analogy time"): 0 highlight, 1 arrow A-B, 2 arrow +C, 3 land, 4 hold
-var PT=[1.0,1.8,1.8,1.2,2.2], PTOT=PT.reduce(function(a,b){return a+b;},0);
-var at=0;
-var hover=null,drag=null,mx=-999,my=-999;
-
-var spd=document.getElementById('spd');
-spd.addEventListener('input',function(){speed=parseInt(spd.value,10)/100;document.getElementById('s-spd').textContent=speed.toFixed(1)+'x';});
-window.addEventListener('keydown',function(e){
-  if(e.code==='Space'){paused=!paused;e.preventDefault();}
-  if(e.key==='r'||e.key==='R'){resetPos();}
+new ResizeObserver(resize).observe(stage); resize();
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+// tabs
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', x === b));
+  document.querySelectorAll('.pane').forEach(p => p.classList.toggle('on', p.id === 'p-' + b.dataset.tab));
 });
-function pick(sx,sy){
-  var best=null,bd=26;
-  for(var i=0;i<words.length;i++){
-    var d=Math.hypot(PX(words[i].x)-sx,PY(words[i].y)-sy);
-    if(d<bd){bd=d;best=words[i];}
+// playback
+let playing = !REDUCED, speed = 1;
+const SPEEDS = [0.25, 0.5, 1, 2, 4];
+function setPlaying(v) { playing = v; $('#bPlay').textContent = v ? '❚❚' : '▶'; $('#bPlay').classList.toggle('on', v); $('#bPlay').setAttribute('aria-label', v ? 'Pause' : 'Play'); }
+$('#bPlay').onclick = () => setPlaying(!playing);
+$('#bSpeed').onclick = () => { speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]; $('#bSpeed').textContent = speed + '×'; };
+// tour: STEPS = [{t:'title', d:'html', cap:'stage caption html', go(){ /* set demo state */ }}]
+let tour = 0;
+function renderSteps() {
+  const ol = $('#steps'); ol.innerHTML = '';
+  STEPS.forEach((s, i) => { const li = document.createElement('li'); li.className = (i === tour ? 'on' : '') + (i < tour ? ' done' : ''); li.innerHTML = `<span class="t">${s.t}</span><span class="d">${s.d}</span>`; li.onclick = () => goStep(i); ol.appendChild(li); });
+  $('#tPrev').disabled = tour === 0; $('#tNext').textContent = tour === STEPS.length - 1 ? 'Start over ↺' : 'Next step →';
+}
+function goStep(i) { tour = (i + STEPS.length) % STEPS.length; const s = STEPS[tour]; if (s.go) s.go(); $('#caption').innerHTML = s.cap || ''; renderSteps(); }
+$('#tPrev').onclick = () => goStep(Math.max(0, tour - 1));
+$('#tNext').onclick = () => goStep(tour + 1);
+// experiments: TRIES = [{q:'Predict…', run(){…}, why:'html'}]
+function renderTries() {
+  const p = $('#p-try'); p.innerHTML = '<p>Make a prediction first, then run it. Each experiment sets the demo up for you.</p>';
+  TRIES.forEach(x => { const c = document.createElement('div'); c.className = 'card'; c.innerHTML = `<div class="q">${x.q}</div><div class="row"><button class="btn primary">Run it</button><button class="btn">Show why</button></div><div class="why">${x.why}</div>`; const [run, why] = c.querySelectorAll('button'); run.onclick = () => { x.run(); setPlaying(true); }; why.onclick = () => c.classList.toggle('revealed'); p.appendChild(c); });
+}
+// controls helpers
+function slider(parent, id, label, min, max, step, value, fmt, onInput) {
+  const d = document.createElement('div'); d.className = 'ctrl';
+  d.innerHTML = `<label for="${id}">${label}</label><output id="${id}o"></output><input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${value}">`;
+  parent.appendChild(d); const inp = d.querySelector('input'), out = d.querySelector('output');
+  const upd = () => { out.textContent = fmt(+inp.value); onInput(+inp.value); }; inp.oninput = upd; upd();
+  return { set(v) { inp.value = v; upd(); }, get: () => +inp.value };
+}
+function seg(parent, options, value, onPick) {
+  const d = document.createElement('div'); d.className = 'seg'; parent.appendChild(d);
+  const bs = options.map(([v, label]) => { const b = document.createElement('button'); b.textContent = label; b.setAttribute('aria-pressed', v === value); b.onclick = () => set(v); d.appendChild(b); return [v, b]; });
+  function set(v) { bs.forEach(([k, b]) => b.setAttribute('aria-pressed', k === v)); onPick(v); }
+  return { set };
+}
+function stat(id, label) { const d = document.createElement('div'); d.className = 'stat'; d.innerHTML = `<div class="k">${label}</div><div class="v" id="${id}">–</div>`; $('#stats').appendChild(d); }
+const setText = (id, v) => { const e = document.getElementById(id); if (e && e.textContent !== v) e.textContent = v; };
+// keyboard
+addEventListener('keydown', e => {
+  if (e.target.matches('input,select,textarea')) return;
+  if (e.code === 'Space') { setPlaying(!playing); e.preventDefault(); }
+  else if (e.key === 'ArrowRight') goStep(tour + 1);
+  else if (e.key === 'ArrowLeft') goStep(Math.max(0, tour - 1));
+  else if (e.key === 'r' || e.key === 'R') $('#bReset').click();
+});
+// wall-clock-locked loop (dt clamped to [0, 0.1] — rAF timestamps can precede performance.now())
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.1, Math.max(0, (now - last) / 1000)); last = now;
+  try { frame(playing ? dt * speed : 0, dt); } catch (err) { window.onerror(err.message, '', 0); return; }
+  requestAnimationFrame(loop);
+}
+
+// ===== DEMO CODE: Word Embeddings =====
+/*CORE-START*/
+const DIMS = ['gender', 'royalty', 'youth', 'person', 'animal', 'feline', 'domestic', 'size', 'place', 'city', 'north', 'east', 'verb', 'past', 'speed', 'water', 'air'];
+const CATS = { people: 'people & royalty', animals: 'animals', places: 'countries & capitals', verbs: 'verbs & tense' };
+const G = 0.8; // gender magnitude
+const GEO = { france: [0.6, -0.4], germany: [1.0, 0.2], italy: [0.1, 0.3], spain: [-0.1, -0.8], egypt: [-1.0, 0.8], japan: [-0.3, 1.6] };
+const CAP = { france: 'paris', germany: 'berlin', italy: 'rome', spain: 'madrid', egypt: 'cairo', japan: 'tokyo' };
+const WORDS = (() => {
+  const W = [], add = (n, cat, f) => W.push({ n, cat, f });
+  const P = { person: 1 };
+  add('man', 'people', { ...P, gender: -G }); add('woman', 'people', { ...P, gender: G });
+  add('boy', 'people', { ...P, gender: -G, youth: 1 }); add('girl', 'people', { ...P, gender: G, youth: 1 });
+  add('king', 'people', { ...P, gender: -G, royalty: 1 }); add('queen', 'people', { ...P, gender: G, royalty: 1 });
+  add('prince', 'people', { ...P, gender: -G, royalty: 1, youth: 1 }); add('princess', 'people', { ...P, gender: G, royalty: 1, youth: 1 });
+  add('child', 'people', { ...P, youth: 1 }); add('crown', 'people', { royalty: 1, size: 0.1 });
+  const A = (n, f) => { add(n, 'animals', { animal: 1, ...f }); };
+  A('dog', { domestic: 1, size: 0.4 }); A('puppy', { domestic: 1, size: 0.4, youth: 1 });
+  A('cat', { feline: 1, domestic: 1, size: 0.2 }); A('kitten', { feline: 1, domestic: 1, size: 0.2, youth: 1 });
+  A('lion', { feline: 1, size: 0.9 }); A('cub', { feline: 1, size: 0.9, youth: 1 });
+  A('horse', { domestic: 0.7, size: 1 }); A('foal', { domestic: 0.7, size: 1, youth: 1 });
+  add('fish', 'animals', { animal: 0.7, water: 1, size: 0.1 }); add('bird', 'animals', { animal: 0.7, air: 1, size: 0.1 });
+  for (const c in GEO) {
+    const [no, ea] = GEO[c];
+    add(c, 'places', { place: 1, north: no, east: ea }); add(CAP[c], 'places', { place: 1, city: 1, north: no, east: ea });
+  }
+  const V = (a, b, f) => { add(a, 'verbs', { verb: 1, ...f }); add(b, 'verbs', { verb: 1, past: 1, ...f }); };
+  V('walk', 'walked', { speed: 0.3 }); V('run', 'ran', { speed: 1 }); V('swim', 'swam', { water: 1 }); V('fly', 'flew', { air: 1 });
+  return W;
+})();
+const IDX = Object.fromEntries(WORDS.map((w, i) => [w.n, i]));
+function rng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function gauss(r) { return Math.sqrt(-2 * Math.log(1 - r())) * Math.cos(2 * Math.PI * r()); }
+// every word = its hand-built features + a little seeded noise (real embeddings are never this clean)
+function makeVectors(sigma, seed = 7) {
+  const r = rng(seed);
+  return WORDS.map(w => DIMS.map(d => (w.f[d] || 0) + sigma * gauss(r)));
+}
+const dot = (u, v) => { let s = 0; for (let i = 0; i < u.length; i++) s += u[i] * v[i]; return s; };
+const norm = u => Math.sqrt(dot(u, u));
+const cosine = (u, v) => dot(u, v) / (norm(u) * norm(v) || 1);
+const analogy = (V, a, b, c) => V[a].map((x, k) => x - V[b][k] + V[c][k]);
+function rank(V, q, exclude = [], k = 5) {
+  const out = [];
+  V.forEach((v, i) => { if (!exclude.includes(i)) out.push({ i, c: cosine(q, v) }); });
+  return out.sort((x, y) => y.c - x.c).slice(0, k);
+}
+// PCA by power iteration + deflation on the covariance matrix (deterministic start vector)
+function pca(V, k = 3) {
+  const n = V.length, d = V[0].length, mean = new Array(d).fill(0);
+  V.forEach(v => v.forEach((x, j) => mean[j] += x / n));
+  const C = Array.from({ length: d }, () => new Array(d).fill(0));
+  V.forEach(v => { for (let i = 0; i < d; i++) for (let j = 0; j < d; j++) C[i][j] += (v[i] - mean[i]) * (v[j] - mean[j]) / n; });
+  let total = 0; for (let i = 0; i < d; i++) total += C[i][i];
+  const cov = C.map(r => r.slice());
+  const comps = [], vals = [];
+  for (let c = 0; c < k; c++) {
+    let x = DIMS.map((_, j) => 1 + j * 0.13);
+    for (let it = 0; it < 300; it++) {
+      const y = C.map(row => dot(row, x)), m = norm(y) || 1;
+      x = y.map(t => t / m);
+    }
+    const lam = dot(x, C.map(row => dot(row, x)));
+    let big = 0; x.forEach((t, j) => { if (Math.abs(t) > Math.abs(x[big])) big = j; });
+    if (x[big] < 0) x = x.map(t => -t); // stable sign
+    comps.push(x); vals.push(lam);
+    for (let i = 0; i < d; i++) for (let j = 0; j < d; j++) C[i][j] -= lam * x[i] * x[j];
+  }
+  return { mean, comps, vals, total, cov };
+}
+// a view = two axes; each axis is a unit direction in 17-D (a PC or a named dimension)
+function axisVec(P, key) { return key[0] === 'P' ? P.comps[+key[2] - 1] : DIMS.map(d => d === key ? 1 : 0); }
+const axes = (P, view) => view.ax || [axisVec(P, view.x), axisVec(P, view.y)];
+function project(v, P, view) { const c = view.center ? v.map((x, j) => x - P.mean[j]) : v, [a, b] = axes(P, view); return [dot(c, a), dot(c, b)]; }
+// the plane through PC1 that also contains a chosen direction (Gram–Schmidt)
+function planeWith(P, dir) { const a = P.comps[0], t = dot(dir, a), y = dir.map((x, j) => x - t * a[j]), m = norm(y) || 1; return [a, y.map(x => x / m)]; }
+function varShown(P, view) {
+  let s = 0;
+  for (const a of axes(P, view)) s += dot(a, P.cov.map(row => dot(row, a)));
+  return s / P.total;
+}
+/*CORE-END*/
+
+/* ---------- constants ---------- */
+var READY = false; // shell calls onResize() before this block has run
+const COL = { a: '#ff7a6b', b: '#3fd0c0', hl: '#ffc857', grad: '#a78bfa', data: '#c7cbe0', ink: '#e9ecfa', dim: '#a2a9c8', faint: '#6b7396', good: '#7ee787', bad: '#ff6b8a', bg: '#0c0e1a' };
+const CATCOL = { people: '#ff9ec7', animals: '#8fdc9c', places: '#8ab4ff', verbs: '#f2b880' };
+const SANS = 'ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif', MONO = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace';
+const VIEWS = [
+  { k: 'pc12', x: 'PC1', y: 'PC2', center: true, name: 'PC1 · PC2' },
+  { k: 'off', x: 'PC1', y: 'offset', center: true, name: 'PC1 · offset' },
+  { k: 'pc23', x: 'PC2', y: 'PC3', center: true, name: 'PC2 · PC3' },
+  { k: 'gr', x: 'gender', y: 'royalty', name: 'gender × royalty' },
+  { k: 'ya', x: 'youth', y: 'animal', name: 'youth × animal' },
+  { k: 'geo', x: 'east', y: 'north', name: 'east × north' },
+  { k: 'vp', x: 'past', y: 'verb', name: 'past × verb' }];
+const PRESETS = [['king', 'man', 'woman'], ['paris', 'france', 'japan'], ['puppy', 'dog', 'cat'], ['walked', 'walk', 'swim'], ['boy', 'man', 'lion'], ['princess', 'girl', 'boy']];
+const RELS = {
+  gender: { name: 'male → female', pairs: [['man', 'woman'], ['king', 'queen'], ['boy', 'girl'], ['prince', 'princess']] },
+  capital: { name: 'country → capital', pairs: [['france', 'paris'], ['japan', 'tokyo'], ['italy', 'rome'], ['egypt', 'cairo'], ['germany', 'berlin'], ['spain', 'madrid']] },
+  young: { name: 'adult → young', pairs: [['dog', 'puppy'], ['cat', 'kitten'], ['lion', 'cub'], ['horse', 'foal'], ['man', 'boy'], ['woman', 'girl']] },
+  past: { name: 'present → past', pairs: [['walk', 'walked'], ['run', 'ran'], ['swim', 'swam'], ['fly', 'flew']] } };
+const REL_KEYS = Object.keys(RELS), CAT_REL = { people: 'gender', places: 'capital', animals: 'young', verbs: 'past' };
+const ANG_PAIRS = [['cat', 'kitten'], ['cat', 'dog'], ['cat', 'lion'], ['cat', 'paris']];
+const MATRIX_SEQ = ['queen', 'paris', 'kitten', 'swam', 'crown'];
+const PH = [0.5, 0.9, 0.9, 0.5, 0.9, 2.8], PH_T = PH.reduce((a, b) => a + b, 0); // show, −B, +C, land, parallelogram, hold
+const SIGMA0 = 0.03;
+
+/* ---------- state ---------- */
+const S = {
+  sigma: SIGMA0, V: null, P: null, view: 0, mode: 'rank', auto: false, exclude: true,
+  abc: PRESETS[0].map(n => IDX[n]), slot: 0, at: 0, preset: 0, mt: 0, cyc: 0, ci: 0,
+  pair: [IDX.cat, IDX.kitten], rel: 'gender', mrow: IDX.queen, fpair: null, fixedPair: null,
+  hover: -1, pos: WORDS.map(() => ({ x: 0, y: 0, tx: 0, ty: 0 })), op: { x: 0, y: 0, tx: 0, ty: 0 }, bx: [0, 1], by: [0, 1] };
+const L = {};
+let D = {}, BAR = [];
+
+/* ---------- model plumbing ---------- */
+function rebuild() { S.V = makeVectors(S.sigma); S.P = pca(S.V); retarget(false); }
+function retarget(snap) {
+  if (!S.V || !L.scene) return;
+  const vw = VIEWS[S.view];
+  if (vw.k === 'off') { vw.ax = planeWith(S.P, offsetDir()); vw.y = offsetName(); }
+  S.offKey = offKey();
+  const xy = S.V.map(v => project(v, S.P, vw)), o = project(DIMS.map(() => 0), S.P, vw);
+  const xs = xy.map(p => p[0]).concat(o[0]), ys = xy.map(p => p[1]).concat(o[1]);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const px = (x1 - x0) * 0.04 || 1, py = (y1 - y0) * 0.04 || 1;
+  S.bx = [x0 - px, x1 + px]; S.by = [y0 - py, y1 + py];
+  const put = (p, [x, y]) => { [p.tx, p.ty] = toScreen(x, y); if (snap || REDUCED) { p.x = p.tx; p.y = p.ty; } };
+  xy.forEach((q, i) => put(S.pos[i], q)); put(S.op, o);
+  S.fpair = null;
+}
+// the direction being added: the relation family's mean offset, or C − B of the analogy
+function offsetDir() {
+  if (S.mode === 'relation') { const ps = RELS[S.rel].pairs; return DIMS.map((_, k) => ps.reduce((t, [f, g]) => t + S.V[IDX[g]][k] - S.V[IDX[f]][k], 0)); }
+  return S.V[S.abc[2]].map((x, k) => x - S.V[S.abc[1]][k]);
+}
+const offKey = () => S.mode === 'relation' ? S.rel : S.abc.join();
+const offsetName = () => S.mode === 'relation' ? RELS[S.rel].name.replace(' → ', '→') : `${WORDS[S.abc[1]].n}→${WORDS[S.abc[2]].n}`;
+function toScreen(x, y) {
+  const sc = L.scene;
+  return [sc.x + (x - S.bx[0]) / (S.bx[1] - S.bx[0]) * sc.w, sc.y + sc.h - (y - S.by[0]) / (S.by[1] - S.by[0]) * sc.h];
+}
+// the pair that sits closest on the flat map while being unrelated in 17-D
+function falsePair() {
+  let best = null, bd = 1e9;
+  for (let i = 0; i < WORDS.length; i++) for (let j = i + 1; j < WORDS.length; j++) {
+    if (WORDS[i].cat === WORDS[j].cat || cosine(S.V[i], S.V[j]) > 0.2) continue;
+    const d = Math.hypot(S.pos[i].tx - S.pos[j].tx, S.pos[i].ty - S.pos[j].ty);
+    if (d < bd) { bd = d; best = [i, j]; }
   }
   return best;
 }
-cv.addEventListener('mousemove',function(e){
-  mx=e.clientX;my=e.clientY;
-  if(drag){drag.x=UX(mx);drag.y=UY(my);}
-  else hover=pick(mx,my);
-  cv.style.cursor=(drag||hover)?'grab':'crosshair';
+function flatNearest(a, b, c) {
+  const P = S.pos, rx = P[a].tx - P[b].tx + P[c].tx, ry = P[a].ty - P[b].ty + P[c].ty;
+  let best = -1, bd = 1e9;
+  P.forEach((p, i) => { if (i === a || i === b || i === c) return; const d = Math.hypot(p.tx - rx, p.ty - ry); if (d < bd) { bd = d; best = i; } });
+  return best;
+}
+function derive() {
+  const V = S.V, d = { vr: varShown(S.P, VIEWS[S.view]) }, [a, b, c] = S.abc;
+  d.r = analogy(V, a, b, c);
+  d.list = rank(V, d.r, S.exclude ? [a, b, c] : [], 5);
+  d.top = d.list[0].i;
+  d.u = d.r; d.v = V[d.top]; d.un = 'r'; d.vn = WORDS[d.top].n;
+  if (S.mode === 'angle') { d.u = V[S.pair[0]]; d.v = V[S.pair[1]]; d.un = WORDS[S.pair[0]].n; d.vn = WORDS[S.pair[1]].n; }
+  if (S.mode === 'relation') {
+    const offs = RELS[S.rel].pairs.map(([f, t]) => V[IDX[t]].map((x, k) => x - V[IDX[f]][k]));
+    d.mean = DIMS.map((_, k) => offs.reduce((s, o) => s + o[k], 0) / offs.length);
+    d.align = offs.map(o => cosine(o, d.mean));
+    d.u = offs[0]; d.v = d.mean; d.un = RELS[S.rel].pairs[0].join('→'); d.vn = 'mean offset';
+  }
+  if (S.mode === 'false') {
+    if (!S.fpair) S.fpair = S.fixedPair || falsePair();
+    d.fp = S.fpair; d.u = V[d.fp[0]]; d.v = V[d.fp[1]]; d.un = WORDS[d.fp[0]].n; d.vn = WORDS[d.fp[1]].n;
+    d.flat = flatNearest(a, b, c);
+  }
+  if (S.mode === 'matrix') { d.u = V[S.mrow]; d.v = V[S.mrow]; d.un = d.vn = WORDS[S.mrow].n; }
+  d.cos = cosine(d.u, d.v);
+  return d;
+}
+
+/* ---------- layout ---------- */
+function onResize() {
+  if (!READY) return;
+  const narrow = W < 640; L.narrow = narrow;
+  L.chips = { x: 16, y: narrow ? 92 : 94, h: 30 };
+  if (narrow) {
+    L.card = null; L.strip = { x: 16, y: H - 80 - 34, w: W - 32, h: 34 };
+    L.scene = { x: 30, y: L.chips.y + 46, w: W - 60, h: L.strip.y - 16 - (L.chips.y + 46) };
+  } else {
+    const cw = Math.min(250, Math.max(200, W * 0.27));
+    L.card = { x: W - 16 - cw, y: 94, w: cw, h: H - 80 - 94 }; L.strip = null;
+    L.scene = { x: 44, y: L.chips.y + 56, w: L.card.x - 44 - 40, h: H - 80 - 40 - (L.chips.y + 56) };
+  }
+  retarget(true);
+}
+
+/* ---------- drawing helpers ---------- */
+const hexA = (h, a) => `rgba(${parseInt(h.slice(1, 3), 16)},${parseInt(h.slice(3, 5), 16)},${parseInt(h.slice(5, 7), 16)},${a})`;
+const ease = t => t < 0.5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2;
+const n1 = t => (t <= -0.05 ? '−' : '') + Math.abs(t).toFixed(1);
+const f2 = v => (v <= -0.005 ? '−' : '') + Math.abs(v).toFixed(2);
+const MW = new Map();
+function tw(font, s) { const k = font + '|' + s; if (!MW.has(k)) { ctx.font = font; MW.set(k, ctx.measureText(s).width); } return MW.get(k); }
+function text(s, x, y, font, col, align = 'left', base = 'middle') { ctx.font = font; ctx.fillStyle = col; ctx.textAlign = align; ctx.textBaseline = base; ctx.fillText(s, x, y); }
+function rrect(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function arrow(x1, y1, x2, y2, col, w = 2.4, dash = null, head = true) {
+  const len = Math.hypot(x2 - x1, y2 - y1); if (len < 2) return;
+  const ang = Math.atan2(y2 - y1, x2 - x1), hl = Math.min(12, len * 0.4);
+  const ex = head ? x2 - Math.cos(ang) * hl * 0.6 : x2, ey = head ? y2 - Math.sin(ang) * hl * 0.6 : y2;
+  ctx.lineCap = 'round'; ctx.setLineDash(dash || []);
+  for (const [lw, a] of [[w + 5, 0.16], [w, 1]]) { ctx.strokeStyle = a < 1 ? hexA(col, a) : col; ctx.lineWidth = lw; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(ex, ey); ctx.stroke(); }
+  ctx.setLineDash([]);
+  if (head) { ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(x2, y2); ctx.lineTo(x2 - hl * Math.cos(ang - 0.45), y2 - hl * Math.sin(ang - 0.45)); ctx.lineTo(x2 - hl * Math.cos(ang + 0.45), y2 - hl * Math.sin(ang + 0.45)); ctx.closePath(); ctx.fill(); }
+}
+const PILLF = `600 12px ${SANS}`;
+function pillRect(p) { const w = tw(PILLF, p.t) + 14; return { x: p.x - w / 2, y: p.y - 10, w, h: 20 }; }
+function drawPill(p) { const r = pillRect(p); rrect(r.x, r.y, r.w, r.h, 10); ctx.fillStyle = 'rgba(12,14,30,.9)'; ctx.fill(); ctx.strokeStyle = hexA(p.c, 0.6); ctx.lineWidth = 1; ctx.stroke(); text(p.t, p.x, p.y + 0.5, PILLF, p.c, 'center'); }
+// a pill beside the midpoint of a segment, pushed off the line perpendicular to it
+function midPill(x1, y1, x2, y2, t, c, side = 1) { const mx = (x1 + x2) / 2, my = (y1 + y2) / 2, l = Math.hypot(x2 - x1, y2 - y1) || 1, nx = -(y2 - y1) / l * side, ny = (x2 - x1) / l * side; return { t, c, mx, my, nx, ny, x: mx + nx * 16, y: my + ny * 16 }; }
+function placePills(pills, obst, dots) {
+  const done = [], KS = [16, -16, 30, -30, 46, -46, 62, -62];
+  const at = (p, k) => { p.x = p.mx + p.nx * k; p.y = p.my + p.ny * k; return pillRect(p); };
+  const free = (R, strict) => !done.some(o => hit(R, o)) && (!strict || (!dots.some(o => hit(R, o)) && !obst.some(o => hit(R, o))));
+  for (const p of pills) {
+    if (p.nx !== undefined) {
+      let k = KS.find(k => free(at(p, k), true));
+      if (k === undefined) k = KS.find(k => free(at(p, k), false));
+      if (k === undefined) { p.hide = true; continue; } // never overprint another pill
+      at(p, k);
+    }
+    done.push(pillRect(p));
+  }
+  return done;
+}
+const hit = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+/* ---------- collision-free labels ---------- */
+function placeLabels(prio, obst) {
+  const out = [], placed = obst.slice(), P = S.pos, sc = L.scene;
+  const lim = { x: sc.x - 12, y: sc.y - 14, w: Math.min(sc.w + 30, (L.card ? L.card.x - 6 : W - 6) - (sc.x - 12)), h: sc.h + 24 };
+  const dots = P.map(p => ({ x: p.x - 5, y: p.y - 5, w: 10, h: 10 }));
+  prio = [...new Set(prio.filter(i => i >= 0))];
+  const order = prio.concat(WORDS.map((_, i) => i).filter(i => !prio.includes(i)));
+  for (const i of order) {
+    const big = prio.includes(i), font = big ? `700 13px ${SANS}` : `12px ${SANS}`, w = tw(font, WORDS[i].n), h = big ? 16 : 14, p = P[i], r = big ? 7 : 5;
+    const C = [[r + 4, -h / 2], [-r - 4 - w, -h / 2], [-w / 2, -r - 3 - h], [-w / 2, r + 3], [r, -r - h], [-r - w, -r - h], [r, r], [-r - w, r]];
+    if (big) C.push([r + 22, -h / 2], [-r - 22 - w, -h / 2], [-w / 2, -r - 20 - h], [-w / 2, r + 20], [r + 16, -r - 16 - h], [-r - 16 - w, r + 16]);
+    const tryAt = (cands, useDots) => cands.some(([dx, dy]) => {
+      const R = { x: p.x + dx, y: p.y + dy, w, h };
+      if (R.x < lim.x || R.y < lim.y || R.x + w > lim.x + lim.w || R.y + h > lim.y + lim.h) return false;
+      if (placed.some(o => hit(R, o)) || (useDots && dots.some((d, j) => j !== i && hit(R, d)))) return false;
+      placed.push(R); out.push({ i, R, font, lead: Math.abs(dx) > 20 || Math.abs(dy) > 20 }); return true;
+    });
+    // a focus word must never go unlabelled: fall back to far spots with a leader line (vertical/diagonal first, so it can't read as a neighbour's label)
+    const FAR = [[-w / 2, -r - 36 - h], [-w / 2, r + 36], [r + 30, -r - 30 - h], [-r - 30 - w, -r - 30 - h], [r + 30, r + 30], [-r - 30 - w, r + 30], [-w / 2, r + 58], [-w / 2, -r - 58 - h], [r + 22, r + 52], [-r - 22 - w, r + 52], [r + 44, -h / 2], [-r - 44 - w, -h / 2]];
+    if (!tryAt(C, true) && big && !tryAt(FAR, true)) tryAt(FAR, false);
+  }
+  return out;
+}
+
+/* ---------- mode overlays: each returns {under(), over(), pills, prio} ---------- */
+function phase(at) { let acc = 0; for (let i = 0; i < PH.length; i++) { if (at < acc + PH[i]) return [i, (at - acc) / PH[i]]; acc += PH[i]; } return [PH.length - 1, 1]; }
+function ovAnalogy(d, withFlat) {
+  const [a, b, c] = S.abc, P = S.pos, A = P[a], B = P[b], C = P[c], O = S.op, [ph, f] = phase(S.at), t = x => ph === x ? ease(f) : 1;
+  const m = { x: A.x - B.x + O.x, y: A.y - B.y + O.y }, r = { x: A.x - B.x + C.x, y: A.y - B.y + C.y }, T = P[d.top];
+  const nb = WORDS[b].n, nc = WORDS[c].n, pills = [], lerp = (p, q, k) => ({ x: p.x + (q.x - p.x) * k, y: p.y + (q.y - p.y) * k });
+  if (ph >= 1) pills.push(midPill(A.x, A.y, m.x, m.y, '− ' + nb, COL.b));
+  if (ph >= 2) pills.push(midPill(m.x, m.y, r.x, r.y, '+ ' + nc, COL.a));
+  if (ph >= 4) pills.push(midPill(B.x, B.y, C.x, C.y, nb + ' → ' + nc, COL.grad, -1));
+  return {
+    prio: [a, b, c, d.top].concat(withFlat ? [d.flat] : []), pills,
+    rings: ph >= 3 ? [{ x: r.x, y: r.y, r: 9 + 22 * (1 - t(3)) }] : [],
+    under() {
+      if (ph >= 1) { arrow(O.x, O.y, B.x, B.y, COL.b, 1.2, [3, 5], false); const e = lerp(A, m, t(1)); arrow(A.x, A.y, e.x, e.y, COL.b, 2.6); }
+      if (ph >= 2) { arrow(O.x, O.y, C.x, C.y, COL.a, 1.2, [3, 5], false); const e = lerp(m, r, t(2)); arrow(m.x, m.y, e.x, e.y, COL.a, 2.6); }
+      if (ph >= 4) { const k = t(4); const e1 = lerp(B, C, k), e2 = lerp(A, r, k); arrow(B.x, B.y, e1.x, e1.y, COL.grad, 2, [7, 5]); arrow(A.x, A.y, e2.x, e2.y, COL.grad, 2, [7, 5]); }
+      if (ph >= 3) { ctx.setLineDash([2, 4]); ctx.strokeStyle = hexA(COL.hl, 0.7); ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(r.x, r.y); ctx.lineTo(T.x, T.y); ctx.stroke(); ctx.setLineDash([]); }
+      if (withFlat && d.flat >= 0 && ph >= 3) { const F = P[d.flat]; ctx.setLineDash([4, 4]); ctx.strokeStyle = hexA(COL.bad, 0.8); ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(r.x, r.y); ctx.lineTo(F.x, F.y); ctx.stroke(); ctx.setLineDash([]); }
+    },
+    over() { if (ph >= 3) { const rr = 9 + 22 * (1 - t(3)); ctx.fillStyle = hexA(COL.hl, 0.18); ctx.beginPath(); ctx.arc(r.x, r.y, rr + 6, 0, 7); ctx.fill(); ctx.strokeStyle = COL.hl; ctx.lineWidth = 2.2; ctx.beginPath(); ctx.arc(r.x, r.y, rr, 0, 7); ctx.stroke(); ctx.fillStyle = COL.hl; ctx.beginPath(); ctx.arc(r.x, r.y, 3, 0, 7); ctx.fill(); } }
+  };
+}
+function ovAngle(d) {
+  const [i, j] = S.pair, O = S.op, U = S.pos[i], V2 = S.pos[j], k = REDUCED ? 1 : ease(Math.min(1, S.mt / 0.6));
+  return {
+    prio: [i, j].concat(ANG_PAIRS.flat().map(n => IDX[n])), pills: [midPill(U.x, U.y, V2.x, V2.y, 'cos ' + f2(d.cos), COL.hl, 1)], rings: [],
+    under() {
+      ctx.fillStyle = hexA(COL.grad, 0.12); ctx.beginPath(); ctx.moveTo(O.x, O.y); ctx.lineTo(O.x + (U.x - O.x) * k, O.y + (U.y - O.y) * k); ctx.lineTo(O.x + (V2.x - O.x) * k, O.y + (V2.y - O.y) * k); ctx.closePath(); ctx.fill();
+      arrow(O.x, O.y, O.x + (U.x - O.x) * k, O.y + (U.y - O.y) * k, COL.hl, 2.4); arrow(O.x, O.y, O.x + (V2.x - O.x) * k, O.y + (V2.y - O.y) * k, COL.data, 2.4);
+    }, over() {}
+  };
+}
+function ovRelation(d) {
+  const pairs = RELS[S.rel].pairs, P = S.pos, pills = [];
+  pairs.forEach(([f, t], n) => { if (n === 1) pills.push(midPill(P[IDX[f]].x, P[IDX[f]].y, P[IDX[t]].x, P[IDX[t]].y, RELS[S.rel].name, COL.grad)); });
+  return {
+    prio: pairs.flat().map(n => IDX[n]), pills, rings: [],
+    under() { pairs.forEach(([f, t], n) => { const k = REDUCED ? 1 : ease(Math.max(0, Math.min(1, (S.mt - n * 0.25) / 0.6))); const A = P[IDX[f]], B = P[IDX[t]]; if (k > 0) arrow(A.x, A.y, A.x + (B.x - A.x) * k, A.y + (B.y - A.y) * k, COL.grad, 2.4); }); }, over() {}
+  };
+}
+function ovFalse(d) {
+  const base = ovAnalogy(d, true), [i, j] = d.fp, P = S.pos, mx = (P[i].x + P[j].x) / 2, my = (P[i].y + P[j].y) / 2;
+  base.prio = [i, j].concat(base.prio); base.pills.unshift({ t: 'look close · cos ' + f2(d.cos), c: COL.bad, x: mx, y: my - 30 });
+  const o = base.over;
+  base.over = () => { o(); ctx.strokeStyle = COL.bad; ctx.lineWidth = 1.8; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.arc(mx, my, Math.max(12, Math.hypot(P[i].x - P[j].x, P[i].y - P[j].y) / 2 + 9), 0, 7); ctx.stroke(); ctx.setLineDash([]); };
+  return base;
+}
+function ovMatrix() {
+  const p = S.pos[S.mrow];
+  return { prio: [S.mrow], pills: [], rings: [{ x: p.x, y: p.y, r: 12 }], under() {}, over() { ctx.strokeStyle = COL.hl; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(p.x, p.y, 11, 0, 7); ctx.stroke(); if (L.card && L.rowY) { ctx.setLineDash([3, 4]); ctx.strokeStyle = hexA(COL.hl, 0.6); ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(p.x + 11, p.y); ctx.lineTo(L.card.x, L.rowY); ctx.stroke(); ctx.setLineDash([]); } } };
+}
+
+/* ---------- top bar: equation chips / mode chips (drawn on canvas, tappable) ---------- */
+function buildBar(d) {
+  const items = [], F = `600 14px ${SANS}`, FS = `12px ${SANS}`; let x = L.chips.x;
+  const chip = (t, c, act, on, font = F) => { const w = tw(font, t) + 20; items.push({ t, c, act, on, font, x, y: L.chips.y, w, h: L.chips.h }); x += w + 6; };
+  const op = t => { items.push({ t, c: COL.dim, font: F, x, y: L.chips.y, w: 12, h: L.chips.h, op: 1 }); x += 18; };
+  if (S.mode === 'rank') {
+    S.abc.forEach((w, k) => { if (k) op(k === 1 ? '−' : '+'); chip(WORDS[w].n, [COL.hl, COL.b, COL.a][k], () => { S.slot = k; }, S.slot === k && !S.auto); });
+    op('≈'); chip(WORDS[d.top].n, CATCOL[WORDS[d.top].cat], null, false);
+    if (!S.auto && x + 150 < (L.card ? L.card.x : W)) items.push({ t: 'tap a word to fill the ▢ slot', c: COL.faint, font: FS, x, y: L.chips.y, w: 150, h: L.chips.h, op: 1 });
+  } else if (S.mode === 'relation') {
+    REL_KEYS.forEach(k => chip(L.narrow ? RELS[k].name.split(' → ')[1] : RELS[k].name, COL.grad, () => { S.rel = k; S.auto = false; S.mt = 0; }, S.rel === k, FS));
+  } else if (S.mode === 'angle') {
+    chip(WORDS[S.pair[0]].n, COL.hl, null, false); op('↔'); chip(WORDS[S.pair[1]].n, COL.data, null, false);
+    items.push({ t: 'tap two words to compare', c: COL.faint, font: FS, x, y: L.chips.y, w: 150, h: L.chips.h, op: 1 });
+  } else if (S.mode === 'false' || S.mode === 'matrix') {
+    VIEWS.slice(0, L.narrow ? 3 : 4).forEach((v, k) => chip(v.name, COL.dim, () => setView(k), S.view === k, FS));
+  }
+  // wrap to the available width on narrow stages
+  const maxX = (L.card ? L.card.x - 8 : W - 16);
+  let row = 0, shift = 0;
+  items.forEach(it => { if (it.x - shift + it.w > maxX && it.x > L.chips.x) { row++; shift = it.x - L.chips.x; } it.x -= shift; it.y += row * (L.chips.h + 4); });
+  return items.filter(it => it.y < L.chips.y + 2 * (L.chips.h + 4));
+}
+function drawBar() {
+  for (const it of BAR) {
+    if (it.op) { text(it.t, it.x + (it.w > 20 ? 0 : it.w / 2), it.y + it.h / 2, it.font, it.c, it.w > 20 ? 'left' : 'center'); continue; }
+    rrect(it.x, it.y, it.w, it.h, 8); ctx.fillStyle = it.on ? hexA(it.c, 0.22) : 'rgba(19,22,44,.88)'; ctx.fill();
+    ctx.strokeStyle = it.on ? COL.hl : hexA(it.c, 0.55); ctx.lineWidth = it.on ? 2 : 1; ctx.stroke();
+    text(it.t, it.x + it.w / 2, it.y + it.h / 2 + 0.5, it.font, it.on && S.mode !== 'rank' ? COL.ink : it.c, 'center');
+  }
+}
+
+/* ---------- side card (desktop) / strip (phone) ---------- */
+function vecBars(x, y, w, rowH, vecs, cols, hlDims = []) {
+  const lab = 56, mid = x + lab + (w - lab) * 0.42, sc = (w - lab) * 0.36;
+  ctx.strokeStyle = 'rgba(190,200,255,.18)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(mid, y); ctx.lineTo(mid, y + rowH * DIMS.length); ctx.stroke();
+  DIMS.forEach((dn, k) => {
+    const yy = y + k * rowH;
+    text(dn, x + lab - 6, yy + rowH / 2, `10.5px ${MONO}`, hlDims.includes(dn) ? COL.ink : COL.faint, 'right');
+    vecs.forEach((v, n) => { const val = Math.max(-1.6, Math.min(1.6, v[k])) * sc / 1.2; ctx.fillStyle = cols[n]; ctx.fillRect(Math.min(mid, mid + val), yy + 2 + n * (rowH - 4) / vecs.length, Math.abs(val), Math.max(2, (rowH - 5) / vecs.length)); });
+  });
+  return y + rowH * DIMS.length;
+}
+function cosRow(x, y, w, label, col, c, strong) {
+  const F = `${strong ? 700 : 500} 12.5px ${SANS}`; text(label, x, y, F, col);
+  const bx = Math.max(x + w * 0.5, x + tw(F, label) + 8), bw = Math.max(8, x + w * 0.82 - bx); ctx.fillStyle = 'rgba(190,200,255,.08)'; ctx.fillRect(bx, y - 4, bw, 8);
+  ctx.fillStyle = strong ? COL.hl : hexA(COL.hl, 0.45); ctx.fillRect(bx, y - 4, bw * Math.max(0, c), 8);
+  text(f2(c), x + w, y, `12px ${MONO}`, strong ? COL.hl : COL.dim, 'right');
+}
+function drawCard(d) {
+  const c = L.card; rrect(c.x, c.y, c.w, c.h, 12); ctx.fillStyle = 'rgba(14,16,34,.86)'; ctx.fill(); ctx.strokeStyle = 'rgba(190,200,255,.14)'; ctx.lineWidth = 1; ctx.stroke();
+  const x = c.x + 14, w = c.w - 28, H1 = `600 10px ${MONO}`; let y = c.y + 20;
+  const head = t => { text(t, x, y, H1, COL.faint); y += 18; };
+  const rowH = Math.max(11, Math.min(16, (c.y + c.h - y - 300) / 17));
+  if (S.mode === 'rank') {
+    head('COSINE RANKING · 17-D');
+    const nm = S.abc.map(i => WORDS[i].n);
+    let xx = x; [[nm[0], COL.hl], [' − ', COL.dim], [nm[1], COL.b], [' + ', COL.dim], [nm[2], COL.a]].forEach(([t, cl]) => { text(t, xx, y, `600 13px ${SANS}`, cl); xx += tw(`600 13px ${SANS}`, t); }); y += 22;
+    d.list.forEach((e, n) => { cosRow(x, y, w, `${n + 1}. ${WORDS[e.i].n}`, CATCOL[WORDS[e.i].cat], e.c, n === 0); y += 21; });
+    text(S.exclude ? 'inputs excluded from the ranking' : 'inputs allowed in the ranking', x, y, `11px ${SANS}`, COL.faint); y += 24;
+    head('THE 17 NUMBERS'); legend2(x, y - 4, 'result r', COL.hl, WORDS[d.top].n, CATCOL[WORDS[d.top].cat]); y += 12;
+    vecBars(x, y, w, rowH, [d.r, S.V[d.top]], [COL.hl, CATCOL[WORDS[d.top].cat]]);
+  } else if (S.mode === 'angle') {
+    head('TRUE ANGLE IN 17-D');
+    const th = Math.acos(Math.max(-1, Math.min(1, d.cos))), px = x + 8, py = y + 84, R = w - 30;
+    ctx.fillStyle = hexA(COL.grad, 0.16); ctx.beginPath(); ctx.moveTo(px, py); ctx.arc(px, py, R * 0.4, -th, 0); ctx.closePath(); ctx.fill();
+    arrow(px, py, px + R, py, COL.hl, 2.4); arrow(px, py, px + R * Math.cos(th), py - R * Math.sin(th), COL.data, 2.4);
+    text(WORDS[S.pair[0]].n, px + R, py + 14, `600 12px ${SANS}`, COL.hl, 'right');
+    text(WORDS[S.pair[1]].n, px + R * Math.cos(th) + (th > 1.4 ? 8 : 0), py - R * Math.sin(th) - 12, `600 12px ${SANS}`, COL.data, th > 1.4 ? 'left' : 'center');
+    text(`θ = ${(th * 180 / Math.PI).toFixed(0)}°   cos θ = ${f2(d.cos)}`, x, py + 30, `600 13px ${MONO}`, COL.ink); y = py + 58;
+    head('CAT COMPARED WITH…');
+    ANG_PAIRS.forEach(([p, q]) => { cosRow(x, y, w, q, CATCOL[WORDS[IDX[q]].cat], cosine(S.V[IDX[p]], S.V[IDX[q]]), S.pair[0] === IDX[p] && S.pair[1] === IDX[q]); y += 21; });
+    y += 8; head('THE 17 NUMBERS'); y += 2;
+    vecBars(x, y, w, rowH, [d.u, d.v], [COL.hl, COL.data]);
+  } else if (S.mode === 'relation') {
+    head('ONE RELATION = ONE DIRECTION');
+    text(RELS[S.rel].name, x, y, `600 13px ${SANS}`, COL.grad); y += 22;
+    text('cos(each offset, mean offset)', x, y, `11px ${SANS}`, COL.faint); y += 20;
+    RELS[S.rel].pairs.forEach((p, n) => { cosRow(x, y, w, p.join(' → '), COL.ink, d.align[n], false); y += 20; });
+    y += 10; head("THE OFFSET'S 17 NUMBERS"); y += 2;
+    vecBars(x, y, w, rowH, [d.mean], [COL.grad], DIMS.filter((_, k) => Math.abs(d.mean[k]) > 0.3));
+  } else if (S.mode === 'false') {
+    head('THE FLAT MAP LIES');
+    const [i, j] = d.fp, gap = Math.hypot(S.pos[i].tx - S.pos[j].tx, S.pos[i].ty - S.pos[j].ty);
+    text(`${WORDS[i].n} ↔ ${WORDS[j].n}`, x, y, `700 13px ${SANS}`, COL.ink); y += 20;
+    text(`gap on map`, x, y, `12px ${SANS}`, COL.dim); text(`${gap.toFixed(0)} px`, x + w, y, `12px ${MONO}`, COL.ink, 'right'); y += 18;
+    text(`cosine in 17-D`, x, y, `12px ${SANS}`, COL.dim); text(f2(d.cos), x + w, y, `700 12px ${MONO}`, COL.bad, 'right'); y += 26;
+    text(S.abc.map(k => WORDS[k].n).join(' · '), x, y, `11px ${SANS}`, COL.faint); y += 18;
+    text('nearest on flat map', x, y, `12px ${SANS}`, COL.dim); text(WORDS[d.flat].n + (d.flat === d.top ? ' ✓' : ' ✗'), x + w, y, `700 12px ${SANS}`, d.flat === d.top ? COL.good : COL.bad, 'right'); y += 18;
+    text('nearest by cosine', x, y, `12px ${SANS}`, COL.dim); text(WORDS[d.top].n + ' ✓', x + w, y, `700 12px ${SANS}`, COL.good, 'right'); y += 26;
+    text('variance this view keeps', x, y, `12px ${SANS}`, COL.dim); text(`${(d.vr * 100).toFixed(0)}%`, x + w, y, `700 13px ${MONO}`, COL.hl, 'right'); y += 12;
+    ctx.fillStyle = 'rgba(255,107,138,.18)'; ctx.fillRect(x, y, w, 8); ctx.fillStyle = COL.hl; ctx.fillRect(x, y, w * d.vr, 8); y += 26;
+    head('THEIR 17 NUMBERS'); legend2(x, y - 4, WORDS[i].n, COL.hl, WORDS[j].n, COL.data); y += 12;
+    vecBars(x, y, w, rowH, [d.u, d.v], [COL.hl, COL.data]);
+  } else {
+    head(`EMBEDDING MATRIX E · ${WORDS.length} × ${DIMS.length}`);
+    text('one row per token · amber +, teal −', x, y, `11px ${SANS}`, COL.faint); y += 14;
+    const cw = w / DIMS.length, ch = Math.max(4, Math.min(9, (c.y + c.h - y - 70) / WORDS.length));
+    S.V.forEach((v, r) => v.forEach((val, k) => { ctx.fillStyle = val >= 0 ? hexA(COL.hl, Math.min(1, val) * 0.95) : hexA(COL.b, Math.min(1, -val) * 0.95); ctx.fillRect(x + k * cw + 0.5, y + r * ch + 0.5, cw - 1, ch - 1); }));
+    const ry = y + S.mrow * ch; L.rowY = ry + ch / 2; ctx.strokeStyle = COL.ink; ctx.lineWidth = 1.5; ctx.strokeRect(x - 1, ry - 0.5, w + 2, ch + 1);
+    y += WORDS.length * ch + 22;
+    text(`E[${WORDS[S.mrow].n}] =`, x, y, `600 12px ${MONO}`, COL.hl); y += 18;
+    const nums = S.V[S.mrow].map(t => (t <= -0.05 ? '−' : ' ') + Math.abs(t).toFixed(1)), per = Math.max(1, Math.floor((w + tw(`11px ${MONO}`, ' ')) / tw(`11px ${MONO}`, ' −0.0')));
+    for (let k = 0; k < nums.length; k += per) { text(nums.slice(k, k + per).join(' '), x, y, `11px ${MONO}`, COL.dim); y += 15; }
+  }
+}
+function legend2(x, y, a, ca, b, cb) { ctx.fillStyle = ca; ctx.fillRect(x, y - 3, 10, 6); text(a, x + 14, y, `11px ${SANS}`, COL.dim); const x2 = x + 18 + tw(`11px ${SANS}`, a) + 8; ctx.fillStyle = cb; ctx.fillRect(x2, y - 3, 10, 6); text(b, x2 + 14, y, `11px ${SANS}`, COL.dim); }
+function drawStrip(d) {
+  const s = L.strip; rrect(s.x, s.y, s.w, s.h, 10); ctx.fillStyle = 'rgba(14,16,34,.88)'; ctx.fill(); ctx.strokeStyle = 'rgba(190,200,255,.14)'; ctx.lineWidth = 1; ctx.stroke();
+  let segs;
+  if (S.mode === 'rank') segs = d.list.slice(0, 3).flatMap((e, n) => [[n ? '  ·  ' : '≈ ', COL.faint], [WORDS[e.i].n + ' ', CATCOL[WORDS[e.i].cat]], [e.c.toFixed(2), n ? COL.dim : COL.hl]]);
+  else if (S.mode === 'angle') segs = [[d.un + ' ↔ ' + d.vn, COL.ink], ['   cos ', COL.faint], [f2(d.cos), COL.hl], [`   θ ${(Math.acos(Math.max(-1, Math.min(1, d.cos))) * 57.3).toFixed(0)}°`, COL.dim]];
+  else if (S.mode === 'relation') segs = [['offsets align · cos ', COL.faint], [d.align.map(a => a.toFixed(2)).join(' '), COL.grad]];
+  else if (S.mode === 'false') segs = [[d.un + ' ↔ ' + d.vn, COL.ink], [' cos ', COL.faint], [f2(d.cos), COL.bad], ['  flat map says ', COL.faint], [WORDS[d.flat].n, d.flat === d.top ? COL.good : COL.bad]];
+  else {
+    const v = S.V[S.mrow], big = DIMS.map((n, k) => [n, v[k]]).filter(e => Math.abs(e[1]) >= 0.25).sort((p, q) => Math.abs(q[1]) - Math.abs(p[1]));
+    segs = [[`E[${WORDS[S.mrow].n}]  `, COL.hl]]; let used = tw(`600 12.5px ${SANS}`, segs[0][0]);
+    for (const [n, val] of big) { const a = n + ' ', b = n1(val) + '  ', ww = tw(`600 12.5px ${SANS}`, a + b); if (used + ww > s.w - 40) { segs.push(['…', COL.faint]); break; } segs.push([a, COL.faint], [b, val >= 0 ? COL.hl : COL.b]); used += ww; }
+  }
+  let x = s.x + 12; const F = `600 12.5px ${SANS}`;
+  for (const [t, c] of segs) { text(t, x, s.y + s.h / 2, F, c); x += tw(F, t); }
+}
+
+/* ---------- main draw ---------- */
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const d = D, sc = L.scene, P = S.pos, vw = VIEWS[S.view];
+  // axes along the scene edges
+  const ax = sc.y + sc.h + 14, AF = `600 11px ${MONO}`;
+  arrow(sc.x - 10, ax, sc.x + sc.w, ax, COL.faint, 1);
+  arrow(sc.x - 14, ax + 4, sc.x - 14, sc.y, COL.faint, 1);
+  text(vw.x, sc.x + sc.w, ax - 10, AF, COL.dim, 'right'); text(vw.y, sc.x - 8, sc.y - 2, AF, COL.dim, 'left');
+  const O = S.op; ctx.strokeStyle = 'rgba(190,200,255,.35)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(O.x - 5, O.y); ctx.lineTo(O.x + 5, O.y); ctx.moveTo(O.x, O.y - 5); ctx.lineTo(O.x, O.y + 5); ctx.stroke();
+  text('0', O.x + 5, O.y + 8, `10px ${MONO}`, COL.faint);
+  // legend (desktop)
+  const obst = [{ x: sc.x + sc.w - tw(AF, vw.x), y: ax - 18, w: tw(AF, vw.x), h: 16 }, { x: sc.x - 8, y: sc.y - 10, w: tw(AF, vw.y), h: 16 }, { x: O.x - 6, y: O.y - 6, w: 20, h: 20 }];
+  if (!L.narrow) { let lx = sc.x; const ly = ax + 12, LF = `11px ${SANS}`; for (const k in CATCOL) { ctx.fillStyle = CATCOL[k]; ctx.beginPath(); ctx.arc(lx + 4, ly, 4, 0, 7); ctx.fill(); text(CATS[k], lx + 12, ly, LF, COL.dim); lx += 26 + tw(LF, CATS[k]); } }
+  BAR = buildBar(d); BAR.forEach(b => obst.push(b));
+  const ov = { rank: ovAnalogy, angle: ovAngle, relation: ovRelation, false: ovFalse, matrix: ovMatrix }[S.mode](d, false);
+  ov.rings.forEach(r => obst.push({ x: r.x - r.r, y: r.y - r.r, w: r.r * 2, h: r.r * 2 }));
+  placePills(ov.pills, obst, ov.prio.filter(i => i >= 0).map(i => ({ x: P[i].x - 7, y: P[i].y - 7, w: 14, h: 14 }))).forEach(r => obst.push(r));
+  const prio = ov.prio.slice(); if (S.hover >= 0) prio.unshift(S.hover);
+  const labels = placeLabels(prio, obst);
+  ov.under();
+  // hover: lines to the 3 nearest words by cosine
+  let hov = [];
+  if (S.hover >= 0) {
+    const h = P[S.hover]; hov = rank(S.V, S.V[S.hover], [S.hover], 3);
+    hov.forEach((e, n) => { const q = P[e.i]; ctx.strokeStyle = `rgba(233,236,250,${0.6 - n * 0.15})`; ctx.lineWidth = 1.6 - n * 0.3; ctx.beginPath(); ctx.moveTo(h.x, h.y); ctx.lineTo(q.x, q.y); ctx.stroke(); });
+  }
+  // dots
+  const focus = new Set(ov.prio);
+  P.forEach((p, i) => {
+    const c = CATCOL[WORDS[i].cat], f = focus.has(i) || i === S.hover, r = f ? 6 : 4.2;
+    ctx.fillStyle = hexA(c, f ? 0.28 : 0.12); ctx.beginPath(); ctx.arc(p.x, p.y, r + 4, 0, 7); ctx.fill();
+    ctx.fillStyle = f ? c : hexA(c, 0.8); ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 7); ctx.fill();
+    if (f) { ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = 1.4; ctx.stroke(); }
+  });
+  // labels (dark halo for legibility)
+  ctx.lineJoin = 'round';
+  for (const l of labels) {
+    const i = l.i, f = focus.has(i) || i === S.hover, p = P[i];
+    if (l.lead) { ctx.strokeStyle = hexA(CATCOL[WORDS[i].cat], 0.75); ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(Math.max(l.R.x, Math.min(p.x, l.R.x + l.R.w)), Math.max(l.R.y, Math.min(p.y, l.R.y + l.R.h))); ctx.stroke(); }
+    ctx.font = l.font; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.strokeStyle = 'rgba(12,14,26,.9)'; ctx.lineWidth = 3; ctx.strokeText(WORDS[i].n, l.R.x, l.R.y + l.R.h / 2);
+    ctx.fillStyle = f ? '#fff' : hexA(CATCOL[WORDS[i].cat], 0.85); ctx.fillText(WORDS[i].n, l.R.x, l.R.y + l.R.h / 2);
+  }
+  const hp = [];
+  hov.forEach(e => { const q = P[e.i], h = P[S.hover]; for (const t of [0.62, 0.42, 0.82]) { const pl = { t: e.c.toFixed(2), c: COL.ink, x: h.x + (q.x - h.x) * t, y: h.y + (q.y - h.y) * t }, R = pillRect(pl); if (!hp.some(o => hit(R, o))) { hp.push(R); drawPill(pl); break; } } });
+  ov.over(); ov.pills.forEach(p => p.hide || drawPill(p));
+  drawBar();
+  if (L.card) drawCard(d); else drawStrip(d);
+}
+
+/* ---------- update ---------- */
+function frame(dt, rdt) {
+  const k = REDUCED ? 1 : 1 - Math.exp(-rdt * 9);
+  for (const p of S.pos.concat(S.op)) { p.x += (p.tx - p.x) * k; p.y += (p.ty - p.y) * k; }
+  S.mt += dt; S.cyc += dt;
+  if (S.mode === 'rank' || S.mode === 'false') {
+    S.at += dt;
+    if (S.at >= PH_T) { if (S.auto) { S.preset = (S.preset + 1) % PRESETS.length; S.abc = PRESETS[S.preset].map(n => IDX[n]); S.at = 0; } else S.at = PH_T; }
+  } else if (S.auto && S.cyc > (S.mode === 'relation' ? 4 : 2.6)) {
+    S.cyc = 0; S.ci++; S.mt = 0;
+    if (S.mode === 'angle') S.pair = ANG_PAIRS[S.ci % ANG_PAIRS.length].map(n => IDX[n]);
+    if (S.mode === 'relation') S.rel = REL_KEYS[S.ci % REL_KEYS.length];
+    if (S.mode === 'matrix') S.mrow = IDX[MATRIX_SEQ[S.ci % MATRIX_SEQ.length]];
+  }
+  if (VIEWS[S.view].k === 'off' && offKey() !== S.offKey) retarget(false);
+  D = derive();
+  const res = { rank: WORDS[D.top].n, false: `${D.un}↔${D.vn}`, angle: `${D.un}↔${D.vn}`, relation: RELS[S.rel].name.replace(' → ', '→'), matrix: WORDS[S.mrow].n }[S.mode];
+  setText('sRes', res); setText('sCos', f2(S.mode === 'relation' ? D.align.reduce((a, b) => a + b, 0) / D.align.length : D.cos)); setText('sVar', (D.vr * 100).toFixed(0) + '%');
+  setText('mU', D.un); setText('mV', D.vn); setText('mDot', f2(dot(D.u, D.v))); setText('mNu', norm(D.u).toFixed(2)); setText('mNv', norm(D.v).toFixed(2)); setText('mCos', f2(D.cos));
+  const nm = S.abc.map(i => WORDS[i].n); setText('mA', nm[0]); setText('mB', nm[1]); setText('mC', nm[2]); setText('mTop', WORDS[D.top].n); setText('mTopC', f2(D.list[0].c));
+  const offA = S.V[S.abc[2]].map((x, j) => x - S.V[S.abc[1]][j]), offB = S.V[D.top].map((x, j) => x - S.V[S.abc[0]][j]);
+  setText('mB2', nm[1]); setText('mC2', nm[2]); setText('mA2', nm[0]); setText('mTop2', WORDS[D.top].n); setText('mOff', f2(cosine(offA, offB)));
+  setText('mView', VIEWS[S.view].name); setText('mVar', (D.vr * 100).toFixed(1) + '%');
+  draw();
+}
+
+/* ---------- interaction ---------- */
+function local(e) { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
+function nearestWord(x, y, max) { let best = -1, bd = max; S.pos.forEach((p, i) => { const d = Math.hypot(p.x - x, p.y - y); if (d < bd) { bd = d; best = i; } }); return best; }
+const barHit = (x, y) => BAR.find(b => b.act && x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h);
+cv.addEventListener('pointermove', e => { const [x, y] = local(e); S.hover = e.pointerType === 'touch' ? -1 : nearestWord(x, y, 22); cv.style.cursor = S.hover >= 0 || barHit(x, y) ? 'pointer' : 'crosshair'; });
+cv.addEventListener('pointerleave', () => { S.hover = -1; });
+cv.addEventListener('pointerdown', e => {
+  try { cv.setPointerCapture(e.pointerId); } catch (_) { /* synthetic pointer */ }
+  const [x, y] = local(e), b = barHit(x, y);
+  if (b) { b.act(); return; }
+  if (L.card && x > L.card.x) return;
+  const i = nearestWord(x, y, 1e9); if (i < 0) return;
+  if (S.mode === 'rank') { S.abc[S.slot] = i; S.slot = (S.slot + 1) % 3; S.auto = false; S.at = playing ? 0.3 : PH_T; }
+  else if (S.mode === 'angle') { S.pair = [S.pair[1] === i ? S.pair[0] : S.pair[1], i]; S.auto = false; S.mt = 0; }
+  else if (S.mode === 'relation') { S.rel = CAT_REL[WORDS[i].cat]; S.auto = false; S.mt = 0; }
+  else if (S.mode === 'false') { let j = -1, bd = 1e9; S.pos.forEach((p, k) => { const d = Math.hypot(p.tx - S.pos[i].tx, p.ty - S.pos[i].ty); if (k !== i && d < bd) { bd = d; j = k; } }); S.fixedPair = S.fpair = [i, j]; }
+  else { S.mrow = i; S.auto = false; }
 });
-cv.addEventListener('mousedown',function(e){drag=pick(e.clientX,e.clientY);if(drag)cv.style.cursor='grabbing';});
-window.addEventListener('mouseup',function(){drag=null;});
-cv.addEventListener('mouseleave',function(){mx=-999;my=-999;hover=null;});
-cv.addEventListener('touchstart',function(e){var T=e.touches[0];drag=pick(T.clientX,T.clientY);if(drag)e.preventDefault();},{passive:false});
-cv.addEventListener('touchmove',function(e){if(drag){var T=e.touches[0];drag.x=UX(T.clientX);drag.y=UY(T.clientY);e.preventDefault();}},{passive:false});
-window.addEventListener('touchend',function(){drag=null;});
-
-function segPhase(){
-  var acc=0;
-  for(var i=0;i<PT.length;i++){
-    if(at<acc+PT[i])return{i:i,f:(at-acc)/PT[i]};
-    acc+=PT[i];
-  }
-  return{i:PT.length-1,f:1};
+function setView(k) {
+  S.view = (k + VIEWS.length) % VIEWS.length; retarget(false);
+  $('#bView').textContent = VIEWS[S.view].name; syncSeg('#segView', VIEWS.map(v => v.k), VIEWS[S.view].k);
 }
+function syncSeg(sel, keys, v) { document.querySelectorAll(sel + ' button').forEach((b, i) => b.setAttribute('aria-pressed', keys[i] === v)); }
+function setMode(m, o = {}) { S.mode = m; S.mt = 0; S.cyc = 0; S.ci = 0; S.auto = !!o.auto; if (o.abc) { S.abc = o.abc.map(n => IDX[n]); S.slot = 0; } S.at = REDUCED ? PH_T : (o.at || 0); S.fixedPair = o.pair ? o.pair.map(n => IDX[n]) : null; S.fpair = null; if (o.view !== undefined) setView(o.view); }
+$('#bView').onclick = () => setView(S.view + 1);
+$('#bStep').onclick = () => {
+  if (S.mode === 'rank' || S.mode === 'false') { const [ph] = phase(S.at); S.at = PH.slice(0, ph + 1).reduce((a, b) => a + b, 0) + 1e-3; if (S.at >= PH_T && S.auto) S.at = PH_T - 1e-3; }
+  else S.cyc = 99;
+};
+$('#bReset').onclick = () => { sigmaCtl.set(SIGMA0); S.exclude = true; syncSeg('#segEx', ['on', 'off'], 'on'); goStep(tour); };
 
-// ---------- hulls ----------
-function hullFor(key){
-  var P=[];
-  for(var i=0;i<words.length;i++) if(words[i].cl===key) P.push([PX(words[i].x),PY(words[i].y)]);
-  if(P.length<3)return null;
-  P.sort(function(a,b){return a[0]-b[0]||a[1]-b[1];});
-  function cross(o,a,b){return (a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]);}
-  var lo=[],hi=[],i2;
-  for(i2=0;i2<P.length;i2++){while(lo.length>=2&&cross(lo[lo.length-2],lo[lo.length-1],P[i2])<=0)lo.pop();lo.push(P[i2]);}
-  for(i2=P.length-1;i2>=0;i2--){while(hi.length>=2&&cross(hi[hi.length-2],hi[hi.length-1],P[i2])<=0)hi.pop();hi.push(P[i2]);}
-  lo.pop();hi.pop();
-  return lo.concat(hi);
-}
-function drawArrow(x1,y1,x2,y2,col,wd,label){
-  var ang=Math.atan2(y2-y1,x2-x1),len=Math.hypot(x2-x1,y2-y1);
-  if(len<2)return;
-  ctx.strokeStyle=col;ctx.lineWidth=wd;ctx.lineCap='round';
-  ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
-  var hl=Math.min(15,len*0.35);
-  ctx.fillStyle=col;ctx.beginPath();
-  ctx.moveTo(x2,y2);
-  ctx.lineTo(x2-hl*Math.cos(ang-0.42),y2-hl*Math.sin(ang-0.42));
-  ctx.lineTo(x2-hl*Math.cos(ang+0.42),y2-hl*Math.sin(ang+0.42));
-  ctx.closePath();ctx.fill();
-  if(label){
-    ctx.font='bold 13px ui-monospace,monospace';ctx.textAlign='center';ctx.textBaseline='middle';
-    var mx2=(x1+x2)/2,my2=(y1+y2)/2, off=16;
-    ctx.fillStyle='rgba(4,4,12,.85)';
-    var tw=ctx.measureText(label).width+10;
-    ctx.fillRect(mx2-tw/2,my2-off-9,tw,18);
-    ctx.fillStyle=col;ctx.fillText(label,mx2,my2-off);
-  }
-}
+/* ---------- lesson content ---------- */
+const STEPS = [
+  { t: 'Words are vectors', d: 'Each of these 40 words is a list of <b>17 numbers</b> — one per feature: gender, royalty, youth, animal, place, past tense… The map is a 2-D slice of that 17-D space: PC1 (the most informative direction) across, the offset being added (first man→woman) up. Related words cluster, and arithmetic on the numbers carries meaning.',
+    cap: 'Each dot is <b>17 numbers</b> flattened to 2-D. Watch the arithmetic: <b>king − man + woman</b> lands on <b>queen</b>, then five more analogies.', go() { setMode('rank', { auto: true, abc: PRESETS[0], view: 1, at: 0.4 }); S.preset = 0; } },
+  { t: 'Similar meaning = small angle', d: 'Similarity is the <b>angle</b> between two vectors: cosine 1 = same direction, 0 = unrelated (a right angle). Length is ignored. Any two vectors span a plane, so the card draws their true 17-D angle exactly — the map can only approximate it.',
+    cap: 'Similar words <b>point the same way</b>: cos(cat, kitten) ≈ 0.88, cos(cat, paris) ≈ 0. Tap two words to compare.', go() { setMode('angle', { auto: true, view: 0 }); S.pair = [IDX.cat, IDX.kitten]; } },
+  { t: 'Directions encode relations', d: 'woman − man, queen − king, girl − boy all point the same way: one direction is one <b>relation</b>. Their cosines with the mean offset are ≈ 1. A linear projection keeps parallel lines parallel, so you can see it on the map.',
+    cap: 'Each violet arrow is the <b>same offset</b> — parallel arrows = one relation. Pick a family above, or tap a word.', go() { S.rel = 'gender'; setMode('relation', { auto: true, view: 1 }); } },
+  { t: 'Analogy = add the offset', d: 'king − man + woman, tip to tail: start at king, subtract the man vector, add the woman vector. Then rank <b>every other word by cosine</b> to the result r. The answer is the top match, excluding the three inputs.',
+    cap: 'Your turn: <b>tap a word</b> to fill the amber slot and read the cosine ranking. Try paris − france + japan.', go() { setMode('rank', { abc: PRESETS[0], view: 1 }); } },
+  { t: 'The flat map lies', d: 'PCA keeps the two directions with the most variance — here only ~39%. Words that touch in 2-D can be orthogonal in 17-D, and doing the arithmetic on the flat map picks the wrong word. Rank in the full space, always.',
+    cap: '', go() {
+      setMode('false', { view: 0 });
+      // show an analogy that the flat map gets wrong, if this layout has one
+      const k = Math.max(0, PRESETS.findIndex(p => { S.abc = p.map(n => IDX[n]); const d = derive(); return d.flat !== d.top; }));
+      S.abc = PRESETS[k].map(n => IDX[n]); D = derive(); const nm = S.abc.map(i => WORDS[i].n);
+      this.cap = `<b>${D.un}</b> and <b>${D.vn}</b> sit side by side on the map, yet cos = ${f2(D.cos)}. ` + (D.flat !== D.top ? `On the flat map ${nm[0]} − ${nm[1]} + ${nm[2]} picks <b>${WORDS[D.flat].n}</b>; cosine says ${WORDS[D.top].n}.` : 'Rank by cosine in 17-D, never by distance on the map.');
+    } },
+  { t: 'Where embeddings live in LLMs', d: 'An LLM begins with exactly this: an <b>embedding matrix</b>, one row per token, looked up by id. Real rows have hundreds to ~16 thousand learned, unnamed dimensions (768 in GPT-2 small, 12,288 in GPT-3) instead of 17 hand-built ones — and semantic search ranks documents with this same cosine.',
+    cap: 'An LLM\'s first layer is this <b>table</b>: token → row of numbers. Tap a word to look up its row.', go() { setMode('matrix', { auto: true, view: 0 }); S.mrow = IDX.queen; } }];
+const TRIES = [
+  { q: '<b>Predict:</b> <i>boy − man</i> is the "youth" offset, learned only from people. Add it to <i>lion</i>. Do you get a young lion, or a person?',
+    run() { goStepQuiet(3); setMode('rank', { abc: ['boy', 'man', 'lion'], view: 0 }); $('#caption').innerHTML = '<b>boy − man + lion</b>: watch where the youth offset lands.'; },
+    why: '<b>cub</b>, with cos ≈ 0.99. The offset boy − man is one direction (youth) and it points the same way everywhere in the space, animals included. Relations are directions, not facts about particular words — that is why analogies generalise.' },
+  { q: '<b>Predict:</b> in the <i>gender × royalty</i> view, <i>paris</i> and <i>walk</i> land on the same spot. Are they similar?',
+    run() { goStepQuiet(4); setMode('false', { abc: PRESETS[0], view: 3, pair: ['paris', 'walk'] }); $('#caption').innerHTML = '<b>gender × royalty</b>: paris and walk share a spot. Read their cosine on the card.'; },
+    why: 'No: cos ≈ 0. Both of the dimensions shown are zero for both words, so the view stacks them on top of each other; the 15 hidden dimensions are where they differ. This view keeps ~11% of the variance. PCA picks the two directions with the most variance (~39%) — better, but most is still thrown away.' },
+  { q: '<b>Predict:</b> <i>paris − france + dog</i>, "the capital of dog". Will the model refuse to answer?',
+    run() { goStepQuiet(3); setMode('rank', { abc: ['paris', 'france', 'dog'], view: 0 }); $('#caption').innerHTML = '<b>paris − france + dog</b>: a nonsense question. Check the score.'; },
+    why: 'It never refuses. The argmax always returns something (here a nearby animal) but the cosine is only ≈ 0.7, against ≈ 0.99 for the real analogies here. The score is the tell: search and RAG systems set a similarity threshold for the same reason. Nearest does not mean relevant.' }];
+function goStepQuiet(i) { tour = i; renderSteps(); }
 
-// ---------- draw ----------
-function draw(t){
-  ctx.fillStyle='#04040b';ctx.fillRect(0,0,W,H);
-  // starfield-ish grid
-  ctx.strokeStyle='rgba(150,120,220,.055)';ctx.lineWidth=1;
-  for(var gx=(cx0%64);gx<W;gx+=64){ctx.beginPath();ctx.moveTo(gx,0);ctx.lineTo(gx,H);ctx.stroke();}
-  for(var gy=(cy0%64);gy<H;gy+=64){ctx.beginPath();ctx.moveTo(0,gy);ctx.lineTo(W,gy);ctx.stroke();}
+/* ---------- panes ---------- */
+stat('sRes', 'Result'); stat('sCos', 'Cosine'); stat('sVar', 'Variance on map');
+$('#p-math').innerHTML = `
+<h3>Similarity is an angle</h3>
+<div class="eq">cos(<span class="c-hl">u</span>, v) = u·v / (‖u‖ ‖v‖)<br>u = <span class="live" id="mU"></span>, v = <span class="live" id="mV"></span><br>= <span class="live" id="mDot"></span> / (<span class="live" id="mNu"></span> × <span class="live" id="mNv"></span>) = <span class="live" id="mCos"></span></div>
+<p>1 = same direction, 0 = perpendicular (unrelated), −1 = opposite. Scaling a vector changes its length, never its cosine.</p>
+<h3>Analogy is vector addition</h3>
+<div class="eq"><span class="c-hl">r</span> = <span class="c-hl" id="mA"></span> − <span class="c-b" id="mB"></span> + <span class="c-a" id="mC"></span><br>answer = argmax<sub>w ∉ {A,B,C}</sub> cos(<span class="c-hl">r</span>, w)<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; = <span class="live" id="mTop"></span> (cos <span class="live" id="mTopC"></span>)</div>
+<p>It works because the two offsets are the same direction:</p>
+<div class="eq">cos(<span class="c-g"><span id="mC2"></span> − <span id="mB2"></span></span>, <span class="c-g"><span id="mTop2"></span> − <span id="mA2"></span></span>) = <span class="live" id="mOff"></span></div>
+<h3>The map is a projection</h3>
+<div class="eq">p(v) = [ a₁·(v − μ), a₂·(v − μ) ]<br>kept = (a₁ᵀΣa₁ + a₂ᵀΣa₂) / tr Σ<br>view <span class="live" id="mView"></span> keeps <span class="live" id="mVar"></span></div>
+<p>For PCA, a₁ and a₂ are the top eigenvectors of the covariance Σ, so this is the most variance any 2-D view can keep. The origin mark on the map is where the zero vector lands.</p>
+<div class="note"><b>Close on the map ≠ similar.</b> Two words can overlap in 2-D and still be orthogonal in 17-D. Every ranking in this demo is computed in the full space; the map is only for your eyes.</div>
+<div class="note"><b>These dimensions are hand-built and named.</b> A trained model learns hundreds to thousands of unnamed dimensions from co-occurrence statistics; "gender" is only roughly one direction there, and famous analogies work less cleanly than they do here.</div>`;
+const pc = $('#p-play');
+pc.innerHTML = '<h3>Which 2-D view</h3><p>PCA picks the most informative plane; the named views show exactly two of the 17 features.</p><div id="segView"></div><h3>Analogy presets</h3><div id="segPre"></div><h3>Realism</h3>';
+seg($('#segView'), VIEWS.map((v, k) => [v.k, v.name]), 'pc12', v => setView(VIEWS.findIndex(x => x.k === v)));
+seg($('#segPre'), PRESETS.map((p, k) => [k, `${p[0]} − ${p[1]} + ${p[2]}`]), 0, k => { if (S.mode !== 'rank' && S.mode !== 'false') setMode('rank'); S.abc = PRESETS[k].map(n => IDX[n]); S.auto = false; S.at = playing ? 0.3 : PH_T; });
+const sigmaCtl = slider(pc, 'sig', 'Noise added to every number (σ) — real embeddings are messy', 0, 0.3, 0.01, SIGMA0, v => v.toFixed(2), v => { S.sigma = v; if (READY) rebuild(); });
+pc.insertAdjacentHTML('beforeend', '<h3>Ranking</h3><p>Standard analogy benchmarks exclude A, B and C from the answers.</p><div id="segEx"></div><p>Tap words on the map to build an analogy; hover a word to see its 3 nearest neighbours by cosine.</p>');
+seg($('#segEx'), [['on', 'exclude inputs'], ['off', 'allow inputs']], 'on', v => { S.exclude = v === 'on'; });
 
-  // cluster hulls
-  for(var key in CL){
-    var hu=hullFor(key);if(!hu)continue;
-    ctx.beginPath();
-    for(var i=0;i<hu.length;i++){var p=hu[i];i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]);}
-    ctx.closePath();
-    ctx.save();ctx.lineJoin='round';ctx.lineWidth=26;
-    ctx.globalAlpha=0.075;ctx.strokeStyle=CL[key].c;ctx.stroke();
-    ctx.globalAlpha=0.055;ctx.fillStyle=CL[key].c;ctx.fill();
-    ctx.restore();
-    ctx.strokeStyle=CL[key].c;ctx.globalAlpha=0.28;ctx.lineWidth=1.2;ctx.stroke();ctx.globalAlpha=1;
-    // cluster label at top-most hull point
-    var top=hu[0];for(var h=1;h<hu.length;h++) if(hu[h][1]<top[1]) top=hu[h];
-    ctx.font='10px ui-monospace,monospace';ctx.textAlign='center';ctx.textBaseline='bottom';
-    ctx.fillStyle=CL[key].c;ctx.globalAlpha=0.55;
-    ctx.fillText(CL[key].name,top[0],top[1]-20);ctx.globalAlpha=1;
-  }
-
-  var A=ANALOGIES[ai];
-  var wA=byName[A[0]],wB=byName[A[1]],wC=byName[A[2]],wD=byName[A[3]];
-  var sp=segPhase();
-  // result vector = A - B + C
-  var rx=wA.x-wB.x+wC.x, ry=wA.y-wB.y+wC.y;
-  var involved=[A[0],A[1],A[2],A[3]];
-
-  // ---- analogy chain ----
-  var pA=[PX(wA.x),PY(wA.y)], pB=[PX(wB.x),PY(wB.y)], pC=[PX(wC.x),PY(wC.y)];
-  var pR=[PX(rx),PY(ry)], pD=[PX(wD.x),PY(wD.y)];
-  // step1: from A draw -B  (i.e. A + (B->A)?) show A - B as arrow A -> A-B
-  var mid=[PX(wA.x-wB.x),PY(wA.y-wB.y)];
-  // to keep it readable we chain in place: from A, move by -B, then by +C
-  var s1e=[PX(wA.x-wB.x),PY(wA.y-wB.y)];
-  if(sp.i>=1){
-    var f1=(sp.i===1)?easeIO(sp.f):1;
-    var e1=[pA[0]+(s1e[0]-pA[0])*f1, pA[1]+(s1e[1]-pA[1])*f1];
-    drawArrow(pA[0],pA[1],e1[0],e1[1],'rgba(255,110,150,.92)',2.6,sp.i===1?('− '+A[1]):null);
-  }
-  if(sp.i>=2){
-    var f2=(sp.i===2)?easeIO(sp.f):1;
-    var e2=[s1e[0]+(pR[0]-s1e[0])*f2, s1e[1]+(pR[1]-s1e[1])*f2];
-    drawArrow(s1e[0],s1e[1],e2[0],e2[1],'rgba(125,227,255,.92)',2.6,sp.i===2?('+ '+A[2]):null);
-  }
-  // result circle
-  if(sp.i>=3){
-    var land=(sp.i===3)?easeIO(sp.f):1;
-    var pulse=(sp.i>=4)?(0.5+0.5*Math.sin(t*0.006)):land;
-    var rr=10+22*(1-land)+pulse*5;
-    var g=ctx.createRadialGradient(pR[0],pR[1],0,pR[0],pR[1],rr*3);
-    g.addColorStop(0,'rgba(255,224,138,'+(0.35+pulse*0.35)+')');
-    g.addColorStop(1,'rgba(255,190,80,0)');
-    ctx.fillStyle=g;ctx.beginPath();ctx.arc(pR[0],pR[1],rr*3,0,6.2832);ctx.fill();
-    ctx.strokeStyle='rgba(255,224,138,.95)';ctx.lineWidth=2.2;
-    ctx.beginPath();ctx.arc(pR[0],pR[1],rr,0,6.2832);ctx.stroke();
-    ctx.setLineDash([5,5]);ctx.strokeStyle='rgba(255,224,138,.55)';ctx.lineWidth=1.4;
-    ctx.beginPath();ctx.moveTo(pR[0],pR[1]);ctx.lineTo(pD[0],pD[1]);ctx.stroke();ctx.setLineDash([]);
-    ctx.font='bold 13px ui-monospace,monospace';ctx.textAlign='center';ctx.textBaseline='bottom';
-    ctx.fillStyle='rgba(255,236,180,.95)';
-    ctx.fillText('≈ '+A[3],pR[0],pR[1]-rr-8);
-  }
-
-  // ---- nearest-neighbour lines for hovered/dragged word ----
-  var focus=drag||hover;
-  var nn=null;
-  if(focus){
-    nn=nearest(focus.x,focus.y,[focus.n],3);
-    for(var q=0;q<nn.length;q++){
-      var nb=nn[q];
-      ctx.strokeStyle='rgba(255,255,255,'+(0.55-q*0.13)+')';
-      ctx.lineWidth=2.2-q*0.5;ctx.setLineDash([]);
-      ctx.beginPath();ctx.moveTo(PX(focus.x),PY(focus.y));ctx.lineTo(PX(nb.w.x),PY(nb.w.y));ctx.stroke();
-      var mmx=(PX(focus.x)+PX(nb.w.x))/2, mmy=(PY(focus.y)+PY(nb.w.y))/2;
-      ctx.font='10px ui-monospace,monospace';ctx.textAlign='center';ctx.textBaseline='middle';
-      var lbl=nb.d.toFixed(2);
-      ctx.fillStyle='rgba(4,4,12,.8)';
-      var lw2=ctx.measureText(lbl).width+8;
-      ctx.fillRect(mmx-lw2/2,mmy-8,lw2,16);
-      ctx.fillStyle='rgba(230,230,255,.9)';ctx.fillText(lbl,mmx,mmy);
-    }
-  }
-
-  // ---- words ----
-  for(var i2=0;i2<words.length;i2++){
-    var wd=words[i2];
-    var X=PX(wd.x),Y=PY(wd.y);
-    var inA=involved.indexOf(wd.n)>=0;
-    var isFocus=(wd===focus);
-    var bright=inA?1:(isFocus?1:0.42);
-    var col=CL[wd.cl].c;
-    var r=inA?7.5:5.4;
-    if(isFocus)r=8.5;
-    var gg=ctx.createRadialGradient(X,Y,0,X,Y,r*4.2);
-    gg.addColorStop(0,hexA(col,0.10+bright*0.42));
-    gg.addColorStop(1,hexA(col,0));
-    ctx.fillStyle=gg;ctx.beginPath();ctx.arc(X,Y,r*4.2,0,6.2832);ctx.fill();
-    ctx.fillStyle=hexA(col,0.35+bright*0.6);
-    ctx.beginPath();ctx.arc(X,Y,r,0,6.2832);ctx.fill();
-    if(inA||isFocus){ctx.strokeStyle='rgba(255,255,255,.85)';ctx.lineWidth=1.6;ctx.stroke();}
-    ctx.font=(inA||isFocus?'bold 13px':'12px')+' ui-monospace,monospace';
-    ctx.textAlign='center';ctx.textBaseline='top';
-    ctx.fillStyle=inA||isFocus?'rgba(255,255,255,.97)':hexA(col,0.72);
-    ctx.fillText(wd.n,X,Y+r+4);
-  }
-
-  // equation banner
-  ctx.font='bold '+Math.round(Math.min(30,W*0.028))+'px ui-monospace,monospace';
-  ctx.textAlign='center';ctx.textBaseline='middle';
-  var eq=A[0]+' − '+A[1]+' + '+A[2]+'  ≈  '+A[3];
-  ctx.fillStyle='rgba(255,255,255,.10)';ctx.fillText(eq,W/2+1,H*0.075+1);
-  ctx.fillStyle='rgba(226,205,255,.92)';ctx.fillText(eq,W/2,H*0.075);
-
-  // side panel: hovered similarity ranking rendered in DOM (see updateUI)
-  return {rx:rx,ry:ry,wD:wD,nn:nn,focus:focus};
-}
-function easeIO(f){return f<0.5?2*f*f:1-Math.pow(-2*f+2,2)/2;}
-function hexA(hex,a){
-  var r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
-  return 'rgba('+r+','+g+','+b+','+a+')';
-}
-
-var el={an:document.getElementById('s-an'),near:document.getElementById('s-near'),
-        cos:document.getElementById('s-cos'),hov:document.getElementById('s-hov'),nn:document.getElementById('nn')};
-var uiT=0,lastInfo=null;
-function frame(t){
-  var dt=Math.min(0.05,(t-tPrev)/1000)||0.016;tPrev=t;
-  if(!paused){
-    at+=dt*speed;
-    if(at>=PTOT){at=0;ai=(ai+1)%ANALOGIES.length;}
-  }
-  lastInfo=draw(t);
-  uiT+=dt;
-  if(uiT>0.09){
-    uiT=0;
-    var A=ANALOGIES[ai];
-    el.an.textContent=A[0]+'−'+A[1]+'+'+A[2];
-    var nb=nearest(lastInfo.rx,lastInfo.ry,[A[0],A[1],A[2]],1)[0];
-    el.near.textContent=nb?(nb.w.n+'  (d '+nb.d.toFixed(2)+')'):'-';
-    var c=cos(lastInfo.rx,lastInfo.ry,lastInfo.wD.x,lastInfo.wD.y);
-    el.cos.textContent=c.toFixed(3);
-    var f=lastInfo.focus;
-    el.hov.textContent=f?f.n:'—';
-    if(f){
-      var rank=nearest(f.x,f.y,[f.n],5);
-      var s='nearest to <b>'+f.n+'</b>:<br>';
-      for(var i=0;i<rank.length;i++){
-        var cs=cos(f.x,f.y,rank[i].w.x,rank[i].w.y);
-        s+=(i+1)+'. '+rank[i].w.n+'  d='+rank[i].d.toFixed(2)+'  cos='+cs.toFixed(2)+'<br>';
-      }
-      el.nn.innerHTML=s;
-    }else{
-      el.nn.textContent=paused?'paused — drag a word to warp space':'hover a word for its similarity ranking';
-    }
-  }
-  requestAnimationFrame(frame);
-}
-requestAnimationFrame(frame);
-})();
+READY = true; rebuild(); onResize();
+renderSteps(); renderTries(); goStep(0); requestAnimationFrame(loop);
+if (REDUCED) setPlaying(false);
+window.__demo = { goStep, setPlaying, state: () => ({ mode: S.mode, view: VIEWS[S.view].k, abc: S.abc.map(i => WORDS[i].n), top: D.top >= 0 ? WORDS[D.top].n : null, cos: D.cos, at: S.at }), tries: TRIES };
 </script>
+</body>
+</html>

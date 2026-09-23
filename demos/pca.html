@@ -1,299 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>PCA — Principal Axes, Live</title>
+<title>PCA — ML Field Notes</title>
 <style>
-  html,body{margin:0;height:100%;background:#05070c;overflow:hidden}
-  canvas{touch-action:none;display:block;position:fixed;inset:0}
-  #ui{position:fixed;top:14px;left:14px;z-index:10;background:rgba(6,10,18,.62);
-      border:1px solid rgba(80,220,255,.28);border-radius:8px;padding:12px 14px;
-      font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#9fe8ff;
-      max-width:340px;backdrop-filter:blur(6px);text-shadow:0 0 8px rgba(0,220,255,.25);max-height:52vh;overflow:auto}
-  #ui h1{margin:0 0 6px;font-size:14px;letter-spacing:.14em;color:#6ff;text-transform:uppercase}
-  #ui p{margin:0 0 8px;color:#7fb6cc}
-  #ui .k{color:#ffe066}
-  #ui .row{color:#c9f6ff}
-  #ui a{color:#ff7ad9;text-decoration:none}
-  #ui a:hover{text-decoration:underline}
-  .bar{height:7px;background:rgba(255,255,255,.09);border-radius:4px;margin:3px 0 6px;overflow:hidden}
-  .bar i{display:block;height:100%;width:0;border-radius:4px}
-@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
+/* ===== ML Field Notes design system (shared by every ML/AI demo) =====
+   Colour means the same thing in every demo:
+   --a coral = class A / "positive"     --b teal = class B / "negative"
+   --hl amber = the model's current parameters / guess / selection
+   --grad violet = gradients, updates, errors flowing back
+   --accent = this demo's signature colour (set per demo) */
+:root{
+  --bg:#0c0e1a; --bg2:#10132a; --panel:#13162c; --panel2:#181c38; --line:rgba(190,200,255,.10); --line2:rgba(190,200,255,.18);
+  --ink:#e9ecfa; --dim:#a2a9c8; --faint:#6b7396;
+  --a:#ff7a6b; --b:#3fd0c0; --hl:#ffc857; --grad:#a78bfa; --good:#7ee787; --bad:#ff6b8a;
+  --accent:#5ec8ff;
+  --r:12px; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.5 var(--sans)}
+body{overflow:hidden}
+a{color:var(--accent)}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app{display:grid;grid-template-columns:minmax(0,1fr) 380px;grid-template-rows:48px minmax(0,1fr);height:100vh;height:100dvh}
+.top{grid-column:1/-1;display:flex;align-items:center;gap:12px;padding:0 14px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#11142a,#0d1020)}
+.top a.back{color:var(--dim);text-decoration:none;font-size:13px;white-space:nowrap}
+.top a.back:hover{color:var(--ink)}
+.top .chip{font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 45%,transparent);border-radius:99px;padding:5px 8px}
+.top h1{margin:0;font-size:15px;font-weight:650;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top .sp{flex:1}
+.top .keys{font:11px var(--mono);color:var(--faint);white-space:nowrap}
+.stage{position:relative;min-width:0;min-height:0;background:radial-gradient(ellipse at 50% 40%,#151a3a 0%,var(--bg) 70%)}
+.stage::before{content:"";position:absolute;inset:0;background-image:radial-gradient(rgba(190,200,255,.07) 1px,transparent 1.3px);background-size:24px 24px;pointer-events:none}
+.stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.caption{position:absolute;left:16px;right:16px;top:14px;max-width:640px;padding:10px 14px;border-radius:10px;background:rgba(12,14,30,.78);border:1px solid var(--line2);backdrop-filter:blur(6px);font-size:14px;line-height:1.45;pointer-events:none;transition:opacity .3s}
+.caption b{color:var(--accent)}
+.caption:empty{opacity:0}
+.dock{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;gap:6px;padding:6px;border-radius:99px;background:rgba(12,14,30,.82);border:1px solid var(--line2);backdrop-filter:blur(6px)}
+.dock button{border:0;background:transparent;border-radius:99px;min-width:36px;height:34px;padding:0 12px;cursor:pointer;color:var(--ink);white-space:nowrap}
+.dock button:hover{background:rgba(255,255,255,.08)}
+.dock button.on{background:color-mix(in srgb,var(--accent) 22%,transparent);color:var(--accent)}
+.lesson{border-left:1px solid var(--line);background:var(--panel);overflow:auto;min-height:0;display:flex;flex-direction:column}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border-bottom:1px solid var(--line)}
+.stat{background:var(--panel);padding:10px 12px}
+.stat .k{font:600 10px/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.stat .v{font:600 18px/1.3 var(--mono);font-variant-numeric:tabular-nums;margin-top:3px}
+.tabs{display:flex;gap:2px;padding:10px 12px 0;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);z-index:2}
+.tabs button{border:0;background:none;padding:9px 12px;color:var(--dim);cursor:pointer;border-bottom:2px solid transparent;font-weight:600}
+.tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent)}
+.pane{padding:14px 16px 22px;display:none}
+.pane.on{display:block}
+.pane h3{margin:14px 0 6px;font-size:13px;letter-spacing:.02em}
+.pane p{margin:0 0 10px;color:var(--dim)}
+.pane p b,.pane li b{color:var(--ink)}
+.lede{font-size:15px;color:var(--ink)!important}
+.steps{list-style:none;margin:10px 0 0;padding:0;counter-reset:s}
+.steps li{counter-increment:s;border:1px solid var(--line);border-radius:10px;margin:0 0 8px;padding:10px 12px 10px 40px;position:relative;cursor:pointer;color:var(--dim);background:var(--panel2)}
+.steps li::before{content:counter(s);position:absolute;left:12px;top:10px;width:18px;height:18px;border-radius:99px;display:grid;place-items:center;font:600 11px var(--mono);background:rgba(255,255,255,.07);color:var(--dim)}
+.steps li.on{border-color:color-mix(in srgb,var(--accent) 60%,transparent);color:var(--ink)}
+.steps li.on::before{background:var(--accent);color:#141414}
+.steps li.done::before{content:"✓";background:rgba(126,231,135,.2);color:var(--good)}
+.steps li .t{font-weight:650;color:var(--ink);display:block}
+.steps li .d{display:none;margin-top:4px}
+.steps li.on .d{display:block}
+.tournav{display:flex;gap:8px;margin-top:6px}
+.btn{border:1px solid var(--line2);background:var(--panel2);border-radius:9px;padding:7px 12px;cursor:pointer;color:var(--ink)}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:#15131a;border-color:transparent;font-weight:650}
+.card{border:1px solid var(--line);border-radius:12px;padding:12px;margin:0 0 10px;background:var(--panel2)}
+.card .q{color:var(--ink);font-weight:600;margin-bottom:8px}
+.card .why{display:none;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line2);color:var(--dim)}
+.card.revealed .why{display:block}
+.card .row{display:flex;gap:8px;flex-wrap:wrap}
+.eq{font:14px/1.7 var(--mono);background:#0e1124;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:6px 0 12px;overflow-x:auto;white-space:nowrap}
+.eq .c-a{color:var(--a)} .eq .c-b{color:var(--b)} .eq .c-hl{color:var(--hl)} .eq .c-g{color:var(--grad)} .eq .c-acc{color:var(--accent)}
+.live{font-variant-numeric:tabular-nums;color:var(--hl)}
+.ctrl{display:grid;grid-template-columns:1fr auto;gap:4px 10px;align-items:center;margin:10px 0}
+.ctrl label{color:var(--dim);font-size:13px}
+.ctrl output{font:12px var(--mono);color:var(--ink);font-variant-numeric:tabular-nums}
+.ctrl input[type=range]{grid-column:1/-1;width:100%;accent-color:var(--accent)}
+.seg{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 10px}
+.seg button{border:1px solid var(--line2);background:transparent;border-radius:99px;padding:5px 11px;cursor:pointer;color:var(--dim);font-size:13px}
+.seg button[aria-pressed=true]{background:color-mix(in srgb,var(--accent) 20%,transparent);color:var(--ink);border-color:color-mix(in srgb,var(--accent) 55%,transparent)}
+.note{border-left:3px solid var(--grad);padding:6px 10px;margin:8px 0 12px;color:var(--dim);background:rgba(167,139,250,.06);border-radius:0 8px 8px 0}
+.wild li{margin-bottom:6px;color:var(--dim)}
+@media (max-width:880px){
+  body{overflow:auto}
+  .app{grid-template-columns:1fr;grid-template-rows:48px 58vh auto;height:auto}
+  .stage{height:58vh}
+  .lesson{border-left:0;border-top:1px solid var(--line)}
+  .top .keys{display:none}
+  .caption{font-size:13px;top:10px;left:10px;right:10px}
+  .stats{grid-template-columns:repeat(3,1fr)}
+  .stat .v{font-size:15px}
+}
+@media (prefers-reduced-motion:reduce){.caption{transition:none}}
 </style>
+</head>
 <body>
-<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
-<canvas id="c"></canvas>
-<div id="ui">
-  <h1>PCA</h1>
-  <p>Power iteration hunts the direction of greatest variance, then projects the cloud onto it.</p>
-  <div class="row"><span class="k">R</span> reseed &nbsp; <span class="k">SPACE</span> project/restore &nbsp; <span class="k">drag</span> stretch cloud</div>
-  <div class="row" id="st1">iter 0 · Δ 0.000</div>
-  <div class="row" style="color:#6ff">PC1 <span id="v1">0%</span></div>
-  <div class="bar"><i id="b1" style="background:linear-gradient(90deg,#0ff,#6ff)"></i></div>
-  <div class="row" style="color:#ff7ad9">PC2 <span id="v2">0%</span></div>
-  <div class="bar"><i id="b2" style="background:linear-gradient(90deg,#f0a,#ff7ad9)"></i></div>
-  <div class="row" id="st2">n = 0 points</div>
-  <div class="row" id="st3">mode: exploring</div>
-  <a href="index.html">← gallery</a>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace;max-width:100vw;white-space:pre-wrap';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div class="app">
+  <header class="top">
+    <a class="back" href="index.html">← Gallery</a>
+    <span class="chip">ML / AI</span>
+    <h1>PCA · principal axes</h1>
+    <span class="sp"></span>
+    <span class="keys">Space play · ←/→ tour · R reset</span>
+  </header>
+  <section class="stage" id="stage">
+    <canvas id="c" role="img" aria-label="A draggable point cloud with its covariance ellipses, principal-axis arrows and an amber candidate axis you can rotate. A panel below shows explained-variance bars and the variance along every angle."></canvas>
+    <div class="caption" id="caption" aria-live="polite"></div>
+    <div class="dock" role="group" aria-label="Simulation controls">
+      <button id="bPlay" class="on" aria-label="Pause">❚❚</button>
+      <button id="bStep" aria-label="One power-iteration step">Power step</button>
+      <button id="bProj" aria-label="Project onto your axis">Project</button>
+      <button id="bReset" aria-label="Reset">Reset</button>
+      <button id="bSpeed" aria-label="Speed">1×</button>
+    </div>
+  </section>
+  <aside class="lesson">
+    <div class="stats" id="stats"><!-- 3 stat tiles: .stat > .k + .v#id --></div>
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-tab="learn">Learn</button>
+      <button role="tab" aria-selected="false" data-tab="try">Try this</button>
+      <button role="tab" aria-selected="false" data-tab="math">The math</button>
+      <button role="tab" aria-selected="false" data-tab="play">Controls</button>
+    </div>
+    <div class="pane on" id="p-learn">
+      <p class="lede">PCA rotates your view of the data until it lines up with the directions the points actually spread along. Then you can drop the directions that barely vary.</p>
+      <ol class="steps" id="steps"></ol>
+      <div class="tournav"><button class="btn" id="tPrev">← Back</button><button class="btn primary" id="tNext">Next step →</button></div>
+      <h3>In the wild</h3>
+      <ul class="wild">
+        <li><b>Inside LLMs:</b> PCA of hidden activations often shows a few directions that track concepts such as sentiment, truthfulness or refusal. Interpretability and steering-vector work starts from these.</li>
+        <li><b>Embeddings:</b> 768–4096-D text and image embeddings are projected to 2-D for a first look. Truncating to the top-k PCs also shrinks a vector index and speeds up search.</li>
+        <li><b>Science &amp; finance:</b> PCA of European genomes reproduces the map of Europe (Novembre 2008). Level, slope and curvature explain most bond-yield-curve moves. Eigenfaces applied the same idea to faces.</li>
+      </ul>
+    </div>
+    <div class="pane" id="p-try"><!-- .card experiments: predict → run → why --></div>
+    <div class="pane" id="p-math">
+      <h3>1 · Covariance of the centred cloud</h3>
+      <div class="eq">Σ = <span class="c-acc">1/n ∑ᵢ (xᵢ − μ)(xᵢ − μ)ᵀ</span><br>  = [ <span class="live" id="mA"></span>  <span class="live" id="mB"></span> ; <span class="live" id="mB2"></span>  <span class="live" id="mD"></span> ]</div>
+      <p id="mC" style="color:var(--bad);margin:-6px 0 10px"></p>
+      <h3>2 · Variance along a direction u = (cos θ, sin θ)</h3>
+      <div class="eq"><span class="c-hl">Var(u) = uᵀΣu</span> = <span class="live" id="mVu"></span>   at θ = <span class="live" id="mTh"></span></div>
+      <div class="eq">Var(θ) = (λ₁+λ₂)/2<br>       + (λ₁−λ₂)/2 · cos 2(θ − <span class="c-acc">θ₁</span>)</div>
+      <p>That is why the curve under the stage is a pure cosine, with its peak at PC1 and its trough exactly 90° later at PC2.</p>
+      <h3>3 · The best direction is an eigenvector</h3>
+      <div class="eq">Σ<span class="c-acc">v₁</span> = <span class="c-acc">λ₁v₁</span><br>λ₁ = <span class="live" id="mL1"></span>  λ₂ = <span class="live" id="mL2"></span><br>θ₁ = <span class="live" id="mTh1"></span></div>
+      <div class="eq">power iteration:  <span class="c-hl">u</span> ← <span class="c-g">Σu</span> / ‖Σu‖</div>
+      <p>Maximise uᵀΣu subject to ‖u‖ = 1 with a Lagrange multiplier and you get Σu = λu. So the maximum is λ₁, reached at v₁.</p>
+      <h3>4 · What projection keeps and loses</h3>
+      <div class="eq">x̂ = μ + (uᵀ(x − μ)) u<br><span class="c-g">mean ‖x − x̂‖²</span> = tr Σ − uᵀΣu</div>
+      <div class="eq">total <span class="live" id="mTot"></span> = <span class="c-hl">kept</span> <span class="live" id="mKept"></span> + <span class="c-g">lost</span> <span class="live" id="mLost"></span></div>
+      <div class="note"><b>Misconception:</b> “PCA finds the direction that separates the groups.” PCA finds the direction of greatest spread and never looks at labels. Try this → two classes.</div>
+      <div class="note"><b>Units matter.</b> Measure one feature in millimetres and another in metres, and the millimetre feature dominates Σ. Standardise first, which amounts to PCA of the correlation matrix. This demo uses 1/n. Using 1/(n−1) scales every λ by the same factor and leaves the axes unchanged.</div>
+    </div>
+    <div class="pane" id="p-play"><!-- .ctrl sliders, .seg segmented choices --></div>
+  </aside>
 </div>
 <script>
-(function(){
-"use strict";
-var cv=document.getElementById('c'),ctx=cv.getContext('2d');
-var W=0,H=0,DPR=1;
-function resize(){
-  DPR=Math.min(2,window.devicePixelRatio||1);
-  W=window.innerWidth;H=window.innerHeight;
-  cv.width=Math.floor(W*DPR);cv.height=Math.floor(H*DPR);
-  cv.style.width=W+'px';cv.style.height=H+'px';
-  ctx.setTransform(DPR,0,0,DPR,0,0);
+'use strict';
+/* ===== shell helpers (keep) ===== */
+const $ = s => document.querySelector(s);
+const cv = $('#c'), ctx = cv.getContext('2d'), stage = $('#stage');
+let W = 0, H = 0, DPR = 1;
+function resize() {
+  const r = stage.getBoundingClientRect(); DPR = Math.min(2, devicePixelRatio || 1);
+  W = Math.max(1, r.width); H = Math.max(1, r.height);
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR); ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  if (typeof onResize === 'function') onResize();
 }
-window.addEventListener('resize',resize);resize();
-
-// ---- data ----
-var N=420, pts=[], proj=[], mean={x:0,y:0};
-function gauss(){var u=0,v=0;while(u===0)u=Math.random();while(v===0)v=Math.random();
-  return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
-var sx=1,sy=1,theta=0;
-function seed(){
-  sx=90+Math.random()*130; sy=14+Math.random()*40; theta=Math.random()*Math.PI;
-  rebuild();
-}
-function rebuild(){
-  pts.length=0;
-  var ct=Math.cos(theta),st=Math.sin(theta);
-  for(var i=0;i<N;i++){
-    var a=gauss()*sx, b=gauss()*sy;
-    pts.push({x:a*ct-b*st, y:a*st+b*ct, ax:0, ay:0, t:Math.random()});
-  }
-  centre();
-  // start the candidate axis ~78 deg away from the true principal direction
-  var a0=theta+1.36;
-  v={x:Math.cos(a0),y:Math.sin(a0)};
-  vd={x:v.x,y:v.y};
-  iter=0; delta=1; converged=false;
-}
-function centre(){
-  var mx=0,my=0;
-  for(var i=0;i<pts.length;i++){mx+=pts[i].x;my+=pts[i].y;}
-  mx/=pts.length;my/=pts.length;
-  for(i=0;i<pts.length;i++){pts[i].x-=mx;pts[i].y-=my;}
-}
-
-// ---- covariance ----
-var C=[0,0,0]; // cxx, cxy, cyy
-function cov(){
-  var a=0,b=0,c=0,n=pts.length;
-  for(var i=0;i<n;i++){var p=pts[i];a+=p.x*p.x;b+=p.x*p.y;c+=p.y*p.y;}
-  C[0]=a/n;C[1]=b/n;C[2]=c/n;
-}
-// ---- power iteration state ----
-var v={x:1,y:0}, vd={x:1,y:0}, iter=0, delta=1, converged=false;
-// vd = smoothly eased display axis, chases the true power-iteration vector v
-function easeAxis(dt){
-  var ta=Math.atan2(v.y,v.x), ca=Math.atan2(vd.y,vd.x);
-  var diff=ta-ca;
-  while(diff>Math.PI)diff-=2*Math.PI;
-  while(diff<-Math.PI)diff+=2*Math.PI;
-  ca+=diff*Math.min(1,dt*4.5);
-  vd.x=Math.cos(ca);vd.y=Math.sin(ca);
-}
-function powerStep(){
-  var nx=C[0]*v.x+C[1]*v.y, ny=C[1]*v.x+C[2]*v.y;
-  var L=Math.hypot(nx,ny)||1; nx/=L; ny/=L;
-  if(nx*v.x+ny*v.y<0){nx=-nx;ny=-ny;}
-  delta=Math.hypot(nx-v.x,ny-v.y);
-  v.x=nx;v.y=ny;iter++;
-  converged=delta<1e-6;
-}
-// exact eigen for variance labels (2x2 closed form)
-var lam1=1,lam2=0;
-function eigen(){
-  var tr=C[0]+C[2], det=C[0]*C[2]-C[1]*C[1];
-  var d=Math.sqrt(Math.max(0,tr*tr/4-det));
-  lam1=tr/2+d; lam2=Math.max(0,tr/2-d);
-}
-
-// ---- projection anim ----
-var projT=0, projTarget=0;
-// ---- interaction ----
-var drag=false, lx=0, ly=0;
-cv.addEventListener('mousedown',function(e){drag=true;lx=e.clientX;ly=e.clientY;});
-window.addEventListener('mouseup',function(){drag=false;});
-window.addEventListener('mousemove',function(e){
-  if(!drag)return;
-  var dx=(e.clientX-lx), dy=(e.clientY-ly);
-  lx=e.clientX;ly=e.clientY;
-  // horizontal drag = stretch along current PC1, vertical = rotate
-  var s=1+dx*0.004, r=dy*0.006;
-  var cr=Math.cos(r),sr=Math.sin(r);
-  var ux=vd.x,uy=vd.y, wx=-uy, wy=ux;
-  for(var i=0;i<pts.length;i++){
-    var p=pts[i];
-    var a=p.x*ux+p.y*uy, b=p.x*wx+p.y*wy;
-    a*=s;
-    var X=a*ux+b*wx, Y=a*uy+b*wy;
-    p.x=X*cr-Y*sr; p.y=X*sr+Y*cr;
-  }
-  centre(); delta=1; converged=false;
+new ResizeObserver(resize).observe(stage); resize();
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+// tabs
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', x === b));
+  document.querySelectorAll('.pane').forEach(p => p.classList.toggle('on', p.id === 'p-' + b.dataset.tab));
 });
-window.addEventListener('keydown',function(e){
-  if(e.code==='Space'){e.preventDefault();projTarget=projTarget>0.5?0:1;}
-  else if(e.key==='r'||e.key==='R'){seed();projTarget=0;}
+// playback
+let playing = !REDUCED, speed = 1;
+const SPEEDS = [0.25, 0.5, 1, 2, 4];
+function setPlaying(v) { playing = v; $('#bPlay').textContent = v ? '❚❚' : '▶'; $('#bPlay').classList.toggle('on', v); $('#bPlay').setAttribute('aria-label', v ? 'Pause' : 'Play'); }
+$('#bPlay').onclick = () => setPlaying(!playing);
+$('#bSpeed').onclick = () => { speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]; $('#bSpeed').textContent = speed + '×'; };
+// tour: STEPS = [{t:'title', d:'html', cap:'stage caption html', go(){ /* set demo state */ }}]
+let tour = 0;
+function renderSteps() {
+  const ol = $('#steps'); ol.innerHTML = '';
+  STEPS.forEach((s, i) => { const li = document.createElement('li'); li.className = (i === tour ? 'on' : '') + (i < tour ? ' done' : ''); li.innerHTML = `<span class="t">${s.t}</span><span class="d">${s.d}</span>`; li.onclick = () => goStep(i); ol.appendChild(li); });
+  $('#tPrev').disabled = tour === 0; $('#tNext').textContent = tour === STEPS.length - 1 ? 'Start over ↺' : 'Next step →';
+}
+function goStep(i) { tour = (i + STEPS.length) % STEPS.length; const s = STEPS[tour]; if (s.go) s.go(); $('#caption').innerHTML = s.cap || ''; renderSteps(); }
+$('#tPrev').onclick = () => goStep(Math.max(0, tour - 1));
+$('#tNext').onclick = () => goStep(tour + 1);
+// experiments: TRIES = [{q:'Predict…', run(){…}, why:'html'}]
+function renderTries() {
+  const p = $('#p-try'); p.innerHTML = '<p>Make a prediction first, then run it. Each experiment sets the demo up for you.</p>';
+  TRIES.forEach(x => { const c = document.createElement('div'); c.className = 'card'; c.innerHTML = `<div class="q">${x.q}</div><div class="row"><button class="btn primary">Run it</button><button class="btn">Show why</button></div><div class="why">${x.why}</div>`; const [run, why] = c.querySelectorAll('button'); run.onclick = () => { x.run(); setPlaying(true); }; why.onclick = () => c.classList.toggle('revealed'); p.appendChild(c); });
+}
+// controls helpers
+function slider(parent, id, label, min, max, step, value, fmt, onInput) {
+  const d = document.createElement('div'); d.className = 'ctrl';
+  d.innerHTML = `<label for="${id}">${label}</label><output id="${id}o"></output><input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${value}">`;
+  parent.appendChild(d); const inp = d.querySelector('input'), out = d.querySelector('output');
+  const upd = () => { out.textContent = fmt(+inp.value); onInput(+inp.value); }; inp.oninput = upd; upd();
+  return { set(v) { inp.value = v; upd(); }, get: () => +inp.value };
+}
+function seg(parent, options, value, onPick) {
+  const d = document.createElement('div'); d.className = 'seg'; parent.appendChild(d);
+  const bs = options.map(([v, label]) => { const b = document.createElement('button'); b.textContent = label; b.setAttribute('aria-pressed', v === value); b.onclick = () => set(v); d.appendChild(b); return [v, b]; });
+  function set(v) { bs.forEach(([k, b]) => b.setAttribute('aria-pressed', k === v)); onPick(v); }
+  return { set };
+}
+function stat(id, label) { const d = document.createElement('div'); d.className = 'stat'; d.innerHTML = `<div class="k">${label}</div><div class="v" id="${id}">–</div>`; $('#stats').appendChild(d); }
+const setText = (id, v) => { const e = document.getElementById(id); if (e && e.textContent !== v) e.textContent = v; };
+// keyboard
+addEventListener('keydown', e => {
+  if (e.target.matches('input,select,textarea')) return;
+  if (e.code === 'Space') { setPlaying(!playing); e.preventDefault(); }
+  else if (e.key === 'ArrowRight') goStep(tour + 1);
+  else if (e.key === 'ArrowLeft') goStep(Math.max(0, tour - 1));
+  else if (e.key === 'r' || e.key === 'R') $('#bReset').click();
 });
-
-// ---- rendering helpers ----
-function arrow(cx,cy,dx,dy,len,col,label,glow){
-  var ex=cx+dx*len, ey=cy+dy*len;
-  ctx.save();
-  ctx.strokeStyle=col;ctx.fillStyle=col;
-  ctx.shadowColor=col;ctx.shadowBlur=glow;
-  ctx.lineWidth=2.4;ctx.lineCap='round';
-  ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(ex,ey);ctx.stroke();
-  var ang=Math.atan2(dy,dx),h=13;
-  ctx.beginPath();
-  ctx.moveTo(ex,ey);
-  ctx.lineTo(ex-h*Math.cos(ang-0.35),ey-h*Math.sin(ang-0.35));
-  ctx.lineTo(ex-h*Math.cos(ang+0.35),ey-h*Math.sin(ang+0.35));
-  ctx.closePath();ctx.fill();
-  ctx.shadowBlur=0;
-  ctx.font='bold 13px ui-monospace,monospace';
-  ctx.fillText(label, ex+dx*16-6, ey+dy*16+4);
-  ctx.restore();
+// wall-clock-locked loop (dt clamped to [0, 0.1] — rAF timestamps can precede performance.now())
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.1, Math.max(0, (now - last) / 1000)); last = now;
+  try { frame(playing ? dt * speed : 0, dt); } catch (err) { window.onerror(err.message, '', 0); return; }
+  requestAnimationFrame(loop);
 }
 
-var els={st1:document.getElementById('st1'),st2:document.getElementById('st2'),
-  st3:document.getElementById('st3'),v1:document.getElementById('v1'),
-  v2:document.getElementById('v2'),b1:document.getElementById('b1'),b2:document.getElementById('b2')};
-
-seed();
-var last=0, acc=0, uiAcc=0;
-function frame(ts){
-  var dt=Math.min(0.05,(ts-last)/1000||0.016); last=ts;
-  cov(); eigen();
-
-  // step power iteration a few times per second so each step is visible
-  acc+=dt;
-  if(acc>0.17 && !converged){acc=0;powerStep();}
-  easeAxis(dt);
-  var gap=Math.abs(Math.atan2(vd.x*v.y-vd.y*v.x, vd.x*v.x+vd.y*v.y));
-  var settled=converged && gap<0.003;
-
-  projT+=(projTarget-projT)*Math.min(1,dt*3.2);
-
-  var cx=W/2, cy=H/2, S=Math.min(W,H)/720*1.35;
-
-  // background
-  ctx.fillStyle='#05070c';ctx.fillRect(0,0,W,H);
-  // grid
-  ctx.save();ctx.strokeStyle='rgba(70,120,160,.10)';ctx.lineWidth=1;
-  var g=48;
-  for(var x=cx%g;x<W;x+=g){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
-  for(var y=cy%g;y<H;y+=g){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
-  ctx.restore();
-
-  var ux=vd.x, uy=vd.y, wx=-uy, wy=ux;
-  var L1=Math.sqrt(Math.max(lam1,1e-6)), L2=Math.sqrt(Math.max(lam2,1e-6));
-
-  // PC1 line (infinite)
-  ctx.save();
-  ctx.strokeStyle='rgba(0,255,255,'+(0.18+0.5*projT)+')';
-  ctx.lineWidth=1+2*projT;ctx.shadowColor='#0ff';ctx.shadowBlur=12*projT;
-  ctx.setLineDash([10,8]);
-  var big=Math.max(W,H);
-  ctx.beginPath();
-  ctx.moveTo(cx-ux*big,cy-uy*big);ctx.lineTo(cx+ux*big,cy+uy*big);ctx.stroke();
-  ctx.restore();
-
-  // candidate axis (the vector power iteration is currently pushing around)
-  if(!settled){
-    var pulse=0.5+0.5*Math.sin(ts/180);
-    ctx.save();
-    ctx.strokeStyle='rgba(255,224,102,'+(0.35+0.4*pulse)+')';
-    ctx.lineWidth=1.6;ctx.setLineDash([4,6]);
-    ctx.beginPath();
-    ctx.moveTo(cx-v.x*big*0.6,cy-v.y*big*0.6);ctx.lineTo(cx+v.x*big*0.6,cy+v.y*big*0.6);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.font='11px ui-monospace,monospace';
-    ctx.fillStyle='rgba(255,224,102,.9)';
-    ctx.fillText('candidate  v ← Cv/|Cv|   step '+iter, cx+v.x*big*0.28+10, cy+v.y*big*0.28);
-    ctx.restore();
+// ===== DEMO CODE: PCA =====
+/*CORE-START*/
+// Pure model code: seeded data, covariance, eigen-decomposition (2-D closed form, 3-D Jacobi), projection.
+function mulberry(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function gauss(r) { let u = 0; while (u === 0) u = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * r()); }
+// 2-D presets → { P: [[x,y]], L: class per point, out: index of the outlier or -1 }
+function makeData(kind, n, seed, ratio, off) {
+  const r = mulberry(seed), P = [], L = [], ox = off ? off[0] : 0, oy = off ? off[1] : 0;
+  const blob = (cx, cy, s1, s2, a, lab) => { const g1 = gauss(r) * s1, g2 = gauss(r) * s2, c = Math.cos(a), s = Math.sin(a); P.push([ox + cx + g1 * c - g2 * s, oy + cy + g1 * s + g2 * c]); L.push(lab); };
+  let out = -1;
+  if (kind === 'round') for (let i = 0; i < n; i++) blob(0, 0, 1.1, 1.1, 0, 0);
+  else if (kind === 'clusters') { const a = 0.44, nx = -Math.sin(a) * 0.72, ny = Math.cos(a) * 0.72; for (let i = 0; i < n; i++) { const k = i % 2; blob(k ? -nx : nx, k ? -ny : ny, 1.6, 0.24, a, k); } }
+  else if (kind === 'outlier') { for (let i = 0; i < n - 1; i++) blob(0, 0, 1.15, 0.55, 0.26, 0); out = n - 1; P.push([ox - 1.3, oy + 3.5]); L.push(0); }
+  else for (let i = 0; i < n; i++) blob(0, 0, 1.55, 1.55 * ratio, 0.49, 0);
+  return { P, L, out };
+}
+function meanOf(P) { let x = 0, y = 0; for (const p of P) { x += p[0]; y += p[1]; } return [x / P.length, y / P.length]; }
+// second-moment matrix about c·mean → [a, b, d] of [[a,b],[b,d]]. c = 1 is the covariance Σ; c = 0 is uncentred E[xxᵀ]
+function moment2(P, c) { const m = meanOf(P), cx = m[0] * c, cy = m[1] * c; let a = 0, b = 0, d = 0; for (const p of P) { const x = p[0] - cx, y = p[1] - cy; a += x * x; b += x * y; d += y * y; } const n = P.length; return [a / n, b / n, d / n]; }
+// closed-form eigen of a symmetric 2×2: λ = h ± q, θ₁ = ½·atan2(2b, a−d)
+function eig2(S) { const [a, b, d] = S, h = (a + d) / 2, q = Math.hypot((a - d) / 2, b), th = 0.5 * Math.atan2(2 * b, a - d); return { l1: h + q, l2: h - q, th1: th, v1: [Math.cos(th), Math.sin(th)], v2: [-Math.sin(th), Math.cos(th)] }; }
+function varAlong(S, th) { const c = Math.cos(th), s = Math.sin(th); return S[0] * c * c + 2 * S[1] * c * s + S[2] * s * s; }
+function powerStep(S, th) { const c = Math.cos(th), s = Math.sin(th); return Math.atan2(S[1] * c + S[2] * s, S[0] * c + S[1] * s); }
+// mean squared distance from each point (about c·mean) to its projection onto direction th
+function reconErr(P, c, th) { const m = meanOf(P), ux = Math.cos(th), uy = Math.sin(th); let e = 0; for (const p of P) { const x = p[0] - c * m[0], y = p[1] - c * m[1], t = x * ux + y * uy; e += (x - t * ux) ** 2 + (y - t * uy) ** 2; } return e / P.length; }
+// 3-D: a nearly flat cloud (spreads 1.9 / 1.0 / 0.3) turned by a fixed rotation
+function make3D(n, seed) {
+  const r = mulberry(seed), P = [], [a, b, c] = [0.6, -0.45, 0.3], ca = Math.cos(a), sa = Math.sin(a), cb = Math.cos(b), sb = Math.sin(b), cc = Math.cos(c), sc = Math.sin(c);
+  for (let i = 0; i < n; i++) {
+    let [x, y, z] = [gauss(r) * 1.9, gauss(r) * 1.0, gauss(r) * 0.3];
+    [x, y] = [cc * x - sc * y, sc * x + cc * y]; [x, z] = [cb * x + sb * z, -sb * x + cb * z]; [y, z] = [ca * y - sa * z, sa * y + ca * z];
+    P.push([x, y, z]);
   }
-
-  // points
-  for(var i=0;i<pts.length;i++){
-    var p=pts[i];
-    var a=p.x*ux+p.y*uy, b=p.x*wx+p.y*wy;
-    var bb=b*(1-projT);
-    var X=cx+(a*ux+bb*wx)*S, Y=cy+(a*uy+bb*wy)*S;
-    // whisker to PC1 while collapsing
-    if(projT>0.02 && projT<0.995 && (i%3===0)){
-      var fx=cx+a*ux*S, fy=cy+a*uy*S;
-      ctx.strokeStyle='rgba(255,122,217,'+(0.30*(1-projT))+')';
-      ctx.lineWidth=1;
-      ctx.beginPath();ctx.moveTo(X,Y);ctx.lineTo(fx,fy);ctx.stroke();
+  return P;
+}
+function cov3(P) { const n = P.length, m = [0, 1, 2].map(k => P.reduce((s, p) => s + p[k], 0) / n), S = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]; for (const p of P) for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) S[i][j] += (p[i] - m[i]) * (p[j] - m[j]) / n; return { m, S }; }
+// cyclic Jacobi rotations → eigenvalues (descending) and unit eigenvectors
+function jacobi3(S) {
+  const A = S.map(r => r.slice()), V = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  for (let sw = 0; sw < 50; sw++) {
+    if (A[0][1] ** 2 + A[0][2] ** 2 + A[1][2] ** 2 < 1e-22) break;
+    for (let p = 0; p < 2; p++) for (let q = p + 1; q < 3; q++) {
+      if (Math.abs(A[p][q]) < 1e-15) continue;
+      const t = 0.5 * Math.atan2(2 * A[p][q], A[q][q] - A[p][p]), c = Math.cos(t), s = Math.sin(t);
+      for (let k = 0; k < 3; k++) { const x = A[k][p], y = A[k][q]; A[k][p] = c * x - s * y; A[k][q] = s * x + c * y; }
+      for (let k = 0; k < 3; k++) { const x = A[p][k], y = A[q][k]; A[p][k] = c * x - s * y; A[q][k] = s * x + c * y; }
+      for (let k = 0; k < 3; k++) { const x = V[k][p], y = V[k][q]; V[k][p] = c * x - s * y; V[k][q] = s * x + c * y; }
     }
-    var hue=projT>0.5?185:200+30*Math.sin(p.t*6.28);
-    ctx.fillStyle='hsla('+hue+',100%,'+(62+10*p.t)+'%,0.85)';
-    ctx.shadowColor='hsla('+hue+',100%,60%,1)';ctx.shadowBlur=6;
-    ctx.beginPath();ctx.arc(X,Y,2.1,0,6.2832);ctx.fill();
   }
-  ctx.shadowBlur=0;
-
-  // eigen arrows scaled by explained variance
-  var tot=lam1+lam2||1;
-  var e1=lam1/tot, e2=lam2/tot;
-  var base=Math.min(W,H)*0.30;
-  arrow(cx,cy,ux,uy, base*(0.45+0.55*e1)*(1), '#66ffff','PC1 '+(e1*100).toFixed(1)+'%',18);
-  arrow(cx,cy,wx,wy, base*(0.45+0.55*e2)*(1-0.85*projT), '#ff7ad9','PC2 '+(e2*100).toFixed(1)+'%',14);
-
-  // centroid
-  ctx.save();ctx.strokeStyle='#fff';ctx.lineWidth=1.4;ctx.shadowColor='#fff';ctx.shadowBlur=8;
-  ctx.beginPath();ctx.arc(cx,cy,5,0,6.2832);ctx.stroke();ctx.restore();
-
-  // covariance ellipse (1 sigma)
-  ctx.save();
-  ctx.translate(cx,cy);ctx.rotate(Math.atan2(uy,ux));
-  ctx.strokeStyle='rgba(120,200,255,.25)';ctx.lineWidth=1.2;
-  ctx.beginPath();ctx.ellipse(0,0,L1*S,L2*S*(1-projT)+0.6,0,0,6.2832);ctx.stroke();
-  ctx.restore();
-
-  // variance bars on canvas (bottom right)
-  var bw=210,bh=12,bx=W-bw-28,by=H-70;
-  ctx.save();ctx.font='11px ui-monospace,monospace';
-  ctx.fillStyle='rgba(159,232,255,.85)';
-  ctx.fillText('explained variance',bx,by-10);
-  ctx.fillStyle='rgba(255,255,255,.08)';ctx.fillRect(bx,by,bw,bh);
-  ctx.fillStyle='#0ff';ctx.shadowColor='#0ff';ctx.shadowBlur=10;
-  ctx.fillRect(bx,by,bw*e1,bh);
-  ctx.fillStyle='#ff7ad9';ctx.shadowColor='#f5a';
-  ctx.fillRect(bx,by+bh+6,bw*e2,bh);
-  ctx.shadowBlur=0;
-  ctx.fillStyle='rgba(255,255,255,.08)';ctx.fillRect(bx+bw*e2,by+bh+6,bw*(1-e2),bh);
-  ctx.restore();
-
-  if(projT>0.6){
-    ctx.save();
-    ctx.font='bold 15px ui-monospace,monospace';
-    ctx.fillStyle='rgba(102,255,255,'+((projT-0.6)/0.4)+')';
-    ctx.shadowColor='#0ff';ctx.shadowBlur=14;
-    ctx.fillText('2D → 1D · '+(e1*100).toFixed(1)+'% of variance kept', 28, H-28);
-    ctx.restore();
-  }
-
-  // UI text (throttled)
-  uiAcc+=dt;
-  if(uiAcc>0.1){
-    uiAcc=0;
-    els.st1.textContent='power iter '+iter+' · Δ '+delta.toExponential(2)+(settled?' ✓ converged':' …');
-    els.st2.textContent='n = '+pts.length+' points · λ1='+lam1.toFixed(1)+' λ2='+lam2.toFixed(1);
-    els.st3.textContent='mode: '+(projT>0.5?'projected onto PC1':'full 2D');
-    els.v1.textContent=(e1*100).toFixed(1)+'%';
-    els.v2.textContent=(e2*100).toFixed(1)+'%';
-    els.b1.style.width=(e1*100)+'%';
-    els.b2.style.width=(e2*100)+'%';
-  }
-  requestAnimationFrame(frame);
+  const idx = [0, 1, 2].sort((i, j) => A[j][j] - A[i][i]);
+  return { vals: idx.map(i => A[i][i]), vecs: idx.map(i => [V[0][i], V[1][i], V[2][i]]) };
 }
-requestAnimationFrame(frame);
+// signed angle difference for lines (period π), in (−π/2, π/2]
+function lineDiff(from, to) { let d = (to - from) % Math.PI; if (d > Math.PI / 2) d -= Math.PI; if (d <= -Math.PI / 2) d += Math.PI; return d; }
+/*CORE-END*/
+
+/* ===== palette, layout, state ===== */
+const ACC = '#5ec8ff', PC2C = '#ff9bd2', HL = '#ffc857', GR = '#a78bfa', CA = '#ff7a6b', CB = '#3fd0c0', NEU = '#c7cbe0';
+const MONO = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace';
+const rgba = (hex, a) => { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16},${n >> 8 & 255},${n & 255},${a})`; };
+var SCENE = { x: 0, y: 0, w: 1, h: 1 }, PANEL = SCENE, CURVE = SCENE, O = { x: 0, y: 0 }, SC = 50, RH = 100, PHONE = false;
+function onResize() {
+  PHONE = W < 600; const sx = 16, sy = 84, sw = W - 32, sh = H - 160, ph = PHONE ? 66 : 80;
+  PANEL = { x: sx, y: sy + sh - ph, w: sw, h: ph }; SCENE = { x: sx, y: sy, w: sw, h: sh - ph - 10 };
+  O = { x: SCENE.x + SCENE.w / 2, y: SCENE.y + SCENE.h / 2 }; SC = Math.min(SCENE.w / 10.4, SCENE.h / 8.6); RH = Math.min(SCENE.w / 2, SCENE.h / 2) - 12;
+}
+onResize();
+const ST = { kind: 'elong', n: 80, ratio: 0.32, seed: 7, off: null, P: [], L: [], out: -1, morph: null, Q: [],
+  c: 1, cTo: 1, th: 0, thTo: null, proj: 0, projTo: 0, auto: null, flags: {}, seen: new Uint8Array(90), flash: 0, powK: 0,
+  yaw: 0.6, pitch: 0.42, camTo: null, time: 0 };
+let D = { pos: [] }, drag = null, lastTry = null, lastBin = -1, hoverHandle = false;
+const is3D = () => ST.kind === '3d';
+
+function load(kind, o = {}) {
+  ST.kind = kind; if (o.n) ST.n = o.n; if (o.seed != null) ST.seed = o.seed; ST.off = o.off || null; ST.morph = null;
+  if (kind === '3d') { ST.Q = make3D(160, ST.seed); ST.P = []; ST.L = []; ST.out = -1; derive(); return; }
+  const d = makeData(kind, ST.n, ST.seed, ST.ratio, ST.off);
+  if (o.morph && !REDUCED && ST.P.length === d.P.length) ST.morph = { from: ST.P.map(p => p.slice()), to: d.P, t: 0 }; else ST.P = d.P;
+  ST.L = d.L; ST.out = d.out; derive(); syncControls();
+}
+function derive() {
+  if (is3D()) { const { m, S } = cov3(ST.Q), E = jacobi3(S); D = { pos: [], m3: m, E3: E, tot: E.vals[0] + E.vals[1] + E.vals[2] }; return; }
+  const m = meanOf(ST.P), S = moment2(ST.P, ST.c), E = eig2(S), vu = varAlong(S, ST.th);
+  D = { pos: D.pos, m, S, E, tot: S[0] + S[2], vu, gap: Math.abs(lineDiff(ST.th, E.th1)) };
+  if (ST.flags.ghost && ST.out >= 0) { const P0 = ST.P.filter((_, i) => i !== ST.out); D.m0 = meanOf(P0); D.E0 = eig2(moment2(P0, 1)); } // PC1 without the outlier
+}
+function setFlags(o) { ST.flags = Object.assign({ axes: true, pc2: true, ell: true, cand: true, shadows: true, pow: false, ghost: false, reveal: false, focus: null }, o); syncToggles(); }
+function base(fl) {
+  lastTry = null; ST.auto = null; ST.c = ST.cTo = 1; ST.proj = ST.projTo = 0; ST.thTo = null; ST.camTo = null;
+  ST.flash = 0; ST.powK = 0; ST.seen.fill(0); lastBin = -1; drag = null; setFlags(fl || {});
+}
+function cancelAuto() {
+  const A = ST.auto; if (!A) return;
+  if (A.type === 'project' || A.type === '3d') ST.projTo = 1;
+  if (A.type === 'centre') ST.cTo = 1;
+  ST.auto = null; ST.camTo = null;
+}
+
+/* ===== autonomous behaviour (runs on simulated dt: freezes when paused) ===== */
+function runAuto(dt) {
+  const A = ST.auto; if (!A) return; A.t += dt;
+  if (A.type === 'sweep') ST.th += dt * 0.33;
+  else if (A.type === 'centre') { const ph = A.t % 8; ST.cTo = ph < 1.4 || ph > 6.8 ? 0 : 1; }
+  else if (A.type === 'power') {
+    A.acc += dt; if (A.acc < 1.1) return; A.acc = 0;
+    if (D.gap < 0.004) { if (++A.hold > 2) { A.hold = 0; ST.th = D.E.th1 + 1.35; ST.thTo = null; ST.powK = 0; } }
+    else { ST.thTo = powerStep(D.S, ST.th); ST.powK++; }
+  }
+  else if (A.type === 'pc2') ST.th = D.E.th1 + Math.PI / 2 + 0.5 * Math.sin(A.t * 0.8);
+  else if (A.type === 'project') { ST.th = D.E.th1; const ph = A.t % 8; ST.projTo = ph > 0.8 && ph < 6 ? 1 : 0; }
+  else if (A.type === 'orbit') { const a = 1.2 + A.t * 0.4; ST.P[ST.out] = [4.0 * Math.cos(a), 3.2 * Math.sin(a)]; }
+  else if (A.type === 'resample') { A.acc += dt; if (A.acc > 1.2) { A.acc = 0; ST.seed++; load(ST.kind, { morph: true }); } }
+  else if (A.type === '3d') { const ph = A.t % 13; ST.projTo = ph > 2 && ph < 10 ? 1 : 0; ST.camTo = ph > 4.5 && ph < 10 ? 'pc3' : null; }
+}
+/* ===== eased transitions (real time: respond even when paused) ===== */
+function update(dt, rdt) {
+  const k = r => REDUCED ? 1 : 1 - Math.exp(-rdt * r);
+  if (ST.morph) { const M = ST.morph; M.t = Math.min(1, M.t + rdt * 2.5); const e = M.t * M.t * (3 - 2 * M.t); ST.P = M.from.map((p, i) => [p[0] + (M.to[i][0] - p[0]) * e, p[1] + (M.to[i][1] - p[1]) * e]); if (M.t >= 1) ST.morph = null; }
+  ST.c += (ST.cTo - ST.c) * k(2.6); if (Math.abs(ST.cTo - ST.c) < 1e-3) ST.c = ST.cTo;
+  ST.proj += (ST.projTo - ST.proj) * k(3.2); if (Math.abs(ST.projTo - ST.proj) < 1e-3) ST.proj = ST.projTo;
+  if (ST.thTo != null) { const d = lineDiff(ST.th, ST.thTo); ST.th += d * k(7); if (Math.abs(d) < 1e-4) { ST.th = ST.thTo; ST.thTo = null; } }
+  ST.th = ((ST.th % Math.PI) + Math.PI) % Math.PI;
+  ST.flash = Math.max(0, ST.flash - rdt);
+  if (is3D()) {
+    if (ST.camTo === 'pc3') { let v = D.E3.vecs[2]; if (v[2] < 0) v = v.map(x => -x); const ty = Math.atan2(-v[0], v[2]), tp = Math.asin(v[1]);
+      let dy = (ty - ST.yaw) % (2 * Math.PI); if (dy > Math.PI) dy -= 2 * Math.PI; if (dy < -Math.PI) dy += 2 * Math.PI; ST.yaw += dy * k(2.5); ST.pitch += (tp - ST.pitch) * k(2.5); }
+    else if (!(drag && drag.type === 'cam')) ST.yaw += dt * 0.28;
+  } else {
+    const bin = Math.min(89, Math.floor(ST.th / Math.PI * 90));
+    if (lastBin < 0) ST.seen[bin] = 1; else { let d = bin - lastBin; if (d > 45) d -= 90; if (d < -45) d += 90; for (let j = 0; j <= Math.abs(d); j++) ST.seen[(lastBin + Math.sign(d) * j + 90) % 90] = 1; }
+    lastBin = bin;
+  }
+}
+
+/* ===== drawing primitives ===== */
+function arrow(x0, y0, x1, y1, col, w) {
+  const a = Math.atan2(y1 - y0, x1 - x0), L = Math.hypot(x1 - x0, y1 - y0), hs = Math.min(11, L * 0.4);
+  ctx.lineCap = 'round';
+  for (const [lw, al] of [[w + 5, 0.16], [w, 1]]) { ctx.strokeStyle = rgba(col, al); ctx.lineWidth = lw; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1 - Math.cos(a) * hs * 0.6, y1 - Math.sin(a) * hs * 0.6); ctx.stroke(); }
+  ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x1 - hs * Math.cos(a - 0.42), y1 - hs * Math.sin(a - 0.42)); ctx.lineTo(x1 - hs * Math.cos(a + 0.42), y1 - hs * Math.sin(a + 0.42)); ctx.closePath(); ctx.fill();
+}
+// text pill clamped inside the scene; align 'l' | 'r' | 'c'
+function pill(x, y, txt, col, al = 'c', strong = false) {
+  ctx.font = `600 ${PHONE ? 11 : 12}px ${MONO}`; const w = ctx.measureText(txt).width + 14, h = PHONE ? 20 : 22;
+  let bx = al === 'r' ? x - w : al === 'c' ? x - w / 2 : x, by = y - h / 2;
+  bx = Math.max(SCENE.x, Math.min(SCENE.x + SCENE.w - w, bx)); by = Math.max(SCENE.y, Math.min(SCENE.y + SCENE.h - h, by));
+  ctx.beginPath(); ctx.roundRect(bx, by, w, h, 7); ctx.fillStyle = 'rgba(12,14,30,.9)'; ctx.fill(); if (strong) { ctx.fillStyle = rgba(col, 0.2); ctx.fill(); }
+  ctx.strokeStyle = rgba(col, strong ? 0.9 : 0.45); ctx.lineWidth = 1; ctx.stroke();
+  ctx.fillStyle = col; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(txt, bx + 7, by + h / 2 + 0.5);
+  return { x: bx, y: by, w, h };
+}
+function ring(x, y, r, col) { const p = REDUCED ? 0 : Math.sin(ST.time * 4) * 3; ctx.strokeStyle = rgba(col, 0.9); ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, r + p, 0, 7); ctx.stroke(); ctx.strokeStyle = rgba(col, 0.25); ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(x, y, r + 5 + p, 0, 7); ctx.stroke(); }
+function tipLabel(x, y, dx, dy, txt, col, gap = 16) { const L = Math.hypot(dx, dy) || 1; pill(x + dx / L * gap, y + dy / L * (gap - 2), txt, col, dx > 0.3 * L ? 'l' : dx < -0.3 * L ? 'r' : 'c'); }
+const f2 = v => v.toFixed(2), pct = v => (100 * v).toFixed(v > 0.995 ? 0 : 1) + '%', deg = r => (r * 180 / Math.PI).toFixed(1) + '°';
+
+/* ===== 2-D scene ===== */
+function draw2D() {
+  const f = ST.flags, { m, S, E, vu, tot } = D, c = ST.c, pe = ST.proj, ux = Math.cos(ST.th), uy = Math.sin(ST.th);
+  const X = v => O.x + v * SC, Y = v => O.y - v * SC, L = Math.hypot(SCENE.w, SCENE.h);
+  ctx.save(); ctx.beginPath(); ctx.rect(SCENE.x, SCENE.y, SCENE.w, SCENE.h); ctx.clip();
+  ctx.strokeStyle = 'rgba(190,200,255,.10)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(SCENE.x, O.y); ctx.lineTo(SCENE.x + SCENE.w, O.y); ctx.moveTo(O.x, SCENE.y); ctx.lineTo(O.x, SCENE.y + SCENE.h); ctx.stroke();
+  const a1 = Math.sqrt(Math.max(E.l1, 0)), a2 = Math.sqrt(Math.max(E.l2, 0));
+  if (f.ell && f.axes) {
+    for (const [k, al] of [[2, 0.28], [1, 0.55]]) { ctx.beginPath(); ctx.ellipse(O.x, O.y, k * a1 * SC, Math.max(0.5, k * a2 * SC), -E.th1, 0, 2 * Math.PI); ctx.fillStyle = rgba(ACC, al * 0.13); ctx.fill(); ctx.strokeStyle = rgba(ACC, al); ctx.lineWidth = 1.2; ctx.stroke(); }
+    ctx.font = `11px ${MONO}`; ctx.fillStyle = rgba(ACC, 0.8); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (const k of [1, 2]) { const q = 0.72, px = k * (a1 * Math.cos(q) * E.v1[0] + a2 * Math.sin(q) * E.v2[0]), py = k * (a1 * Math.cos(q) * E.v1[1] + a2 * Math.sin(q) * E.v2[1]); ctx.fillText(k + 'σ', X(px * 1.08) + 8, Y(py * 1.08) - 8); }
+  }
+  if (f.ghost && ST.out >= 0) { // PC1 of the cloud without the outlier
+    const { m0, E0 } = D, gx = X(m0[0] - c * m[0]), gy = Y(m0[1] - c * m[1]);
+    ctx.setLineDash([6, 6]); ctx.strokeStyle = rgba(NEU, 0.55); ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(gx - L * E0.v1[0], gy + L * E0.v1[1]); ctx.lineTo(gx + L * E0.v1[0], gy - L * E0.v1[1]); ctx.stroke(); ctx.setLineDash([]);
+    const r = Math.min(SCENE.w / 2 - 20, SCENE.h / 2 - 16); pill(gx - r * E0.v1[0], gy + r * E0.v1[1], 'PC1 without the outlier', NEU, 'c');
+  }
+  // candidate axis u(θ) with each point's shadow on it
+  const pos = D.pos = [];
+  for (const p of ST.P) { const dx = p[0] - c * m[0], dy = p[1] - c * m[1], t = dx * ux + dy * uy; pos.push([X(dx + (t * ux - dx) * pe), Y(dy + (t * uy - dy) * pe), X(dx), Y(dy), X(t * ux), Y(t * uy)]); }
+  if (f.cand) {
+    if (f.shadows && pe < 0.98) {
+      const a = 1 - pe; ctx.lineWidth = 1; ctx.strokeStyle = rgba(GR, 0.16 * a); ctx.beginPath(); for (const q of pos) { ctx.moveTo(q[2], q[3]); ctx.lineTo(q[4], q[5]); } ctx.stroke();
+      ctx.strokeStyle = rgba(HL, 0.7 * a); ctx.lineWidth = 1.5; ctx.beginPath(); for (const q of pos) { ctx.moveTo(q[4] + uy * 5, q[5] + ux * 5); ctx.lineTo(q[4] - uy * 5, q[5] - ux * 5); } ctx.stroke();
+    }
+    for (const [lw, al] of [[7, 0.14], [1.8, 0.95]]) { ctx.strokeStyle = rgba(HL, al); ctx.lineWidth = lw; ctx.beginPath(); ctx.moveTo(O.x - L * ux, O.y + L * uy); ctx.lineTo(O.x + L * ux, O.y - L * uy); ctx.stroke(); }
+    for (const s of [1, -1]) { ctx.fillStyle = HL; ctx.strokeStyle = '#0c0e1a'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(O.x + s * RH * ux, O.y - s * RH * uy, hoverHandle || (drag && drag.type === 'handle') ? 10 : 8, 0, 7); ctx.fill(); ctx.stroke(); }
+  }
+  if (pe > 0.01) { // reconstruction error: original → projected
+    ctx.strokeStyle = rgba(GR, 0.8 * pe); ctx.lineWidth = 1.3; ctx.beginPath(); for (const q of pos) { ctx.moveTo(q[2], q[3]); ctx.lineTo(q[0], q[1]); } ctx.stroke();
+    ctx.fillStyle = rgba(NEU, 0.22 * pe); ctx.beginPath(); for (const q of pos) { ctx.moveTo(q[2] + 2.5, q[3]); ctx.arc(q[2], q[3], 2.5, 0, 7); } ctx.fill();
+  }
+  const pr = PHONE ? 2.8 : 3.4, cls = ST.kind === 'clusters';
+  for (const [lab, col] of cls ? [[0, CA], [1, CB]] : [[0, NEU]]) { ctx.fillStyle = col; ctx.beginPath(); pos.forEach((q, i) => { if (ST.L[i] === lab) { ctx.moveTo(q[0] + pr, q[1]); ctx.arc(q[0], q[1], i === ST.out ? pr + 2.5 : pr, 0, 7); } }); ctx.fill(); }
+  if (drag && drag.type === 'pt' && pos[drag.i]) ring(pos[drag.i][0], pos[drag.i][1], 9, HL);
+  // principal axes: arrows reach 2√λ (the 2σ ellipse)
+  const t1 = [X(2 * a1 * E.v1[0]), Y(2 * a1 * E.v1[1])], t2 = [X(2 * a2 * E.v2[0]), Y(2 * a2 * E.v2[1])];
+  if (f.axes) {
+    if (f.pc2) { arrow(O.x, O.y, t2[0], t2[1], PC2C, 2.2); tipLabel(t2[0], t2[1], t2[0] - O.x, t2[1] - O.y, `PC2 λ₂=${f2(E.l2)}`, PC2C, f.focus === 'pc2' ? 34 : 16); }
+    arrow(O.x, O.y, t1[0], t1[1], ACC, 2.8); tipLabel(t1[0], t1[1], t1[0] - O.x, t1[1] - O.y, `PC1 λ₁=${f2(E.l1)}`, ACC, f.focus === 'pc1' ? 34 : 16);
+    if (f.focus === 'pc2') { const s = 14, v1 = [E.v1[0], -E.v1[1]], v2 = [E.v2[0], -E.v2[1]]; ctx.strokeStyle = rgba('#ffffff', 0.8); ctx.lineWidth = 1.3; ctx.beginPath(); ctx.moveTo(O.x + v1[0] * s, O.y + v1[1] * s); ctx.lineTo(O.x + (v1[0] + v2[0]) * s, O.y + (v1[1] + v2[1]) * s); ctx.lineTo(O.x + v2[0] * s, O.y + v2[1] * s); ctx.stroke(); }
+  }
+  if (f.pow && f.cand) { // power iteration: u and Σu (scaled by 1/λ₁ so they coincide at convergence)
+    const R = 2 * a1, sx = (S[0] * ux + S[1] * uy) / E.l1, sy = (S[1] * ux + S[2] * uy) / E.l1;
+    arrow(O.x, O.y, X(R * ux), Y(R * uy), HL, 2.4); arrow(O.x, O.y, X(R * sx), Y(R * sy), GR, 2.4);
+    pill(X(0.6 * R * sx) - E.v2[0] * 18, Y(0.6 * R * sy) + E.v2[1] * 18, 'Σu', GR); // mid-arrow, on the side away from PC2: the tip meets the PC1 label at convergence
+  }
+  // mean marker
+  const mx = X((1 - c) * m[0]), my = Y((1 - c) * m[1]);
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(mx, my, 6, 0, 7); ctx.moveTo(mx - 10, my); ctx.lineTo(mx + 10, my); ctx.moveTo(mx, my - 10); ctx.lineTo(mx, my + 10); ctx.stroke();
+  if (c < 0.97 || f.focus === 'mean') { ctx.strokeStyle = rgba('#ffffff', 0.5); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(mx + 6, my + 6); ctx.lineTo(mx + 30, my + 30); ctx.stroke(); pill(mx + 30, my + 32, c < 0.97 ? 'mean μ' : 'μ now at the origin', '#ffffff', 'l'); }
+  // your-axis readout on the handle farthest from the PC labels
+  if (f.cand) {
+    const ends = [1, -1].map(s => [O.x + s * RH * ux, O.y - s * RH * uy]), score = e => Math.min(Math.hypot(e[0] - t1[0], e[1] - t1[1]), f.pc2 ? Math.hypot(e[0] - t2[0], e[1] - t2[1]) : 1e9);
+    const e = score(ends[0]) >= score(ends[1]) ? ends[0] : ends[1], hit = D.gap < 0.017;
+    if (f.focus === 'handle') for (const h of ends) ring(h[0], h[1], 15, HL);
+    let txt = pe > 0.5 ? `kept ${pct(vu / tot)} · lost ${pct(1 - vu / tot)}` : PHONE ? `u: ${f2(vu)} (${pct(vu / tot)})` : `your axis: var ${f2(vu)} = ${pct(vu / tot)}`;
+    if (f.pow) txt = `power step ${ST.powK} · ${deg(D.gap)} off`;
+    if (ST.flash > 0) txt = '✓ PCA agrees: that is PC1';
+    else if (hit && pe < 0.5 && !f.pow) txt += ' ✓ max';
+    pill(e[0], e[1] + (e[1] < O.y ? 26 : -26), txt, HL, 'c', ST.flash > 0 || (hit && !f.pow));
+  }
+  if (f.focus === 'pc1' && f.axes) ring(t1[0], t1[1], 13, ACC);
+  if (f.focus === 'pc2' && f.axes) ring(t2[0], t2[1], 13, PC2C);
+  if (f.focus === 'outlier' && ST.out >= 0 && pos[ST.out]) ring(pos[ST.out][0], pos[ST.out][1], 12, '#ffffff');
+  if (f.focus === 'mean') ring(mx, my, 13, '#ffffff');
+  ctx.restore();
+}
+
+/* ===== 3-D scene: a rotating cloud, the PC1–PC2 plane, and the drop along PC3 ===== */
+function camM(y, p) { const cy = Math.cos(y), sy = Math.sin(y), cp = Math.cos(p), sp = Math.sin(p); return [[cy, 0, sy], [sp * sy, cp, -sp * cy], [-cp * sy, sp, cp * cy]]; }
+function draw3D() {
+  const { m3, E3 } = D, v = E3.vecs, l = E3.vals, pe = ST.proj, R = camM(ST.yaw, ST.pitch), s3 = SC * 1.05;
+  const pr = p => [O.x + (R[0][0] * p[0] + R[0][1] * p[1] + R[0][2] * p[2]) * s3, O.y - (R[1][0] * p[0] + R[1][1] * p[1] + R[1][2] * p[2]) * s3, R[2][0] * p[0] + R[2][1] * p[1] + R[2][2] * p[2]];
+  // orientation triad
+  const tx = SCENE.x + 30, ty = SCENE.y + SCENE.h - 30; ctx.font = `11px ${MONO}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ['x', 'y', 'z'].forEach((n, k) => { const e = [0, 0, 0]; e[k] = 1; const q = pr(e), dx = (q[0] - O.x) / s3 * 20, dy = (q[1] - O.y) / s3 * 20; ctx.strokeStyle = rgba(NEU, 0.45); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(tx + dx, ty + dy); ctx.stroke(); ctx.fillStyle = rgba(NEU, 0.7); ctx.fillText(n, tx + dx * 1.35, ty + dy * 1.35); });
+  // the PC1–PC2 plane (2σ disk)
+  const A = 2 * Math.sqrt(l[0]), B = 2 * Math.sqrt(l[1]); ctx.beginPath();
+  for (let k = 0; k <= 48; k++) { const t = k / 48 * 2 * Math.PI, q = pr([0, 1, 2].map(i => v[0][i] * A * Math.cos(t) + v[1][i] * B * Math.sin(t))); k ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); }
+  ctx.fillStyle = rgba(ACC, 0.08); ctx.fill(); ctx.strokeStyle = rgba(ACC, 0.45); ctx.lineWidth = 1.2; ctx.stroke();
+  const pts = ST.Q.map(q => { const d = [q[0] - m3[0], q[1] - m3[1], q[2] - m3[2]], t = d[0] * v[2][0] + d[1] * v[2][1] + d[2] * v[2][2]; return { o: pr(d), p: pr(d.map((x, i) => x - t * v[2][i] * pe)) }; });
+  if (pe > 0.01) { ctx.strokeStyle = rgba(GR, 0.75 * pe); ctx.lineWidth = 1.2; ctx.beginPath(); for (const q of pts) { ctx.moveTo(q.o[0], q.o[1]); ctx.lineTo(q.p[0], q.p[1]); } ctx.stroke(); }
+  pts.sort((a, b) => a.p[2] - b.p[2]);
+  for (const q of pts) { const z = Math.max(0, Math.min(1, (q.p[2] + 3.5) / 7)); ctx.fillStyle = rgba(NEU, 0.35 + 0.65 * z); ctx.beginPath(); ctx.arc(q.p[0], q.p[1], (PHONE ? 2 : 2.4) + 1.4 * z, 0, 7); ctx.fill(); }
+  [2, 1, 0].forEach(k => { const L = 2 * Math.sqrt(Math.max(l[k], 0)), q = pr(v[k].map(x => x * L)), col = [ACC, PC2C, GR][k]; arrow(O.x, O.y, q[0], q[1], col, k ? 2.2 : 2.8); tipLabel(q[0], q[1], q[0] - O.x, q[1] - O.y, k === 2 ? `PC3 λ₃=${f2(l[2])}${PHONE ? '' : ' (dropped)'}` : `PC${k + 1} λ${k ? '₂' : '₁'}=${f2(l[k])}`, col); });
+}
+
+/* ===== bottom panel: explained-variance bars + variance-by-angle curve ===== */
+function bars(x, y, w, rows) {
+  const rh = Math.min(20, (PANEL.h - 16) / rows.length); ctx.font = `600 11px ${MONO}`; ctx.textBaseline = 'middle';
+  rows.forEach(([name, fr, col], i) => {
+    const cy = y + rh * (i + 0.5), bx = x + 50, bw = w - 50 - 50;
+    ctx.fillStyle = col; ctx.textAlign = 'left'; ctx.fillText(name, x, cy);
+    ctx.fillStyle = 'rgba(190,200,255,.08)'; ctx.fillRect(bx, cy - 4, bw, 8); ctx.fillStyle = col; ctx.fillRect(bx, cy - 4, bw * Math.max(0, Math.min(1, fr)), 8);
+    ctx.textAlign = 'right'; ctx.fillText(pct(fr), x + w, cy);
+  });
+}
+function drawPanel() {
+  const P = PANEL; ctx.fillStyle = 'rgba(12,14,30,.72)'; ctx.strokeStyle = 'rgba(190,200,255,.16)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.roundRect(P.x, P.y, P.w, P.h, 12); ctx.fill(); ctx.stroke();
+  if (is3D()) {
+    const l = D.E3.vals, bw = Math.min(360, P.w * 0.55); bars(P.x + 12, P.y + 8, bw, [['PC1', l[0] / D.tot, ACC], ['PC2', l[1] / D.tot, PC2C], ['PC3', l[2] / D.tot, GR]]);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; const x = P.x + bw + 30;
+    ctx.fillStyle = '#e9ecfa'; ctx.font = `650 ${PHONE ? 15 : 20}px ${MONO}`; ctx.fillText(pct((l[0] + l[1]) / D.tot) + ' kept', x, P.y + P.h / 2 + 2);
+    ctx.fillStyle = rgba(GR, 1); ctx.font = `11px ${MONO}`; ctx.fillText((PHONE ? 'lose ' : '3 → 2 dims, lose ') + pct(l[2] / D.tot), x, P.y + P.h / 2 + 20);
+    CURVE = { x: 0, y: 0, w: 0, h: 0 }; return;
+  }
+  const { S, E, tot, vu } = D, f = ST.flags, bw = PHONE ? P.w * 0.42 : Math.min(300, P.w * 0.36);
+  bars(P.x + 12, P.y + 8, bw - 12, [['PC1', E.l1 / tot, ACC], ['PC2', E.l2 / tot, PC2C]].concat(f.cand ? [['yours', vu / tot, HL]] : []));
+  const C = CURVE = { x: P.x + bw + 26, y: P.y + 22, w: P.w - bw - 26 - 14, h: P.h - 38 }, vmax = E.l1 * 1.08 + 1e-9, cx = th => C.x + th / Math.PI * C.w, cy = v => C.y + C.h - v / vmax * C.h;
+  ctx.font = `11px ${MONO}`; ctx.fillStyle = '#a2a9c8'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillText(PHONE ? 'variance along θ' : 'variance along θ (drag to scrub)', C.x, P.y + 15);
+  ctx.textAlign = 'center'; ctx.fillStyle = '#6b7396'; [[0, '0°'], [Math.PI / 2, '90°'], [Math.PI, '180°']].forEach(([t, s]) => ctx.fillText(s, Math.min(C.x + C.w - 12, Math.max(C.x + 6, cx(t))), P.y + P.h - 3));
+  ctx.strokeStyle = 'rgba(190,200,255,.14)'; ctx.beginPath(); ctx.moveTo(C.x, C.y + C.h); ctx.lineTo(C.x + C.w, C.y + C.h); ctx.stroke();
+  const full = !f.reveal; ctx.fillStyle = rgba(ACC, 0.14); ctx.strokeStyle = rgba(ACC, 0.9); ctx.lineWidth = 1.6;
+  for (let i = 0; i < 90; i++) if (full || ST.seen[i]) { const a = i / 90 * Math.PI, b = (i + 1) / 90 * Math.PI, va = varAlong(S, a), vb = varAlong(S, b); ctx.beginPath(); ctx.moveTo(cx(a), C.y + C.h); ctx.lineTo(cx(a), cy(va)); ctx.lineTo(cx(b), cy(vb)); ctx.lineTo(cx(b), C.y + C.h); ctx.fill(); ctx.beginPath(); ctx.moveTo(cx(a), cy(va)); ctx.lineTo(cx(b), cy(vb)); ctx.stroke(); }
+  if (f.axes) { ctx.setLineDash([3, 3]); ctx.lineWidth = 1.2; [[E.th1, ACC], [E.th1 + Math.PI / 2, PC2C]].forEach(([t, col]) => { const x = cx(((t % Math.PI) + Math.PI) % Math.PI); ctx.strokeStyle = col; ctx.beginPath(); ctx.moveTo(x, C.y - 2); ctx.lineTo(x, C.y + C.h); ctx.stroke(); }); ctx.setLineDash([]); }
+  if (f.cand) { ctx.fillStyle = HL; ctx.strokeStyle = '#0c0e1a'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(cx(ST.th), cy(vu), 4.5, 0, 7); ctx.fill(); ctx.stroke(); }
+}
+
+/* ===== frame ===== */
+let lastMode = '';
+const TILES = { d3: ['PC1+PC2 keep', 'Lost to PC3', 'Dimensions'], axis: ['You keep', 'PC1 keeps', 'Gap to PC1'], centre: ['PC1 keeps', 'PC1 angle θ₁', 'Mean offset'], outlier: ['PC1 keeps', 'PC1 angle θ₁', 'Outlier tilt'] };
+function frame(dt, rdt) {
+  ST.time += rdt; derive(); runAuto(dt); update(dt, rdt); derive();
+  ctx.clearRect(0, 0, W, H); if (is3D()) draw3D(); else draw2D(); drawPanel(); ui();
+}
+function ui() {
+  const d3 = is3D(), f = ST.flags, mode = d3 ? 'd3' : f.cand ? 'axis' : f.ghost && D.E0 ? 'outlier' : 'centre';
+  if (lastMode !== mode) { lastMode = mode; const ks = document.querySelectorAll('.stat .k'); TILES[mode].forEach((t, i) => ks[i].textContent = t); }
+  setText('bStep', d3 ? (PHONE ? 'Face' : 'Face plane') : PHONE ? 'Power' : 'Power step'); $('#bProj').classList.toggle('on', ST.projTo > 0.5);
+  const lv = (id, v) => setText(id, v);
+  if (d3) {
+    const l = D.E3.vals; lv('sYou', pct((l[0] + l[1]) / D.tot)); lv('sPC1', pct(l[2] / D.tot)); lv('sGap', ST.proj > 0.5 ? '3 → 2' : '3');
+    ['mA', 'mB', 'mB2', 'mD', 'mVu', 'mTh', 'mTh1'].forEach(id => lv(id, '—')); lv('mC', ''); lv('mL1', f2(l[0])); lv('mL2', f2(l[1])); lv('mTot', f2(D.tot)); lv('mKept', f2(l[0] + l[1])); lv('mLost', f2(l[2]));
+    return;
+  }
+  const { S, E, tot, vu, gap } = D;
+  const th1 = ((E.th1 % Math.PI) + Math.PI) % Math.PI;
+  if (mode === 'axis') { lv('sYou', pct(vu / tot)); lv('sPC1', pct(E.l1 / tot)); lv('sGap', deg(gap)); }
+  else { lv('sYou', pct(E.l1 / tot)); lv('sPC1', deg(th1)); lv('sGap', mode === 'outlier' ? deg(Math.abs(lineDiff(D.E0.th1, E.th1))) : f2((1 - ST.c) * Math.hypot(D.m[0], D.m[1]))); }
+  lv('mA', f2(S[0])); lv('mB', f2(S[1])); lv('mB2', f2(S[1])); lv('mD', f2(S[2])); lv('mVu', f2(vu)); lv('mTh', deg(ST.th));
+  lv('mC', ST.c < 0.995 ? `Not centred yet: this matrix is taken about ${f2(ST.c)}·μ instead of μ, so it is not Σ.` : '');
+  lv('mL1', f2(E.l1)); lv('mL2', f2(E.l2)); lv('mTh1', deg(th1)); lv('mTot', f2(tot)); lv('mKept', f2(vu)); lv('mLost', f2(tot - vu));
+  const el = $('#th'); if (el && document.activeElement !== el) { const v = Math.round(ST.th * 180 / Math.PI) % 180; if (+el.value !== v) { el.value = v; setText('tho', v + '°'); } }
+}
+
+/* ===== direct manipulation ===== */
+const inR = (x, y, R) => x >= R.x && x <= R.x + R.w && y >= R.y && y <= R.y + R.h;
+function hit(x, y) {
+  if (is3D()) return { type: 'cam' };
+  if (inR(x, y, { x: CURVE.x - 8, y: CURVE.y - 14, w: CURVE.w + 16, h: CURVE.h + 28 })) return { type: 'scrub' };
+  if (inR(x, y, PANEL)) return null;
+  const f = ST.flags;
+  if (f.cand) for (const s of [1, -1]) if (Math.hypot(x - O.x - s * RH * Math.cos(ST.th), y - O.y + s * RH * Math.sin(ST.th)) < 22) return { type: 'handle' };
+  if (ST.proj < 0.05) { let bi = -1, bd = PHONE ? 20 : 14; D.pos.forEach((p, i) => { const d = Math.hypot(x - p[0], y - p[1]); if (d < bd) { bd = d; bi = i; } }); if (bi >= 0) return { type: 'pt', i: bi }; }
+  if (f.cand) return { type: 'aim' };
+  return ST.out >= 0 ? { type: 'pt', i: ST.out } : { type: 'centre' };
+}
+function act(x, y) {
+  const g = drag; if (!g) return;
+  if (g.type === 'handle' || g.type === 'aim') { ST.th = Math.atan2(-(y - O.y), x - O.x); ST.thTo = null; }
+  else if (g.type === 'scrub') { ST.th = Math.max(0, Math.min(0.9999, (x - CURVE.x) / CURVE.w)) * Math.PI; ST.thTo = null; }
+  else if (g.type === 'pt') {
+    const tx = Math.max(SCENE.x + 6, Math.min(SCENE.x + SCENE.w - 6, x)), ty = Math.max(SCENE.y + 6, Math.min(SCENE.y + SCENE.h - 6, y));
+    const p = ST.P[g.i], n = ST.P.length, dx = p[0] - ST.c * D.m[0], dy = p[1] - ST.c * D.m[1], k = 1 / (1 - ST.c / n);
+    p[0] += ((tx - O.x) / SC - dx) * k; p[1] += (-(ty - O.y) / SC - dy) * k;
+  }
+  else if (g.type === 'cam') { ST.yaw += (x - g.x) * 0.01; ST.pitch = Math.max(-1.45, Math.min(1.45, ST.pitch + (y - g.y) * 0.01)); g.moved += Math.abs(x - g.x) + Math.abs(y - g.y); g.x = x; g.y = y; }
+  if (ST.flags.reveal && !ST.flags.axes && (g.type === 'handle' || g.type === 'aim' || g.type === 'scrub')) { derive(); if (D.gap < 0.021) { ST.flags.axes = true; ST.flags.reveal = false; ST.flags.focus = null; ST.flash = 3; syncToggles(); cap('<b>Found it.</b> The direction with the most variance is <b>PC1</b>, and PCA computed the same line. The curve below now shows every angle. Next: why the winner is an eigenvector.'); } }
+}
+const loc = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+cv.addEventListener('pointerdown', e => {
+  const [x, y] = loc(e), h = hit(x, y); if (!h) return;
+  cv.setPointerCapture(e.pointerId); cancelAuto(); ST.morph = null;
+  if (h.type === 'centre') { ST.cTo = ST.cTo > 0.5 ? 0 : 1; syncToggles(); return; }
+  drag = Object.assign(h, { x, y, moved: 0 }); if (h.type !== 'cam') act(x, y);
+});
+cv.addEventListener('pointermove', e => {
+  const [x, y] = loc(e);
+  if (drag) { act(x, y); return; }
+  const h = hit(x, y); hoverHandle = !!h && h.type === 'handle';
+  cv.style.cursor = !h ? 'default' : h.type === 'scrub' ? 'ew-resize' : h.type === 'aim' ? 'crosshair' : h.type === 'centre' ? 'pointer' : 'grab';
+});
+const end = () => { if (drag && drag.type === 'cam' && drag.moved < 4) { ST.projTo = ST.projTo > 0.5 ? 0 : 1; } drag = null; };
+cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+
+/* ===== dock ===== */
+$('#bStep').onclick = () => {
+  cancelAuto();
+  if (is3D()) { ST.camTo = ST.camTo ? null : 'pc3'; return; }
+  derive(); ST.flags.pow = true; ST.flags.cand = true; ST.thTo = powerStep(D.S, ST.th); ST.powK++; syncToggles();
+};
+$('#bProj').onclick = () => { const on = ST.proj > 0.5; cancelAuto(); ST.projTo = on ? 0 : 1; if (!is3D()) ST.flags.cand = true; syncToggles(); };
+$('#bReset').onclick = () => { if (lastTry) lastTry.run(); else goStep(tour); };
+
+/* ===== lesson: tour ===== */
+const cap = h => { $('#caption').innerHTML = h; };
+const E7 = o => { ST.ratio = 0.32; load('elong', Object.assign({ seed: 7, n: 80 }, o)); }; // the tour's reference cloud, whatever the sliders say
+const STEPS = [
+  { t: 'Shadows on a line', d: 'Every point casts a shadow (amber tick) on the line. The spread of those shadows is the <b>variance along that direction</b>. The curve at the bottom records it for every angle the line visits.',
+    cap: '<b>The amber line sweeps around.</b> Its ticks are the points’ shadows. Where they spread widest, the line lies along the cloud’s main direction, <b>PC1</b>.',
+    go() { base({ pc2: false, ell: false, reveal: true }); E7(); ST.th = 2.64; ST.auto = { type: 'sweep', t: 0 }; if (REDUCED) { ST.th = 0.62; for (let i = 0; i < 20; i++) ST.seen[i] = 1; } } },
+  { t: 'Centre the data', d: 'PCA measures spread around the <b>mean μ</b>, so it subtracts μ first. Without centring, the “best direction” just points at the cloud, because the mean’s offset dominates the second moment. Click the stage to toggle.',
+    cap: '<b>First, centre.</b> Watch the cloud slide so its mean ◎ sits on the origin. The blue axes swing from pointing <i>at</i> the cloud to lying <i>along</i> it.',
+    go() { base({ cand: false, focus: 'mean' }); E7({ off: [1.9, -1.3] }); ST.c = ST.cTo = 0; ST.auto = { type: 'centre', t: 0 }; } },
+  { t: 'Variance along a direction', d: 'For a unit direction u, the shadows have variance <b>uᵀΣu</b>. PCA’s answer is hidden, so find it yourself by dragging the handle or scrubbing the curve.',
+    cap: '<b>Your turn: drag an amber handle.</b> The readout is the shadows’ variance, uᵀΣu. Find the angle where it peaks and PCA’s answer will appear.',
+    go() { base({ axes: false, reveal: true, focus: 'handle' }); E7(); ST.th = 1.95; } },
+  { t: 'The best direction is an eigenvector', d: 'Multiplying by Σ stretches u most along PC1, so Σu (violet) always leans toward PC1. Repeat and u converges geometrically, by a factor λ₂/λ₁ each step. The fixed points, where Σu ∥ u, are the <b>eigenvectors</b>.',
+    cap: '<b>Power iteration:</b> multiply u by Σ (violet) and it turns toward PC1. The only directions Σ does not turn are its <b>eigenvectors</b>, the axes of the ellipse.',
+    go() { base({ pow: true, shadows: false, focus: 'pc1' }); E7(); ST.th = D.E.th1 + 1.35; ST.auto = { type: 'power', t: 0, acc: 0.4, hold: 0 }; } },
+  { t: 'PC2 is orthogonal', d: 'Σ is symmetric, so its eigenvectors are perpendicular. PC2 is the direction of <b>least</b> variance, the minimum of the curve. Each arrow reaches 2√λ, which lands on the 2σ ellipse.',
+    cap: '<b>PC2 sits at 90°.</b> The line rocks around it, and the variance only rises either side: PC2 is the curve’s minimum. The ellipse radii are √λ₁ and √λ₂.',
+    go() { base({ focus: 'pc2' }); E7(); ST.auto = { type: 'pc2', t: 0 }; } },
+  { t: 'Project and measure what’s lost', d: 'Keeping one number per point, its coordinate on PC1, reconstructs the point on the line. The mean squared error is <b>tr Σ − uᵀΣu</b>, so maximising variance and minimising error are the same goal. At PC1 the loss is exactly λ₂.',
+    cap: '<b>Project onto PC1.</b> The points drop onto the line. Violet lines are what 1-D forgets, and their mean squared length is λ₂. Drag the handle and they only get longer.',
+    go() { base({ shadows: false }); E7(); ST.auto = { type: 'project', t: 0 }; } },
+  { t: 'Limitation: outliers pull the axes', d: 'Variance squares distances, so one far point gets a loud vote. The dashed line is PC1 without it. Robust PCA and trimming exist for this reason. Also: PCA only finds <b>linear</b> directions, so curved structure needs kernel PCA, t-SNE or UMAP.',
+    cap: '<b>Outliers pull the axes.</b> One far point (ringed) orbits, and PC1 swings after it. The dashed line is PC1 without it. Drag the outlier yourself.',
+    go() { base({ cand: false, ghost: true, focus: 'outlier' }); load('outlier', { n: 45, seed: 3 }); ST.auto = { type: 'orbit', t: 0 }; } },
+];
+const TRIES = [
+  { q: 'Two classes lie side by side (coral and teal). Project the cloud onto PC1. Will the classes stay apart?',
+    run() { base({ shadows: false }); load('clusters', { n: 120, seed: 11 }); ST.auto = { type: 'project', t: 0 }; cap('<b>Two classes, one PC1.</b> Watch the coral and teal points land on the line. Then press <b>Snap to PC2</b> in Controls and project again.'); lastTry = this; },
+    why: 'They <b>merge</b>. PC1 follows the long direction the two cigars share. The gap between classes lies along low-variance PC2, which is exactly the direction PCA drops. PCA never sees labels, and maximum variance is not maximum separation. Supervised methods such as LDA look for the separating direction instead. Snap the axis to PC2 and the classes come apart.' },
+  { q: 'A perfectly round cloud is resampled every second. Will PC1 hold still?',
+    run() { base({ shadows: false }); load('round', { n: 80, seed: 5 }); ST.auto = { type: 'resample', t: 0, acc: 0 }; cap('<b>Round cloud, fresh sample every second.</b> Watch the blue arrow, the bars and the flat curve.'); lastTry = this; },
+    why: 'It <b>spins at random</b>. When λ₁ ≈ λ₂, every direction has nearly the same variance (the curve is flat), so sampling noise alone decides the “top” eigenvector. The bars sit near 50/50, and you cannot compress a cloud like this. Before you trust or interpret a component, check the <b>eigenvalue gap</b>.' },
+  { q: 'This 3-D cloud is nearly flat. Drop it to 2-D. What share of the variance do you lose?',
+    run() { base({}); load('3d', { seed: 2 }); ST.yaw = 0.6; ST.pitch = 0.42; ST.auto = { type: '3d', t: 0 }; cap('<b>3 → 2 dimensions.</b> The points slide along violet PC3 onto the blue plane. Then the camera turns to look straight down PC3. Drag to orbit, and click to toggle the drop.'); lastTry = this; },
+    why: 'Only <b>λ₃ / (λ₁+λ₂+λ₃)</b>, a few percent. The drop moves each point along PC3, the direction with the least spread. Looking straight down PC3 shows the 2-D coordinates (the scores) PCA gives you. Embeddings go from 768-D to a 2-D plot the same way, and the bars tell you how honest the picture is.' },
+];
+
+/* ===== controls ===== */
+const TOG = [];
+function toggles(parent, list) {
+  const d = document.createElement('div'); d.className = 'seg'; parent.appendChild(d);
+  list.forEach(([k, lab]) => { const b = document.createElement('button'); b.textContent = lab; b.onclick = () => { if (k === 'centre') { cancelAuto(); ST.cTo = ST.cTo > 0.5 ? 0 : 1; } else ST.flags[k] = !ST.flags[k]; if (k === 'axes') ST.flags.reveal = false; syncToggles(); }; d.appendChild(b); TOG.push([k, b]); });
+}
+function syncToggles() { TOG.forEach(([k, b]) => b.setAttribute('aria-pressed', k === 'centre' ? ST.cTo > 0.5 : !!ST.flags[k])); }
+const KINDS = [['elong', 'Elongated'], ['round', 'Round'], ['clusters', 'Two classes'], ['outlier', 'With outlier'], ['3d', '3-D cloud']];
+let dsSeg, nS, rS;
+function syncControls() {
+  if (!dsSeg) return; dsSeg.querySelectorAll('button').forEach((b, i) => b.setAttribute('aria-pressed', KINDS[i][0] === ST.kind));
+  const n = $('#nPts'); if (n && +n.value !== ST.n) { n.value = ST.n; setText('nPtso', String(ST.n)); }
+  const r = $('#rat'); if (r && +r.value !== ST.ratio) { r.value = ST.ratio; setText('rato', ST.ratio.toFixed(2)); }
+}
+(function buildControls() {
+  const p = $('#p-play'), h = t => { const e = document.createElement('h3'); e.textContent = t; p.appendChild(e); }, btn = (label, fn, parent) => { const b = document.createElement('button'); b.className = 'btn'; b.textContent = label; b.onclick = fn; parent.appendChild(b); };
+  h('Data');
+  seg(p, KINDS, 'elong', v => { base({}); load(v, { n: v === 'outlier' ? 45 : v === 'clusters' ? 120 : ST.n }); cap(''); }); dsSeg = p.lastChild;
+  nS = slider(p, 'nPts', 'Number of points (fewer = each point matters more)', 12, 200, 1, ST.n, v => String(v), v => { if (v !== ST.n && ST.P.length) { ST.n = v; load(ST.kind); } });
+  rS = slider(p, 'rat', 'Thinness: minor ÷ major spread (Elongated)', 0.05, 1, 0.01, ST.ratio, v => v.toFixed(2), v => { ST.ratio = v; if (ST.kind === 'elong' && ST.P.length) load('elong', { morph: true, n: ST.n }); });
+  const r1 = document.createElement('div'); r1.className = 'row tournav'; r1.style.flexWrap = 'wrap'; p.appendChild(r1); btn('New random sample', () => { ST.seed++; load(ST.kind, { morph: true }); }, r1);
+  h('Your axis u');
+  slider(p, 'th', 'Direction θ of your candidate axis (degrees)', 0, 179, 1, 110, v => v + '°', v => { if (ST.P.length) { cancelAuto(); ST.th = v * Math.PI / 180; ST.thTo = null; ST.flags.cand = true; syncToggles(); } });
+  const r2 = document.createElement('div'); r2.className = 'row tournav'; r2.style.flexWrap = 'wrap'; p.appendChild(r2);
+  btn('Snap to PC1', () => { if (is3D()) return; cancelAuto(); ST.flags.cand = true; ST.thTo = D.E.th1; syncToggles(); }, r2);
+  btn('Snap to PC2', () => { if (is3D()) return; cancelAuto(); ST.flags.cand = true; ST.thTo = D.E.th1 + Math.PI / 2; syncToggles(); }, r2);
+  btn('Power step', () => $('#bStep').click(), r2);
+  h('Show');
+  toggles(p, [['axes', 'PC arrows'], ['ell', '1σ / 2σ ellipses'], ['cand', 'Your axis'], ['shadows', 'Shadows'], ['pow', 'Σu arrow'], ['centre', 'Centre the data']]);
+  const n = document.createElement('p'); n.innerHTML = 'Drag points to reshape the cloud. Drag the stage or the curve to aim your axis. In 3-D, drag to orbit and click to drop a dimension.'; p.appendChild(n);
 })();
+stat('sYou', 'Your axis keeps'); stat('sPC1', 'PC1 keeps'); stat('sGap', 'Gap to PC1');
+
+renderSteps(); renderTries(); goStep(0); requestAnimationFrame(loop);
+window.__demo = { goStep, setPlaying, state: () => ({ kind: ST.kind, th: ST.th, c: ST.c, proj: ST.proj, gap: D.gap, E: D.E || D.E3, auto: ST.auto && ST.auto.type }), tries: TRIES };
 </script>
+</body>
+</html>

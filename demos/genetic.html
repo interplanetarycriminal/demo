@@ -3,194 +3,609 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Genetic Rockets</title>
+<title>Genetic Algorithm — ML Field Notes</title>
 <style>
-html,body{margin:0;height:100%;overflow:hidden;background:#03050b}
-#c{position:fixed;inset:0;display:block;touch-action:none}
-#ui{position:fixed;top:10px;left:10px;z-index:10;color:#9ad8e8;background:rgba(3,10,20,.74);border:1px solid rgba(0,255,213,.22);border-radius:8px;padding:10px 12px;font:11px/1.55 ui-monospace,Menlo,Consolas,monospace;max-width:335px;max-height:52vh;overflow:auto}
-#ui h1{margin:0 0 3px;font-size:13px;letter-spacing:1px;color:#3cf7d8;font-weight:700}
-.dim{color:#6d93aa}
-#ui b{color:#fff}
-#ui a{color:#ff8ae2;text-decoration:none}
-#g{display:block;margin:6px 0 4px;background:rgba(0,0,0,.4);border:1px solid rgba(0,255,213,.14);border-radius:4px}
-@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
+/* ===== ML Field Notes design system (shared by every ML/AI demo) =====
+   Colour means the same thing in every demo:
+   --a coral = class A / "positive"     --b teal = class B / "negative"
+   --hl amber = the model's current parameters / guess / selection
+   --grad violet = gradients, updates, errors flowing back
+   --accent = this demo's signature colour (set per demo) */
+:root{
+  --bg:#0c0e1a; --bg2:#10132a; --panel:#13162c; --panel2:#181c38; --line:rgba(190,200,255,.10); --line2:rgba(190,200,255,.18);
+  --ink:#e9ecfa; --dim:#a2a9c8; --faint:#6b7396;
+  --a:#ff7a6b; --b:#3fd0c0; --hl:#ffc857; --grad:#a78bfa; --good:#7ee787; --bad:#ff6b8a;
+  --accent:#7ee787;
+  --r:12px; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.5 var(--sans)}
+body{overflow:hidden}
+a{color:var(--accent)}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app{display:grid;grid-template-columns:minmax(0,1fr) 380px;grid-template-rows:48px minmax(0,1fr);height:100vh;height:100dvh}
+.top{grid-column:1/-1;display:flex;align-items:center;gap:12px;padding:0 14px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#11142a,#0d1020)}
+.top a.back{color:var(--dim);text-decoration:none;font-size:13px;white-space:nowrap}
+.top a.back:hover{color:var(--ink)}
+.top .chip{font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 45%,transparent);border-radius:99px;padding:5px 8px}
+.top h1{margin:0;font-size:15px;font-weight:650;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top .sp{flex:1}
+.top .keys{font:11px var(--mono);color:var(--faint);white-space:nowrap}
+.stage{position:relative;min-width:0;min-height:0;background:radial-gradient(ellipse at 50% 40%,#151a3a 0%,var(--bg) 70%)}
+.stage::before{content:"";position:absolute;inset:0;background-image:radial-gradient(rgba(190,200,255,.07) 1px,transparent 1.3px);background-size:24px 24px;pointer-events:none}
+.stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.caption{position:absolute;left:16px;right:16px;top:14px;max-width:640px;padding:10px 14px;border-radius:10px;background:rgba(12,14,30,.78);border:1px solid var(--line2);backdrop-filter:blur(6px);font-size:14px;line-height:1.45;pointer-events:none;transition:opacity .3s}
+.caption b{color:var(--accent)}
+.caption:empty{opacity:0}
+.dock{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;gap:6px;padding:6px;border-radius:99px;background:rgba(12,14,30,.82);border:1px solid var(--line2);backdrop-filter:blur(6px)}
+.dock button{border:0;background:transparent;border-radius:99px;min-width:36px;height:34px;padding:0 12px;cursor:pointer;color:var(--ink);white-space:nowrap}
+.dock button:hover{background:rgba(255,255,255,.08)}
+.dock button.on{background:color-mix(in srgb,var(--accent) 22%,transparent);color:var(--accent)}
+.lesson{border-left:1px solid var(--line);background:var(--panel);overflow:auto;min-height:0;display:flex;flex-direction:column}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border-bottom:1px solid var(--line)}
+.stat{background:var(--panel);padding:10px 12px}
+.stat .k{font:600 10px/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.stat .v{font:600 18px/1.3 var(--mono);font-variant-numeric:tabular-nums;margin-top:3px}
+.tabs{display:flex;gap:2px;padding:10px 12px 0;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);z-index:2}
+.tabs button{border:0;background:none;padding:9px 12px;color:var(--dim);cursor:pointer;border-bottom:2px solid transparent;font-weight:600}
+.tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent)}
+.pane{padding:14px 16px 22px;display:none}
+.pane.on{display:block}
+.pane h3{margin:14px 0 6px;font-size:13px;letter-spacing:.02em}
+.pane p{margin:0 0 10px;color:var(--dim)}
+.pane p b,.pane li b{color:var(--ink)}
+.lede{font-size:15px;color:var(--ink)!important}
+.steps{list-style:none;margin:10px 0 0;padding:0;counter-reset:s}
+.steps li{counter-increment:s;border:1px solid var(--line);border-radius:10px;margin:0 0 8px;padding:10px 12px 10px 40px;position:relative;cursor:pointer;color:var(--dim);background:var(--panel2)}
+.steps li::before{content:counter(s);position:absolute;left:12px;top:10px;width:18px;height:18px;border-radius:99px;display:grid;place-items:center;font:600 11px var(--mono);background:rgba(255,255,255,.07);color:var(--dim)}
+.steps li.on{border-color:color-mix(in srgb,var(--accent) 60%,transparent);color:var(--ink)}
+.steps li.on::before{background:var(--accent);color:#141414}
+.steps li.done::before{content:"✓";background:rgba(126,231,135,.2);color:var(--good)}
+.steps li .t{font-weight:650;color:var(--ink);display:block}
+.steps li .d{display:none;margin-top:4px}
+.steps li.on .d{display:block}
+.tournav{display:flex;gap:8px;margin-top:6px}
+.btn{border:1px solid var(--line2);background:var(--panel2);border-radius:9px;padding:7px 12px;cursor:pointer;color:var(--ink)}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:#15131a;border-color:transparent;font-weight:650}
+.card{border:1px solid var(--line);border-radius:12px;padding:12px;margin:0 0 10px;background:var(--panel2)}
+.card .q{color:var(--ink);font-weight:600;margin-bottom:8px}
+.card .why{display:none;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line2);color:var(--dim)}
+.card.revealed .why{display:block}
+.card .row{display:flex;gap:8px;flex-wrap:wrap}
+.eq{font:14px/1.7 var(--mono);background:#0e1124;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:6px 0 12px;overflow-x:auto;white-space:nowrap}
+.eq .c-a{color:var(--a)} .eq .c-b{color:var(--b)} .eq .c-hl{color:var(--hl)} .eq .c-g{color:var(--grad)} .eq .c-acc{color:var(--accent)}
+.live{font-variant-numeric:tabular-nums;color:var(--hl)}
+.ctrl{display:grid;grid-template-columns:1fr auto;gap:4px 10px;align-items:center;margin:10px 0}
+.ctrl label{color:var(--dim);font-size:13px}
+.ctrl output{font:12px var(--mono);color:var(--ink);font-variant-numeric:tabular-nums}
+.ctrl input[type=range]{grid-column:1/-1;width:100%;accent-color:var(--accent)}
+.seg{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 10px}
+.seg button{border:1px solid var(--line2);background:transparent;border-radius:99px;padding:5px 11px;cursor:pointer;color:var(--dim);font-size:13px}
+.seg button[aria-pressed=true]{background:color-mix(in srgb,var(--accent) 20%,transparent);color:var(--ink);border-color:color-mix(in srgb,var(--accent) 55%,transparent)}
+.note{border-left:3px solid var(--grad);padding:6px 10px;margin:8px 0 12px;color:var(--dim);background:rgba(167,139,250,.06);border-radius:0 8px 8px 0}
+.wild li{margin-bottom:6px;color:var(--dim)}
+@media (max-width:880px){
+  body{overflow:auto}
+  .app{grid-template-columns:1fr;grid-template-rows:48px 58vh auto;height:auto}
+  .stage{height:58vh}
+  .lesson{border-left:0;border-top:1px solid var(--line)}
+  .top .keys{display:none}
+  .caption{font-size:13px;top:10px;left:10px;right:10px}
+  .stats{grid-template-columns:repeat(3,1fr)}
+  .stat .v{font-size:15px}
+}
+@media (max-width:880px){.app{grid-template-rows:48px 66vh auto}.stage{height:66vh}}   /* demo: arena + genome bench need more height on phones */
+@media (prefers-reduced-motion:reduce){.caption{transition:none}}
 </style>
 </head>
 <body>
-<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
-<canvas id="c"></canvas>
-<div id="ui">
- <h1>GENETIC ROCKETS</h1>
- <div class="dim">Each rocket's genome is a list of 180 thrust vectors; every generation the fittest are bred via roulette selection + crossover + mutation until the swarm threads the gap.</div>
- <div>gen <b id="sGen">1</b> &nbsp;step <b id="sStep">0</b>/<b id="sLife">180</b> &nbsp;mutation <b id="sMut">0.020</b></div>
- <div>best fit <b id="sBest">&mdash;</b> &nbsp;reached <b id="sSucc">0%</b> &nbsp;crashed <b id="sCrash">0</b></div>
- <canvas id="g" width="310" height="64"></canvas>
- <div class="dim">click: move target &middot; hold W + mouse: drag wall &middot; [ / ] or M: mutation rate &middot; <a href="index.html">&larr; gallery</a></div>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace;max-width:100vw;white-space:pre-wrap';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div class="app">
+  <header class="top">
+    <a class="back" href="index.html">← Gallery</a>
+    <span class="chip">ML / AI</span>
+    <h1>Genetic Algorithm</h1>
+    <span class="sp"></span>
+    <span class="keys">Space play · ←/→ tour · R reset</span>
+  </header>
+  <section class="stage" id="stage">
+    <canvas id="c" role="img" aria-label="A population of rockets evolves flight plans to reach a target past two walls. Below: a child genome spliced from two parents with mutated genes, a best and mean fitness chart per generation, and a live fitness histogram."></canvas>
+    <div class="caption" id="caption" aria-live="polite"></div>
+    <div class="dock" role="group" aria-label="Simulation controls">
+      <button id="bPlay" class="on" aria-label="Pause">❚❚</button>
+      <button id="bStep" aria-label="Step once">Step</button>
+      <button id="bReset" aria-label="Reset">Reset</button>
+      <button id="bSpeed" aria-label="Speed">1×</button>
+    </div>
+  </section>
+  <aside class="lesson">
+    <div class="stats" id="stats"><!-- 3 stat tiles: .stat > .k + .v#id --></div>
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-tab="learn">Learn</button>
+      <button role="tab" aria-selected="false" data-tab="try">Try this</button>
+      <button role="tab" aria-selected="false" data-tab="math">The math</button>
+      <button role="tab" aria-selected="false" data-tab="play">Controls</button>
+    </div>
+    <div class="pane on" id="p-learn">
+      <p class="lede">No gradients and no teacher: <b>score</b> a population of random guesses, let the best <b>breed</b>, add a little <b>noise</b>, and repeat. Good solutions accumulate on their own.</p>
+      <ol class="steps" id="steps"></ol>
+      <div class="tournav"><button class="btn" id="tPrev">← Back</button><button class="btn primary" id="tNext">Next step →</button></div>
+      <h3>In the wild</h3>
+      <ul class="wild"><li><b>Hardware design:</b> NASA's ST5 spacecraft (2006) flew an X-band antenna whose shape an evolutionary algorithm designed.</li><li><b>Neural architecture &amp; hyperparameter search:</b> regularized evolution found AmoebaNet image classifiers, and DeepMind's Population-Based Training evolves hyperparameters during training.</li><li><b>Neuroevolution for control:</b> NEAT, OpenAI's evolution strategies and Uber's deep GA train game and robot policies with no backpropagation.</li></ul>
+    </div>
+    <div class="pane" id="p-try"><!-- .card experiments: predict → run → why --></div>
+    <div class="pane" id="p-math"><!-- .eq blocks with colour-coded terms + .live spans; .note for misconceptions --></div>
+    <div class="pane" id="p-play"><!-- .ctrl sliders, .seg segmented choices --></div>
+  </aside>
 </div>
 <script>
 'use strict';
-var cv=document.getElementById('c'),ctx=cv.getContext('2d');
-var gc=document.getElementById('g'),gx=gc.getContext('2d');gx.font='10px monospace';
-var W=innerWidth,H=innerHeight;
-var LIFE=180,POP=80,MAXF=0.28,mutRate=0.02;
-var target={x:W*0.5,y:95,r:17};
-var wall={y:H*0.52,gapX:W*0.62,gapW:150,t:7};
-var pop=[],parts=[],step=0,gen=1,tick=0,wHeld=false;
-var histF=[],histS=[],lastBest=0;
-
-function resize(){
- var d=Math.min(2,window.devicePixelRatio||1);
- W=innerWidth;H=innerHeight;
- cv.width=W*d;cv.height=H*d;cv.style.width=W+'px';cv.style.height=H+'px';
- ctx.setTransform(d,0,0,d,0,0);
- target.x=Math.max(40,Math.min(W-40,target.x));target.y=Math.max(40,Math.min(H-40,target.y));
- wall.y=Math.max(90,Math.min(H-130,wall.y));wall.gapX=Math.max(0,Math.min(W,wall.gapX));
+/* ===== shell helpers (keep) ===== */
+const $ = s => document.querySelector(s);
+const cv = $('#c'), ctx = cv.getContext('2d'), stage = $('#stage');
+let W = 0, H = 0, DPR = 1;
+function resize() {
+  const r = stage.getBoundingClientRect(); DPR = Math.min(2, devicePixelRatio || 1);
+  W = Math.max(1, r.width); H = Math.max(1, r.height);
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR); ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  if (typeof onResize === 'function') onResize();
 }
-addEventListener('resize',resize);resize();
-
-function randGenes(){
- var g=new Float32Array(LIFE*2);
- for(var i=0;i<LIFE;i++){var a=Math.random()*6.28318,m=Math.random()*MAXF;g[i*2]=Math.cos(a)*m;g[i*2+1]=Math.sin(a)*m;}
- return g;
-}
-function Rocket(genes){this.genes=genes;this.reset();}
-Rocket.prototype.reset=function(){this.x=W*0.5;this.y=H-34;this.vx=0;this.vy=-1.5;this.dead=false;this.reached=false;this.finish=LIFE;this.minD=1e9;};
-for(var i0=0;i0<POP;i0++)pop.push(new Rocket(randGenes()));
-
-function stepRocket(r,i){
- if(r.dead||r.reached)return;
- var ax=r.genes[step*2],ay=r.genes[step*2+1];
- r.vx+=ax;r.vy+=ay;
- var sp=Math.hypot(r.vx,r.vy);if(sp>7){r.vx*=7/sp;r.vy*=7/sp;}
- r.x+=r.vx;r.y+=r.vy;
- var d=Math.hypot(r.x-target.x,r.y-target.y);
- if(d<r.minD)r.minD=d;
- if(d<target.r){r.reached=true;r.finish=step;return;}
- if(r.x<0||r.x>W||r.y<0||r.y>H){r.dead=true;return;}
- if(Math.abs(r.y-wall.y)<wall.t+2&&Math.abs(r.x-wall.gapX)>wall.gapW/2){r.dead=true;return;}
- if((step+i)%2===0&&parts.length<2200)
-  parts.push({x:r.x,y:r.y,vx:-ax*13+(Math.random()-.5),vy:-ay*13+(Math.random()-.5),l:1});
-}
-
-function breed(a,b){
- var g=new Float32Array(LIFE*2),m=(Math.random()*LIFE)|0;
- for(var i=0;i<LIFE;i++){
-  var s=i<m?a:b;g[i*2]=s[i*2];g[i*2+1]=s[i*2+1];
-  if(Math.random()<mutRate){var an=Math.random()*6.28318,mm=Math.random()*MAXF;g[i*2]=Math.cos(an)*mm;g[i*2+1]=Math.sin(an)*mm;}
- }
- return g;
-}
-
-function evolve(){
- var diag=Math.hypot(W,H),fits=new Array(POP),best=0,bi=0,succ=0;
- for(var i=0;i<POP;i++){
-  var r=pop[i],f=1-Math.min(1,r.minD/diag);f*=f;
-  if(r.reached){succ++;f=1.5+(LIFE-r.finish)/LIFE;}
-  else if(r.dead)f*=0.25;
-  fits[i]=f;if(f>best){best=f;bi=i;}
- }
- lastBest=best;
- histF.push(best);histS.push(succ/POP);
- if(histF.length>150){histF.shift();histS.shift();}
- drawGraph();
- var sum=0;for(i=0;i<POP;i++)sum+=fits[i];
- function pick(){
-  if(sum<=0)return pop[(Math.random()*POP)|0].genes;
-  var t=Math.random()*sum,a=0;
-  for(var j=0;j<POP;j++){a+=fits[j];if(a>=t)return pop[j].genes;}
-  return pop[POP-1].genes;
- }
- var next=[pop[bi].genes];
- while(next.length<POP)next.push(breed(pick(),pick()));
- for(i=0;i<POP;i++){pop[i].genes=next[i];pop[i].reset();}
- step=0;gen++;parts.length=0;
-}
-
-function drawGraph(){
- var w=gc.width,h=gc.height;gx.clearRect(0,0,w,h);
- gx.fillStyle='rgba(255,255,255,.05)';gx.fillRect(0,0,w,h);
- var n=histF.length;
- if(n<2){gx.fillStyle='#6d93aa';gx.fillText('best fitness (cyan) / success % (pink) per gen',6,13);return;}
- var mx=1,i;for(i=0;i<n;i++)if(histF[i]>mx)mx=histF[i];
- var X,Y;
- gx.strokeStyle='#3cf7d8';gx.lineWidth=1.5;gx.beginPath();
- for(i=0;i<n;i++){X=i/(n-1)*(w-8)+4;Y=h-4-(histF[i]/mx)*(h-10);if(i)gx.lineTo(X,Y);else gx.moveTo(X,Y);}
- gx.stroke();
- gx.strokeStyle='#ff8ae2';gx.lineWidth=1;gx.beginPath();
- for(i=0;i<n;i++){X=i/(n-1)*(w-8)+4;Y=h-4-histS[i]*(h-10);if(i)gx.lineTo(X,Y);else gx.moveTo(X,Y);}
- gx.stroke();
-}
-
-function drawRocket(r){
- var a=Math.atan2(r.vy,r.vx);
- ctx.save();ctx.translate(r.x,r.y);ctx.rotate(a);
- if(r.reached){ctx.fillStyle='rgba(255,214,90,.25)';tri(2.2);ctx.fillStyle='#ffd75e';tri(1);}
- else if(r.dead){ctx.fillStyle='rgba(255,80,95,.4)';tri(1);}
- else{ctx.fillStyle='rgba(90,210,255,.22)';tri(2.4);ctx.fillStyle='#cfeeff';tri(1);}
- ctx.restore();
-}
-function tri(s){ctx.beginPath();ctx.moveTo(8*s,0);ctx.lineTo(-6*s,3.4*s);ctx.lineTo(-3*s,0);ctx.lineTo(-6*s,-3.4*s);ctx.closePath();ctx.fill();}
-
-function hud(){
- var succ=0,crash=0;
- for(var i=0;i<POP;i++){if(pop[i].reached)succ++;else if(pop[i].dead)crash++;}
- document.getElementById('sGen').textContent=gen;
- document.getElementById('sStep').textContent=step;
- document.getElementById('sMut').textContent=mutRate.toFixed(3);
- document.getElementById('sBest').textContent=lastBest?lastBest.toFixed(2):'—';
- document.getElementById('sSucc').textContent=Math.round(succ/POP*100)+'%';
- document.getElementById('sCrash').textContent=crash;
-}
-
-function render(){
- ctx.globalCompositeOperation='source-over';
- ctx.fillStyle='#03050b';ctx.fillRect(0,0,W,H);
- tick++;
- ctx.fillStyle='rgba(60,247,216,.3)';ctx.fillRect(W*0.5-26,H-30,52,3);
- var gl=wall.gapX-wall.gapW/2,gr=wall.gapX+wall.gapW/2;
- ctx.fillStyle='#ff3d78';
- if(gl>0)ctx.fillRect(0,wall.y-wall.t,gl,wall.t*2);
- if(gr<W)ctx.fillRect(gr,wall.y-wall.t,W-gr,wall.t*2);
- ctx.globalCompositeOperation='lighter';
- ctx.fillStyle='rgba(255,61,120,.13)';
- if(gl>0)ctx.fillRect(0,wall.y-wall.t*3,gl,wall.t*6);
- if(gr<W)ctx.fillRect(gr,wall.y-wall.t*3,W-gr,wall.t*6);
- var pr=target.r+3*Math.sin(tick*0.09);
- ctx.fillStyle='rgba(255,215,94,.16)';ctx.beginPath();ctx.arc(target.x,target.y,pr*2,0,6.29);ctx.fill();
- ctx.strokeStyle='rgba(255,215,94,.95)';ctx.lineWidth=2;
- ctx.beginPath();ctx.arc(target.x,target.y,pr,0,6.29);ctx.stroke();
- ctx.fillStyle='#ffd75e';ctx.beginPath();ctx.arc(target.x,target.y,4,0,6.29);ctx.fill();
- for(var i=parts.length-1;i>=0;i--){
-  var p=parts[i];p.x+=p.vx;p.y+=p.vy;p.vx*=0.95;p.vy*=0.95;p.l-=0.045;
-  if(p.l<=0){parts[i]=parts[parts.length-1];parts.pop();continue;}
-  ctx.fillStyle='rgba(90,210,255,'+(p.l*0.45).toFixed(3)+')';
-  ctx.fillRect(p.x-1.2,p.y-1.2,2.4,2.4);
- }
- for(i=0;i<POP;i++)drawRocket(pop[i]);
- ctx.globalCompositeOperation='source-over';
- hud();
-}
-
-addEventListener('keydown',function(e){
- var k=e.key;
- if(k==='w'||k==='W')wHeld=true;
- else if(k==='[')mutRate=Math.max(0.001,+(mutRate-0.005).toFixed(3));
- else if(k===']')mutRate=Math.min(0.3,+(mutRate+0.005).toFixed(3));
- else if(k==='m'||k==='M'){var pre=[0.005,0.02,0.05,0.1];mutRate=pre[(pre.indexOf(mutRate)+1)%pre.length]||0.02;}
+new ResizeObserver(resize).observe(stage); resize();
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+// tabs
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', x === b));
+  document.querySelectorAll('.pane').forEach(p => p.classList.toggle('on', p.id === 'p-' + b.dataset.tab));
 });
-addEventListener('keyup',function(e){if(e.key==='w'||e.key==='W')wHeld=false;});
-addEventListener('mousemove',function(e){if(wHeld){wall.gapX=e.clientX;wall.y=Math.max(90,Math.min(H-130,e.clientY));}});
-cv.addEventListener('click',function(e){if(!wHeld){target.x=e.clientX;target.y=e.clientY;}});
-
-function loop(){
- requestAnimationFrame(loop);
- var active=0;
- for(var i=0;i<POP;i++){var r=pop[i];stepRocket(r,i);if(!r.dead&&!r.reached)active++;}
- step++;
- if(step>=LIFE||active===0)evolve();
- render();
+// playback
+let playing = !REDUCED, speed = 1;
+const SPEEDS = [0.25, 0.5, 1, 2, 4];
+function setPlaying(v) { playing = v; $('#bPlay').textContent = v ? '❚❚' : '▶'; $('#bPlay').classList.toggle('on', v); $('#bPlay').setAttribute('aria-label', v ? 'Pause' : 'Play'); }
+$('#bPlay').onclick = () => setPlaying(!playing);
+$('#bSpeed').onclick = () => { speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]; $('#bSpeed').textContent = speed + '×'; };
+// tour: STEPS = [{t:'title', d:'html', cap:'stage caption html', go(){ /* set demo state */ }}]
+let tour = 0;
+function renderSteps() {
+  const ol = $('#steps'); ol.innerHTML = '';
+  STEPS.forEach((s, i) => { const li = document.createElement('li'); li.className = (i === tour ? 'on' : '') + (i < tour ? ' done' : ''); li.innerHTML = `<span class="t">${s.t}</span><span class="d">${s.d}</span>`; li.onclick = () => goStep(i); ol.appendChild(li); });
+  $('#tPrev').disabled = tour === 0; $('#tNext').textContent = tour === STEPS.length - 1 ? 'Start over ↺' : 'Next step →';
 }
-loop();
+function goStep(i) { tour = (i + STEPS.length) % STEPS.length; const s = STEPS[tour]; if (s.go) s.go(); $('#caption').innerHTML = s.cap || ''; renderSteps(); }
+$('#tPrev').onclick = () => goStep(Math.max(0, tour - 1));
+$('#tNext').onclick = () => goStep(tour + 1);
+// experiments: TRIES = [{q:'Predict…', run(){…}, why:'html'}]
+function renderTries() {
+  const p = $('#p-try'); p.innerHTML = '<p>Make a prediction first, then run it. Each experiment sets the demo up for you.</p>';
+  TRIES.forEach(x => { const c = document.createElement('div'); c.className = 'card'; c.innerHTML = `<div class="q">${x.q}</div><div class="row"><button class="btn primary">Run it</button><button class="btn">Show why</button></div><div class="why">${x.why}</div>`; const [run, why] = c.querySelectorAll('button'); run.onclick = () => { x.run(); setPlaying(true); }; why.onclick = () => c.classList.toggle('revealed'); p.appendChild(c); });
+}
+// controls helpers
+function slider(parent, id, label, min, max, step, value, fmt, onInput) {
+  const d = document.createElement('div'); d.className = 'ctrl';
+  d.innerHTML = `<label for="${id}">${label}</label><output id="${id}o"></output><input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${value}">`;
+  parent.appendChild(d); const inp = d.querySelector('input'), out = d.querySelector('output');
+  const upd = () => { out.textContent = fmt(+inp.value); onInput(+inp.value); }; inp.oninput = upd; upd();
+  return { set(v) { inp.value = v; upd(); }, get: () => +inp.value };
+}
+function seg(parent, options, value, onPick) {
+  const d = document.createElement('div'); d.className = 'seg'; parent.appendChild(d);
+  const bs = options.map(([v, label]) => { const b = document.createElement('button'); b.textContent = label; b.setAttribute('aria-pressed', v === value); b.onclick = () => set(v); d.appendChild(b); return [v, b]; });
+  function set(v) { bs.forEach(([k, b]) => b.setAttribute('aria-pressed', k === v)); onPick(v); }
+  return { set };
+}
+function stat(id, label) { const d = document.createElement('div'); d.className = 'stat'; d.innerHTML = `<div class="k">${label}</div><div class="v" id="${id}">–</div>`; $('#stats').appendChild(d); }
+const setText = (id, v) => { const e = document.getElementById(id); if (e && e.textContent !== v) e.textContent = v; };
+// keyboard
+addEventListener('keydown', e => {
+  if (e.target.matches('input,select,textarea')) return;
+  if (e.code === 'Space') { setPlaying(!playing); e.preventDefault(); }
+  else if (e.key === 'ArrowRight') goStep(tour + 1);
+  else if (e.key === 'ArrowLeft') goStep(Math.max(0, tour - 1));
+  else if (e.key === 'r' || e.key === 'R') $('#bReset').click();
+});
+// wall-clock-locked loop (dt clamped to [0, 0.1] — rAF timestamps can precede performance.now())
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.1, Math.max(0, (now - last) / 1000)); last = now;
+  try { frame(playing ? dt * speed : 0, dt); } catch (err) { window.onerror(err.message, '', 0); return; }
+  requestAnimationFrame(loop);
+}
+
+// ===== DEMO CODE =====
+/*CORE-START*/
+// ===== Genetic algorithm core (pure, deterministic) =====
+const GENES = 40, HOLD = 6, LIFE = GENES * HOLD, PSTEP = 3;   // 40 genes, each fires for 6 physics steps
+const WX = 1000, WY = 520, START = { x: 70, y: 260 };          // arena in world units
+const THRUST = 0.32, VMAX = 7, TARGET_R = 22, DSCALE = 100, TOUR_K = 3;
+function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const TAU = Math.PI * 2;
+function defaultWorld() { return { target: { x: 915, y: 260 }, obs: [{ x: 330, y: 0, w: 32, h: 320 }, { x: 610, y: 200, w: 32, h: 320 }] }; }
+function randomGenome(rng) { const g = new Float32Array(GENES); for (let i = 0; i < GENES; i++) g[i] = rng() * TAU; return g; }
+function newRocket(g) { return { g, x: START.x, y: START.y, vx: 0, vy: 0, dmin: Infinity, dead: false, reached: false, tReach: 0, path: new Float32Array(2 * (LIFE / PSTEP + 2)), pn: 0 }; }
+function hitObstacle(x, y, obs) { for (const o of obs) if (x > o.x && x < o.x + o.w && y > o.y && y < o.y + o.h) return true; return false; }
+function recordPath(r) { r.path[r.pn * 2] = r.x; r.path[r.pn * 2 + 1] = r.y; r.pn++; }
+function stepRocket(r, t, world) {
+  if (r.dead || r.reached) return;
+  const th = r.g[Math.min(GENES - 1, (t / HOLD) | 0)];
+  r.vx += THRUST * Math.cos(th); r.vy += THRUST * Math.sin(th);
+  const sp = Math.hypot(r.vx, r.vy); if (sp > VMAX) { r.vx *= VMAX / sp; r.vy *= VMAX / sp; }
+  r.x += r.vx; r.y += r.vy;
+  const d = Math.hypot(r.x - world.target.x, r.y - world.target.y);
+  if (d < r.dmin) r.dmin = d;
+  if (d < TARGET_R) { r.reached = true; r.tReach = t; }
+  else if (r.x < 0 || r.x > WX || r.y < 0 || r.y > WY || hitObstacle(r.x, r.y, world.obs)) r.dead = true;
+}
+// f = 1/(1+(d/100)^2); hit the target: 2 + speed bonus; crashed: halved
+function fitness(r) {
+  if (r.reached) return 2 + (1 - r.tReach / LIFE);
+  const q = r.dmin / DSCALE, f = 1 / (1 + q * q);
+  return r.dead ? f * 0.5 : f;
+}
+function selectRoulette(fits, rng) { let s = 0; for (const f of fits) s += f; let u = rng() * s; for (let i = 0; i < fits.length; i++) { u -= fits[i]; if (u <= 0) return { i, cont: null }; } return { i: fits.length - 1, cont: null }; }
+function selectTournament(fits, rng) { const cont = []; let best = -1; for (let k = 0; k < TOUR_K; k++) { const j = (rng() * fits.length) | 0; cont.push(j); if (best < 0 || fits[j] > fits[best]) best = j; } return { i: best, cont }; }
+function crossover(a, b, cut) { const c = new Float32Array(a.length); for (let i = 0; i < a.length; i++) c[i] = i < cut ? a[i] : b[i]; return c; }
+function mutate(g, mu, rng) { const flips = []; for (let i = 0; i < g.length; i++) if (rng() < mu) { g[i] = rng() * TAU; flips.push(i); } return flips; }
+// diversity: mean circular variance of each gene across the population (0 = clones, ~1 = random)
+function diversity(genomes) { let s = 0; for (let i = 0; i < GENES; i++) { let cx = 0, cy = 0; for (const g of genomes) { cx += Math.cos(g[i]); cy += Math.sin(g[i]); } s += 1 - Math.hypot(cx, cy) / genomes.length; } return s / GENES; }
+function makeSim(seed, world, P) {
+  const rng = mulberry32(seed), rockets = [];
+  for (let i = 0; i < P.pop; i++) rockets.push(newRocket(randomGenome(rng)));
+  rockets.forEach(recordPath);
+  return { rng, world, P, gen: 0, t: 0, rockets, best: [], mean: [], reach: [], ghosts: [], births: null, div: diversity(rockets.map(r => r.g)), prev: null };
+}
+function simStep(sim) {       // one physics step for every rocket; true when the flight is over
+  const t = sim.t; let alive = 0;
+  for (const r of sim.rockets) { stepRocket(r, t, sim.world); if (!r.dead && !r.reached) alive++; if ((t + 1) % PSTEP === 0 || ((r.dead || r.reached) && r.pn && r.path[r.pn * 2 - 2] !== r.x)) recordPath(r); }
+  sim.t++;
+  return sim.t >= LIFE || alive === 0;
+}
+function simBreed(sim) {      // score → select → crossover → mutate → next generation
+  const { rng, P } = sim, R = sim.rockets, fits = R.map(fitness), N = P.pop;
+  let bi = 0, sum = 0, reached = 0;
+  fits.forEach((f, i) => { sum += f; if (f > fits[bi]) bi = i; if (R[i].reached) reached++; });
+  sim.best.push(fits[bi]); sim.mean.push(sum / fits.length); sim.reach.push(reached / fits.length);
+  const br = R[bi]; sim.ghosts.push({ path: br.path.slice(0, br.pn * 2), gen: sim.gen, reached: br.reached });
+  if (sim.ghosts.length > 12) sim.ghosts.shift();
+  const order = fits.map((f, i) => i).sort((a, b) => fits[b] - fits[a]);
+  const sel = P.sel === 'tournament' ? selectTournament : selectRoulette;
+  const next = [], elite = Math.min(P.elite, N, R.length);
+  for (let e = 0; e < elite; e++) next.push(R[order[e]].g.slice());
+  const births = order.slice(0, elite).map(i => ({ elite: true, ia: i }));
+  while (next.length < N) {
+    const A = sel(fits, rng), B = sel(fits, rng), cut = 1 + ((rng() * (GENES - 1)) | 0);
+    const child = crossover(R[A.i].g, R[B.i].g, cut), flips = mutate(child, P.mu, rng);
+    births.push({ ia: A.i, ib: B.i, contA: A.cont, contB: B.cont, cut, flips });
+    next.push(child);
+  }
+  sim.prev = { rockets: R, fits, bi, sum };
+  sim.births = births;
+  sim.rockets = next.map(newRocket); sim.rockets.forEach(recordPath);
+  sim.t = 0; sim.gen++; sim.div = diversity(next);
+}
+function simRunGen(sim) { while (!simStep(sim)); simBreed(sim); }
+/*CORE-END*/
+
+// ===== state + parameters =====
+const P = { pop: 80, mu: 0.01, elite: 2, sel: 'roulette' };
+const COL = { a: '#ff7a6b', b: '#3fd0c0', hl: '#ffc857', grad: '#a78bfa', data: '#c7cbe0', acc: '#7ee787', ink: '#e9ecfa', dim: '#a2a9c8', faint: '#6b7396' };
+let seed = 9, sim = makeSim(seed, defaultWorld(), P);
+let phase = 'fly', judgeLeft = 0, turbo = false, focus = 'world', feat = 0, flashT = 9, clock = 0, acc = 0, hover = null, drag = null;
+const DT = 1 / 60;
+
+// ===== layout: arena on top, "lab bench" (genome · timeline · histogram) below =====
+var WR, ks, PAN, phone, READY, capTop = 84;   // var: the shell calls onResize() before the demo's consts exist
+function onResize() {
+  if (!READY) return; phone = W < 640; PAN = {};
+  const sx = 16, sy = capTop, sw = W - 32, sh = H - 76 - sy, gap = phone ? 8 : 12;
+  const benchH = phone ? Math.min(136, sh * 0.44) : Math.min(166, sh * 0.3);
+  const ah = sh - benchH - gap;
+  ks = Math.min(sw / WX, ah / WY);
+  WR = { x: sx + (sw - WX * ks) / 2, y: sy + (ah - WY * ks) / 2, w: WX * ks, h: WY * ks };
+  const bx = phone ? sx : WR.x, bw = phone ? sw : WR.w, by = sy + sh - benchH;
+  if (!phone) {
+    const w1 = bw * 0.44, w2 = bw * 0.34, w3 = bw - w1 - w2 - 2 * gap;
+    PAN.gen = { x: bx, y: by, w: w1, h: benchH }; PAN.chart = { x: bx + w1 + gap, y: by, w: w2, h: benchH }; PAN.hist = { x: bx + w1 + w2 + 2 * gap, y: by, w: w3, h: benchH };
+  } else {
+    const h1 = Math.round(benchH * 0.52), h2 = benchH - h1 - gap, w2 = Math.round(sw * 0.6);
+    PAN.gen = { x: bx, y: by, w: bw, h: h1 }; PAN.chart = { x: bx, y: by + h1 + gap, w: w2 - gap / 2, h: h2 }; PAN.hist = { x: bx + w2 + gap / 2, y: by + h1 + gap, w: bw - w2 - gap / 2, h: h2 };
+  }
+}
+const toS = (x, y) => [WR.x + x * ks, WR.y + y * ks];
+READY = true; onResize();
+
+// ===== setup used by tour steps and experiments =====
+let ctrls = {};
+function setup(o) {
+  seed = o.seed ?? 9; ctrls.pop.set(o.pop ?? 80); ctrls.mu.set(o.mu ?? 0.01); ctrls.elite.set(o.elite ?? 2); ctrls.sel.set(o.sel ?? 'roulette'); ctrls.ff.set('watch');
+  sim = makeSim(seed, o.world || defaultWorld(), P);
+  for (let g = 0; g < (o.gens || 0); g++) simRunGen(sim);
+  for (let i = 0; i < (o.t || 0); i++) simStep(sim);
+  phase = 'fly'; focus = o.focus || 'world'; feat = Math.min(P.elite, sim.rockets.length - 1); flashT = o.t ? 0.2 : 0; acc = 0;
+}
+function onBred() { flashT = 0; feat = Math.min(P.elite, sim.rockets.length - 1); }
+function endFlight() { simBreed(sim); onBred(); phase = 'judge'; judgeLeft = focus === 'select' ? 4 : 1.1; }
+
+// ===== simulation clock (fixed 60 Hz steps) =====
+function update(dt) {
+  if (dt <= 0) return;
+  if (turbo) { const n = speed >= 2 ? speed : 1; for (let k = 0; k < n; k++) { simRunGen(sim); onBred(); } phase = 'judge'; judgeLeft = 1e9; return; }
+  acc += dt; let n = 0;
+  while (acc >= DT && n++ < 10) {
+    acc -= DT;
+    if (phase === 'fly') { if (simStep(sim)) endFlight(); }
+    else if ((judgeLeft -= DT) <= 0) phase = 'fly';
+  }
+}
+
+// ===== derived views =====
+const shown = () => phase === 'judge' && sim.prev ? sim.prev.rockets : sim.rockets;
+function leader(R) { let bi = 0, bf = -1; R.forEach((r, i) => { const f = fitness(r); if (f > bf) { bf = f; bi = i; } }); return { i: bi, f: bf }; }
+function birthOf(i) { return sim.births && sim.prev ? sim.births[i] : null; }
+
+// ===== drawing primitives =====
+const hatch = (() => { const c = document.createElement('canvas'); c.width = c.height = 8; const x = c.getContext('2d'); x.strokeStyle = 'rgba(199,203,224,.16)'; x.lineWidth = 1.2; x.beginPath(); x.moveTo(0, 8); x.lineTo(8, 0); x.stroke(); return ctx.createPattern(c, 'repeat'); })();
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+let placed = [];
+function tag(x, y, text, col, align = 'left') {
+  ctx.font = `600 ${phone ? 10 : 11}px ui-monospace,Menlo,monospace`; const tw = ctx.measureText(text).width, pw = tw + 10, ph = phone ? 15 : 17;
+  let lx = align === 'center' ? x - pw / 2 : align === 'right' ? x - pw : x, ly;
+  lx = Math.max(WR.x + 2, Math.min(WR.x + WR.w - pw - 2, lx));
+  for (const k of [0, 1, -1, 2, -2, 3, -3]) {   // nudge vertically until it clears labels already placed this frame
+    ly = Math.max(WR.y + 2, Math.min(WR.y + WR.h - ph - 2, y - ph / 2 + k * (ph + 3)));
+    if (!placed.some(q => lx < q.x + q.w && lx + pw > q.x && ly < q.y + q.h && ly + ph > q.y)) break;
+  }
+  placed.push({ x: lx, y: ly, w: pw, h: ph });
+  ctx.fillStyle = 'rgba(12,14,30,.86)'; rr(lx, ly, pw, ph, 5); ctx.fill(); ctx.strokeStyle = col + '66'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.fillStyle = col; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(text, lx + 5, ly + ph / 2 + 0.5);
+  return { x: lx, y: ly, w: pw, h: ph };
+}
+function ring(x, y, r, col, w = 2, dash) { ctx.setLineDash(dash || []); ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.stroke(); ctx.setLineDash([]); }
+function panel(p, title, on) {
+  ctx.fillStyle = 'rgba(16,19,42,.9)'; rr(p.x, p.y, p.w, p.h, 10); ctx.fill();
+  if (on) { ctx.strokeStyle = COL.acc + '33'; ctx.lineWidth = 6; ctx.stroke(); }
+  ctx.strokeStyle = on ? COL.acc : 'rgba(190,200,255,.16)'; ctx.lineWidth = on ? 1.5 : 1; rr(p.x, p.y, p.w, p.h, 10); ctx.stroke();
+  ctx.font = `600 ${phone ? 9 : 10}px ui-monospace,Menlo,monospace`; ctx.fillStyle = on ? COL.acc : COL.faint; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  ctx.fillText(title, p.x + 10, p.y + (phone ? 6 : 9));
+}
+
+// ===== arena =====
+function drawArena() {
+  const R = shown(), w = sim.world, jud = phase === 'judge' && sim.prev, later = []; placed = [];   // later: scenery labels drawn on top of the swarm
+  ctx.fillStyle = 'rgba(255,255,255,.018)'; rr(WR.x, WR.y, WR.w, WR.h, 8); ctx.fill();
+  ctx.strokeStyle = 'rgba(190,200,255,.2)'; ctx.lineWidth = 1; ctx.stroke();
+  // obstacles
+  w.obs.forEach((o, i) => {
+    const [x, y] = toS(o.x, o.y), hov = (hover && hover.kind === 'obs' && hover.i === i) || (drag && drag.kind === 'obs' && drag.i === i);
+    ctx.fillStyle = 'rgba(199,203,224,.07)'; ctx.fillRect(x, y, o.w * ks, o.h * ks); ctx.fillStyle = hatch; ctx.fillRect(x, y, o.w * ks, o.h * ks);
+    ctx.strokeStyle = hov ? COL.ink : 'rgba(199,203,224,.45)'; ctx.lineWidth = hov ? 1.5 : 1; ctx.strokeRect(x + .5, y + .5, o.w * ks - 1, o.h * ks - 1);
+    if (hov || focus === 'world') later.push(() => tag(x + o.w * ks / 2, o.y < 10 ? y + o.h * ks - 14 : y + 14, 'wall · drag', COL.dim, 'center'));
+  });
+  // launch pad
+  const [px, py] = toS(START.x, START.y); ctx.strokeStyle = COL.dim; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(px - 10, py - 12); ctx.lineTo(px - 14, py - 12); ctx.lineTo(px - 14, py + 12); ctx.lineTo(px - 10, py + 12); ctx.stroke();
+  if (!phone) { ctx.font = '10px ui-monospace,Menlo,monospace'; ctx.fillStyle = COL.faint; ctx.textAlign = 'center'; ctx.fillText('launch', px - 6, py + 24); }
+  // champion ghost paths (older = fainter)
+  const G = sim.ghosts, n = G.length;
+  G.forEach((g, k) => {
+    const age = n - 1 - k, a = age === 0 ? 0.85 : Math.max(0.06, 0.42 - age * 0.04);
+    ctx.beginPath(); for (let j = 0; j < g.path.length; j += 2) { const [x, y] = toS(g.path[j], g.path[j + 1]); j ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+    if (age === 0) { ctx.strokeStyle = 'rgba(255,200,87,.16)'; ctx.lineWidth = 6; ctx.stroke(); }
+    ctx.strokeStyle = `rgba(255,200,87,${a})`; ctx.lineWidth = age === 0 ? 1.6 : 1; ctx.stroke();
+  });
+  if (n) { const g = G[n - 1], L = g.path.length; const [x, y] = toS(g.path[L - 2], g.path[L - 1]); if (focus === 'chart' || focus === 'world') later.push(() => tag(x + 10, y - 14, `gen ${g.gen} champion`, COL.hl)); }
+  // trails of the flight on show (one batched stroke)
+  ctx.beginPath();
+  for (const r of R) for (let j = 0; j < r.pn; j++) { const [x, y] = toS(r.path[j * 2], r.path[j * 2 + 1]); j ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+  ctx.strokeStyle = 'rgba(199,203,224,.10)'; ctx.lineWidth = 1; ctx.stroke();
+  // target
+  const [tx, ty] = toS(w.target.x, w.target.y), tr = Math.max(7, TARGET_R * ks), pul = 1 + 0.12 * Math.sin(clock * 3);
+  ctx.fillStyle = 'rgba(126,231,135,.10)'; ctx.beginPath(); ctx.arc(tx, ty, tr * 2 * pul, 0, TAU); ctx.fill();
+  ring(tx, ty, tr * pul, COL.acc, 2); ctx.fillStyle = COL.acc; ctx.beginPath(); ctx.arc(tx, ty, 3, 0, TAU); ctx.fill();
+  if (focus === 'world' || (hover && hover.kind === 'target')) later.push(() => tag(tx, ty + tr * 2 + 10, 'target · drag me', COL.acc, 'center'));
+  // fitness = distance: violet error lines
+  if (focus === 'hist' && !jud) { ctx.beginPath(); for (const r of R) if (!r.dead) { const [x, y] = toS(r.x, r.y); ctx.moveTo(x, y); ctx.lineTo(tx, ty); } ctx.strokeStyle = 'rgba(167,139,250,.16)'; ctx.stroke(); }
+  // rockets, batched by status
+  const live = new Path2D(), won = new Path2D(), dead = new Path2D(), s = Math.max(0.75, ks * 1.1);
+  for (const r of R) {
+    const [x, y] = toS(r.x, r.y), a = Math.atan2(r.vy, r.vx), c = Math.cos(a), si = Math.sin(a), p = r.reached ? won : r.dead ? dead : live;
+    p.moveTo(x + c * 8 * s, y + si * 8 * s); p.lineTo(x - c * 5 * s - si * 3.4 * s, y - si * 5 * s + c * 3.4 * s); p.lineTo(x - c * 2.5 * s, y - si * 2.5 * s); p.lineTo(x - c * 5 * s + si * 3.4 * s, y - si * 5 * s - c * 3.4 * s); p.closePath();
+  }
+  ctx.fillStyle = 'rgba(199,203,224,.28)'; ctx.fill(dead); ctx.fillStyle = COL.data; ctx.fill(live); ctx.fillStyle = COL.acc; ctx.fill(won);
+  if (jud) drawSelection(R, tx, ty);
+  else {
+    const L = leader(R), lr = R[L.i], [lx, ly] = toS(lr.x, lr.y); ring(lx, ly, 9, COL.hl, 2); if (focus !== 'genome' && focus !== 'mut') tag(lx + 12, ly - 16, `leader  f ${L.f.toFixed(2)}`, COL.hl);
+    const fr = R[feat]; if (fr && sim.gen > 0 && (focus === 'genome' || focus === 'mut')) { const [fx, fy] = toS(fr.x, fr.y); ring(fx, fy, 11, COL.ink, 1.5, [3, 3]); tag(fx + 13, fy + 16, `child #${feat} · genome ↓`, COL.ink); }
+  }
+  if (turbo) tag(WR.x + WR.w / 2, WR.y + WR.h - 14, 'TURBO · one generation per frame', COL.acc, 'center');
+  later.forEach(f => f());
+}
+// between flights: score, pick parents, show who breeds
+function drawSelection(R, tx, ty) {
+  const f = sim.prev.fits, b = birthOf(feat), fmax = Math.max(...f);
+  ctx.fillStyle = 'rgba(12,14,30,.35)'; ctx.fillRect(WR.x, WR.y, WR.w, WR.h);
+  R.forEach((r, i) => { const [x, y] = toS(r.x, r.y); ctx.fillStyle = `rgba(255,200,87,${0.15 + 0.85 * f[i] / fmax})`; ctx.beginPath(); ctx.arc(x, y, 1.5 + 4 * f[i] / fmax, 0, TAU); ctx.fill(); });
+  if (!turbo) tag(WR.x + WR.w / 2, WR.y + WR.h - 14, `scoring gen ${sim.gen - 1} → breeding gen ${sim.gen}`, COL.hl, 'center');
+  if (!b || b.elite || turbo) return;
+  for (const [cont, win, col] of [[b.contA, b.ia, COL.a], [b.contB, b.ib, COL.b]]) if (cont) { const [wx, wy] = toS(R[win].x, R[win].y); cont.forEach(j => { const [x, y] = toS(R[j].x, R[j].y); ctx.strokeStyle = col + '88'; ctx.lineWidth = 1; ctx.setLineDash([2, 3]); ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(wx, wy); ctx.stroke(); ctx.setLineDash([]); ring(x, y, 6, col + 'aa', 1); }); }
+  const [ax, ay] = toS(R[b.ia].x, R[b.ia].y), [bx, by] = toS(R[b.ib].x, R[b.ib].y);
+  ring(ax, ay, 12, COL.a, 2.5); ring(bx, by, b.ia === b.ib ? 16 : 12, COL.b, 2.5);
+  const up = ay <= by;
+  tag(ax - 14, ay + (up ? -20 : 20), `parent A  f ${f[b.ia].toFixed(2)}`, COL.a, 'right');
+  tag(bx + 14, by + (up ? 20 : -20), `parent B  f ${f[b.ib].toFixed(2)}`, COL.b);
+}
+
+// ===== bench: genome strips =====
+function strip(x, y, w, h, g, colOf, gi) {
+  const cw = w / GENES;
+  for (let i = 0; i < GENES; i++) {
+    const cx = x + i * cw; ctx.fillStyle = colOf(i); ctx.fillRect(cx + 0.5, y, Math.max(1, cw - 1), h);
+    if (g && cw >= 5) { const a = g[i], m = Math.min(cw, h) * 0.38, mx = cx + cw / 2, my = y + h / 2; ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(mx - Math.cos(a) * m, my - Math.sin(a) * m); ctx.lineTo(mx + Math.cos(a) * m, my + Math.sin(a) * m); ctx.stroke(); ctx.fillStyle = '#fff'; ctx.fillRect(mx + Math.cos(a) * m - 1, my + Math.sin(a) * m - 1, 2, 2); }
+  }
+  if (gi >= 0 && gi < GENES) { ctx.strokeStyle = COL.hl; ctx.lineWidth = 2; ctx.strokeRect(x + gi * cw - 1, y - 2, cw + 1, h + 4); }
+}
+function drawGenome() {
+  const p = PAN.gen, b = birthOf(feat), on = focus === 'genome' || focus === 'mut', fr = sim.rockets[feat];
+  const title = !b ? `GENOME OF ROCKET #${feat} · 40 THRUST GENES` : b.elite ? `CHILD #${feat} · ELITE — COPIED UNCHANGED` : `CHILD #${feat} = A[1..${b.cut}] + B[${b.cut + 1}..40]` + (phone ? '' : '  · click a rocket');
+  panel(p, title, on);
+  const lw = phone ? 40 : 50, x0 = p.x + lw, sw = p.w - lw - 10, top = p.y + (phone ? 19 : 26), rowH = Math.min(phone ? 10 : 22, (p.y + p.h - 8 - top) / 3 - 3), gapR = 3 + (phone ? 0 : 3);
+  const gi = phase === 'fly' ? Math.floor(sim.t / HOLD) : -1, fl = Math.max(0, 1 - flashT / 1.6), pulse = 0.55 + 0.45 * fl * (0.5 + 0.5 * Math.sin(clock * 14));
+  const rows = [['A', COL.a], ['B', COL.b], ['child', COL.ink]];
+  ctx.font = `600 ${phone ? 9 : 11}px ui-monospace,Menlo,monospace`; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  rows.forEach(([l, c], k) => { ctx.fillStyle = c; ctx.fillText(l, p.x + 10, top + k * (rowH + gapR) + rowH / 2); });
+  const y = k => top + k * (rowH + gapR);
+  if (!b || b.elite) {
+    ctx.fillStyle = COL.faint; ctx.font = `${phone ? 9 : 11}px ui-monospace,Menlo,monospace`;
+    ctx.fillText(!b ? 'gen 0: random genes, no parents yet' : 'elitism: the best rockets pass on unchanged', x0, y(0) + rowH / 2 + (rowH + gapR) / 2);
+    strip(x0, y(2), sw, rowH, fr.g, () => b ? 'rgba(255,200,87,.35)' : 'rgba(199,203,224,.22)', gi);
+    return;
+  }
+  const A = sim.prev.rockets[b.ia].g, B = sim.prev.rockets[b.ib].g, fs = new Set(b.flips), cut = b.cut;
+  strip(x0, y(0), sw, rowH, A, i => i < cut ? 'rgba(255,122,107,.62)' : 'rgba(255,122,107,.12)', -1);
+  strip(x0, y(1), sw, rowH, B, i => i >= cut ? 'rgba(63,208,192,.58)' : 'rgba(63,208,192,.10)', -1);
+  strip(x0, y(2), sw, rowH, fr.g, i => fs.has(i) ? `rgba(167,139,250,${pulse})` : i < cut ? 'rgba(255,122,107,.62)' : 'rgba(63,208,192,.58)', gi);
+  const cx = x0 + cut * sw / GENES; ctx.strokeStyle = COL.ink; ctx.lineWidth = 1.5; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(cx, y(0) - 3); ctx.lineTo(cx, y(2) + rowH + 3); ctx.stroke(); ctx.setLineDash([]);
+  if (!phone) {
+    ctx.font = '10px ui-monospace,Menlo,monospace'; ctx.fillStyle = COL.grad; ctx.textAlign = 'right'; ctx.textBaseline = 'top';
+    ctx.fillText(b.flips.length ? `${b.flips.length} mutated gene${b.flips.length > 1 ? 's' : ''} (violet)` : 'no mutations this child', p.x + p.w - 10, y(2) + rowH + 5);
+    ctx.fillStyle = COL.hl; ctx.textAlign = 'left'; if (gi >= 0) ctx.fillText('▲ gene firing now', x0, y(2) + rowH + 5);
+  }
+}
+// ===== bench: fitness timeline =====
+function drawChart() {
+  const p = PAN.chart; panel(p, phone ? 'FITNESS / GEN' : 'FITNESS PER GENERATION', focus === 'chart');
+  const x0 = p.x + (phone ? 16 : 22), x1 = p.x + p.w - 10, y0 = p.y + p.h - (phone ? 8 : 18), y1 = p.y + (phone ? 20 : 28), yv = v => y0 - (v / 3) * (y0 - y1);
+  const nb = sim.best.length, from = Math.max(0, nb - 50), n = nb - from, xv = i => x0 + (n > 1 ? (i - from) / (n - 1) : 0) * (x1 - x0);
+  ctx.font = '9px ui-monospace,Menlo,monospace'; ctx.fillStyle = COL.faint; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  (phone ? [0, 2] : [0, 1, 2, 3]).forEach(v => { ctx.fillText(v, x0 - 5, yv(v)); ctx.strokeStyle = 'rgba(190,200,255,.07)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x0, yv(v)); ctx.lineTo(x1, yv(v)); ctx.stroke(); });
+  ctx.setLineDash([4, 4]); ctx.strokeStyle = COL.acc + '77'; ctx.beginPath(); ctx.moveTo(x0, yv(2)); ctx.lineTo(x1, yv(2)); ctx.stroke(); ctx.setLineDash([]);
+  if (!phone) { ctx.fillStyle = COL.acc; ctx.textAlign = 'left'; ctx.fillText('≥2 = hit target', x0 + 4, yv(2) - 7); }
+  if (!phone) { ctx.textAlign = 'right'; ctx.textBaseline = 'top'; ctx.fillStyle = COL.hl; ctx.fillText('— best', x1 - 44, p.y + 9); ctx.fillStyle = COL.dim; ctx.fillText('— mean', x1, p.y + 9); }
+  if (n < 1) { ctx.fillStyle = COL.faint; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('first generation in flight…', (x0 + x1) / 2, (y0 + y1) / 2); return; }
+  for (const [arr, col, lw] of [[sim.mean, COL.dim, 1.2], [sim.best, COL.hl, 2]]) { ctx.beginPath(); for (let i = from; i < nb; i++) i > from ? ctx.lineTo(xv(i), yv(arr[i])) : ctx.moveTo(xv(i), yv(arr[i])); ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.stroke(); }
+  ctx.fillStyle = COL.hl; ctx.beginPath(); ctx.arc(xv(nb - 1), yv(sim.best[nb - 1]), 3, 0, TAU); ctx.fill();
+  if (!phone) { ctx.fillStyle = COL.faint; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillText(`gen ${from}`, x0, y0 + 4); ctx.textAlign = 'right'; ctx.fillText(`gen ${nb - 1}`, x1, y0 + 4); }
+}
+// ===== bench: live fitness histogram =====
+function drawHist() {
+  const p = PAN.hist, R = shown(), NB = 12, cnt = new Array(NB).fill(0); let mean = 0;
+  panel(p, phone ? 'FITNESS NOW' : 'FITNESS · THIS FLIGHT', focus === 'hist' || focus === 'select');
+  R.forEach(r => { const f = fitness(r); mean += f / R.length; cnt[Math.min(NB - 1, Math.floor(f / 3 * NB))]++; });
+  const x0 = p.x + 10, x1 = p.x + p.w - 10, y0 = p.y + p.h - (phone ? 8 : 18), y1 = p.y + (phone ? 20 : 28), mx = Math.max(...cnt), bw = (x1 - x0) / NB;
+  cnt.forEach((c, i) => { if (!c) return; const h = Math.max(2, (c / mx) * (y0 - y1 - 12)); ctx.fillStyle = i * 3 / NB >= 2 ? COL.acc : 'rgba(199,203,224,.55)'; ctx.fillRect(x0 + i * bw + 1, y0 - h, bw - 2, h); });
+  const mxp = x0 + (mean / 3) * (x1 - x0); ctx.strokeStyle = COL.hl; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(mxp, y1 - 2); ctx.lineTo(mxp, y0); ctx.stroke();
+  ctx.font = '9px ui-monospace,Menlo,monospace'; ctx.textBaseline = 'top';
+  if (!phone) { ctx.fillStyle = COL.faint; ctx.textAlign = 'left'; ctx.fillText('0', x0, y0 + 4); ctx.textAlign = 'center'; ctx.fillText('1', x0 + (x1 - x0) / 3, y0 + 4); ctx.fillStyle = COL.acc; ctx.fillText('2 hit', x0 + (x1 - x0) * 2 / 3, y0 + 4); ctx.fillStyle = COL.faint; ctx.textAlign = 'right'; ctx.fillText('3', x1, y0 + 4); }
+  ctx.fillStyle = COL.hl; ctx.textAlign = mean < 1.5 ? 'left' : 'right'; ctx.fillText('mean', mxp + (mean < 1.5 ? 4 : -4), y1 - 2);
+}
+
+// ===== frame =====
+function frame(dt, realDt) {
+  clock += realDt; flashT += dt || (playing ? 0 : realDt * 0.4);
+  const cap = $('#caption'), ct = cap.textContent ? Math.max(84, Math.ceil(cap.offsetTop + cap.offsetHeight + 10)) : 84;   // keep the arena clear of the caption
+  if (ct !== capTop) { capTop = ct; onResize(); }
+  update(dt);
+  ctx.clearRect(0, 0, W, H);
+  drawArena(); drawGenome(); drawChart(); drawHist();
+  // stats + live math
+  const R = shown(), fin = phase === 'judge' || sim.t >= LIFE, hits = R.filter(r => r.reached).length;
+  setText('sGen', String(sim.gen)); setText('sReach', `${Math.round(100 * hits / R.length)}%` + (fin ? '' : ' …')); setText('sDiv', `${Math.round(sim.div * 100)}%`);
+  const L = leader(R), lr = R[L.i], b = birthOf(feat);
+  setText('m-d', isFinite(lr.dmin) ? lr.dmin.toFixed(0) : '–'); setText('m-f', L.f.toFixed(2));
+  if (sim.prev) { const N = sim.prev.fits.length; setText('m-p', (100 * (P.sel === 'tournament' ? 1 - Math.pow(1 - 1 / N, TOUR_K) : sim.prev.fits[sim.prev.bi] / sim.prev.sum)).toFixed(1) + '%'); setText('m-pu', (100 / sim.prev.fits.length).toFixed(1) + '%'); }
+  setText('m-c', b && !b.elite ? String(b.cut) : '–'); setText('m-c1', b && !b.elite ? String(b.cut + 1) : '–');
+  setText('m-mu', (P.mu * 100).toFixed(1) + '%'); setText('m-e', (P.mu * GENES).toFixed(2)); setText('m-fl', b && !b.elite ? String(b.flips.length) : '–'); setText('m-div', (sim.div * 100).toFixed(0) + '%');
+}
+
+// ===== pointer: drag target & walls, click a rocket to inspect its genome =====
+function pt(e) { const r = cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top; return { x, y, wx: (x - WR.x) / ks, wy: (y - WR.y) / ks }; }
+function hitTest(p) {
+  const w = sim.world, [tx, ty] = toS(w.target.x, w.target.y);
+  if (Math.hypot(p.x - tx, p.y - ty) < Math.max(20, TARGET_R * ks + 10)) return { kind: 'target' };
+  for (let i = w.obs.length - 1; i >= 0; i--) { const o = w.obs[i]; if (p.wx > o.x - 6 / ks && p.wx < o.x + o.w + 6 / ks && p.wy > o.y - 6 / ks && p.wy < o.y + o.h + 6 / ks) return { kind: 'obs', i }; }
+  if (p.x >= WR.x && p.x <= WR.x + WR.w && p.y >= WR.y && p.y <= WR.y + WR.h) {
+    if (phase === 'fly' && sim.gen > 0) { let bi = -1, bd = 14; sim.rockets.forEach((r, i) => { const [x, y] = toS(r.x, r.y), d = Math.hypot(p.x - x, p.y - y); if (d < bd) { bd = d; bi = i; } }); if (bi >= 0) return { kind: 'rocket', i: bi }; }
+    return { kind: 'empty' };
+  }
+  const g = PAN.gen; if (p.x > g.x && p.x < g.x + g.w && p.y > g.y && p.y < g.y + g.h && sim.gen > 0) return { kind: 'genome' };
+  return null;
+}
+const clampT = (t, p) => { t.x = Math.max(TARGET_R, Math.min(WX - TARGET_R, p.wx)); t.y = Math.max(TARGET_R, Math.min(WY - TARGET_R, p.wy)); };
+cv.addEventListener('pointerdown', e => {
+  const p = pt(e), h = hitTest(p); if (!h) return;
+  if (h.kind === 'rocket') { feat = h.i; focus = 'genome'; return; }
+  if (h.kind === 'genome') { feat = (feat + 1) % sim.rockets.length; return; }
+  if (h.kind === 'empty') { clampT(sim.world.target, p); h.kind = 'target'; }
+  drag = h; if (h.kind === 'obs') { const o = sim.world.obs[h.i]; drag.dx = p.wx - o.x; drag.dy = p.wy - o.y; }
+  cv.setPointerCapture(e.pointerId); cv.style.cursor = 'grabbing';
+});
+cv.addEventListener('pointermove', e => {
+  const p = pt(e);
+  if (!drag) { hover = hitTest(p); cv.style.cursor = !hover ? 'default' : hover.kind === 'target' || hover.kind === 'obs' ? 'grab' : hover.kind === 'empty' ? 'crosshair' : 'pointer'; return; }
+  if (drag.kind === 'target') clampT(sim.world.target, p);
+  else { const o = sim.world.obs[drag.i]; o.x = Math.max(0, Math.min(WX - o.w, p.wx - drag.dx)); o.y = Math.max(-o.h + 40, Math.min(WY - 40, p.wy - drag.dy)); }
+});
+const endDrag = () => { drag = null; cv.style.cursor = 'grab'; };
+cv.addEventListener('pointerup', endDrag); cv.addEventListener('pointercancel', endDrag);
+cv.addEventListener('pointerleave', () => { if (!drag) hover = null; });
+
+// ===== lesson panel =====
+stat('sGen', 'Generation'); stat('sReach', 'Hit target'); stat('sDiv', 'Diversity');
+const cp = $('#p-play');
+cp.insertAdjacentHTML('beforeend', '<p>Drag the <b>target</b> or a <b>wall</b> on the stage (click empty space to drop the target there). Click any rocket to see its genome and parents.</p><h3>Population</h3>');
+ctrls.pop = slider(cp, 'cPop', 'Population N — rockets per generation (applies next generation)', 20, 200, 10, 80, v => v, v => P.pop = v);
+ctrls.mu = slider(cp, 'cMu', 'Mutation rate μ — chance each gene is replaced by a random direction', 0, 0.25, 0.005, 0.01, v => (v * 100).toFixed(1) + '%', v => P.mu = v);
+ctrls.elite = slider(cp, 'cEl', 'Elitism — best rockets copied unchanged into the next generation', 0, 5, 1, 2, v => v, v => P.elite = v);
+cp.insertAdjacentHTML('beforeend', '<h3>Selection — who gets to breed</h3>');
+ctrls.sel = seg(cp, [['roulette', 'Roulette (chance ∝ fitness)'], ['tournament', 'Tournament (best of 3)']], 'roulette', v => P.sel = v);
+cp.insertAdjacentHTML('beforeend', '<h3>Fast-forward</h3>');
+ctrls.ff = seg(cp, [['watch', 'Watch each flight'], ['turbo', 'Turbo (1 gen / frame)']], 'watch', v => { turbo = v === 'turbo'; if (!turbo && phase === 'judge') judgeLeft = 0.3; });
+cp.insertAdjacentHTML('beforeend', '<div class="row" style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="bSkip">+10 generations</button><button class="btn" id="bWorld">Reset arena</button></div><p style="margin-top:10px">The dock\'s <b>Step</b> finishes the current flight and shows selection; <b>Reset</b> starts a fresh random population.</p>');
+$('#bSkip').onclick = () => { for (let g = 0; g < 10; g++) simRunGen(sim); onBred(); phase = 'fly'; };
+$('#bWorld').onclick = () => { sim.world = defaultWorld(); };
+$('#bStep').onclick = () => { setPlaying(false); if (phase === 'judge') phase = 'fly'; while (!simStep(sim)); endFlight(); };
+$('#bReset').onclick = () => { seed = (seed * 7 + 13) % 997; const w = sim.world; sim = makeSim(seed, w, P); phase = 'fly'; feat = 0; };
+
+$('#p-math').innerHTML = `
+<h3>1 · The genome is a flight plan</h3>
+<div class="eq">g = (θ<sub>1</sub>, θ<sub>2</sub>, …, θ<sub>40</sub>)<br>thrust(t) = F·(cos θ<sub>k</sub>, sin θ<sub>k</sub>)<br>k = ⌊t/6⌋ + 1</div>
+<p>Each gene is a direction, fired for 6 physics steps — one cell in the strip, its tick is the direction.</p>
+<h3>2 · Fitness: one number, no gradient</h3>
+<div class="eq">f = <span class="c-hl">1 / (1 + (d/100)²)</span><br><span class="c-acc">hit target → f = 2 + speed bonus</span><br>crashed → f × ½</div>
+<p>Leader right now: closest approach d = <span class="live" id="m-d">–</span>, f = <span class="live" id="m-f">–</span></p>
+<h3>3 · Selection</h3>
+<div class="eq">roulette: P(i) = <span class="c-hl">f<sub>i</sub></span> / Σ<sub>j</sub> f<sub>j</sub><br>tournament: best f of 3 random picks<br>&nbsp;&nbsp;→ P(best) = 1 − (1 − 1/N)³</div>
+<p>Last generation's champion got P = <span class="live" id="m-p">–</span> per draw, versus <span class="live" id="m-pu">–</span> if chosen at random.</p>
+<h3>4 · Crossover</h3>
+<div class="eq">child = <span class="c-a">A[1..<span id="m-c">–</span>]</span> ‖ <span class="c-b">B[<span id="m-c1">–</span>..40]</span></div>
+<h3>5 · Mutation</h3>
+<div class="eq"><span class="c-g">θ<sub>i</sub> ← random</span> with prob μ = <span class="live" id="m-mu">–</span><br>E[flips per child] = μ·40 = <span class="live" id="m-e">–</span></div>
+<p>The child in the strip has <span class="live" id="m-fl">–</span> mutated gene(s). Population diversity (mean circular spread of each gene): <span class="live" id="m-div">–</span>.</p>
+<div class="note"><b>Not gradient descent.</b> The GA never differentiates f. It only compares scores, so crashes, walls and other discontinuities don't break it. The cost: it has no idea which way is "downhill" and has to find out by trying.</div>
+<div class="note"><b>μ is per gene, not per rocket.</b> 1% of 40 genes = 0.4 flips per child. A common rule of thumb is μ ≈ 1/L (here 2.5%): about one new idea per child.</div>`;
+
+// ===== guided tour =====
+const STEPS = [
+  { t: 'Evolution, live', d: 'Nobody wrote these flight paths. Selection, crossover and mutation found them.', cap: '<b>Nobody programmed these paths.</b> Each rocket is 40 thrust genes, and the best scorers breed. Amber lines are past champions. <b>Drag the target or a wall</b> and watch them re-adapt.', go() { setup({ gens: 8, t: REDUCED ? 225 : 0 }); } },
+  { t: 'Generation 0: random genomes', d: 'Every gene starts as a random direction. The strip is one rocket\'s genome, and the amber box marks the gene firing now.', cap: '<b>Generation 0:</b> the genes are random, so the swarm sprays everywhere. The strip below is one rocket\'s <b>genome</b>. Each tick is a thrust direction, and the amber box marks the gene firing now.', go() { setup({ gens: 0, focus: 'genome' }); feat = 0; } },
+  { t: 'Fitness: one number per rocket', d: 'f = 1/(1+(d/100)²) from the closest approach d. Hits score ≥ 2, crashes are halved.', cap: '<b>Fitness</b> is one number: how close did you get? The <b style="color:var(--grad)">violet lines</b> are the distances being scored. Watch the histogram slide right. A hit scores ≥ 2.', go() { setup({ gens: 9, t: 40, focus: 'hist' }); } },
+  { t: 'Selection: the fit breed more', d: 'Roulette: breeding chance ∝ fitness. Tournament: best of 3 random rockets.', cap: '<b>After every flight</b> each rocket is scored (brighter dot = fitter). <b>Roulette</b> picks parents in proportion to fitness. The <b style="color:var(--a)">coral</b> and <b style="color:var(--b)">teal</b> rings mark one child\'s parents.', go() { setup({ gens: 4, t: LIFE - 15, focus: 'select' }); } },
+  { t: 'Crossover: splice two genomes', d: 'The child takes A up to a random cut point and B after it: A\'s opening moves, B\'s finish.', cap: '<b>Crossover:</b> the child copies <b style="color:var(--a)">A</b> up to a random <b>cut</b>, then <b style="color:var(--b)">B</b>, so it flies A\'s opening and B\'s finish. <b>Click any rocket</b> to see its genome.', go() { setup({ gens: 6, t: 20, focus: 'genome' }); } },
+  { t: 'Mutation: where new ideas come from', d: 'Each gene has chance μ of becoming a random direction (violet flashes).', cap: '<b>Mutation:</b> each gene has chance μ of becoming a random direction (the <b style="color:var(--grad)">violet</b> flashes). Crossover only reshuffles genes that already exist. Mutation is the only source of new ones.', go() { setup({ gens: 6, t: 20, mu: 0.05, focus: 'mut' }); } },
+  { t: 'Convergence, and how it fails', d: 'With μ = 0 diversity collapses and the search freezes on a poor route. With too much mutation, good routes get scrambled.', cap: '<b>Stuck at μ = 0:</b> the population became clones (diversity ≈ 0%) and the best line went flat. Too little mutation freezes the search, and too much scrambles it. Raise μ in <b>Controls</b>.', go() { setup({ seed: 4, mu: 0, pop: 60, elite: 1, gens: 24, t: 90, focus: 'chart' }); } },
+];
+const cap = html => { $('#caption').innerHTML = html; };
+const TRIES = [
+  { q: 'Mutation at 20% per gene. Will more mutation make evolution faster?', run() { setup({ mu: 0.2, gens: 20, t: 60, focus: 'chart' }); cap('<b>μ = 20%:</b> about 8 of each child\'s 40 genes are rewritten at random. Watch the <b>mean</b> line on the chart and the Diversity tile.'); }, why: 'No. Each child has about 8 of its 40 genes rewritten at random, so good routes get destroyed faster than selection can keep them. Elitism keeps the <b>best</b> line up, but the <b>mean</b> stays near the floor and diversity stays high: the population never converges. Useful rates sit near μ ≈ 1/L, about one change per child.' },
+  { q: 'Hide the target just behind a tall wall. The gap is far below. Will they find the long way round?', run() { setup({ seed: 2, world: { target: { x: 600, y: 90 }, obs: [{ x: 500, y: 0, w: 32, h: 430 }] }, gens: 12, t: 60, focus: 'world' }); cap('<b>Deceptive fitness:</b> the target sits just behind the wall, and the only gap is far below. Watch where the swarm piles up, generation after generation.'); }, why: 'Almost never. Fitness only measures distance, and the wall\'s near face is closer to the target than the gap is. So selection keeps rewarding rockets that press against the wall. That is a <b>deceptive</b> fitness landscape, and the GA is stuck on a local optimum because it sees scores, not the map. The fixes change the objective: waypoint rewards, novelty search, or keeping diversity high.' },
+  { q: 'Once they have mastered the course, move the target to the top-right corner. Do they need as many generations as the first time (~7)?', run() { setup({ gens: 25 }); sim.world.target = { x: 900, y: 70 }; cap('Trained for 25 generations, then the <b>target jumped</b> to the top-right corner. Count the generations until the first hits.'); }, why: 'No. The first hits come within a generation or two, and about half the swarm hits a few generations later. The first 3/4 of the old genome (under wall 1, over wall 2) is still correct, so only the last genes need to change. Selection preserves useful <b>building blocks</b> and mutation retunes the tail. A converged population is a memory of what worked.' },
+];
+
+$('#bStep').textContent = 'Step gen';
+setPlaying(playing);   // sync the dock icon (reduced motion starts paused)
+renderSteps(); renderTries(); goStep(0); requestAnimationFrame(loop);
+window.__demo = { goStep, setPlaying, state: () => ({ gen: sim.gen, t: sim.t, phase, focus, feat, best: sim.best.slice(-1)[0], div: sim.div, P: { ...P } }), sim: () => sim };
 </script>
 </body>
 </html>

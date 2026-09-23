@@ -3,169 +3,712 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Diffusion — noise ⇄ data</title>
+<title>Diffusion Models — ML Field Notes</title>
 <style>
-html,body{margin:0;height:100%;overflow:hidden;background:#04060c}
-canvas{display:block;touch-action:none}
-#ui{position:fixed;top:12px;left:12px;z-index:10;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;
- color:#cfeaf2;background:rgba(3,8,18,.68);border:1px solid rgba(0,255,213,.28);border-radius:8px;
- padding:10px 12px;max-width:340px;user-select:none;max-height:52vh;overflow:auto}
-#ui h1{margin:0 0 4px;font-size:13px;color:#4fffd7;letter-spacing:.6px}
-#ui p{margin:0 0 6px;color:#9fb8c8}
-#ui .hint{color:#7f93a5}
-#ui a{color:#4fffd7;text-decoration:none}
-#st{color:#ffd24f;margin-top:5px;white-space:pre}
-@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
+/* ===== ML Field Notes design system (shared by every ML/AI demo) =====
+   Colour means the same thing in every demo:
+   --a coral = class A / "positive"     --b teal = class B / "negative"
+   --hl amber = the model's current parameters / guess / selection
+   --grad violet = gradients, updates, errors flowing back
+   --accent = this demo's signature colour (set per demo) */
+:root{
+  --bg:#0c0e1a; --bg2:#10132a; --panel:#13162c; --panel2:#181c38; --line:rgba(190,200,255,.10); --line2:rgba(190,200,255,.18);
+  --ink:#e9ecfa; --dim:#a2a9c8; --faint:#6b7396;
+  --a:#ff7a6b; --b:#3fd0c0; --hl:#ffc857; --grad:#a78bfa; --good:#7ee787; --bad:#ff6b8a;
+  --accent:#6ec3ff;
+  --r:12px; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.5 var(--sans)}
+body{overflow:hidden}
+a{color:var(--accent)}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app{display:grid;grid-template-columns:minmax(0,1fr) 380px;grid-template-rows:48px minmax(0,1fr);height:100vh;height:100dvh}
+.top{grid-column:1/-1;display:flex;align-items:center;gap:12px;padding:0 14px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#11142a,#0d1020)}
+.top a.back{color:var(--dim);text-decoration:none;font-size:13px;white-space:nowrap}
+.top a.back:hover{color:var(--ink)}
+.top .chip{font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 45%,transparent);border-radius:99px;padding:5px 8px}
+.top h1{margin:0;font-size:15px;font-weight:650;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top .sp{flex:1}
+.top .keys{font:11px var(--mono);color:var(--faint);white-space:nowrap}
+.stage{position:relative;min-width:0;min-height:0;background:radial-gradient(ellipse at 50% 40%,#151a3a 0%,var(--bg) 70%)}
+.stage::before{content:"";position:absolute;inset:0;background-image:radial-gradient(rgba(190,200,255,.07) 1px,transparent 1.3px);background-size:24px 24px;pointer-events:none}
+.stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.caption{position:absolute;left:16px;right:16px;top:14px;max-width:640px;padding:10px 14px;border-radius:10px;background:rgba(12,14,30,.78);border:1px solid var(--line2);backdrop-filter:blur(6px);font-size:14px;line-height:1.45;pointer-events:none;transition:opacity .3s}
+.caption b{color:var(--accent)}
+.caption:empty{opacity:0}
+.dock{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;gap:6px;padding:6px;border-radius:99px;background:rgba(12,14,30,.82);border:1px solid var(--line2);backdrop-filter:blur(6px)}
+.dock button{border:0;background:transparent;border-radius:99px;min-width:36px;height:34px;padding:0 12px;cursor:pointer;color:var(--ink);white-space:nowrap}
+.dock button:hover{background:rgba(255,255,255,.08)}
+.dock button.on{background:color-mix(in srgb,var(--accent) 22%,transparent);color:var(--accent)}
+.lesson{border-left:1px solid var(--line);background:var(--panel);overflow:auto;min-height:0;display:flex;flex-direction:column}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border-bottom:1px solid var(--line)}
+.stat{background:var(--panel);padding:10px 12px}
+.stat .k{font:600 10px/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.stat .v{font:600 18px/1.3 var(--mono);font-variant-numeric:tabular-nums;margin-top:3px}
+.tabs{display:flex;gap:2px;padding:10px 12px 0;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);z-index:2}
+.tabs button{border:0;background:none;padding:9px 12px;color:var(--dim);cursor:pointer;border-bottom:2px solid transparent;font-weight:600}
+.tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent)}
+.pane{padding:14px 16px 22px;display:none}
+.pane.on{display:block}
+.pane h3{margin:14px 0 6px;font-size:13px;letter-spacing:.02em}
+.pane p{margin:0 0 10px;color:var(--dim)}
+.pane p b,.pane li b{color:var(--ink)}
+.lede{font-size:15px;color:var(--ink)!important}
+.steps{list-style:none;margin:10px 0 0;padding:0;counter-reset:s}
+.steps li{counter-increment:s;border:1px solid var(--line);border-radius:10px;margin:0 0 8px;padding:10px 12px 10px 40px;position:relative;cursor:pointer;color:var(--dim);background:var(--panel2)}
+.steps li::before{content:counter(s);position:absolute;left:12px;top:10px;width:18px;height:18px;border-radius:99px;display:grid;place-items:center;font:600 11px var(--mono);background:rgba(255,255,255,.07);color:var(--dim)}
+.steps li.on{border-color:color-mix(in srgb,var(--accent) 60%,transparent);color:var(--ink)}
+.steps li.on::before{background:var(--accent);color:#141414}
+.steps li.done::before{content:"✓";background:rgba(126,231,135,.2);color:var(--good)}
+.steps li .t{font-weight:650;color:var(--ink);display:block}
+.steps li .d{display:none;margin-top:4px}
+.steps li.on .d{display:block}
+.tournav{display:flex;gap:8px;margin-top:6px}
+.btn{border:1px solid var(--line2);background:var(--panel2);border-radius:9px;padding:7px 12px;cursor:pointer;color:var(--ink)}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:#15131a;border-color:transparent;font-weight:650}
+.card{border:1px solid var(--line);border-radius:12px;padding:12px;margin:0 0 10px;background:var(--panel2)}
+.card .q{color:var(--ink);font-weight:600;margin-bottom:8px}
+.card .why{display:none;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line2);color:var(--dim)}
+.card.revealed .why{display:block}
+.card .row{display:flex;gap:8px;flex-wrap:wrap}
+.eq{font:14px/1.7 var(--mono);background:#0e1124;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:6px 0 12px;overflow-x:auto;white-space:nowrap}
+.eq .c-a{color:var(--a)} .eq .c-b{color:var(--b)} .eq .c-hl{color:var(--hl)} .eq .c-g{color:var(--grad)} .eq .c-acc{color:var(--accent)}
+.live{font-variant-numeric:tabular-nums;color:var(--hl)}
+.ctrl{display:grid;grid-template-columns:1fr auto;gap:4px 10px;align-items:center;margin:10px 0}
+.ctrl label{color:var(--dim);font-size:13px}
+.ctrl output{font:12px var(--mono);color:var(--ink);font-variant-numeric:tabular-nums}
+.ctrl input[type=range]{grid-column:1/-1;width:100%;accent-color:var(--accent)}
+.seg{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 10px}
+.seg button{border:1px solid var(--line2);background:transparent;border-radius:99px;padding:5px 11px;cursor:pointer;color:var(--dim);font-size:13px}
+.seg button[aria-pressed=true]{background:color-mix(in srgb,var(--accent) 20%,transparent);color:var(--ink);border-color:color-mix(in srgb,var(--accent) 55%,transparent)}
+.note{border-left:3px solid var(--grad);padding:6px 10px;margin:8px 0 12px;color:var(--dim);background:rgba(167,139,250,.06);border-radius:0 8px 8px 0}
+.wild li{margin-bottom:6px;color:var(--dim)}
+@media (max-width:880px){
+  body{overflow:auto}
+  .app{grid-template-columns:1fr;grid-template-rows:48px 58vh auto;height:auto}
+  .stage{height:58vh}
+  .lesson{border-left:0;border-top:1px solid var(--line)}
+  .top .keys{display:none}
+  .caption{font-size:13px;top:10px;left:10px;right:10px}
+  .stats{grid-template-columns:repeat(3,1fr)}
+  .stat .v{font-size:15px}
+}
+@media (prefers-reduced-motion:reduce){.caption{transition:none}}
 </style>
 </head>
 <body>
-<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
-<canvas id="c"></canvas>
-<div id="ui">
- <h1>DIFFUSION MODEL — 2D toy</h1>
- <p>Forward diffusion destroys data with gaussian noise; generation is the exact same walk reversed — step-by-step denoising drifts pure noise back onto the data manifold.</p>
- <div class="hint">[D]/click shape · [space] pause · <a href="index.html">← gallery</a></div>
- <div id="st"></div>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace;max-width:100vw;white-space:pre-wrap';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div class="app">
+  <header class="top">
+    <a class="back" href="index.html">← Gallery</a>
+    <span class="chip">ML / AI</span>
+    <h1>Diffusion Models</h1>
+    <span class="sp"></span>
+    <span class="keys">Space play · ←/→ tour · R reset</span>
+  </header>
+  <section class="stage" id="stage">
+    <canvas id="c" role="img" aria-label="A 2-D point cloud shaped like a heart is gradually noised into a Gaussian blob, then a diffusion model denoises fresh noise back into a new heart. Violet arrows show the predicted-noise field; a timeline scrubs the noise level t and a plot shows the noise schedule."></canvas>
+    <div class="caption" id="caption" aria-live="polite"></div>
+    <div class="dock" role="group" aria-label="Simulation controls">
+      <button id="bPlay" class="on" aria-label="Pause">❚❚</button>
+      <button id="bStep" aria-label="Step once">Step</button>
+      <button id="bReset" aria-label="Reset">Reset</button>
+      <button id="bSpeed" aria-label="Speed">1×</button>
+    </div>
+  </section>
+  <aside class="lesson">
+    <div class="stats" id="stats"><!-- 3 stat tiles: .stat > .k + .v#id --></div>
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-tab="learn">Learn</button>
+      <button role="tab" aria-selected="false" data-tab="try">Try this</button>
+      <button role="tab" aria-selected="false" data-tab="math">The math</button>
+      <button role="tab" aria-selected="false" data-tab="play">Controls</button>
+    </div>
+    <div class="pane on" id="p-learn">
+      <p class="lede">A diffusion model learns one skill — look at a noisy point and guess the noise in it — and generates data by applying that guess again and again, starting from pure static.</p>
+      <ol class="steps" id="steps"></ol>
+      <div class="tournav"><button class="btn" id="tPrev">← Back</button><button class="btn primary" id="tNext">Next step →</button></div>
+      <h3>In the wild</h3>
+      <ul class="wild">
+        <li><b>Stable Diffusion, Imagen, DALL·E 3, Midjourney:</b> this exact loop runs in the compressed latent of an image, with a U-Net or transformer predicting ε̂ from the noisy latent, t and the text prompt, and guidance w around 5–8.</li>
+        <li><b>Video, audio, molecules:</b> video models diffuse spacetime patches; AlphaFold 3 and RFdiffusion diffuse 3-D atom coordinates, literally point clouds like this one.</li>
+        <li><b>Fast samplers:</b> DDIM, DPM-Solver and distilled / consistency models are all about the steps slider: fewer network calls per image at the same quality.</li>
+      </ul>
+    </div>
+    <div class="pane" id="p-try"><!-- .card experiments: predict → run → why --></div>
+    <div class="pane" id="p-math">
+      <h3>1 · Forward: trade signal for noise</h3>
+      <div class="eq"><span class="c-acc">x<sub>t</sub></span> = <span class="c-hl">√ᾱ<sub>t</sub></span>·x<sub>0</sub> + <span class="c-hl">√(1−ᾱ<sub>t</sub>)</span>·ε,&nbsp; ε ~ N(0, I)<br>&nbsp;&nbsp;&nbsp; = <span class="live" id="m-sa">1</span>·x<sub>0</sub> + <span class="live" id="m-sn">0</span>·ε</div>
+      <p>ᾱ<sub>t</sub> = ∏<sub>s≤t</sub>(1 − β<sub>s</sub>) is the schedule plot. Signal-to-noise SNR = ᾱ/(1−ᾱ) = <span class="live" id="m-snr">–</span>. Because the two coefficients square-sum to 1, Var[x<sub>t</sub>] = ᾱ·Var[x<sub>0</sub>] + (1−ᾱ): it glides from the data’s variance (≈ 0.74 per axis here) to exactly 1 and never blows up. Measured now <span class="live" id="m-var">–</span>.</p>
+      <h3>2 · The model: predict the noise</h3>
+      <div class="eq">loss = ‖ε − <span class="c-g">ε̂<sub>θ</sub>(x<sub>t</sub>, t)</span>‖²<br>⇒ best <span class="c-g">ε̂</span> = E[ε | x<sub>t</sub>]<br><span class="c-hl">x̂<sub>0</sub></span> = m + (√ᾱσ₀²/v)(x<sub>t</sub> − √ᾱ m)<br>m = Σ<sub>k</sub> <span class="c-hl">w<sub>k</sub></span> x<sub>k</sub>,&nbsp; v = ᾱσ₀² + 1 − ᾱ<br><span class="c-hl">w<sub>k</sub></span> ∝ exp(−‖x<sub>t</sub> − √ᾱ x<sub>k</sub>‖² / 2v)<br><span class="c-g">ε̂</span> = (x<sub>t</sub> − √ᾱ <span class="c-hl">x̂<sub>0</sub></span>) / √(1−ᾱ)<br>&nbsp;&nbsp;= −√(1−ᾱ)·∇log p<sub>t</sub>(x<sub>t</sub>)</div>
+      <p>This demo uses the <b>exact</b> minimiser for a training set of K points (each blurred by σ₀), so no network is needed. Probe: ‖ε̂‖ = <span class="live" id="m-eps">–</span>, largest vote w<sub>max</sub> = <span class="live" id="m-wmax">–</span>.</p>
+      <h3>3 · Reverse step (DDPM and DDIM are one formula)</h3>
+      <div class="eq">x<sub>t′</sub> = √ᾱ<sub>t′</sub>·<span class="c-hl">x̂<sub>0</sub></span><br>&nbsp;&nbsp;+ √(1−ᾱ<sub>t′</sub>−σ²)·<span class="c-g">ε̂</span> + σ·z<br>σ = η·√((1−ᾱ<sub>t′</sub>)/(1−ᾱ<sub>t</sub>))<br>&nbsp;&nbsp;·√(1−ᾱ<sub>t</sub>/ᾱ<sub>t′</sub>)<br>η = 1: DDPM &nbsp;·&nbsp; η = 0: DDIM<br>now t → t′ = <span class="live" id="m-step">–</span><br>σ = <span class="live" id="m-sig">–</span></div>
+      <h3>4 · Classifier-free guidance</h3>
+      <div class="eq"><span class="c-g">ε̃</span> = <span class="c-a">ε̂(x | c)</span><br>&nbsp;&nbsp;+ w·(<span class="c-a">ε̂(x | c)</span> − ε̂(x))<br>w = <span class="live" id="m-w">0</span></div>
+      <div class="note"><b>Misconception:</b> “the reverse process replays the added noise backwards.” It never sees that noise, only x<sub>t</sub> and t. Starting from the same x<sub>T</sub>, a sample ends wherever the learned flow takes it (Try this #1).</div>
+      <div class="note"><b>Misconception:</b> “a better denoiser is always a better generator.” The exact ε̂ here is the best possible on its training set, and with few points it only copies them (Try this #3). Real networks generalise because they approximate.</div>
+    </div>
+    <div class="pane" id="p-play"><!-- .ctrl sliders, .seg segmented choices --></div>
+  </aside>
 </div>
 <script>
-const cv=document.getElementById('c'),x=cv.getContext('2d'),st=document.getElementById('st');
-let W,H,S,CX,CY,dpr;
-function rs(){
- dpr=Math.min(2,window.devicePixelRatio||1);
- W=innerWidth;H=innerHeight;
- cv.width=W*dpr;cv.height=H*dpr;
- cv.style.width=W+'px';cv.style.height=H+'px';
- x.setTransform(dpr,0,0,dpr,0,0);
- S=Math.min(W,H)*0.33;CX=W/2;CY=H/2+14;
- x.fillStyle='#04060c';x.fillRect(0,0,W,H);
+'use strict';
+/* ===== shell helpers (keep) ===== */
+const $ = s => document.querySelector(s);
+const cv = $('#c'), ctx = cv.getContext('2d'), stage = $('#stage');
+let W = 0, H = 0, DPR = 1;
+function resize() {
+  const r = stage.getBoundingClientRect(); DPR = Math.min(2, devicePixelRatio || 1);
+  W = Math.max(1, r.width); H = Math.max(1, r.height);
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR); ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  if (typeof onResize === 'function') onResize();
 }
-addEventListener('resize',rs);rs();
-
-// ---- diffusion schedule (variance preserving, T steps) ----
-const T=50,N=900,F=5,HOLD=70;
-const beta=[0],abar=[1];
-for(let t=1;t<=T;t++){
- const b=0.006+(0.20-0.006)*(t-1)/(T-1);
- beta.push(b);abar.push(abar[t-1]*(1-b));
-}
-// closed-form reverse posterior q(x_{t-1}|x_t,x0): mean=c0*x0+c1*x_t, sd=sg
-const c0=[0],c1=[0],sg=[0];
-for(let t=1;t<=T;t++){
- const d=1-abar[t];
- c0.push(Math.sqrt(abar[t-1])*beta[t]/d);
- c1.push(Math.sqrt(1-beta[t])*(1-abar[t-1])/d);
- sg.push(Math.sqrt((1-abar[t-1])/d*beta[t]));
-}
-function g(){let u=0;while(!u)u=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(6.28318*Math.random());}
-
-// ---- target distributions ----
-const SHAPES=['spiral','heart','ring'];
-let shape=0;
-function sample(k){
- if(k===0){const u=Math.sqrt(Math.random()),th=u*6.6,r=0.1+0.88*u;
-  return[r*Math.cos(th)+g()*0.02,r*Math.sin(th)+g()*0.02];}
- if(k===1){const s=Math.random()*6.28318;
-  const px=Math.pow(Math.sin(s),3)*1.13;
-  const py=(-(13*Math.cos(s)-5*Math.cos(2*s)-2*Math.cos(3*s)-Math.cos(4*s))/17-0.35)*1.2;
-  return[px+g()*0.02,py+g()*0.02];}
- const a=Math.random()*6.28318,r=0.8+g()*0.045;
- return[r*Math.cos(a),r*Math.sin(a)];
-}
-const pts=[];
-function initPts(){
- pts.length=0;
- for(let i=0;i<N;i++){
-  const[a,b]=sample(shape);
-  pts.push({x0:a,y0:b,ax:a,ay:b,px:a,py:b,tx:a,ty:b,hj:Math.random()*36-18});
- }
-}
-initPts();
-
-let mode='holdClean',t=0,f=0,hold=50,paused=false;
-
-function stepFwd(){ // x_t = sqrt(1-b) x_{t-1} + sqrt(b) eps
- t++;const sa=Math.sqrt(1-beta[t]),sb=Math.sqrt(beta[t]);
- for(const p of pts){p.px=p.tx;p.py=p.ty;p.tx=sa*p.tx+sb*g();p.ty=sa*p.ty+sb*g();}
-}
-function stepRev(){ // annealed drift toward anchor on the manifold + noise
- const A=c0[t],B=c1[t],s=sg[t];
- for(const p of pts){p.px=p.tx;p.py=p.ty;p.tx=A*p.ax+B*p.tx+s*g();p.ty=A*p.ay+B*p.ty+s*g();}
- t--;
-}
-function assignAnchors(){ // each noise particle follows the score toward a nearby mode
- for(const p of pts){
-  let bd=1e9,bi=0;
-  for(let k=0;k<7;k++){
-   const j=(Math.random()*N)|0,q=pts[j];
-   const dx=q.x0-p.tx,dy=q.y0-p.ty,d=dx*dx+dy*dy;
-   if(d<bd){bd=d;bi=j;}
-  }
-  p.ax=pts[bi].x0;p.ay=pts[bi].y0;
- }
-}
-function update(){
- f++;
- if(mode==='holdClean'){if(--hold<=0){mode='fwd';f=0;stepFwd();}}
- else if(mode==='holdNoise'){if(--hold<=0){assignAnchors();mode='rev';f=0;stepRev();}}
- else if(f>=F){
-  f=0;
-  if(mode==='fwd'){if(t>=T){mode='holdNoise';hold=HOLD;}else stepFwd();}
-  else{
-   if(t<=0){for(const p of pts){p.x0=p.ax;p.y0=p.ay;}mode='holdClean';hold=HOLD;}
-   else stepRev();
-  }
- }
-}
-function label(){
- if(mode==='holdClean')return['x₀ — clean data sample','#4fffd7'];
- if(mode==='fwd')return['adding noise →','#ff5fd2'];
- if(mode==='holdNoise')return['x_T ≈ pure gaussian','#ff5fd2'];
- return['← denoising (generation)','#4fffd7'];
-}
-function frame(){
- if(!paused){
-  update();
-  // trails
-  x.globalCompositeOperation='source-over';
-  x.fillStyle='rgba(4,6,12,0.16)';x.fillRect(0,0,W,H);
-  // points, hue keyed to diffusion step
-  x.globalCompositeOperation='lighter';
-  const k=Math.min(1,f/F),ke=k*k*(3-2*k),hue=190+150*(t/T);
-  for(const p of pts){
-   const ix=p.px+(p.tx-p.px)*ke,iy=p.py+(p.ty-p.py)*ke;
-   const sx2=CX+ix*S,sy2=CY+iy*S;
-   x.fillStyle='hsla('+(hue+p.hj)+',95%,62%,0.30)';
-   x.fillRect(sx2-2.4,sy2-2.4,4.8,4.8);
-   x.fillStyle='hsla('+(hue+p.hj)+',100%,84%,0.9)';
-   x.fillRect(sx2-1,sy2-1,2,2);
-  }
-  // banner + progress bar
-  x.globalCompositeOperation='source-over';
-  const[txt,col]=label();
-  x.textAlign='center';x.font='700 15px ui-monospace,Menlo,monospace';
-  x.fillStyle='rgba(4,6,12,0.55)';x.fillRect(CX-170,26,340,52);
-  x.fillStyle=col;x.fillText(txt,CX,46);
-  x.fillStyle='rgba(255,255,255,0.12)';x.fillRect(CX-130,58,260,6);
-  x.fillStyle=col;x.fillRect(CX-130,58,260*(t/T),6);
-  x.font='11px ui-monospace,monospace';x.fillStyle='#9fb8c8';
-  x.fillText('t = '+t+' / '+T,CX,74);
- }
- st.textContent='phase  '+label()[0]+'\nstep   t = '+t+' / '+T+'\nshape  '+SHAPES[shape]+'   particles '+N+(paused?'\n[paused]':'');
- requestAnimationFrame(frame);
-}
-function cycleShape(){
- shape=(shape+1)%SHAPES.length;
- initPts();mode='holdClean';t=0;f=0;hold=60;
- x.setTransform(dpr,0,0,dpr,0,0);
- x.globalCompositeOperation='source-over';
- x.fillStyle='#04060c';x.fillRect(0,0,W,H);
-}
-addEventListener('keydown',e=>{
- if(e.key==='d'||e.key==='D')cycleShape();
- if(e.key===' '){paused=!paused;e.preventDefault();}
+new ResizeObserver(resize).observe(stage); resize();
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+// tabs
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', x === b));
+  document.querySelectorAll('.pane').forEach(p => p.classList.toggle('on', p.id === 'p-' + b.dataset.tab));
 });
-cv.addEventListener('click',cycleShape);
-requestAnimationFrame(frame);
+// playback
+let playing = !REDUCED, speed = 1;
+const SPEEDS = [0.25, 0.5, 1, 2, 4];
+function setPlaying(v) { playing = v; $('#bPlay').textContent = v ? '❚❚' : '▶'; $('#bPlay').classList.toggle('on', v); $('#bPlay').setAttribute('aria-label', v ? 'Pause' : 'Play'); }
+$('#bPlay').onclick = () => setPlaying(!playing);
+$('#bSpeed').onclick = () => { speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]; $('#bSpeed').textContent = speed + '×'; };
+// tour: STEPS = [{t:'title', d:'html', cap:'stage caption html', go(){ /* set demo state */ }}]
+let tour = 0;
+function renderSteps() {
+  const ol = $('#steps'); ol.innerHTML = '';
+  STEPS.forEach((s, i) => { const li = document.createElement('li'); li.className = (i === tour ? 'on' : '') + (i < tour ? ' done' : ''); li.innerHTML = `<span class="t">${s.t}</span><span class="d">${s.d}</span>`; li.onclick = () => goStep(i); ol.appendChild(li); });
+  $('#tPrev').disabled = tour === 0; $('#tNext').textContent = tour === STEPS.length - 1 ? 'Start over ↺' : 'Next step →';
+}
+function goStep(i) { tour = (i + STEPS.length) % STEPS.length; const s = STEPS[tour]; if (s.go) s.go(); $('#caption').innerHTML = s.cap || ''; renderSteps(); }
+$('#tPrev').onclick = () => goStep(Math.max(0, tour - 1));
+$('#tNext').onclick = () => goStep(tour + 1);
+// experiments: TRIES = [{q:'Predict…', run(){…}, why:'html'}]
+function renderTries() {
+  const p = $('#p-try'); p.innerHTML = '<p>Make a prediction first, then run it. Each experiment sets the demo up for you.</p>';
+  TRIES.forEach(x => { const c = document.createElement('div'); c.className = 'card'; c.innerHTML = `<div class="q">${x.q}</div><div class="row"><button class="btn primary">Run it</button><button class="btn">Show why</button></div><div class="why">${x.why}</div>`; const [run, why] = c.querySelectorAll('button'); run.onclick = () => { x.run(); setPlaying(true); }; why.onclick = () => c.classList.toggle('revealed'); p.appendChild(c); });
+}
+// controls helpers
+function slider(parent, id, label, min, max, step, value, fmt, onInput) {
+  const d = document.createElement('div'); d.className = 'ctrl';
+  d.innerHTML = `<label for="${id}">${label}</label><output id="${id}o"></output><input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${value}">`;
+  parent.appendChild(d); const inp = d.querySelector('input'), out = d.querySelector('output');
+  const upd = () => { out.textContent = fmt(+inp.value); onInput(+inp.value); }; inp.oninput = upd; upd();
+  return { set(v) { inp.value = v; upd(); }, get: () => +inp.value };
+}
+function seg(parent, options, value, onPick) {
+  const d = document.createElement('div'); d.className = 'seg'; parent.appendChild(d);
+  const bs = options.map(([v, label]) => { const b = document.createElement('button'); b.textContent = label; b.setAttribute('aria-pressed', v === value); b.onclick = () => set(v); d.appendChild(b); return [v, b]; });
+  function set(v) { bs.forEach(([k, b]) => b.setAttribute('aria-pressed', k === v)); onPick(v); }
+  return { set };
+}
+function stat(id, label) { const d = document.createElement('div'); d.className = 'stat'; d.innerHTML = `<div class="k">${label}</div><div class="v" id="${id}">–</div>`; $('#stats').appendChild(d); }
+const setText = (id, v) => { const e = document.getElementById(id); if (e && e.textContent !== v) e.textContent = v; };
+// keyboard
+addEventListener('keydown', e => {
+  if (e.target.matches('input,select,textarea')) return;
+  if (e.code === 'Space') { setPlaying(!playing); e.preventDefault(); }
+  else if (e.key === 'ArrowRight') goStep(tour + 1);
+  else if (e.key === 'ArrowLeft') goStep(Math.max(0, tour - 1));
+  else if (e.key === 'r' || e.key === 'R') $('#bReset').click();
+});
+// wall-clock-locked loop (dt clamped to [0, 0.1] — rAF timestamps can precede performance.now())
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.1, Math.max(0, (now - last) / 1000)); last = now;
+  try { frame(playing ? dt * speed : 0, dt); } catch (err) { window.onerror(err.message, '', 0); return; }
+  requestAnimationFrame(loop);
+}
+
+// ===== DEMO CODE: diffusion on a 2-D point cloud =====
+/*CORE-START*/
+// Pure model code (no DOM). World units: data is centred with max radius 1.55, so N(0, I) is the natural end state.
+const T = 1000;
+function rng(seed) { let a = seed >>> 0; return () => { a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function gauss(r) { let u = 0; while (!u) u = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * r()); }
+// variance-preserving schedule: ab[t] = ᾱ_t = Π_{s≤t} (1 − β_s), ab[0] = 1
+function makeSchedule(kind) {
+  const ab = new Float64Array(T + 1); ab[0] = 1;
+  if (kind === 'cosine') { const s = 0.008, f = t => Math.cos((t / T + s) / (1 + s) * Math.PI / 2) ** 2; for (let t = 1; t <= T; t++) ab[t] = ab[t - 1] * (1 - Math.min(0.999, 1 - f(t) / f(t - 1))); }
+  else for (let t = 1; t <= T; t++) ab[t] = ab[t - 1] * (1 - (1e-4 + (0.02 - 1e-4) * (t - 1) / (T - 1)));
+  return ab;
+}
+function abarAt(ab, t) { const i = Math.max(0, Math.min(T - 1, Math.floor(t))), f = Math.min(1, Math.max(0, t - i)); return ab[i] * (1 - f) + ab[i + 1] * f; }
+// shapes: u ∈ [0,1) → [x, y, class]
+function shapePoint(name, u) {
+  if (name === 'heart') { const s = u * 2 * Math.PI, x = 16 * Math.sin(s) ** 3, y = 13 * Math.cos(s) - 5 * Math.cos(2 * s) - 2 * Math.cos(3 * s) - Math.cos(4 * s); return [x, y, x < 0 ? 0 : 1]; }
+  if (name === 'spiral') { const c = u < 0.5 ? 0 : 1, v = Math.sqrt((u % 0.5) * 2), th = v * 3.1 * Math.PI + c * Math.PI, r = 0.12 + v; return [r * Math.cos(th), r * Math.sin(th), c]; }
+  if (name === 'smiley') {
+    if (u < 0.55) { const th = u / 0.55 * 2 * Math.PI; return [Math.cos(th), Math.sin(th), 0]; }
+    if (u < 0.75) { const v = (u - 0.55) / 0.2, e = v < 0.5 ? -1 : 1, th = (v % 0.5) * 4 * Math.PI; return [e * 0.36 + 0.1 * Math.cos(th), 0.3 + 0.13 * Math.sin(th), 1]; }
+    const th = Math.PI * (1.15 + 0.7 * (u - 0.75) / 0.25); return [0.58 * Math.cos(th), 0.02 + 0.58 * Math.sin(th), 1];
+  }
+  const c = u < 0.5 ? 0 : 1, th = (u % 0.5) * 2 * Math.PI; // two moons
+  return c ? [1 - Math.cos(th), 0.45 - Math.sin(th), 1] : [Math.cos(th), Math.sin(th), 0];
+}
+// training set: K points on the shape; the data density is p0 = (1/K) Σ N(x_k, σ0² I)
+function makeShape(name, K, sig0, seed) {
+  const r = rng(seed), x = new Float64Array(K), y = new Float64Array(K), c = new Uint8Array(K);
+  for (let k = 0; k < K; k++) { const p = shapePoint(name, (k + 0.5 + 0.6 * (r() - 0.5)) / K); x[k] = p[0]; y[k] = p[1]; c[k] = p[2]; }
+  let mx = 0, my = 0, R = 0; for (let k = 0; k < K; k++) { mx += x[k] / K; my += y[k] / K; }
+  for (let k = 0; k < K; k++) { x[k] -= mx; y[k] -= my; R = Math.max(R, Math.hypot(x[k], y[k])); }
+  for (let k = 0; k < K; k++) { x[k] *= 1.55 / R; y[k] *= 1.55 / R; }
+  return { name, n: K, x, y, c, sig0, tmp: new Float64Array(K) };
+}
+function sampleData(D, r, n) { const X = new Float64Array(2 * n); for (let i = 0; i < n; i++) { const k = Math.floor(r() * D.n); X[2 * i] = D.x[k] + D.sig0 * gauss(r); X[2 * i + 1] = D.y[k] + D.sig0 * gauss(r); } return X; }
+// exact posterior mean E[x0 | x_t] under p_t = (1/K) Σ N(√ᾱ x_k, v I), v = ᾱσ0² + 1 − ᾱ   (cls ≥ 0: that class only)
+function denoise(D, ab, x, y, cls, out, wOut) {
+  const a = Math.sqrt(ab), v = ab * D.sig0 * D.sig0 + (1 - ab), iv = 0.5 / v, X = D.x, Y = D.y, C = D.c, d2 = D.tmp;
+  let dmin = Infinity, s = 0, mx = 0, my = 0;
+  for (let k = 0; k < D.n; k++) { if (cls >= 0 && C[k] !== cls) { d2[k] = Infinity; continue; } const dx = x - a * X[k], dy = y - a * Y[k]; d2[k] = dx * dx + dy * dy; if (d2[k] < dmin) dmin = d2[k]; }
+  for (let k = 0; k < D.n; k++) { const e = d2[k] === Infinity ? 0 : Math.exp((dmin - d2[k]) * iv); s += e; mx += e * X[k]; my += e * Y[k]; if (wOut) wOut[k] = e; }
+  mx /= s; my /= s; if (wOut) for (let k = 0; k < D.n; k++) wOut[k] /= s;
+  const g = a * D.sig0 * D.sig0 / v;
+  out[0] = mx + g * (x - a * mx); out[1] = my + g * (y - a * my);
+}
+// ε̂ with classifier-free guidance: x̂0 = x̂0(c) + w (x̂0(c) − x̂0(∅)), ε̂ = (x − √ᾱ x̂0) / √(1 − ᾱ).  out = [x̂0x, x̂0y, ε̂x, ε̂y]
+const _U = new Float64Array(2);
+function predict(D, ab, x, y, cond, w, out, wOut) {
+  denoise(D, ab, x, y, cond, out, wOut);
+  if (cond >= 0 && w) { denoise(D, ab, x, y, -1, _U); out[0] += w * (out[0] - _U[0]); out[1] += w * (out[1] - _U[1]); }
+  const a = Math.sqrt(ab), sn = Math.sqrt(Math.max(1e-12, 1 - ab));
+  out[2] = (x - a * out[0]) / sn; out[3] = (y - a * out[1]) / sn;
+}
+function taus(S) { return Array.from({ length: S + 1 }, (_, i) => Math.round(T * (S - i) / S)); }
+// one generalised DDIM step t → t' (η = 1: DDPM ancestral, η = 0: deterministic DDIM), in place on X = [x0,y0,x1,y1…]
+const _O = new Float64Array(4);
+function reverseStep(D, abT, abP, X, n, cond, w, eta, r, hat) {
+  const aP = Math.sqrt(abP), sig = eta * Math.sqrt((1 - abP) / (1 - abT) * (1 - abT / abP)), c = Math.sqrt(Math.max(0, 1 - abP - sig * sig));
+  for (let i = 0; i < n; i++) {
+    predict(D, abT, X[2 * i], X[2 * i + 1], cond, w, _O);
+    if (hat && i === 0) { hat[0] = _O[0]; hat[1] = _O[1]; }
+    X[2 * i] = aP * _O[0] + c * _O[2] + (sig ? sig * gauss(r) : 0);
+    X[2 * i + 1] = aP * _O[1] + c * _O[3] + (sig ? sig * gauss(r) : 0);
+  }
+  return sig;
+}
+function sampleRun(D, ab, S, eta, cond, w, n, seed) {
+  const r = rng(seed), X = new Float64Array(2 * n), ts = taus(S); for (let i = 0; i < 2 * n; i++) X[i] = gauss(r);
+  for (let i = 0; i < S; i++) reverseStep(D, ab[ts[i]], ab[ts[i + 1]], X, n, cond, w, eta, r);
+  return X;
+}
+function meanNearest(D, X, n) {
+  let s = 0; for (let i = 0; i < n; i++) { let m = Infinity; for (let k = 0; k < D.n; k++) { const dx = X[2 * i] - D.x[k], dy = X[2 * i + 1] - D.y[k], d = dx * dx + dy * dy; if (d < m) m = d; } s += Math.sqrt(m); }
+  return s / n;
+}
+/*CORE-END*/
+
+/* ===== constants, state ===== */
+const C = { a: '#ff7a6b', b: '#3fd0c0', hl: '#ffc857', g: '#a78bfa', data: '#c7cbe0', acc: '#6ec3ff', ink: '#e9ecfa', dim: '#a2a9c8', faint: '#6b7396' };
+const M = 500, NH = 3, REV_DUR = 5, FWD_DUR = 4, HOLD0 = 1.8, HOLDT = 0.9;
+let VIEW = 2.8; // world half-width shown in the plot (zoomed in a little on phones)
+const STEPS_N = [1, 2, 3, 5, 10, 20, 50, 100, 250, 1000];
+const CLASSES = { heart: ['left lobe', 'right lobe'], spiral: ['arm A', 'arm B'], smiley: ['face ring', 'eyes + smile'], moons: ['top moon', 'bottom moon'] };
+const DEF = { shape: 'heart', sched: 'cosine', sampler: 'ddpm', S: 100, cond: -1, w: 0, K: 300, sig0: 0.05, arrows: true };
+const state = { ...DEF, phase: 'rev', t: T, timer: 0, seed: 1, probe: null, orbit: false, orbitA: 0, orbitC: null, stay: false, stayT: false, fwdDur: FWD_DUR, focus: null, showOrigin: false, hideHeroes: false, clock: 0, dist: 0, vr: 1, sig: 0 };
+const AB = { linear: makeSchedule('linear'), cosine: makeSchedule('cosine') };
+let ab = AB.linear, D = null, walks = [];
+const X0 = new Float64Array(2 * M), EPS = new Float64Array(2 * M), P = new Float64Array(2 * M);
+const R = { taus: [T, 0], i: 0, u: 0, prev: new Float64Array(2 * M), cur: new Float64Array(2 * M), trails: [], hat: [0, 0], origin: [], r: rng(1) };
+const PO = new Float64Array(4), WK = new Float64Array(400);
+const rgba = (hex, a) => `rgba(${parseInt(hex.slice(1, 3), 16)},${parseInt(hex.slice(3, 5), 16)},${parseInt(hex.slice(5, 7), 16)},${a})`;
+const smooth = u => u * u * (3 - 2 * u);
+const partCol = () => state.cond === 0 ? C.a : state.cond === 1 ? C.b : C.acc;
+
+/* ===== model plumbing ===== */
+function buildData() { D = makeShape(state.shape, state.K, state.sig0, 11); }
+function freshData() { X0.set(sampleData(D, rng(state.seed * 31 + 5), M)); }
+function freshNoise() { const r = rng(state.seed * 97 + 3); for (let i = 0; i < 2 * M; i++) EPS[i] = gauss(r); newWalks(); }
+function newWalks() { // hero particles take the step-by-step Markov chain q(x_t | x_{t−1}); same marginals as the closed form
+  const r = rng(state.seed * 53 + 1); walks = [];
+  for (let h = 0; h < NH; h++) {
+    const wk = new Float64Array(2 * (T + 1)); let x = X0[2 * h], y = X0[2 * h + 1]; wk[0] = x; wk[1] = y;
+    for (let t = 1; t <= T; t++) { const b = 1 - ab[t] / ab[t - 1], s = Math.sqrt(1 - b), q = Math.sqrt(b); x = s * x + q * gauss(r); y = s * y + q * gauss(r); wk[2 * t] = x; wk[2 * t + 1] = y; }
+    walks.push(wk);
+  }
+}
+function computeDisplay() {
+  if (state.phase === 'rev') { const e = smooth(R.u); for (let i = 0; i < 2 * M; i++) P[i] = R.prev[i] + (R.cur[i] - R.prev[i]) * e; return; }
+  const A = abarAt(ab, state.t), a = Math.sqrt(A), s = Math.sqrt(1 - A);
+  for (let i = 0; i < 2 * M; i++) P[i] = a * X0[i] + s * EPS[i];
+  const i0 = Math.min(T - 1, Math.floor(state.t)), f = state.t - i0;
+  for (let h = 0; h < NH; h++) { const wk = walks[h]; P[2 * h] = wk[2 * i0] * (1 - f) + wk[2 * i0 + 2] * f; P[2 * h + 1] = wk[2 * i0 + 1] * (1 - f) + wk[2 * i0 + 3] * f; }
+}
+function startRev() {
+  state.phase = 'rev'; state.t = T; R.taus = taus(state.S); R.i = 0; R.u = 0; R.r = rng(state.seed * 7 + 13);
+  const a = Math.sqrt(ab[T]), s = Math.sqrt(1 - ab[T]);
+  for (let i = 0; i < 2 * M; i++) R.prev[i] = a * X0[i] + s * EPS[i];
+  R.origin = []; R.trails = [];
+  for (let h = 0; h < NH; h++) { R.prev[2 * h] = walks[h][2 * T]; R.prev[2 * h + 1] = walks[h][2 * T + 1]; R.origin.push([X0[2 * h], X0[2 * h + 1]]); R.trails.push([R.prev[2 * h], R.prev[2 * h + 1]]); }
+  computeStep();
+  if (REDUCED && !playing) { const k = Math.round(state.S * 0.6); while (R.i + 1 < k) advance(); R.u = 1; state.t = R.taus[R.i + 1]; }
+}
+function computeStep() { // R.cur = one reverse step from R.prev (τ_i → τ_{i+1})
+  R.cur.set(R.prev);
+  state.sig = reverseStep(D, ab[R.taus[R.i]], ab[R.taus[R.i + 1]], R.cur, M, state.cond, state.w, state.sampler === 'ddpm' ? 1 : 0, R.r, R.hat);
+  R.trails.forEach((tr, h) => tr.push(R.cur[2 * h], R.cur[2 * h + 1]));
+}
+function advance() { R.prev.set(R.cur); R.i++; computeStep(); }
+function finishRev() { X0.set(R.cur); R.u = 1; state.phase = 'hold0'; state.timer = 0; state.t = 0; state.seed++; freshNoise(); }
+function startFwd(t0) { state.phase = 'fwd'; state.t = t0; }
+function update(dt) {
+  if (state.orbit && state.probe && dt) { state.orbitA += dt * 0.6; state.probe.x = state.orbitC.x + 0.45 * Math.cos(state.orbitA); state.probe.y = state.orbitC.y + 0.3 * Math.sin(state.orbitA); }
+  if (!dt) return;
+  switch (state.phase) {
+    case 'manual': if (!state.stay) state.phase = state.t >= T ? 'holdT' : 'fwd'; break;
+    case 'fwd': state.t += dt * T / state.fwdDur; if (state.t >= T) { state.t = T; state.phase = 'holdT'; state.timer = 0; } break;
+    case 'holdT': state.timer += dt; if (state.timer > HOLDT && !state.stayT) startRev(); break;
+    case 'hold0': state.timer += dt; if (state.timer > HOLD0) startFwd(0); break;
+    case 'rev': {
+      const S = R.taus.length - 1; R.u += dt * S / REV_DUR;
+      for (let n = 0; R.u >= 1 && n < 12; n++) { if (R.i + 1 >= S) { finishRev(); return; } R.u -= 1; advance(); }
+      R.u = Math.min(1, R.u); state.t = R.taus[R.i] + (R.taus[R.i + 1] - R.taus[R.i]) * smooth(R.u);
+    }
+  }
+}
+function stepOnce() {
+  setPlaying(false);
+  if (state.phase === 'rev') { if (R.u < 1) R.u = 1; else if (R.i + 1 >= R.taus.length - 1) finishRev(); else { advance(); R.u = 1; } if (state.phase === 'rev') state.t = R.taus[R.i + 1]; }
+  else if (state.phase === 'hold0') { state.phase = 'manual'; state.t = 50; }
+  else if (state.t >= T) { startRev(); R.u = 1; state.t = R.taus[1]; }
+  else { state.phase = 'manual'; state.t = Math.min(T, Math.floor(state.t / 50 + 1) * 50); }
+}
+
+/* ===== layout ===== */
+const L = {};
+var READY = false; // shell calls onResize() before this block has run
+function onResize() {
+  if (!READY) return;
+  const sx = 16, sy = 84, sw = W - 32, sh = H - 160, tlH = W < 600 ? 40 : 46, side = sw >= 700 ? Math.min(260, sw * 0.3) : 0;
+  VIEW = side ? 2.8 : 2.45;
+  const ph = sh - tlH - 10, pw = sw - (side ? side + 18 : 0), s = Math.max(120, Math.min(ph, pw));
+  L.plot = { x: sx + (pw - s) / 2, y: sy + Math.max(0, (ph - s) / 2), s };
+  L.tl = side ? { x: sx, y: sy + sh - tlH, w: pw, h: tlH } : { x: sx, y: sy + sh - tlH, w: sw, h: tlH };
+  L.side = side;
+  if (side) {
+    const x = sx + pw + 18; L.sched = { x, y: L.plot.y, w: side, h: 170 };
+    const ts = (side - 4 * 8) / 5; L.thumbs = [0, 100, 250, 450, 1000].map((t, i) => ({ x: x + i * (ts + 8), y: L.plot.y + 206, s: ts, t }));
+    L.legend = { x, y: L.plot.y + 206 + ts + 50 };
+  } else { L.sched = { x: L.plot.x + L.plot.s - 104, y: L.plot.y + 6, w: 98, h: 58, mini: true }; L.thumbs = []; L.legend = null; }
+  arrowsKey = '';
+}
+const sx = x => L.plot.x + L.plot.s * (0.5 + x / (2 * VIEW)), sy = y => L.plot.y + L.plot.s * (0.5 - y / (2 * VIEW));
+const wx = X => (X - L.plot.x) / L.plot.s * 2 * VIEW - VIEW, wy = Y => VIEW - (Y - L.plot.y) / L.plot.s * 2 * VIEW;
+const inR = (p, r) => r && p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+
+/* ===== drawing ===== */
+function label(txt, x, y, col, align = 'left', size = 11, bg = true) {
+  ctx.font = `600 ${size}px ui-monospace,Menlo,Consolas,monospace`; ctx.textAlign = align; ctx.textBaseline = 'middle';
+  if (bg) { const w = ctx.measureText(txt).width, x0 = align === 'left' ? x - 4 : align === 'right' ? x - w - 4 : x - w / 2 - 4; ctx.fillStyle = 'rgba(12,14,30,.78)'; ctx.beginPath(); ctx.roundRect(x0, y - size * 0.75, w + 8, size * 1.5, 4); ctx.fill(); }
+  ctx.fillStyle = col; ctx.fillText(txt, x, y);
+}
+function tag(txt, x, y, col) { ctx.font = '600 11px ui-monospace,Menlo,Consolas,monospace'; const w = ctx.measureText(txt).width, right = x + 9 + w + 6 > L.plot.x + L.plot.s; label(txt, right ? x - 9 : x + 9, y, col, right ? 'right' : 'left'); }
+function dots(arr, n, r, col, from = 0) { ctx.fillStyle = col; ctx.beginPath(); for (let i = from; i < n; i++) { const x = sx(arr[2 * i]), y = sy(arr[2 * i + 1]); ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, 6.2832); } ctx.fill(); }
+function arrowHead(x0, y0, x1, y1, hs) { const a = Math.atan2(y1 - y0, x1 - x0); ctx.moveTo(x1, y1); ctx.lineTo(x1 - hs * Math.cos(a - 0.45), y1 - hs * Math.sin(a - 0.45)); ctx.moveTo(x1, y1); ctx.lineTo(x1 - hs * Math.cos(a + 0.45), y1 - hs * Math.sin(a + 0.45)); }
+let arrows = null, arrowsKey = '';
+function arrowField() {
+  const n = W < 600 ? 13 : 19, te = Math.max(2, Math.round(state.t / 5) * 5);
+  const key = [state.shape, state.K, state.sig0, state.sched, state.cond, state.w, n, te].join();
+  if (key === arrowsKey) return arrows;
+  arrowsKey = key; arrows = []; const cell = 2 * VIEW / n, A = abarAt(ab, te);
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+    const x = -VIEW + (i + 0.5) * cell, y = -VIEW + (j + 0.5) * cell; predict(D, A, x, y, state.cond, state.w, PO);
+    const m = Math.hypot(PO[2], PO[3]) || 1, L2 = cell * 0.45 * Math.tanh(m / 1.2);
+    arrows.push(x, y, -PO[2] / m * L2, -PO[3] / m * L2, Math.tanh(m / 1.5));
+  }
+  return arrows;
+}
+function drawArrows() {
+  const A = arrowField(), k = L.plot.s / (2 * VIEW), fade = Math.min(1, state.t / 60);
+  if (fade < 0.02) return;
+  for (const [lo, hi, al] of [[0, 0.55, 0.32], [0.55, 2, 0.7]]) {
+    ctx.strokeStyle = rgba(C.g, al * fade); ctx.lineWidth = 1.2; ctx.beginPath();
+    for (let i = 0; i < A.length; i += 5) {
+      if (A[i + 4] < lo || A[i + 4] >= hi) continue;
+      const x = sx(A[i]), y = sy(A[i + 1]), dx = A[i + 2] * k, dy = -A[i + 3] * k;
+      ctx.moveTo(x - dx, y - dy); ctx.lineTo(x + dx, y + dy); arrowHead(x - dx, y - dy, x + dx, y + dy, 3.2);
+    }
+    ctx.stroke();
+  }
+}
+function drawPlot() {
+  const p = L.plot, col = partCol(), rev = state.phase === 'rev';
+  ctx.fillStyle = 'rgba(8,10,26,.45)'; ctx.strokeStyle = 'rgba(190,200,255,.14)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.roundRect(p.x, p.y, p.s, p.s, 12); ctx.fill(); ctx.stroke();
+  ctx.save(); ctx.beginPath(); ctx.roundRect(p.x, p.y, p.s, p.s, 12); ctx.clip();
+  ctx.strokeStyle = 'rgba(190,200,255,.06)'; ctx.beginPath(); ctx.moveTo(sx(0), p.y); ctx.lineTo(sx(0), p.y + p.s); ctx.moveTo(p.x, sy(0)); ctx.lineTo(p.x + p.s, sy(0)); ctx.stroke();
+  // N(0, I) rings — the destination of the forward process
+  const ringA = state.focus === 'rings' ? 0.8 : Math.max(0, (state.t - 0.8 * T) / (0.2 * T)) * 0.4;
+  if (ringA > 0.01) {
+    ctx.setLineDash([5, 5]); ctx.strokeStyle = rgba(C.data, ringA); ctx.lineWidth = 1.2; ctx.beginPath();
+    for (const r of [1, 2]) { ctx.moveTo(sx(r), sy(0)); ctx.arc(sx(0), sy(0), r * p.s / (2 * VIEW), 0, 6.2832); }
+    ctx.stroke(); ctx.setLineDash([]);
+    if (ringA > 0.3) { label('1σ', sx(-0.71), sy(-0.71), rgba(C.data, ringA), 'right'); label('2σ of N(0, I)', sx(-1.42), sy(-1.42), rgba(C.data, ringA)); }
+  }
+  // training data (ghost of the shape)
+  for (let k = 0; k < D.n; k++) {
+    const on = state.cond < 0 || D.c[k] === state.cond;
+    ctx.fillStyle = state.cond < 0 ? 'rgba(199,203,224,.32)' : rgba(D.c[k] ? C.b : C.a, on ? 0.35 : 0.08);
+    ctx.fillRect(sx(D.x[k]) - 1, sy(D.y[k]) - 1, 2, 2);
+  }
+  if (state.arrows) drawArrows();
+  // probe: the model's vote (lit data points)
+  let pr = null;
+  if (state.probe) {
+    const te = Math.max(1, state.t), A = abarAt(ab, te); pr = new Float64Array(4); predict(D, A, state.probe.x, state.probe.y, state.cond, state.w, pr, WK);
+    ctx.fillStyle = rgba(C.hl, 0.8); ctx.beginPath();
+    for (let k = 0; k < D.n; k++) if (WK[k] > 0.3 / D.n) { const r = Math.min(5, 1 + 9 * Math.sqrt(WK[k])), x = sx(D.x[k]), y = sy(D.y[k]); ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, 6.2832); }
+    ctx.fill();
+  }
+  // particles (two-pass glow)
+  computeDisplay();
+  dots(P, M, 3.4, rgba(col, 0.13), NH); dots(P, M, 1.5, rgba(col, 0.9), NH);
+  // hero trails
+  const hold = state.phase === 'hold0' ? Math.max(0, 1 - state.timer / HOLD0) : 1, nh = state.hideHeroes ? 0 : NH;
+  for (let h = 0; h < nh; h++) {
+    const pts = [];
+    if (rev || state.phase === 'hold0') { const tr = R.trails[h] || [], n = rev ? tr.length - 2 : tr.length; for (let i = 0; i < n; i += 2) pts.push(sx(tr[i]), sy(tr[i + 1])); }
+    else { const wk = walks[h], te = Math.floor(state.t); for (let t = 0; t <= te; t += 4) pts.push(sx(wk[2 * t]), sy(wk[2 * t + 1])); }
+    if (state.phase !== 'hold0') pts.push(sx(P[2 * h]), sy(P[2 * h + 1]));
+    fadeLine(pts, h ? C.data : col, (h ? 0.3 : state.sampler === 'ddpm' ? 0.7 : 0.85) * hold, h ? 1 : 1.6);
+    if (state.showOrigin && (rev || state.phase === 'hold0') && R.origin[h]) { ctx.strokeStyle = rgba(C.data, 0.8); ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(sx(R.origin[h][0]), sy(R.origin[h][1]), 5, 0, 6.2832); ctx.stroke(); }
+  }
+  if (nh) { dots(P, NH, 4, C.ink); dots(P, NH, 2.6, col); }
+  const hx = sx(P[0]), hy = sy(P[1]);
+  if (state.showOrigin && (rev || state.phase === 'hold0') && R.origin[0]) tag('started here', sx(R.origin[0][0]), sy(R.origin[0][1]) + 12, C.data);
+  if (nh && rev && state.t > 3) { // lead hero's current guess of the clean point
+    const gx = sx(R.hat[0]), gy = sy(R.hat[1]);
+    ctx.setLineDash([3, 4]); ctx.strokeStyle = rgba(C.hl, 0.7); ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(gx, gy); ctx.stroke(); ctx.setLineDash([]);
+    ctx.strokeStyle = C.hl; ctx.lineWidth = 1.8; ctx.beginPath(); ctx.arc(gx, gy, 5.5, 0, 6.2832); ctx.stroke();
+    if (Math.hypot(gx - hx, gy - hy) > 34) label('x̂₀ guess', gx < hx ? gx - 10 : gx + 10, gy < hy ? gy - 12 : gy + 12, C.hl, gx < hx ? 'right' : 'left');
+  }
+  if (nh && state.phase !== 'hold0') tag('x_t (one sample)', hx, hy - 11, C.ink);
+  if (pr) drawProbe(pr);
+  ctx.restore();
+  // plot caption (phase)
+  const S = R.taus.length - 1, sm = state.sampler.toUpperCase();
+  const ph = W < 600, txt = { rev: `← ${ph ? '' : 'REVERSE · '}${sm} · step ${Math.min(S, R.i + 1)}/${S}`, hold0: `✓ ${M} NEW SAMPLES${ph ? '' : ` · ${sm} ${S} step${S > 1 ? 's' : ''}`}`, fwd: 'FORWARD → adding noise', holdT: 't = T · pure noise N(0, I)', manual: ph ? `t = ${Math.round(state.t)} · drag` : `t = ${Math.round(state.t)} · drag timeline or probe` }[state.phase];
+  label(txt, p.x + 12, p.y + 16, state.phase === 'rev' || state.phase === 'hold0' ? col : C.dim, 'left', W < 600 ? 10 : 11);
+  if (state.cond >= 0) label(`condition: ${CLASSES[state.shape][state.cond]} · guidance w = ${state.w}`, p.x + 12, p.y + p.s - 16, col, 'left', W < 600 ? 10 : 11);
+  if (state.focus === 'heroes' && state.phase !== 'hold0') ring(hx, hy, 12);
+}
+function drawProbe(pr) {
+  const px = sx(state.probe.x), py = sy(state.probe.y), te = Math.max(1, state.t);
+  // where this exact point would land under deterministic DDIM from the current t
+  const n = Math.max(2, Math.min(60, Math.round(state.S * te / T))), X = new Float64Array([state.probe.x, state.probe.y]);
+  ctx.setLineDash([2, 4]); ctx.strokeStyle = rgba(C.hl, 0.75); ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(px, py);
+  for (let j = 0; j < n; j++) { reverseStep(D, abarAt(ab, te * (1 - j / n)), abarAt(ab, te * (1 - (j + 1) / n)), X, 1, state.cond, state.w, 0, null); ctx.lineTo(sx(X[0]), sy(X[1])); }
+  ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle = C.hl; ctx.beginPath(); ctx.arc(sx(X[0]), sy(X[1]), 3, 0, 6.2832); ctx.fill();
+  // −ε̂ arrow and x̂₀ guess
+  const k = L.plot.s / (2 * VIEW), m = Math.hypot(pr[2], pr[3]) || 1, len = Math.min(1.1, 0.4 * m) * k, ex = px - pr[2] / m * len, ey = py + pr[3] / m * len;
+  ctx.strokeStyle = C.g; ctx.lineWidth = 2.4; ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(ex, ey); arrowHead(px, py, ex, ey, 8); ctx.stroke();
+  const gx = sx(pr[0]), gy = sy(pr[1]);
+  ctx.strokeStyle = C.hl; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(gx, gy, 6, 0, 6.2832); ctx.stroke();
+  ctx.fillStyle = C.hl; ctx.beginPath(); ctx.moveTo(px, py - 8); ctx.lineTo(px + 7, py); ctx.lineTo(px, py + 8); ctx.lineTo(px - 7, py); ctx.closePath(); ctx.fill();
+  { // probe tag sits opposite the −ε̂ arrow (both axes) so the two labels never collide
+    const txt = state.orbit ? 'probe · drag me' : 'probe'; ctx.font = '600 11px ui-monospace,Menlo,Consolas,monospace';
+    const w = ctx.measureText(txt).width + 12, fitR = px + w < L.plot.x + L.plot.s - 4, fitL = px - w > L.plot.x + 4;
+    const right = ex < px ? fitR || !fitL : !fitL && fitR;
+    label(txt, right ? px + 12 : px - 12, ey < py ? py + 18 : py - 16, C.hl, right ? 'left' : 'right');
+  }
+  label('−ε̂', ex + (ex > px ? 8 : -8), ey + (ey > py ? 10 : -10), C.g, ex > px ? 'left' : 'right');
+  if (Math.hypot(gx - px, gy - py) > 30) label('x̂₀', gx + 9, gy - 10, C.hl);
+  if (state.focus === 'probe') ring(px, py, 15);
+}
+function fadeLine(pts, col, a, lw) { // a trail whose older segments fade out (5 alpha bands), so the recent path reads clearly
+  const n = pts.length / 2 - 1; if (n < 1 || a < 0.01) return; ctx.lineWidth = lw;
+  for (let b = 0; b < 5; b++) {
+    const i0 = Math.floor(n * b / 5), i1 = Math.floor(n * (b + 1) / 5); if (i1 <= i0) continue;
+    ctx.strokeStyle = rgba(col, a * (0.08 + 0.92 * ((b + 1) / 5) ** 2)); ctx.beginPath(); ctx.moveTo(pts[2 * i0], pts[2 * i0 + 1]);
+    for (let i = i0 + 1; i <= i1; i++) ctx.lineTo(pts[2 * i], pts[2 * i + 1]);
+    ctx.stroke();
+  }
+}
+function ring(x, y, r) { const pu = 0.5 + 0.5 * Math.sin(state.clock * 4); ctx.strokeStyle = rgba(C.acc, 0.35 + 0.5 * pu); ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, r + 4 * pu, 0, 6.2832); ctx.stroke(); }
+function drawTimeline() {
+  const r = L.tl, sm = W < 600, x0 = r.x + (sm ? 40 : 58), x1 = r.x + r.w - (sm ? 44 : 70), y = r.y + 13, tx = x0 + (x1 - x0) * state.t / T;
+  ctx.fillStyle = 'rgba(12,14,30,.6)'; ctx.beginPath(); ctx.roundRect(r.x, r.y - 6, r.w, r.h + 4, 10); ctx.fill();
+  const g = ctx.createLinearGradient(x0, 0, x1, 0); g.addColorStop(0, rgba(C.acc, 0.8)); g.addColorStop(1, 'rgba(199,203,224,.18)');
+  ctx.fillStyle = g; ctx.fillRect(x0, y - 2, x1 - x0, 4);
+  ctx.strokeStyle = 'rgba(233,236,250,.5)'; ctx.lineWidth = 1; ctx.beginPath(); // sampler evaluation points τ_i
+  for (const t of (state.S === R.taus.length - 1 ? R.taus : taus(state.S))) { const x = x0 + (x1 - x0) * t / T; ctx.moveTo(x, y - 9); ctx.lineTo(x, y - 4); } ctx.stroke();
+  label(sm ? 'data' : 'x₀ data', r.x + 6, y, C.acc, 'left', 10, false); label(sm ? 'noise' : 'noise x_T', r.x + r.w - 6, y, C.dim, 'right', 10, false);
+  ctx.fillStyle = C.hl; ctx.beginPath(); ctx.arc(tx, y, 7, 0, 6.2832); ctx.fill(); ctx.strokeStyle = '#141414'; ctx.lineWidth = 2; ctx.stroke();
+  const A = abarAt(ab, state.t), dir = state.phase === 'rev' ? '← denoising' : state.phase === 'fwd' ? 'adding noise →' : '';
+  label(`t = ${Math.round(state.t)}${sm ? '' : ` · √ᾱ = ${Math.sqrt(A).toFixed(2)}`}  ${dir}`, (x0 + x1) / 2, y + 17, C.ink, 'center', sm ? 10 : 11, false);
+  if (state.focus === 'timeline') ring(tx, y, 11);
+  if (state.focus === 'ticks') { const pu = 0.5 + 0.5 * Math.sin(state.clock * 4); ctx.strokeStyle = rgba(C.acc, 0.3 + 0.5 * pu); ctx.lineWidth = 2; ctx.beginPath(); ctx.roundRect(x0 - 8, y - 15, x1 - x0 + 16, 22, 8); ctx.stroke(); }
+}
+function schedXY(r) { const m = r.mini ? { l: 6, r: 6, t: 6, b: 6 } : { l: 26, r: 34, t: 30, b: 22 }; return { x0: r.x + m.l, x1: r.x + r.w - m.r, y0: r.y + r.h - m.b, y1: r.y + m.t }; }
+function drawSchedule() {
+  const r = L.sched, q = schedXY(r), X = t => q.x0 + (q.x1 - q.x0) * t / T, Y = v => q.y0 + (q.y1 - q.y0) * v, lsnr = A => (Math.max(-4, Math.min(4, Math.log10(A / (1 - A + 1e-12)))) + 4) / 8;
+  ctx.fillStyle = 'rgba(12,14,30,.75)'; ctx.strokeStyle = 'rgba(190,200,255,.14)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, 10); ctx.fill(); ctx.stroke();
+  const curve = (arr, f, col, lw, dash) => { ctx.setLineDash(dash || []); ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.beginPath(); for (let t = 0; t <= T; t += 10) ctx[t ? 'lineTo' : 'moveTo'](X(t), Y(f(arr[t]))); ctx.stroke(); ctx.setLineDash([]); };
+  const other = AB[state.sched === 'linear' ? 'cosine' : 'linear'];
+  ctx.strokeStyle = 'rgba(190,200,255,.1)'; ctx.beginPath(); ctx.moveTo(q.x0, Y(0.5)); ctx.lineTo(q.x1, Y(0.5)); ctx.stroke();
+  curve(other, v => v, rgba(C.acc, 0.25), 1, [3, 3]);
+  curve(ab, lsnr, rgba(C.data, 0.75), 1.4, [5, 3]);
+  curve(ab, v => v, C.acc, 2.2);
+  const A = abarAt(ab, state.t), tx = X(state.t);
+  ctx.strokeStyle = C.hl; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(tx, q.y0); ctx.lineTo(tx, q.y1); ctx.stroke();
+  ctx.fillStyle = C.hl; ctx.beginPath(); ctx.arc(tx, Y(A), 3.5, 0, 6.2832); ctx.moveTo(tx + 3.5, Y(lsnr(A))); ctx.arc(tx, Y(lsnr(A)), 3.5, 0, 6.2832); ctx.fill();
+  if (r.mini) { label('ᾱ', q.x0 + 2, Y(0.86), C.acc, 'left', 10, false); return; }
+  label(`schedule · ${state.sched}`, r.x + 10, r.y + 14, C.dim, 'left', 10, false);
+  label(`ᾱ=${A.toFixed(3)}  SNR=${(A / (1 - A + 1e-12)).toPrecision(2)}`, r.x + r.w - 10, r.y + 14, C.hl, 'right', 10, false);
+  label('1', q.x0 - 5, Y(1), C.faint, 'right', 9, false); label('0', q.x0 - 5, Y(0), C.faint, 'right', 9, false);
+  label('10⁴', q.x1 + 4, Y(1), C.faint, 'left', 9, false); label('1', q.x1 + 4, Y(0.5), C.faint, 'left', 9, false); label('10⁻⁴', q.x1 + 4, Y(0), C.faint, 'left', 9, false);
+  label('ᾱₜ signal kept', X(T * 0.06), Y(1) + 11, C.acc, 'left', 10, false);
+  label('SNR (log)', X(T * 0.64), Y(lsnr(ab[Math.round(T * 0.64)])) - 10, C.data, 'left', 10, false);
+  label('t →', q.x1, q.y0 + 12, C.faint, 'right', 9, false);
+}
+function drawSide() {
+  const th = L.thumbs; if (!th.length) return;
+  label('snapshots of q(x_t) · click to jump', th[0].x, th[0].y - 14, C.dim, 'left', 10, false);
+  const col = partCol();
+  for (const b of th) {
+    const on = Math.abs(state.t - b.t) < 30, A = abarAt(ab, b.t), a = Math.sqrt(A), s = Math.sqrt(1 - A), k = b.s / (2 * VIEW);
+    ctx.fillStyle = 'rgba(12,14,30,.75)'; ctx.strokeStyle = on ? C.hl : 'rgba(190,200,255,.14)'; ctx.lineWidth = on ? 1.5 : 1; ctx.beginPath(); ctx.roundRect(b.x, b.y, b.s, b.s, 6); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = rgba(col, 0.8);
+    for (let i = 0; i < 300; i++) { const x = b.x + b.s / 2 + (a * X0[2 * i] + s * EPS[2 * i]) * k, y = b.y + b.s / 2 - (a * X0[2 * i + 1] + s * EPS[2 * i + 1]) * k; if (x > b.x && x < b.x + b.s && y > b.y && y < b.y + b.s) ctx.fillRect(x - 0.6, y - 0.6, 1.2, 1.2); }
+    label(`t=${b.t}`, b.x + b.s / 2, b.y + b.s + 10, on ? C.hl : C.faint, 'center', 9, false);
+  }
+  const lg = L.legend, items = [['dot', partCol(), `samples x_t (${M} points)`], ['sq', C.data, 'training data (the shape)'], ['arr', C.g, '−ε̂ : predicted-noise direction'], ['ring', C.hl, 'x̂₀ : model’s guess of the clean point'], ['dia', C.hl, 'probe — click or drag the plot'], ['tick', C.ink, 'ticks = the sampler’s steps']];
+  items.forEach(([g, c, t], i) => {
+    const x = lg.x + 8, y = lg.y + i * 22; ctx.fillStyle = c; ctx.strokeStyle = c; ctx.lineWidth = 1.6; ctx.beginPath();
+    if (g === 'dot') ctx.arc(x, y, 3, 0, 6.2832), ctx.fill(); else if (g === 'sq') ctx.fillRect(x - 2, y - 2, 4, 4);
+    else if (g === 'arr') { ctx.moveTo(x - 7, y); ctx.lineTo(x + 7, y); arrowHead(x - 7, y, x + 7, y, 4); ctx.stroke(); }
+    else if (g === 'ring') { ctx.arc(x, y, 5, 0, 6.2832); ctx.stroke(); } else if (g === 'dia') { ctx.moveTo(x, y - 6); ctx.lineTo(x + 5, y); ctx.lineTo(x, y + 6); ctx.lineTo(x - 5, y); ctx.fill(); }
+    else { ctx.moveTo(x, y - 5); ctx.lineTo(x, y + 1); ctx.stroke(); }
+    ctx.font = '12px ui-sans-serif,system-ui,sans-serif'; ctx.textAlign = 'left'; ctx.fillStyle = C.dim; ctx.fillText(t, x + 16, y);
+  });
+}
+function drawAll() { ctx.clearRect(0, 0, W, H); drawPlot(); drawTimeline(); drawSchedule(); drawSide(); }
+
+/* ===== stats + live math ===== */
+let statT = 0;
+function stats(realDt) {
+  statT -= realDt; const A = abarAt(ab, state.t);
+  setText('st-t', String(Math.round(state.t))); setText('st-ab', A.toFixed(3));
+  if (statT <= 0) {
+    statT = 0.12; state.dist = meanNearest(D, P, M);
+    let m1 = 0, m2 = 0; for (let i = 0; i < 2 * M; i++) { m1 += P[i]; m2 += P[i] * P[i]; } m1 /= 2 * M; state.vr = m2 / (2 * M) - m1 * m1;
+    setText('st-d', state.dist.toFixed(3)); setText('m-var', state.vr.toFixed(2));
+  }
+  setText('m-sa', Math.sqrt(A).toFixed(3)); setText('m-sn', Math.sqrt(1 - A).toFixed(3)); setText('m-snr', (A / (1 - A + 1e-12)).toPrecision(3));
+  const S = R.taus.length - 1, i = Math.min(S - 1, R.i);
+  setText('m-step', `${R.taus[i]} → ${R.taus[i + 1]}`); setText('m-sig', state.sampler === 'ddim' ? '0 (DDIM)' : state.sig.toFixed(3)); setText('m-w', String(state.w));
+  if (state.probe) { const pr = new Float64Array(4); predict(D, abarAt(ab, Math.max(1, state.t)), state.probe.x, state.probe.y, state.cond, state.w, pr, WK); let mx = 0; for (let k = 0; k < D.n; k++) mx = Math.max(mx, WK[k]); setText('m-eps', Math.hypot(pr[2], pr[3]).toFixed(2)); setText('m-wmax', mx.toFixed(3)); }
+  else { setText('m-eps', '— (click the plot)'); setText('m-wmax', '—'); }
+}
+function frame(dt, realDt) { state.clock += realDt; update(dt); drawAll(); stats(realDt); }
+
+/* ===== pointer: probe on the plot, scrub on timeline / schedule / snapshots ===== */
+let drag = null;
+const ptr = e => { const b = cv.getBoundingClientRect(); return { x: e.clientX - b.left, y: e.clientY - b.top }; };
+const plotRect = () => ({ x: L.plot.x, y: L.plot.y, w: L.plot.s, h: L.plot.s });
+function scrubX(p) {
+  let t;
+  if (drag === 'sched') { const q = schedXY(L.sched); t = (p.x - q.x0) / (q.x1 - q.x0) * T; }
+  else { const r = L.tl, sm = W < 600, x0 = r.x + (sm ? 40 : 58), x1 = r.x + r.w - (sm ? 44 : 70); t = (p.x - x0) / (x1 - x0) * T; }
+  state.t = Math.max(0, Math.min(T, t)); state.phase = 'manual'; setPlaying(false);
+}
+cv.addEventListener('pointerdown', e => {
+  const p = ptr(e), th = L.thumbs.find(b => inR(p, { x: b.x, y: b.y, w: b.s, h: b.s + 16 }));
+  if (th) { state.t = th.t; state.phase = 'manual'; setPlaying(false); return; }
+  if (inR(p, { ...L.tl, y: L.tl.y - 8, h: L.tl.h + 8 })) drag = 'tl'; else if (inR(p, L.sched)) drag = 'sched';
+  else if (inR(p, plotRect())) drag = 'probe'; else return;
+  cv.setPointerCapture(e.pointerId); move(p);
+});
+function move(p) { if (drag === 'probe') { state.orbit = false; state.probe = { x: Math.max(-VIEW, Math.min(VIEW, wx(p.x))), y: Math.max(-VIEW, Math.min(VIEW, wy(p.y))) }; } else scrubX(p); }
+cv.addEventListener('pointermove', e => {
+  const p = ptr(e); if (drag) return move(p);
+  const near = state.probe && Math.hypot(p.x - sx(state.probe.x), p.y - sy(state.probe.y)) < 16;
+  cv.style.cursor = inR(p, L.tl) || inR(p, L.sched) ? 'ew-resize' : L.thumbs.some(b => inR(p, { x: b.x, y: b.y, w: b.s, h: b.s })) ? 'pointer' : near ? 'grab' : inR(p, plotRect()) ? 'crosshair' : 'default';
+});
+const endDrag = () => { drag = null; };
+cv.addEventListener('pointerup', endDrag); cv.addEventListener('pointercancel', endDrag);
+
+/* ===== controls ===== */
+let syncing = false; const ctl = {};
+function onParam(k) {
+  if (k === 'shape' || k === 'K' || k === 'sig0') { buildData(); freshData(); freshNoise(); }
+  if (k === 'sched') { ab = AB[state.sched]; newWalks(); }
+  arrowsKey = ''; if (k === 'arrows' || state.phase === 'manual' || state.stay || state.stayT) return;
+  startRev(); setPlaying(true);
+}
+const param = k => v => { state[k] = v; if (!syncing) onParam(k); };
+function setParams(o) { syncing = true; for (const k in o) { if (k === 'S') ctl.S.set(STEPS_N.indexOf(o.S)); else ctl[k].set(o[k]); } syncing = false; }
+{
+  const pp = $('#p-play'), h = (t, d) => pp.insertAdjacentHTML('beforeend', `<h3>${t}</h3>${d ? `<p>${d}</p>` : ''}`);
+  h('Data', 'What the model is trained on.');
+  ctl.shape = seg(pp, [['heart', 'Heart'], ['spiral', 'Spiral'], ['smiley', 'Smiley'], ['moons', 'Two moons']], DEF.shape, param('shape'));
+  ctl.K = slider(pp, 'cK', 'Training points K (fewer → easier to memorise)', 20, 400, 10, DEF.K, v => v, param('K'));
+  ctl.sig0 = slider(pp, 'cS0', 'Data blur σ₀ (0 = the model memorises exact points)', 0, 0.15, 0.01, DEF.sig0, v => v.toFixed(2), param('sig0'));
+  h('Forward process', 'How fast signal is traded for noise.');
+  ctl.sched = seg(pp, [['linear', 'Linear β (DDPM)'], ['cosine', 'Cosine (improved DDPM)']], DEF.sched, param('sched'));
+  h('Sampler', 'How the reverse steps are taken.');
+  ctl.sampler = seg(pp, [['ddpm', 'DDPM · stochastic'], ['ddim', 'DDIM · deterministic']], DEF.sampler, param('sampler'));
+  ctl.S = slider(pp, 'cSt', 'Sampling steps (network calls per sample)', 0, STEPS_N.length - 1, 1, STEPS_N.indexOf(DEF.S), i => String(STEPS_N[i]), i => param('S')(STEPS_N[i]));
+  h('Conditioning', 'Like a text prompt: ask for one part of the shape.');
+  ctl.cond = seg(pp, [[-1, 'None'], [0, 'Class A (coral)'], [1, 'Class B (teal)']], DEF.cond, param('cond'));
+  ctl.w = slider(pp, 'cW', 'Classifier-free guidance w (needs a condition)', 0, 5, 0.25, DEF.w, v => v.toFixed(2), param('w'));
+  h('Overlay');
+  ctl.arrows = seg(pp, [[true, 'Show −ε̂ arrows'], [false, 'Hide arrows']], DEF.arrows, param('arrows'));
+}
+function setup(over = {}) { // shared by tour steps + experiments
+  setParams({ ...DEF, ...over }); ab = AB[state.sched]; buildData(); freshData(); freshNoise();
+  Object.assign(state, { probe: null, orbit: false, stay: false, stayT: false, fwdDur: FWD_DUR, focus: null, showOrigin: false, hideHeroes: false });
+  arrowsKey = ''; setPlaying(!REDUCED);
+}
+function orbitProbe(x, y) { state.probe = { x, y }; state.orbitC = { x, y }; state.orbitA = 0; state.orbit = true; }
+
+/* ===== tour + experiments ===== */
+const STEPS = [
+  { t: 'Noise in, heart out', d: 'The model below is exact, so this is the real algorithm: 500 points of static follow the model’s arrows and become a heart. Every loop the heart is noised away and a fresh one is generated.',
+    cap: '<b>Generation:</b> pure noise follows the violet arrows and becomes a heart — a <b>new</b> one every loop.', go() { setup(); startRev(); } },
+  { t: 'Forward: destroy structure slowly', d: 'Each step shrinks every point toward the origin and adds a pinch of Gaussian noise. In closed form: x<sub>t</sub> = √ᾱ<sub>t</sub>·x<sub>0</sub> + √(1−ᾱ<sub>t</sub>)·ε. Drag the timeline or click a snapshot to scrub.',
+    cap: '<b>Forward process:</b> fine detail dies first, the rough blob last. Drag the <b>timeline</b> to scrub t yourself.', go() { setup({ arrows: false }); state.fwdDur = 7; state.focus = 'timeline'; startFwd(0); } },
+  { t: 'At t = T it’s just a Gaussian', d: 'With ᾱ<sub>T</sub> ≈ 0 (10⁻⁹ cosine, 4·10⁻⁵ linear) the data term has vanished: every point is essentially ε ~ N(0, I). Any dataset ends in the same place, which is why generation can start from plain random noise.',
+    cap: '<b>t = T:</b> the cloud is pure <b>N(0, I)</b> (dashed rings: 1σ, 2σ). Nothing of the heart survives.', go() { setup({ arrows: false }); state.stayT = true; state.hideHeroes = true; state.focus = 'rings'; startFwd(820); } },
+  { t: 'The model learns to predict the noise', d: 'Training shows the network a noisy x<sub>t</sub> and asks “which ε was added?”. The violet arrows are its answer, −ε̂, pointing back toward the data. Here ε̂ is exact: the guess x̂<sub>0</sub> is a softmax-weighted vote over training points — drag the probe and scrub t to see who votes.',
+    cap: 'Violet arrows = <b>−ε̂</b>. Drag the amber <b>probe</b>: its guess <b>x̂₀</b> is a weighted vote of the lit-up data.', go() { setup(); state.stay = true; state.hideHeroes = true; state.focus = 'probe'; state.phase = 'manual'; state.t = 300; orbitProbe(1.5, -0.8); } },
+  { t: 'Reverse steps generate', d: 'From t = T, each DDPM step predicts x̂<sub>0</sub>, jumps to where a point at the earlier t would sit, and re-injects a little fresh noise. Watch one sample’s trail and its amber x̂<sub>0</sub> guess sharpen from “the middle” to a spot on the heart.',
+    cap: '<b>Reverse:</b> each step strips predicted noise. Follow the ringed sample and its amber <b>x̂₀ guess</b>.', go() { setup({ S: 50 }); state.focus = 'heroes'; startRev(); } },
+  { t: 'Fewer steps: DDIM', d: 'DDIM reuses the same trained model but injects no noise, so sampling becomes a deterministic ODE: smooth trails, same noise → same output, and far fewer steps. The ticks on the timeline are the only moments the model is consulted.',
+    cap: '<b>DDIM, 10 steps:</b> no injected noise, and 10 smooth jumps still land on the heart. Count the <b>ticks</b>.', go() { setup({ sampler: 'ddim', S: 10 }); state.focus = 'ticks'; startRev(); } },
+  { t: 'This is how image generators work', d: 'Swap 2-D points for the ~10⁵ numbers of an image latent and our exact ε̂ for a neural net: that is Stable Diffusion. The prompt is the condition; guidance w pushes ε̂ away from the unconditional answer, which is why samples crowd the end of the moon farthest from class B (set w = 0 in Controls to get the whole moon back). The catch: a perfect denoiser of a small dataset just copies it (Try this #3).',
+    cap: '<b>Guidance w = 2</b>, <b>top moon</b>: every sample obeys but crowds away from class B, so less diversity.', go() { setup({ shape: 'moons', cond: 0, w: 2, sampler: 'ddim', S: 20 }); startRev(); } },
+];
+const tryCap = html => { $('#caption').innerHTML = html; };
+const TRIES = [
+  { q: 'Noise the heart, then run <b>DDIM</b> (no randomness) backwards from that exact noise. Does each point return to where it started?',
+    run() { setup({ sampler: 'ddim', S: 50 }); state.showOrigin = true; state.fwdDur = 2.5; startFwd(0); tryCap('Noise the heart, then <b>DDIM</b> back. Grey rings mark where the 3 tracked points <b>started</b>.'); },
+    why: 'No. The points land on the heart but not on their own start (grey rings). The model only sees x<sub>t</sub>, never the noise that was added, and at t = T every x₀ is equally plausible. Generation <b>samples</b> the data distribution; it does not rewind a recording.' },
+  { q: 'Give a perfect denoiser just <b>one</b> step from pure noise. Where do the 500 samples land?',
+    run() { setup({ sampler: 'ddim', S: 1 }); startRev(); tryCap('<b>One step</b> from pure noise with a perfect denoiser. Watch where all 500 samples go.'); },
+    why: 'All on a single point: the average of the training data, which is not even on the heart. Asked “what was x₀?” from pure noise, the MSE-optimal answer is the mean, i.e. blur. Many small steps let each guess become specific; that is why diffusion is iterative, and why one-step generators need distillation.' },
+  { q: 'Train on only <b>20</b> points with an exact denoiser (σ₀ = 0). Will generation invent new heart points?',
+    run() { setup({ K: 20, sig0: 0, sampler: 'ddim', S: 100 }); startRev(); tryCap('<b>20 training points</b>, exact denoiser, σ₀ = 0. Are the 500 results new points?'); },
+    why: 'It copies: every sample lands exactly on one of the 20 training points. The exact score of a finite training set is a set of spikes. Real networks generalise because they approximate ε̂ smoothly. The same effect is behind large image models occasionally regurgitating training images.' },
+];
+
+$('#bStep').onclick = stepOnce;
+$('#bReset').onclick = () => { state.seed++; freshNoise(); state.stayT = false; startRev(); setPlaying(!REDUCED); };
+stat('st-t', 'time t of 1000'); stat('st-ab', 'signal left <span style="text-transform:none">ᾱₜ</span>'); stat('st-d', 'dist to data');
+READY = true; onResize();
+renderSteps(); renderTries(); goStep(0); requestAnimationFrame(loop);
+window.__demo = { goStep, setPlaying, state: () => ({ phase: state.phase, t: state.t, S: state.S, sampler: state.sampler, dist: state.dist, vr: state.vr }), tries: TRIES };
 </script>
 </body>
 </html>

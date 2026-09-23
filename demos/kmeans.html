@@ -3,205 +3,851 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>K-Means — the classic dance</title>
+<title>K-Means Clustering — ML Field Notes</title>
 <style>
-html,body{margin:0;height:100%;overflow:hidden;background:#04060b}
-#c{position:fixed;inset:0;display:block;touch-action:none}
-#ui{position:fixed;top:12px;left:12px;z-index:10;font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#bfe9ff;background:rgba(6,10,18,.74);border:1px solid rgba(0,245,212,.28);border-radius:10px;padding:10px 13px;max-width:360px;pointer-events:none;text-shadow:0 0 6px rgba(0,0,0,.8);max-height:52vh;overflow:auto}
-#ui a{color:#00f5d4;pointer-events:auto;text-decoration:none}
-#ui a:hover{text-shadow:0 0 8px #00f5d4}
-#ui h1{margin:0 0 3px;font-size:14px;letter-spacing:2px;color:#00f5d4;text-shadow:0 0 10px rgba(0,245,212,.7)}
-.ex{color:#8fb4cc;font-size:11px}
-.hint{color:#f5c04c;font-size:11px;margin-top:5px}
-#stats{margin-top:6px;color:#e6f6ff;white-space:pre}
-@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
+/* ===== ML Field Notes design system (shared by every ML/AI demo) =====
+   Colour means the same thing in every demo:
+   --a coral = class A / "positive"     --b teal = class B / "negative"
+   --hl amber = the model's current parameters / guess / selection
+   --grad violet = gradients, updates, errors flowing back
+   --accent = this demo's signature colour (set per demo) */
+:root{
+  --bg:#0c0e1a; --bg2:#10132a; --panel:#13162c; --panel2:#181c38; --line:rgba(190,200,255,.10); --line2:rgba(190,200,255,.18);
+  --ink:#e9ecfa; --dim:#a2a9c8; --faint:#6b7396;
+  --a:#ff7a6b; --b:#3fd0c0; --hl:#ffc857; --grad:#a78bfa; --good:#7ee787; --bad:#ff6b8a;
+  --accent:#6fc3ff;
+  --r:12px; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.5 var(--sans)}
+body{overflow:hidden}
+a{color:var(--accent)}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app{display:grid;grid-template-columns:minmax(0,1fr) 380px;grid-template-rows:48px minmax(0,1fr);height:100vh;height:100dvh}
+.top{grid-column:1/-1;display:flex;align-items:center;gap:12px;padding:0 14px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#11142a,#0d1020)}
+.top a.back{color:var(--dim);text-decoration:none;font-size:13px;white-space:nowrap}
+.top a.back:hover{color:var(--ink)}
+.top .chip{font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 45%,transparent);border-radius:99px;padding:5px 8px}
+.top h1{margin:0;font-size:15px;font-weight:650;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top .sp{flex:1}
+.top .keys{font:11px var(--mono);color:var(--faint);white-space:nowrap}
+.stage{position:relative;min-width:0;min-height:0;background:radial-gradient(ellipse at 50% 40%,#151a3a 0%,var(--bg) 70%)}
+.stage::before{content:"";position:absolute;inset:0;background-image:radial-gradient(rgba(190,200,255,.07) 1px,transparent 1.3px);background-size:24px 24px;pointer-events:none}
+.stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.caption{position:absolute;left:16px;right:16px;top:14px;max-width:640px;padding:10px 14px;border-radius:10px;background:rgba(12,14,30,.78);border:1px solid var(--line2);backdrop-filter:blur(6px);font-size:14px;line-height:1.45;pointer-events:none;transition:opacity .3s}
+.caption b{color:var(--accent)}
+.caption:empty{opacity:0}
+.dock{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;gap:6px;padding:6px;border-radius:99px;background:rgba(12,14,30,.82);border:1px solid var(--line2);backdrop-filter:blur(6px)}
+.dock button{border:0;background:transparent;border-radius:99px;min-width:36px;height:34px;padding:0 12px;cursor:pointer;color:var(--ink);white-space:nowrap}
+.dock button:hover{background:rgba(255,255,255,.08)}
+.dock button.on{background:color-mix(in srgb,var(--accent) 22%,transparent);color:var(--accent)}
+.lesson{border-left:1px solid var(--line);background:var(--panel);overflow:auto;min-height:0;display:flex;flex-direction:column}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border-bottom:1px solid var(--line)}
+.stat{background:var(--panel);padding:10px 12px}
+.stat .k{font:600 10px/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.stat .v{font:600 18px/1.3 var(--mono);font-variant-numeric:tabular-nums;margin-top:3px}
+.tabs{display:flex;gap:2px;padding:10px 12px 0;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);z-index:2}
+.tabs button{border:0;background:none;padding:9px 12px;color:var(--dim);cursor:pointer;border-bottom:2px solid transparent;font-weight:600}
+.tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent)}
+.pane{padding:14px 16px 22px;display:none}
+.pane.on{display:block}
+.pane h3{margin:14px 0 6px;font-size:13px;letter-spacing:.02em}
+.pane p{margin:0 0 10px;color:var(--dim)}
+.pane p b,.pane li b{color:var(--ink)}
+.lede{font-size:15px;color:var(--ink)!important}
+.steps{list-style:none;margin:10px 0 0;padding:0;counter-reset:s}
+.steps li{counter-increment:s;border:1px solid var(--line);border-radius:10px;margin:0 0 8px;padding:10px 12px 10px 40px;position:relative;cursor:pointer;color:var(--dim);background:var(--panel2)}
+.steps li::before{content:counter(s);position:absolute;left:12px;top:10px;width:18px;height:18px;border-radius:99px;display:grid;place-items:center;font:600 11px var(--mono);background:rgba(255,255,255,.07);color:var(--dim)}
+.steps li.on{border-color:color-mix(in srgb,var(--accent) 60%,transparent);color:var(--ink)}
+.steps li.on::before{background:var(--accent);color:#141414}
+.steps li.done::before{content:"✓";background:rgba(126,231,135,.2);color:var(--good)}
+.steps li .t{font-weight:650;color:var(--ink);display:block}
+.steps li .d{display:none;margin-top:4px}
+.steps li.on .d{display:block}
+.tournav{display:flex;gap:8px;margin-top:6px}
+.btn{border:1px solid var(--line2);background:var(--panel2);border-radius:9px;padding:7px 12px;cursor:pointer;color:var(--ink)}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:#15131a;border-color:transparent;font-weight:650}
+.card{border:1px solid var(--line);border-radius:12px;padding:12px;margin:0 0 10px;background:var(--panel2)}
+.card .q{color:var(--ink);font-weight:600;margin-bottom:8px}
+.card .why{display:none;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line2);color:var(--dim)}
+.card.revealed .why{display:block}
+.card .row{display:flex;gap:8px;flex-wrap:wrap}
+.eq{font:14px/1.7 var(--mono);background:#0e1124;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:6px 0 12px;overflow-x:auto;white-space:nowrap}
+.eq .c-a{color:var(--a)} .eq .c-b{color:var(--b)} .eq .c-hl{color:var(--hl)} .eq .c-g{color:var(--grad)} .eq .c-acc{color:var(--accent)}
+.live{font-variant-numeric:tabular-nums;color:var(--hl)}
+.ctrl{display:grid;grid-template-columns:1fr auto;gap:4px 10px;align-items:center;margin:10px 0}
+.ctrl label{color:var(--dim);font-size:13px}
+.ctrl output{font:12px var(--mono);color:var(--ink);font-variant-numeric:tabular-nums}
+.ctrl input[type=range]{grid-column:1/-1;width:100%;accent-color:var(--accent)}
+.seg{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 10px}
+.seg button{border:1px solid var(--line2);background:transparent;border-radius:99px;padding:5px 11px;cursor:pointer;color:var(--dim);font-size:13px}
+.seg button[aria-pressed=true]{background:color-mix(in srgb,var(--accent) 20%,transparent);color:var(--ink);border-color:color-mix(in srgb,var(--accent) 55%,transparent)}
+.note{border-left:3px solid var(--grad);padding:6px 10px;margin:8px 0 12px;color:var(--dim);background:rgba(167,139,250,.06);border-radius:0 8px 8px 0}
+.wild li{margin-bottom:6px;color:var(--dim)}
+@media (max-width:880px){
+  body{overflow:auto}
+  .app{grid-template-columns:1fr;grid-template-rows:48px 58vh auto;height:auto}
+  .stage{height:58vh}
+  .lesson{border-left:0;border-top:1px solid var(--line)}
+  .top .keys{display:none}
+  .caption{font-size:13px;top:10px;left:10px;right:10px}
+  .stats{grid-template-columns:repeat(3,1fr)}
+  .stat .v{font-size:15px}
+}
+@media (prefers-reduced-motion:reduce){.caption{transition:none}}
 </style>
 </head>
 <body>
-<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
-<div id="ui">
-<h1>K-MEANS</h1>
-<div class="ex">Loops two steps — ASSIGN each point to its nearest centroid, UPDATE each centroid to its points' mean — until the centroids stop moving.</div>
-<div class="hint">keys 2&#8211;9 set K &#183; click adds a point &#183; V voronoi shading</div>
-<div id="stats"></div>
-<div><a href="index.html">&#8592; gallery</a></div>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace;max-width:100vw;white-space:pre-wrap';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div class="app">
+  <header class="top">
+    <a class="back" href="index.html">← Gallery</a>
+    <span class="chip">ML / AI</span>
+    <h1>K-Means Clustering</h1>
+    <span class="sp"></span>
+    <span class="keys">Space play · ←/→ tour · R reset</span>
+  </header>
+  <section class="stage" id="stage">
+    <canvas id="c" role="img" aria-label="Scatter plot of points coloured by k-means cluster, with draggable centroids, Voronoi cells, move arrows, a chart of inertia per half-step and an elbow chart over k"></canvas>
+    <div class="caption" id="caption" aria-live="polite"></div>
+    <div class="dock" role="group" aria-label="Simulation controls">
+      <button id="bPlay" class="on" aria-label="Pause">❚❚</button>
+      <button id="bStep" aria-label="Step once">Step</button>
+      <button id="bReset" aria-label="Reset">Reset</button>
+      <button id="bSpeed" aria-label="Speed">1×</button>
+    </div>
+  </section>
+  <aside class="lesson">
+    <div class="stats" id="stats"><!-- 3 stat tiles: .stat > .k + .v#id --></div>
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-tab="learn">Learn</button>
+      <button role="tab" aria-selected="false" data-tab="try">Try this</button>
+      <button role="tab" aria-selected="false" data-tab="math">The math</button>
+      <button role="tab" aria-selected="false" data-tab="play">Controls</button>
+    </div>
+    <div class="pane on" id="p-learn">
+      <p class="lede">K-means finds k groups by alternating two dead-simple moves — join the nearest centre, move each centre to the middle of its points — until nothing changes.</p>
+      <ol class="steps" id="steps"></ol>
+      <div class="tournav"><button class="btn" id="tPrev">← Back</button><button class="btn primary" id="tNext">Next step →</button></div>
+      <h3>In the wild</h3>
+      <ul class="wild">
+        <li><b>Vector search for RAG:</b> FAISS-style IVF indexes run k-means over millions of embeddings, then search only the few nearest cells instead of everything.</li>
+        <li><b>Discrete "tokens" for audio &amp; images:</b> HuBERT-style speech models and VQ codebooks cluster feature vectors with k-means so a transformer can predict unit IDs like words.</li>
+        <li><b>Colour quantisation &amp; segmentation:</b> cluster pixel colours into a k-colour palette, or customers into segments; k-means also seeds Gaussian mixture models.</li>
+      </ul>
+    </div>
+    <div class="pane" id="p-try"><!-- .card experiments: predict → run → why --></div>
+    <div class="pane" id="p-math"><!-- .eq blocks with colour-coded terms + .live spans; .note for misconceptions --></div>
+    <div class="pane" id="p-play"><!-- .ctrl sliders, .seg segmented choices --></div>
+  </aside>
 </div>
-<canvas id="c"></canvas>
 <script>
-(function(){
 'use strict';
-var cv=document.getElementById('c'),ctx=cv.getContext('2d'),statsEl=document.getElementById('stats');
-var TAU=Math.PI*2,W=innerWidth,H=innerHeight,DPR=1,T=0;
-var PAL=['#00f5d4','#f15bb5','#ffd23f','#00bbf9','#9b5de5','#ff6b35','#8ac926','#ff2d95','#4cc9f0'];
-var RGB=PAL.map(function(h){return[parseInt(h.slice(1,3),16),parseInt(h.slice(3,5),16),parseInt(h.slice(5,7),16)];});
-var pts=[],cents=[],K=4,trueK=4,iter=0,runs=0,phase='assign',pt=0,inertia=0,showVoro=true,voroDirty=true,maxMove=0;
-var vc=document.createElement('canvas'),vctx=vc.getContext('2d'),VS=8,pw=0,ph=0;
-function resize(){
- DPR=Math.min(devicePixelRatio||1,2);var nw=innerWidth,nh=innerHeight;
- if(pw&&pts.length){var rx=nw/pw,ry=nh/ph,i,c;
-  for(i=0;i<pts.length;i++){pts[i].x*=rx;pts[i].y*=ry;}
-  for(i=0;i<cents.length;i++){c=cents[i];c.x*=rx;c.y*=ry;c.px*=rx;c.py*=ry;c.tx*=rx;c.ty*=ry;c.trail.length=0;}
- }
- W=pw=nw;H=ph=nh;
- cv.width=W*DPR|0;cv.height=H*DPR|0;cv.style.width=W+'px';cv.style.height=H+'px';
- ctx.setTransform(DPR,0,0,DPR,0,0);
- vc.width=Math.max(1,Math.ceil(W/VS));vc.height=Math.max(1,Math.ceil(H/VS));voroDirty=true;
+/* ===== shell helpers (keep) ===== */
+const $ = s => document.querySelector(s);
+const cv = $('#c'), ctx = cv.getContext('2d'), stage = $('#stage');
+let W = 0, H = 0, DPR = 1;
+function resize() {
+  const r = stage.getBoundingClientRect(); DPR = Math.min(2, devicePixelRatio || 1);
+  W = Math.max(1, r.width); H = Math.max(1, r.height);
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR); ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  if (typeof onResize === 'function') onResize();
 }
-addEventListener('resize',resize);resize();
-function gauss(){var u=0,v=0;while(!u)u=Math.random();while(!v)v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(TAU*v);}
-function newData(){
- trueK=3+(Math.random()*4|0);pts=[];
- var m=Math.min(W,H)*0.14,b,i;
- for(b=0;b<trueK;b++){
-  var cx=m+Math.random()*(W-2*m),cy=m+Math.random()*(H-2*m),sd=Math.min(W,H)*(0.045+Math.random()*0.05),n=38+(Math.random()*34|0);
-  for(i=0;i<n;i++)pts.push({x:Math.max(6,Math.min(W-6,cx+gauss()*sd)),y:Math.max(6,Math.min(H-6,cy+gauss()*sd)),a:-1,na:-1,f:0,rt:0});
- }
- runs++;initCents();
+new ResizeObserver(resize).observe(stage); resize();
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+// tabs
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', x === b));
+  document.querySelectorAll('.pane').forEach(p => p.classList.toggle('on', p.id === 'p-' + b.dataset.tab));
+});
+// playback
+let playing = !REDUCED, speed = 1;
+const SPEEDS = [0.25, 0.5, 1, 2, 4];
+function setPlaying(v) { playing = v; $('#bPlay').textContent = v ? '❚❚' : '▶'; $('#bPlay').classList.toggle('on', v); $('#bPlay').setAttribute('aria-label', v ? 'Pause' : 'Play'); }
+$('#bPlay').onclick = () => setPlaying(!playing);
+$('#bSpeed').onclick = () => { speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]; $('#bSpeed').textContent = speed + '×'; };
+// tour: STEPS = [{t:'title', d:'html', cap:'stage caption html', go(){ /* set demo state */ }}]
+let tour = 0;
+function renderSteps() {
+  const ol = $('#steps'); ol.innerHTML = '';
+  STEPS.forEach((s, i) => { const li = document.createElement('li'); li.className = (i === tour ? 'on' : '') + (i < tour ? ' done' : ''); li.innerHTML = `<span class="t">${s.t}</span><span class="d">${s.d}</span>`; li.onclick = () => goStep(i); ol.appendChild(li); });
+  $('#tPrev').disabled = tour === 0; $('#tNext').textContent = tour === STEPS.length - 1 ? 'Start over ↺' : 'Next step →';
 }
-function initCents(){
- cents=[];var used={},k,j;
- for(k=0;k<Math.min(K,pts.length);k++){
-  do{j=Math.random()*pts.length|0;}while(used[j]);used[j]=1;
-  cents.push({x:pts[j].x,y:pts[j].y,px:0,py:0,tx:0,ty:0,trail:[]});
- }
- iter=0;voroDirty=true;startAssign();
+function goStep(i) { tour = (i + STEPS.length) % STEPS.length; const s = STEPS[tour]; if (s.go) s.go(); $('#caption').innerHTML = s.cap || ''; renderSteps(); }
+$('#tPrev').onclick = () => goStep(Math.max(0, tour - 1));
+$('#tNext').onclick = () => goStep(tour + 1);
+// experiments: TRIES = [{q:'Predict…', run(){…}, why:'html'}]
+function renderTries() {
+  const p = $('#p-try'); p.innerHTML = '<p>Make a prediction first, then run it. Each experiment sets the demo up for you.</p>';
+  TRIES.forEach(x => { const c = document.createElement('div'); c.className = 'card'; c.innerHTML = `<div class="q">${x.q}</div><div class="row"><button class="btn primary">Run it</button><button class="btn">Show why</button></div><div class="why">${x.why}</div>`; const [run, why] = c.querySelectorAll('button'); run.onclick = () => { x.run(); setPlaying(true); }; why.onclick = () => c.classList.toggle('revealed'); p.appendChild(c); });
 }
-function startAssign(){
- phase='assign';pt=0;
- for(var i=0;i<pts.length;i++){var p=pts[i],bd=1e18,bk=0;
-  for(var k=0;k<cents.length;k++){var dx=p.x-cents[k].x,dy=p.y-cents[k].y,d=dx*dx+dy*dy;if(d<bd){bd=d;bk=k;}}
-  p.na=bk;p.rt=Math.random()*0.55;
- }
+// controls helpers
+function slider(parent, id, label, min, max, step, value, fmt, onInput) {
+  const d = document.createElement('div'); d.className = 'ctrl';
+  d.innerHTML = `<label for="${id}">${label}</label><output id="${id}o"></output><input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${value}">`;
+  parent.appendChild(d); const inp = d.querySelector('input'), out = d.querySelector('output');
+  const upd = () => { out.textContent = fmt(+inp.value); onInput(+inp.value); }; inp.oninput = upd; upd();
+  return { set(v) { inp.value = v; upd(); }, get: () => +inp.value };
 }
-function endAssign(){
- var i,k;
- for(i=0;i<pts.length;i++)pts[i].a=pts[i].na;
- maxMove=0;
- for(k=0;k<cents.length;k++){
-  var sx=0,sy=0,n=0,c=cents[k];
-  for(i=0;i<pts.length;i++)if(pts[i].a===k){sx+=pts[i].x;sy+=pts[i].y;n++;}
-  c.px=c.x;c.py=c.y;
-  if(n){c.tx=sx/n;c.ty=sy/n;}else{var j=Math.random()*pts.length|0;c.tx=pts[j].x;c.ty=pts[j].y;}
-  maxMove=Math.max(maxMove,Math.hypot(c.tx-c.px,c.ty-c.py));
- }
- if(maxMove<0.5&&iter>0){phase='done';pt=0;}else{phase='update';pt=0;}
+function seg(parent, options, value, onPick) {
+  const d = document.createElement('div'); d.className = 'seg'; parent.appendChild(d);
+  const bs = options.map(([v, label]) => { const b = document.createElement('button'); b.textContent = label; b.setAttribute('aria-pressed', v === value); b.onclick = () => set(v); d.appendChild(b); return [v, b]; });
+  function set(v) { bs.forEach(([k, b]) => b.setAttribute('aria-pressed', k === v)); onPick(v); }
+  return { set };
 }
-function step(dt){
- T+=dt;pt+=dt;var i,k;
- if(phase==='assign'){
-  for(i=0;i<pts.length;i++){var p=pts[i];if(p.rt>=0&&p.rt<90&&pt>p.rt){p.a=p.na;p.f=1;p.rt=-1;}}
-  if(pt>=0.95)endAssign();
- }else if(phase==='update'){
-  var u=Math.min(1,pt/0.8),e=u<0.5?4*u*u*u:1-Math.pow(-2*u+2,3)/2;
-  for(k=0;k<cents.length;k++){var c=cents[k];
-   c.x=c.px+(c.tx-c.px)*e;c.y=c.py+(c.ty-c.py)*e;
-   c.trail.push({x:c.x,y:c.y,a:0.7});if(c.trail.length>70)c.trail.shift();
+function stat(id, label) { const d = document.createElement('div'); d.className = 'stat'; d.innerHTML = `<div class="k">${label}</div><div class="v" id="${id}">–</div>`; $('#stats').appendChild(d); }
+const setText = (id, v) => { const e = document.getElementById(id); if (e && e.textContent !== v) e.textContent = v; };
+// keyboard
+addEventListener('keydown', e => {
+  if (e.target.matches('input,select,textarea')) return;
+  if (e.code === 'Space') { setPlaying(!playing); e.preventDefault(); }
+  else if (e.key === 'ArrowRight') goStep(tour + 1);
+  else if (e.key === 'ArrowLeft') goStep(Math.max(0, tour - 1));
+  else if (e.key === 'r' || e.key === 'R') $('#bReset').click();
+});
+// wall-clock-locked loop (dt clamped to [0, 0.1] — rAF timestamps can precede performance.now())
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.1, Math.max(0, (now - last) / 1000)); last = now;
+  try { frame(playing ? dt * speed : 0, dt); } catch (err) { window.onerror(err.message, '', 0); return; }
+  requestAnimationFrame(loop);
+}
+
+// ===== DEMO CODE: k-means (Lloyd's algorithm) =====
+/*CORE-START*/
+// Pure model: data, Lloyd's two moves, the objective, k-means++ seeding. No DOM.
+const AX = 1.25; // world = [0, AX] × [0, 1]
+function rngOf(seed) {
+  let a = (seed >>> 0) || 1;
+  return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+function gauss(r) { let u = 0; while (!u) u = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * r()); }
+const initRng = (iseed, k, method) => rngOf(iseed * 101 + k * 7 + (method === 'pp' ? 50000 : 0));
+function nearest(p, C) {
+  let b = 0, bd = Infinity;
+  for (let k = 0; k < C.length; k++) { const dx = p.x - C[k].x, dy = p.y - C[k].y, d = dx * dx + dy * dy; if (d < bd) { bd = d; b = k; } }
+  return b;
+}
+// Move 1 (ASSIGN): every point takes its nearest centroid. Mutates L, returns how many switched.
+function assign(pts, C, L) {
+  let moved = 0;
+  for (let i = 0; i < pts.length; i++) { const k = nearest(pts[i], C); if (k !== L[i]) { L[i] = k; moved++; } }
+  return moved;
+}
+// Move 2 (UPDATE): every centroid goes to the mean of its points (an empty cluster stays put).
+function update(pts, L, C) {
+  const s = C.map(() => [0, 0, 0]);
+  pts.forEach((p, i) => { const a = s[L[i]]; if (a) { a[0] += p.x; a[1] += p.y; a[2]++; } });
+  return C.map((c, k) => s[k][2] ? { x: s[k][0] / s[k][2], y: s[k][1] / s[k][2], n: s[k][2] } : { x: c.x, y: c.y, n: 0 });
+}
+// The objective J (inertia / within-cluster sum of squares).
+function inertia(pts, L, C) {
+  let J = 0;
+  pts.forEach((p, i) => { const c = C[L[i]]; if (c) J += (p.x - c.x) ** 2 + (p.y - c.y) ** 2; });
+  return J;
+}
+// k-means++: P(x) = D(x)² / Σ D², D = distance to the nearest centroid chosen so far.
+function ppWeights(pts, C) {
+  const w = new Float64Array(pts.length); let s = 0;
+  pts.forEach((p, i) => { const c = C[nearest(p, C)]; s += w[i] = (p.x - c.x) ** 2 + (p.y - c.y) ** 2; });
+  for (let i = 0; i < w.length; i++) w[i] = s ? w[i] / s : 1 / w.length;
+  return w;
+}
+function pickIndex(w, u) { let acc = 0; for (let i = 0; i < w.length; i++) { acc += w[i]; if (u < acc) return i; } return w.length - 1; }
+function initCentroids(pts, k, method, r) {
+  const n = pts.length, C = [];
+  if (method === 'pp') {
+    C.push(pts[Math.floor(r() * n)]);
+    while (C.length < k) C.push(pts[pickIndex(ppWeights(pts, C), r())]);
+  } else { // Forgy: k distinct random data points
+    const idx = [...Array(n).keys()];
+    for (let j = 0; j < Math.min(k, n); j++) { const m = j + Math.floor(r() * (n - j)); [idx[j], idx[m]] = [idx[m], idx[j]]; C.push(pts[idx[j]]); }
   }
-  voroDirty=true;
-  if(u>=1){iter++;startAssign();}
- }else if(phase==='done'){
-  if(pt>=2.8)newData();
- }
- for(i=0;i<pts.length;i++)if(pts[i].f>0)pts[i].f-=dt*2.4;
- for(k=0;k<cents.length;k++){var tr=cents[k].trail;
-  for(i=0;i<tr.length;i++)tr[i].a-=dt*0.55;
-  while(tr.length&&tr[0].a<=0)tr.shift();
- }
- inertia=0;
- for(i=0;i<pts.length;i++){var q=pts[i];
-  if(q.a>=0&&q.a<cents.length){var dx=q.x-cents[q.a].x,dy=q.y-cents[q.a].y;inertia+=dx*dx+dy*dy;}
- }
+  return C.map(c => ({ x: c.x, y: c.y }));
 }
-function drawVoro(){
- if(voroDirty){
-  var w=vc.width,h=vc.height,img=vctx.createImageData(w,h),d=img.data,o=0,x,y,k;
-  for(y=0;y<h;y++){var py=(y+0.5)*VS;
-   for(x=0;x<w;x++){var px=(x+0.5)*VS,bd=1e18,bk=0;
-    for(k=0;k<cents.length;k++){var dx=px-cents[k].x,dy=py-cents[k].y,dd=dx*dx+dy*dy;if(dd<bd){bd=dd;bk=k;}}
-    var c=RGB[bk%9];d[o++]=c[0];d[o++]=c[1];d[o++]=c[2];d[o++]=42;
-   }}
-  vctx.putImageData(img,0,0);voroDirty=false;
- }
- ctx.imageSmoothingEnabled=true;
- ctx.drawImage(vc,0,0,W,H);
-}
-function star(x,y,R){
- ctx.beginPath();
- for(var i=0;i<10;i++){var r=i%2?R*0.45:R,a=-Math.PI/2+i*Math.PI/5,sx=x+Math.cos(a)*r,sy=y+Math.sin(a)*r;
-  if(i)ctx.lineTo(sx,sy);else ctx.moveTo(sx,sy);}
- ctx.closePath();
-}
-function draw(){
- var i,k;
- ctx.fillStyle='#04060b';ctx.fillRect(0,0,W,H);
- if(showVoro)drawVoro();
- if(phase==='assign'){
-  var fade=Math.max(0,1-Math.max(0,(pt-0.65)/0.3));
-  ctx.lineWidth=1;
-  for(i=0;i<pts.length;i++){var p=pts[i];
-   if(p.rt!==-1||p.a<0||p.a>=cents.length)continue;
-   var c=cents[p.a];
-   ctx.globalAlpha=Math.min(1,0.13*fade+Math.max(0,p.f)*0.3);
-   ctx.strokeStyle=PAL[p.a%9];
-   ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(c.x,c.y);ctx.stroke();
+// Full Lloyd run; hist records J after every half-step.
+function lloyd(pts, C0, maxIter = 100) {
+  let C = C0.map(c => ({ x: c.x, y: c.y })), iters = 0;
+  const L = new Array(pts.length).fill(-1), hist = [];
+  for (let it = 0; it < maxIter; it++) {
+    const moved = assign(pts, C, L); hist.push({ J: inertia(pts, L, C), kind: 'a', moved });
+    if (it > 0 && moved === 0) break;
+    C = update(pts, L, C); hist.push({ J: inertia(pts, L, C), kind: 'u' }); iters++;
   }
-  ctx.globalAlpha=1;
- }
- for(k=0;k<cents.length;k++){var tr=cents[k].trail;ctx.fillStyle=PAL[k%9];
-  for(i=0;i<tr.length;i++){ctx.globalAlpha=Math.max(0,tr[i].a)*0.35;ctx.beginPath();ctx.arc(tr[i].x,tr[i].y,2.2,0,TAU);ctx.fill();}
- }
- ctx.globalAlpha=1;
- for(i=0;i<pts.length;i++){var q=pts[i],col=q.a<0?'#5a6a80':PAL[q.a%9],f=Math.max(0,q.f);
-  ctx.fillStyle=col;
-  ctx.globalAlpha=0.2;ctx.beginPath();ctx.arc(q.x,q.y,5+f*7,0,TAU);ctx.fill();
-  ctx.globalAlpha=1;ctx.beginPath();ctx.arc(q.x,q.y,2.4+f*2,0,TAU);ctx.fill();
-  if(f>0){ctx.globalAlpha=f;ctx.strokeStyle='#fff';ctx.lineWidth=1;
-   ctx.beginPath();ctx.arc(q.x,q.y,4+(1-f)*9,0,TAU);ctx.stroke();ctx.globalAlpha=1;}
- }
- for(k=0;k<cents.length;k++){var c2=cents[k],R=11+Math.sin(T*3+k*1.7)*1.3;
-  ctx.save();
-  ctx.shadowColor=PAL[k%9];ctx.shadowBlur=22;
-  ctx.fillStyle=PAL[k%9];star(c2.x,c2.y,R);ctx.fill();
-  ctx.shadowBlur=0;ctx.strokeStyle='rgba(255,255,255,.85)';ctx.lineWidth=1.2;star(c2.x,c2.y,R);ctx.stroke();
+  return { C, L, hist, iters, J: hist[hist.length - 1].J };
+}
+function bestJ(pts, k, restarts, r) { let b = Infinity; for (let t = 0; t < restarts; t++) b = Math.min(b, lloyd(pts, initCentroids(pts, k, 'pp', r)).J); return b; }
+// J of the ground-truth grouping (each true group scored around its own mean).
+function truthInertia(pts) {
+  const G = new Map();
+  pts.forEach(p => { if (p.g < 0) return; const a = G.get(p.g) || [0, 0, 0]; a[0] += p.x; a[1] += p.y; a[2]++; G.set(p.g, a); });
+  let J = 0; pts.forEach(p => { const a = G.get(p.g); if (a) J += (p.x - a[0] / a[2]) ** 2 + (p.y - a[1] / a[2]) ** 2; });
+  return J;
+}
+const BLOBS = [[0.28, 0.27], [0.97, 0.26], [0.3, 0.74], [0.99, 0.73]];
+const BAD_INIT = [[0.93, 0.24], [1.01, 0.29], [0.29, 0.5], [0.99, 0.73]]; // 2 centroids in one blob, 1 straddling two
+function makeData(name, seed) {
+  const r = rngOf(seed * 977 + 13), pts = [], guides = [];
+  const blob = (cx, cy, sa, sb, rot, n, g, ring) => {
+    const c = Math.cos(rot), s = Math.sin(rot);
+    for (let i = 0; i < n; i++) { const u = gauss(r) * sa, v = gauss(r) * sb; pts.push({ x: cx + u * c - v * s, y: cy + u * s + v * c, g }); }
+    if (ring) { const q = []; for (let t = 0; t <= 60; t++) { const a = t / 60 * 2 * Math.PI, u = 2 * sa * Math.cos(a), v = 2 * sb * Math.sin(a); q.push([cx + u * c - v * s, cy + u * s + v * c]); } guides.push(q); }
+  };
+  if (name === 'uneven') { blob(0.42, 0.5, 0.14, 0.14, 0, 220, 0, 1); blob(0.97, 0.19, 0.04, 0.04, 0, 32, 1, 1); blob(0.97, 0.81, 0.04, 0.04, 0, 32, 2, 1); }
+  else if (name === 'aniso') { const th = -1.05, px = -Math.sin(th), py = Math.cos(th); for (let j = -1; j <= 1; j++) blob(0.625 + j * 0.18 * px, 0.5 + j * 0.18 * py, 0.2, 0.026, th, 100, j + 1, 1); }
+  else if (name === 'moons') {
+    const R = 0.34, cx = 0.44, cy = 0.585;
+    for (let m = 0; m < 2; m++) {
+      const q = [];
+      for (let i = 0; i < 150; i++) { const t = r() * Math.PI, x = m ? cx + R - R * Math.cos(t) : cx + R * Math.cos(t), y = m ? cy - 0.5 * R + R * Math.sin(t) : cy - R * Math.sin(t); pts.push({ x: x + gauss(r) * 0.03, y: y + gauss(r) * 0.03, g: m }); }
+      for (let i = 0; i <= 40; i++) { const t = i / 40 * Math.PI; q.push(m ? [cx + R - R * Math.cos(t), cy - 0.5 * R + R * Math.sin(t)] : [cx + R * Math.cos(t), cy - R * Math.sin(t)]); }
+      guides.push(q);
+    }
+  } else BLOBS.forEach(([x, y], g) => blob(x + (r() - 0.5) * 0.04, y + (r() - 0.5) * 0.04, 0.065, 0.065, 0, 70, g, 0));
+  pts.forEach(p => { p.x = Math.max(0.01, Math.min(AX - 0.01, p.x)); p.y = Math.max(0.01, Math.min(0.99, p.y)); });
+  return { pts, guides };
+}
+/*CORE-END*/
+
+/* ===== look ===== */
+const PAL = ['#ff7a6b', '#3fd0c0', '#6aa8ff', '#f58ad4', '#a8e063', '#ff9f45', '#d9b38c', '#8de0ff'];
+const RGB = PAL.map(h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)));
+const HL = '#ffc857', GR = '#a78bfa', NEU = '#c7cbe0', INK = '#e9ecfa', DIM = '#a2a9c8', FAINT = '#6b7396', GOOD = '#7ee787', BAD = '#ff6b8a', ACC = '#6fc3ff';
+const MONO = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace', SANS = 'ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif';
+const TAU = Math.PI * 2, clamp = (v, a, b) => Math.max(a, Math.min(b, v)), ease = u => u < 0.5 ? 4 * u * u * u : 1 - (-2 * u + 2) ** 3 / 2;
+const DA = 1.0, DU = 0.9, DPOP = 0.4; // seconds: assign sweep, update glide, init pop
+const pos = p => ({ x: p.x, y: p.y });
+const fmtJ = J => J.toFixed(J < 10 ? 3 : 2);
+
+/* ===== state ===== */
+const st = {
+  ds: 'blobs', seed: 1, iseed: 1, k: 4, init: 'random', forced: null,
+  pts: [], guides: [], L: [], newL: [], delay: [], C: [], C0: [], Ct: [],
+  phase: 'pop', t: 0, next: null, iter: 0, hist: [], moved: 0, shift: 0,
+  loop: false, gap: 0.35, focus: null, voronoi: true, truth: false,
+  elbow: [], jTrue: 0, trueK: 4, pp: null, rng: null, drag: null, hover: -1, hoverC: -1, probe: -1, touched: false
+};
+let quiet = true; // suppress control callbacks while the tour sets them
+
+function loadData(ds, seed) {
+  st.ds = ds; st.seed = seed;
+  const d = makeData(ds, seed); st.pts = d.pts; st.guides = d.guides;
+  st.trueK = new Set(st.pts.map(p => p.g)).size; refreshElbow();
+}
+function refreshElbow() {
+  const r = rngOf(4242 + st.pts.length); st.elbow = [];
+  for (let k = 1; k <= 8; k++) st.elbow.push(bestJ(st.pts, k, 5, r));
+  st.jTrue = truthInertia(st.pts);
+}
+function restart() {
+  const n = st.pts.length;
+  Object.assign(st, { L: new Array(n).fill(-1), hist: [], iter: 0, moved: 0, shift: 0, C0: [], pp: null, rng: initRng(st.iseed, st.k, st.init) });
+  if (st.forced) { st.C = st.forced.map(([x, y]) => ({ x, y })); enter('pop'); }
+  else if (st.init === 'pp') { st.C = [pos(st.pts[Math.floor(st.rng() * n)])]; if (st.k > 1) enter('pp'); else wait('assign'); }
+  else { st.C = initCentroids(st.pts, st.k, 'random', st.rng); enter('pop'); }
+}
+
+/* ===== the animated Lloyd loop: pop/pp → assign → wait → update → wait → assign … → done ===== */
+const ppDur = () => st.focus === 'pp' ? 1.6 : 0.7;
+function enter(ph) {
+  st.phase = ph; st.t = 0;
+  if (ph === 'pp') st.pp = { w: ppWeights(st.pts, st.C), pick: -1 };
+  else if (ph === 'assign') {
+    st.newL = st.L.slice(); assign(st.pts, st.C, st.newL);
+    const d = st.pts.map((p, i) => { const c = st.C[st.newL[i]]; return Math.hypot(p.x - c.x, p.y - c.y); });
+    const md = Math.max(1e-9, ...d); st.delay = d.map(v => 0.6 * DA * v / md); // wave spreads out from each centroid
+    if (st.focus === 'assign') st.probe = ambiguousPoint();
+  } else if (ph === 'update') {
+    st.C0 = st.C.map(pos); st.Ct = update(st.pts, st.L, st.C);
+    st.shift = Math.max(...st.Ct.map((c, k) => Math.hypot(c.x - st.C0[k].x, c.y - st.C0[k].y)));
+  }
+}
+function wait(next) { st.phase = 'wait'; st.next = next; st.t = 0; }
+function record(kind) { st.hist.push({ J: inertia(st.pts, st.L, st.C), kind }); }
+function finish() { // complete the current phase instantly
+  const ph = st.phase;
+  if (ph === 'pop') wait('assign');
+  else if (ph === 'pp') {
+    if (st.pp && st.pp.pick >= 0) st.C.push(pos(st.pts[st.pp.pick]));
+    while (st.C.length < st.k) st.C.push(pos(st.pts[pickIndex(ppWeights(st.pts, st.C), st.rng())]));
+    st.pp = null; wait('assign');
+  } else if (ph === 'assign') {
+    st.moved = st.newL.reduce((m, k, i) => m + (k !== st.L[i]), 0); st.L = st.newL; record('a');
+    if (st.iter > 0 && st.moved === 0) enter('done'); else wait('update');
+  } else if (ph === 'update') { st.C = st.Ct.map(pos); record('u'); st.iter++; wait('assign'); }
+  else if (ph === 'wait') enter(st.next);
+}
+function stepHalf() { // the dock's Step: exactly one visible half-step
+  if (st.phase === 'pop' || st.phase === 'pp') finish();
+  if (st.phase === 'wait') finish();
+  if (st.phase === 'assign' || st.phase === 'update') finish();
+}
+function tick(dt) {
+  if (!dt || st.phase === 'drag') return;
+  st.t += dt;
+  const ph = st.phase;
+  if (ph === 'pop' && st.t >= DPOP) finish();
+  else if (ph === 'pp') {
+    const T = ppDur();
+    if (st.pp.pick < 0 && st.t > 0.7 * T) st.pp.pick = pickIndex(st.pp.w, st.rng());
+    if (st.t >= T) { st.C.push(pos(st.pts[st.pp.pick])); st.pp = null; if (st.C.length < st.k) enter('pp'); else wait('assign'); }
+  } else if (ph === 'assign' && st.t >= DA) finish();
+  else if (ph === 'update') {
+    const e = ease(Math.min(1, st.t / DU));
+    st.C.forEach((c, k) => { c.x = st.C0[k].x + (st.Ct[k].x - st.C0[k].x) * e; c.y = st.C0[k].y + (st.Ct[k].y - st.C0[k].y) * e; });
+    if (st.t >= DU) finish();
+  } else if (ph === 'wait' && st.t >= (st.hist.length ? st.gap : Math.min(st.gap, 0.3))) finish();
+  else if (ph === 'done' && st.loop && st.t > 3.2) { st.iseed++; loadData(st.ds, st.seed + 1); restart(); }
+}
+function ambiguousPoint() { // the point whose two nearest centroids are closest to a tie
+  if (st.C.length < 2) return -1;
+  let best = -1, br = 0;
+  st.pts.forEach((p, i) => {
+    const d = st.C.map(c => Math.hypot(p.x - c.x, p.y - c.y)).sort((a, b) => a - b), r = d[0] / d[1];
+    if (r > br && r < 0.92) { br = r; best = i; }
+  });
+  return best;
+}
+
+/* ===== layout: phase strip + plot on the left, J chart + elbow chart on the right (below on phones) ===== */
+let LY = {};
+var onResize = null; // var: the shell probes typeof onResize before this line runs
+function layout() {
+  const cap = $('#caption'), top = Math.max(84, cap.offsetTop + cap.offsetHeight + 8);
+  const S = { x: 16, y: top, w: W - 32, h: H - top - 76 }, wide = S.w >= 560;
+  let area, c1, c2;
+  if (wide) {
+    const cw = clamp(S.w * 0.27, 226, 250), ch = Math.min(300, (S.h - 14) / 2); // ≥226 so chart legends fit
+    area = { x: S.x, y: S.y + 32, w: S.w - cw - 20, h: S.h - 32 };
+    c1 = { x: S.x + S.w - cw, y: S.y, w: cw, h: ch }; c2 = { x: c1.x, y: S.y + ch + 14, w: cw, h: ch };
+  } else {
+    const ch = 78;
+    area = { x: S.x, y: S.y + 30, w: S.w, h: S.h - 30 - ch - 10 };
+    c1 = { x: S.x, y: S.y + S.h - ch, w: (S.w - 10) / 2, h: ch }; c2 = { x: c1.x + c1.w + 10, y: c1.y, w: c1.w, h: ch };
+  }
+  const sc = Math.max(10, Math.min(area.w / AX, area.h));
+  LY = { S, wide, sc, c1, c2, strip: { x: area.x, y: S.y, w: area.w }, ox: area.x + (area.w - AX * sc) / 2, oy: area.y, pw: AX * sc, ph: sc, pr: clamp(sc / 165, 2.2, 3.4), below: area.y + area.h };
+}
+onResize = layout;
+const X = x => LY.ox + x * LY.sc, Y = y => LY.oy + y * LY.sc;
+
+/* ===== drawing helpers ===== */
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+function circle(x, y, r) { ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); }
+function tag(text, ax, ay, dx, dy, col = INK) { // label with leader line, kept inside the plot
+  ctx.font = `600 12px ${SANS}`;
+  const tw = ctx.measureText(text).width + 14, th = 22;
+  const bx = clamp(ax + dx - (dx < 0 ? tw : dx === 0 ? tw / 2 : 0), LY.ox + 4, LY.ox + LY.pw - tw - 4), by = clamp(ay + dy - th / 2, LY.oy + 4, LY.oy + LY.ph - th - 4);
+  ctx.strokeStyle = 'rgba(233,236,250,.55)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(clamp(ax, bx, bx + tw), clamp(ay, by, by + th)); ctx.stroke();
+  rr(bx, by, tw, th, 6); ctx.fillStyle = 'rgba(12,14,30,.9)'; ctx.fill(); ctx.strokeStyle = col; ctx.globalAlpha = 0.6; ctx.stroke(); ctx.globalAlpha = 1;
+  ctx.fillStyle = col; ctx.textBaseline = 'middle'; ctx.fillText(text, bx + 7, by + th / 2 + 0.5); ctx.textBaseline = 'alphabetic';
+}
+function arrow(x0, y0, x1, y1, col, a) {
+  const L = Math.hypot(x1 - x0, y1 - y0); if (L < 2) return;
+  const ux = (x1 - x0) / L, uy = (y1 - y0) / L, ex = x1 - ux * 12, ey = y1 - uy * 12;
+  ctx.strokeStyle = col; ctx.lineCap = 'round';
+  ctx.globalAlpha = 0.22 * a; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(ex, ey); ctx.stroke();
+  ctx.globalAlpha = a; ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(ex + ux * 2, ey + uy * 2); ctx.lineTo(ex - ux * 7 - uy * 5, ey - uy * 7 + ux * 5); ctx.lineTo(ex - ux * 7 + uy * 5, ey - uy * 7 - ux * 5); ctx.fill();
+  ctx.globalAlpha = 1; ctx.lineCap = 'butt';
+}
+
+/* ===== Voronoi cells: low-res label field → ImageData → scaled drawImage ===== */
+const vc = document.createElement('canvas'), vx = vc.getContext('2d');
+let vorKey = '';
+function drawVoronoi() {
+  const C = st.C, w = Math.max(1, Math.ceil(LY.pw / 3)), h = Math.max(1, Math.ceil(LY.ph / 3));
+  const key = w + 'x' + h + C.map(c => c.x.toFixed(4) + ',' + c.y.toFixed(4)).join(';');
+  if (key !== vorKey) {
+    vorKey = key; if (vc.width !== w || vc.height !== h) { vc.width = w; vc.height = h; }
+    const img = vx.createImageData(w, h), d = img.data, lab = new Uint8Array(w * h);
+    for (let y = 0, i = 0; y < h; y++) for (let x = 0; x < w; x++, i++) lab[i] = nearest({ x: (x + 0.5) / w * AX, y: (y + 0.5) / h }, C);
+    for (let y = 0, i = 0; y < h; y++) for (let x = 0; x < w; x++, i++) {
+      const c = RGB[lab[i] % 8], o = i * 4;
+      d[o] = c[0]; d[o + 1] = c[1]; d[o + 2] = c[2]; d[o + 3] = 30;
+    }
+    vx.putImageData(img, 0, 0);
+  }
+  ctx.imageSmoothingEnabled = true; ctx.drawImage(vc, LY.ox, LY.oy, LY.pw, LY.ph);
+  // exact cell borders: each pair's perpendicular bisector, clipped to where that pair is nearest
+  const n = C.length; ctx.beginPath();
+  for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+    const a = C[i], b = C[j], mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, dx = a.y - b.y, dy = b.x - a.x;
+    let t0 = -1e9, t1 = 1e9;
+    const cut = (A, B) => { if (Math.abs(A) < 1e-12) { if (B < 0) t1 = -1e9; } else if (A > 0) t1 = Math.min(t1, B / A); else t0 = Math.max(t0, B / A); };
+    cut(-dx, mx); cut(dx, AX - mx); cut(-dy, my); cut(dy, 1 - my); // stay inside the world rect
+    for (let k = 0; k < n; k++) if (k !== i && k !== j) { const ex = C[k].x - a.x, ey = C[k].y - a.y; cut(2 * (dx * ex + dy * ey), C[k].x ** 2 + C[k].y ** 2 - a.x ** 2 - a.y ** 2 - 2 * (mx * ex + my * ey)); }
+    if (t0 < t1) { ctx.moveTo(X(mx + t0 * dx), Y(my + t0 * dy)); ctx.lineTo(X(mx + t1 * dx), Y(my + t1 * dy)); }
+  }
+  ctx.strokeStyle = 'rgba(233,236,250,.06)'; ctx.lineWidth = 5; ctx.stroke();
+  ctx.strokeStyle = 'rgba(233,236,250,.3)'; ctx.lineWidth = 1.2; ctx.stroke();
+}
+
+/* ===== scene layers ===== */
+const shown = i => st.phase === 'assign' && st.t >= st.delay[i] ? st.newL[i] : st.L[i];
+function drawLines() { // point → centroid spokes: the visible form of ASSIGN
+  const ph = st.phase;
+  const a = ph === 'assign' || (ph === 'wait' && st.next === 'update') ? 0.3 : ph === 'update' ? 0.3 * (1 - clamp(st.t / (0.5 * DU), 0, 1)) : ph === 'drag' ? 0.2 : 0;
+  if (!a) return;
+  ctx.lineWidth = 1; ctx.globalAlpha = a;
+  st.C.forEach((c, k) => {
+    ctx.strokeStyle = PAL[k % 8]; ctx.beginPath(); const cx = X(c.x), cy = Y(c.y);
+    st.pts.forEach((p, i) => { if ((ph === 'assign' && st.t < st.delay[i]) || shown(i) !== k) return; ctx.moveTo(X(p.x), Y(p.y)); ctx.lineTo(cx, cy); });
+    ctx.stroke();
+  });
+  ctx.globalAlpha = 1;
+}
+function drawPoints() {
+  const r = LY.pr;
+  if (st.phase === 'pp' && st.pp) { // k-means++: dot size ∝ probability of being the next centroid
+    const w = st.pp.w, wm = Math.max(...w) || 1, g = ease(clamp(st.t / (0.35 * ppDur()), 0, 1));
+    st.pts.forEach((p, i) => { const q = Math.sqrt(w[i] / wm); ctx.globalAlpha = 0.25 + 0.7 * q; ctx.fillStyle = q > 0.05 ? HL : NEU; circle(X(p.x), Y(p.y), r * 0.8 + q * 9 * g * clamp(LY.sc / 420, 0.6, 1)); ctx.fill(); });
+    ctx.globalAlpha = 1;
+    if (st.pp.pick >= 0) { const p = st.pts[st.pp.pick], u = clamp((st.t - 0.7 * ppDur()) / (0.3 * ppDur()), 0, 1); ctx.strokeStyle = HL; ctx.lineWidth = 2; circle(X(p.x), Y(p.y), 22 - 12 * u); ctx.stroke(); }
+    return;
+  }
+  for (let k = -1; k < st.C.length; k++) {
+    ctx.fillStyle = k < 0 ? NEU : PAL[k % 8]; ctx.globalAlpha = k < 0 ? 0.7 : 0.95; ctx.beginPath();
+    st.pts.forEach((p, i) => { if (shown(i) === k) { ctx.moveTo(X(p.x) + r, Y(p.y)); ctx.arc(X(p.x), Y(p.y), r, 0, TAU); } });
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  if (st.phase === 'assign') { // ripple on points that switched cluster
+    ctx.lineWidth = 1.2;
+    st.pts.forEach((p, i) => {
+      if (st.newL[i] === st.L[i]) return; const u = (st.t - st.delay[i]) / 0.45; if (u < 0 || u > 1) return;
+      ctx.strokeStyle = PAL[st.newL[i] % 8]; ctx.globalAlpha = 1 - u; circle(X(p.x), Y(p.y), r + 2 + 9 * u); ctx.stroke();
+    });
+    ctx.globalAlpha = 1;
+  }
+}
+function drawMoves() { // UPDATE: ghost at the old spot + violet move arrow
+  if (!st.C0.length) return;
+  const ph = st.phase;
+  const a = ph === 'update' || (ph === 'wait' && st.next === 'assign') ? 1 : ph === 'assign' ? 1 - clamp(st.t / (0.45 * DA), 0, 1) : 0;
+  if (a <= 0) return;
+  st.C0.forEach((c0, k) => {
+    const c = st.C[k]; if (!c || Math.hypot(X(c.x) - X(c0.x), Y(c.y) - Y(c0.y)) < 3) return;
+    ctx.setLineDash([3, 3]); ctx.strokeStyle = HL; ctx.globalAlpha = 0.6 * a; ctx.lineWidth = 1.5; circle(X(c0.x), Y(c0.y), 9); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+    arrow(X(c0.x), Y(c0.y), X(c.x), Y(c.y), GR, a);
+  });
+}
+function drawCentroids() {
+  st.C.forEach((c, k) => {
+    let s = (st.drag && st.drag.type === 'c' && st.drag.i === k) || st.hoverC === k ? 1.25 : 1;
+    if (st.phase === 'pop') s *= ease(clamp(st.t / DPOP, 0, 1));
+    const x = X(c.x), y = Y(c.y), R = 9 * s;
+    if (R < 1) return;
+    ctx.strokeStyle = 'rgba(255,200,87,.2)'; ctx.lineWidth = 7; circle(x, y, R + 2); ctx.stroke();
+    ctx.fillStyle = PAL[k % 8]; circle(x, y, R); ctx.fill();
+    ctx.strokeStyle = HL; ctx.lineWidth = 2.2; ctx.stroke();
+    ctx.strokeStyle = '#0c0e1a'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x - 4 * s, y); ctx.lineTo(x + 4 * s, y); ctx.moveTo(x, y - 4 * s); ctx.lineTo(x, y + 4 * s); ctx.stroke();
+    if (st.phase === 'done' && st.t < 2.4) { const u = (st.t % 1.2) / 1.2; ctx.strokeStyle = GOOD; ctx.globalAlpha = (1 - u) * 0.7; ctx.lineWidth = 2; circle(x, y, R + 4 + 26 * u); ctx.stroke(); ctx.globalAlpha = 1; }
+  });
+}
+function drawGuides() { // the true groups, dashed (what a human would call the clusters)
+  ctx.lineJoin = 'round';
+  st.guides.forEach(q => {
+    ctx.beginPath(); q.forEach(([x, y], i) => i ? ctx.lineTo(X(x), Y(y)) : ctx.moveTo(X(x), Y(y)));
+    ctx.strokeStyle = 'rgba(199,203,224,.07)'; ctx.lineWidth = st.ds === 'moons' ? 0.12 * LY.sc : 8; ctx.stroke();
+    ctx.setLineDash([5, 5]); ctx.strokeStyle = 'rgba(199,203,224,.55)'; ctx.lineWidth = 1.3; ctx.stroke(); ctx.setLineDash([]);
+  });
+}
+function probeIndex() {
+  if (st.phase === 'pp') return -1;
+  if (st.drag && st.drag.type === 'p') return st.drag.i;
+  if (st.hover >= 0) return st.hover;
+  return st.focus === 'assign' && (st.phase === 'assign' || (st.phase === 'wait' && st.next === 'update')) ? st.probe : -1;
+}
+function drawAnnotations() {
+  const pi = probeIndex();
+  if (pi >= 0 && st.C.length) { // distances from one point to every centroid: the shortest wins
+    const p = st.pts[pi], px = X(p.x), py = Y(p.y), d = st.C.map(c => Math.hypot(p.x - c.x, p.y - c.y)), order = d.map((v, k) => k).sort((a, b) => d[a] - d[b]);
+    order.slice().reverse().forEach((k, j) => {
+      const c = st.C[k], win = k === order[0];
+      if (!win) ctx.setLineDash([4, 4]);
+      ctx.strokeStyle = win ? PAL[k % 8] : 'rgba(199,203,224,.5)'; ctx.lineWidth = win ? 2.2 : 1;
+      ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(X(c.x), Y(c.y)); ctx.stroke(); ctx.setLineDash([]);
+    });
+    ctx.strokeStyle = INK; ctx.lineWidth = 1.5; circle(px, py, LY.pr + 5); ctx.stroke();
+    const txt = st.C.length > 1 ? `nearest d = ${d[order[0]].toFixed(2)}  vs  ${d[order[1]].toFixed(2)}` : `d = ${d[0].toFixed(2)}`;
+    tag(txt, px, py, px > LY.ox + LY.pw / 2 ? -16 : 16, -30);
+  }
+  if (st.focus === 'update' && st.C0.length && (st.phase === 'update' || (st.phase === 'wait' && st.next === 'assign'))) {
+    let kb = 0, mb = -1; st.C.forEach((c, k) => { const m = Math.hypot(st.Ct[k].x - st.C0[k].x, st.Ct[k].y - st.C0[k].y); if (m > mb) { mb = m; kb = k; } });
+    const c = st.C[kb]; tag(`→ mean of its ${st.Ct[kb].n} points`, X(c.x), Y(c.y), 18, -30, GR);
+  }
+  if (st.focus === 'badinit' && st.C.length === 4) {
+    const a = st.C[0], b = st.C[1], m = st.C[2];
+    const small = LY.pw < 420;
+    tag(small ? '2 share 1 blob' : '2 centroids · 1 blob', X((a.x + b.x) / 2), Y((a.y + b.y) / 2), small ? -26 : -44, 0, HL);
+    tag(small ? '1 spans 2' : '1 centroid · 2 blobs', X(m.x), Y(m.y), small ? 22 : 40, 0, HL);
+  }
+  if (st.focus === 'pp' && st.pp && st.phase === 'pp') {
+    let im = 0; st.pp.w.forEach((v, i) => { if (v > st.pp.w[im]) im = i; });
+    const p = st.pts[im]; tag('P ∝ D²: far from every centroid', X(p.x), Y(p.y), X(p.x) > LY.ox + LY.pw / 2 ? -16 : 16, -30, HL);
+  }
+  if (st.truth && st.ds === 'moons' && st.guides.length === 2) {
+    const g0 = st.guides[0][20], g1 = st.guides[1][20];
+    tag('true shape A', X(g0[0]), Y(g0[1]), 0, -26, NEU); tag('true shape B', X(g1[0]), Y(g1[1]), 0, 26, NEU);
+  }
+}
+function drawStrip() { // which of the two moves is happening now
+  const { x: x0, y: y0, w } = LY.strip, y = y0 + 2, h = 24, ph = st.phase, k = st.k;
+  let pills;
+  if (ph === 'pop' || ph === 'pp' || (ph === 'wait' && st.next === 'assign' && !st.hist.length)) {
+    pills = [[st.forced ? ['INIT · a hand-placed bad start', 'INIT · bad start'] : st.init === 'pp' ? [`INIT · k-means++ picks centroid ${Math.min(st.C.length + 1, k)} of ${k}`, `k-means++ ${Math.min(st.C.length + 1, k)}/${k}`] : [`INIT · ${k} random points become centroids`, `INIT · ${k} random`], true, HL]];
+  } else if (ph === 'drag') pills = [[['LIVE · every point re-picks its nearest centroid', 'LIVE · re-assigning'], true, ACC]];
+  else {
+    const aOn = ph === 'assign' || (ph === 'wait' && st.next === 'update'), uOn = ph === 'update' || (ph === 'wait' && st.next === 'assign');
+    pills = [[['1 ASSIGN · nearest centroid', '1 ASSIGN'], aOn, ACC], [['2 UPDATE · move to mean', '2 UPDATE'], uOn, GR]];
+  }
+  ctx.font = `600 12px ${MONO}`; ctx.textBaseline = 'middle';
+  const width = v => pills.reduce((s, p) => s + ctx.measureText(p[0][v]).width + 28, 0);
+  const v = ph !== 'done' && width(0) + 110 < w ? 0 : 1; // once converged, short pills leave room for the verdict
+  let x = x0;
+  for (const [t, on, col] of pills) {
+    const tw = ctx.measureText(t[v]).width + 20; rr(x, y, tw, h, 12);
+    if (on) { ctx.fillStyle = col + '2e'; ctx.fill(); ctx.strokeStyle = col; } else ctx.strokeStyle = 'rgba(190,200,255,.18)';
+    ctx.lineWidth = 1; ctx.stroke(); ctx.fillStyle = on ? col : FAINT; ctx.fillText(t[v], x + 10, y + h / 2 + 1); x += tw + 8;
+  }
+  ctx.textAlign = 'right';
+  const opts = ph === 'done' ? ['✓ converged · nothing moved', '✓ converged'] : st.hist.length ? ['iteration ' + st.iter] : [];
+  const right = opts.find(t => x + ctx.measureText(t).width + 8 < x0 + w);
+  if (right) { ctx.fillStyle = ph === 'done' ? GOOD : DIM; ctx.fillText(right, x0 + w, y + h / 2 + 1); }
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+}
+function panel(R, title) {
+  rr(R.x, R.y, R.w, R.h, 10); ctx.fillStyle = 'rgba(19,22,44,.88)'; ctx.fill(); ctx.strokeStyle = 'rgba(190,200,255,.14)'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.font = `600 11px ${MONO}`; ctx.fillStyle = DIM; ctx.fillText(title, R.x + 10, R.y + 17);
+}
+function drawJChart(R) { // inertia after every half-step: it can only go down
+  panel(R, LY.wide ? 'INERTIA J · every half-step' : 'J per half-step');
+  const hs = st.hist, P = { x: R.x + 14, y: R.y + 30, w: R.w - 28, h: R.h - (LY.wide ? 76 : 40) };
+  ctx.strokeStyle = 'rgba(190,200,255,.14)'; ctx.beginPath(); ctx.moveTo(P.x, P.y + P.h + 0.5); ctx.lineTo(P.x + P.w, P.y + P.h + 0.5); ctx.stroke();
+  if (!hs.length) { ctx.fillStyle = FAINT; ctx.font = `12px ${SANS}`; ctx.fillText(LY.wide ? 'starts after the first assign' : 'after 1st assign', P.x, P.y + P.h / 2); return; }
+  const n = Math.max(8, hs.length - 1), jm = Math.max(...hs.map(h => h.J)) * 1.1 || 1;
+  const px = i => P.x + i / n * P.w, py = J => P.y + P.h - J / jm * P.h;
+  ctx.strokeStyle = 'rgba(199,203,224,.65)'; ctx.lineWidth = 1.5; ctx.beginPath(); hs.forEach((h, i) => i ? ctx.lineTo(px(i), py(h.J)) : ctx.moveTo(px(i), py(h.J))); ctx.stroke();
+  hs.forEach((h, i) => { ctx.fillStyle = h.kind === 'u' ? GR : ACC; circle(px(i), py(h.J), LY.wide ? 3.2 : 2.4); ctx.fill(); });
+  const l = hs[hs.length - 1], lx = px(hs.length - 1), lt = fmtJ(l.J);
+  ctx.font = `600 12px ${MONO}`; const rt = lx > P.x + P.w * 0.6, tw = ctx.measureText(lt).width;
+  let top = py(l.J); if (rt) hs.forEach((h, i) => { if (px(i + 1) >= lx - tw - 8) top = Math.min(top, py(h.J)); }); // clear the line under the label
+  const ly = top - 18 < P.y ? py(l.J) + 16 : top - 8; // no room above (flat at the top) → below
+  ctx.fillStyle = HL; ctx.textAlign = rt ? 'right' : 'left'; ctx.fillText(lt, lx + (rt ? -4 : 6), ly); ctx.textAlign = 'left';
+  if (!LY.wide) return;
+  const mono = hs.every((h, i) => !i || h.J <= hs[i - 1].J + 1e-12), by = R.y + R.h - 30;
+  ctx.font = `11px ${MONO}`;
+  ctx.fillStyle = ACC; ctx.fillText('● after assign', R.x + 12, by); ctx.fillStyle = GR; ctx.fillText('● after update', R.x + 12 + ctx.measureText('● after assign  ').width, by);
+  ctx.fillStyle = mono ? GOOD : BAD; ctx.fillText(mono ? `✓ never went up · ${hs.length} value${hs.length > 1 ? 's' : ''}` : '✗ J went up', R.x + 12, by + 16);
+}
+function drawElbow(R) { // best J found for each k vs this run
+  panel(R, LY.wide ? 'ELBOW · best J for k = 1…8' : 'elbow · J vs k');
+  const e = st.elbow; if (!e.length) return;
+  const P = { x: R.x + 18, y: R.y + 30, w: R.w - 36, h: R.h - (LY.wide ? 104 : 44) };
+  const run = st.hist.length ? st.hist[st.hist.length - 1].J : null, showT = st.truth && st.trueK <= 8;
+  const jm = Math.max(e[0], run || 0, showT ? st.jTrue : 0) * 1.08;
+  const px = k => P.x + (k - 1) / 7 * P.w, py = J => P.y + P.h - J / jm * P.h;
+  ctx.setLineDash([3, 4]); ctx.strokeStyle = 'rgba(255,200,87,.4)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(px(st.k), P.y); ctx.lineTo(px(st.k), P.y + P.h); ctx.stroke(); ctx.setLineDash([]);
+  ctx.strokeStyle = 'rgba(199,203,224,.6)'; ctx.lineWidth = 1.5; ctx.beginPath(); e.forEach((J, i) => i ? ctx.lineTo(px(i + 1), py(J)) : ctx.moveTo(px(1), py(J))); ctx.stroke();
+  e.forEach((J, i) => { ctx.fillStyle = i + 1 === st.k ? HL : NEU; circle(px(i + 1), py(J), i + 1 === st.k ? 4.5 : 2.8); ctx.fill(); });
+  if (showT) { const x = px(st.trueK), y = py(st.jTrue); ctx.strokeStyle = INK; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x, y - 6); ctx.lineTo(x + 6, y); ctx.lineTo(x, y + 6); ctx.lineTo(x - 6, y); ctx.closePath(); ctx.stroke(); }
+  if (run != null) { ctx.strokeStyle = GR; ctx.lineWidth = 2; circle(px(st.k), py(run), 7); ctx.stroke(); }
+  if (!LY.wide) return;
+  ctx.font = `11px ${MONO}`; ctx.textAlign = 'center';
+  for (let k = 1; k <= 8; k++) { ctx.fillStyle = k === st.k ? HL : FAINT; ctx.fillText(k, px(k), P.y + P.h + 15); }
+  ctx.textAlign = 'left'; const by = R.y + R.h - 46;
+  ctx.fillStyle = NEU; ctx.fillText('● best of 5 k-means++ runs', R.x + 12, by);
+  ctx.fillStyle = GR; ctx.fillText('○ this run', R.x + 12, by + 15);
+  if (showT) { ctx.fillStyle = INK; ctx.fillText('◇ true groups', R.x + 12 + ctx.measureText('○ this run  ').width, by + 15); }
+  if (st.phase === 'done' && run != null) {
+    const over = run / e[st.k - 1] - 1;
+    ctx.fillStyle = over > 0.03 ? BAD : GOOD; ctx.fillText(over > 0.03 ? `this run +${Math.round(over * 100)}% above best` : '✓ this run ≈ best found', R.x + 12, by + 31);
+  }
+}
+let clock = 0;
+function drawFocus() { // pulse the chart the tour step is about
+  const R = st.focus === 'inertia' ? LY.c1 : st.focus === 'elbow' || st.focus === 'badinit' ? LY.c2 : null; if (!R) return;
+  ctx.strokeStyle = ACC; ctx.globalAlpha = REDUCED ? 0.9 : 0.55 + 0.45 * Math.sin(clock * 4); ctx.lineWidth = 2; rr(R.x - 3, R.y - 3, R.w + 6, R.h + 6, 12); ctx.stroke(); ctx.globalAlpha = 1;
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  ctx.save(); rr(LY.ox, LY.oy, LY.pw, LY.ph, 10); ctx.fillStyle = 'rgba(10,12,26,.6)'; ctx.fill(); ctx.clip();
+  if (st.voronoi && st.C.length) drawVoronoi();
   ctx.restore();
- }
- if(phase==='done'){
-  var ring=(pt%0.9)/0.9;
-  ctx.strokeStyle='#ffd700';ctx.lineWidth=2;
-  for(k=0;k<cents.length;k++){var c3=cents[k];
-   ctx.globalAlpha=(1-ring)*0.8;
-   ctx.beginPath();ctx.arc(c3.x,c3.y,14+ring*80,0,TAU);ctx.stroke();
+  rr(LY.ox, LY.oy, LY.pw, LY.ph, 10); ctx.strokeStyle = 'rgba(190,200,255,.16)'; ctx.lineWidth = 1; ctx.stroke();
+  if (st.truth) drawGuides();
+  drawLines(); drawPoints(); drawMoves(); drawCentroids(); drawAnnotations();
+  drawStrip(); drawJChart(LY.c1); drawElbow(LY.c2); drawFocus();
+  if (!st.touched && LY.wide && LY.below - (LY.oy + LY.ph) > 22) {
+    ctx.font = `12px ${SANS}`; ctx.fillStyle = FAINT;
+    const hint = ['Drag a centroid or point · click empty space to add points · click the elbow to set k', 'Drag a centroid or point · click to add points · click the elbow for k', 'Drag a centroid · click to add points'].find(t => ctx.measureText(t).width <= LY.pw);
+    if (hint) ctx.fillText(hint, LY.ox, LY.oy + LY.ph + 20);
   }
-  ctx.globalAlpha=1;
-  ctx.font='700 20px ui-monospace,Menlo,monospace';ctx.textAlign='center';
-  ctx.fillStyle='#ffd700';ctx.shadowColor='#ffd700';ctx.shadowBlur=18;
-  ctx.fillText('CONVERGED  ·  total inertia '+(inertia/1000).toFixed(1)+'k  ·  new data…',W/2,H*0.10);
-  ctx.shadowBlur=0;ctx.textAlign='left';
- }
- statsEl.textContent=
-  'phase   '+(phase==='done'?'CONVERGED ✦':phase.toUpperCase())+
-  '\niter    '+iter+
-  '\nK       '+K+'   (true clusters: '+trueK+')'+
-  '\npoints  '+pts.length+
-  '\ninertia '+(inertia/1000).toFixed(1)+'k'+
-  '\nvoronoi '+(showVoro?'on':'off')+'   run #'+runs;
 }
-addEventListener('keydown',function(e){
- if(e.key>='2'&&e.key<='9'){K=+e.key;initCents();}
- else if(e.key==='v'||e.key==='V')showVoro=!showVoro;
-});
-cv.addEventListener('pointerdown',function(e){
- pts.push({x:e.clientX,y:e.clientY,a:-1,na:-1,f:1,rt:99});
-});
-var last=0;
-function frame(ts){
- var dt=Math.min(0.05,(ts-last)/1000||0.016);last=ts;
- step(dt);draw();
- requestAnimationFrame(frame);
+
+/* ===== direct manipulation ===== */
+function toWorld(e) { const r = cv.getBoundingClientRect(), sx = e.clientX - r.left, sy = e.clientY - r.top; return { sx, sy, x: (sx - LY.ox) / LY.sc, y: (sy - LY.oy) / LY.sc }; }
+const inPlot = q => q.x >= 0 && q.x <= AX && q.y >= 0 && q.y <= 1;
+const inRect = (q, R) => q.sx >= R.x && q.sx <= R.x + R.w && q.sy >= R.y && q.sy <= R.y + R.h;
+function hit(q, touch) {
+  if (st.phase !== 'pp') for (let k = st.C.length - 1; k >= 0; k--) if (Math.hypot(X(st.C[k].x) - q.sx, Y(st.C[k].y) - q.sy) < (touch ? 26 : 16)) return { type: 'c', i: k };
+  let bi = -1, bd = touch ? 14 : 8;
+  st.pts.forEach((p, i) => { const d = Math.hypot(X(p.x) - q.sx, Y(p.y) - q.sy); if (d < bd) { bd = d; bi = i; } });
+  return bi >= 0 ? { type: 'p', i: bi } : null;
 }
-newData();
-requestAnimationFrame(frame);
-})();
+function addPoint(x, y, jit) {
+  if (st.pts.length >= 900) return;
+  const r = Math.random;
+  st.pts.push({ x: clamp(x + (r() - 0.5) * jit, 0.005, AX - 0.005), y: clamp(y + (r() - 0.5) * jit, 0.005, 0.995), g: -1 }); st.L.push(-1);
+}
+cv.addEventListener('pointerdown', e => {
+  const q = toWorld(e);
+  if (inRect(q, LY.c2)) { ui.k.set(clamp(Math.round((q.sx - LY.c2.x - 18) / (LY.c2.w - 36) * 7) + 1, 1, 8)); return; }
+  const h = hit(q, e.pointerType === 'touch');
+  if (!h && !inPlot(q)) return;
+  if (st.phase === 'pp' || st.phase === 'pop') finish();
+  if (st.phase === 'update') st.C = st.Ct.map(pos);
+  cv.setPointerCapture(e.pointerId);
+  Object.assign(st, { loop: false, touched: true, C0: [], phase: 'drag', drag: h ? { ...h } : { type: 'paint', lx: q.sx, ly: q.sy } });
+  if (st.focus === 'badinit' || st.focus === 'pp') st.focus = null;
+  if (!h) addPoint(q.x, q.y, 0);
+  assign(st.pts, st.C, st.L); cv.style.cursor = h ? 'grabbing' : 'crosshair';
+});
+cv.addEventListener('pointermove', e => {
+  const q = toWorld(e), dr = st.drag;
+  if (dr) {
+    const x = clamp(q.x, 0.005, AX - 0.005), y = clamp(q.y, 0.005, 0.995);
+    if (dr.type === 'c') Object.assign(st.C[dr.i], { x, y });
+    else if (dr.type === 'p') Object.assign(st.pts[dr.i], { x, y });
+    else if (Math.hypot(q.sx - dr.lx, q.sy - dr.ly) > 10 && inPlot(q)) { dr.lx = q.sx; dr.ly = q.sy; addPoint(x, y, 0.02); }
+    assign(st.pts, st.C, st.L); return;
+  }
+  const h = hit(q, e.pointerType === 'touch');
+  st.hover = h && h.type === 'p' ? h.i : -1; st.hoverC = h && h.type === 'c' ? h.i : -1;
+  cv.style.cursor = h ? 'grab' : inRect(q, LY.c2) ? 'pointer' : inPlot(q) ? 'crosshair' : 'default';
+});
+function endDrag() { // resume Lloyd from wherever the learner left things
+  if (!st.drag) return;
+  const edited = st.drag.type !== 'c'; st.drag = null; cv.style.cursor = 'grab';
+  if (edited) refreshElbow();
+  Object.assign(st, { hist: [], iter: 0 }); st.moved = 0; record('a'); wait('update');
+}
+cv.addEventListener('pointerup', endDrag); cv.addEventListener('pointercancel', endDrag);
+cv.addEventListener('pointerleave', () => { if (!st.drag) { st.hover = -1; st.hoverC = -1; } });
+
+/* ===== lesson panel ===== */
+stat('sJ', 'Inertia J'); stat('sIt', 'Iteration'); stat('sMv', 'Points switched');
+$('#p-math').innerHTML = `
+<h3>What k-means minimises</h3>
+<div class="eq">J = Σ<sub>k</sub> Σ<sub>x∈C<sub>k</sub></sub> ‖x − <span class="c-hl">μ<sub>k</sub></span>‖² = <span class="live" id="mJ">–</span></div>
+<p>J is the <b>inertia</b> (within-cluster sum of squares). The amber centroids <span style="color:var(--hl)">μ<sub>k</sub></span> are the only parameters. Best J found for k = <span class="live" id="mK">4</span>: <span class="live" id="mBest">–</span>.</p>
+<h3>Move 1 · assign (the spokes)</h3>
+<div class="eq">c<sub>i</sub> ← argmin<sub>k</sub> ‖x<sub>i</sub> − <span class="c-hl">μ<sub>k</sub></span>‖²</div>
+<p>Each point x<sub>i</sub> takes the label c<sub>i</sub> of its nearest centroid. Last assign switched <span class="live" id="mMoved">–</span> points.</p>
+<h3>Move 2 · update (the violet arrows)</h3>
+<div class="eq"><span class="c-hl">μ<sub>k</sub></span> ← <span class="c-g">(1/|C<sub>k</sub>|) Σ<sub>x∈C<sub>k</sub></sub> x</span></div>
+<p>Each centroid jumps to the mean of its members. Biggest move last update: <span class="live" id="mShift">–</span> (world units; the plot is 1 tall).</p>
+<h3>Why J can never go up</h3>
+<p><b>Assign:</b> a point only switches to a centroid that is nearer, so its term shrinks or stays. <b>Update:</b> for fixed members, Σ‖x − μ‖² has gradient 2Σ(μ − x), which is zero exactly at the mean. Two non-increasing moves over finitely many partitions ⇒ the loop must stop.</p>
+<h3>k-means++ seeding</h3>
+<div class="eq">P(x) = <span class="c-hl">D(x)²</span> / Σ<sub>x′</sub> D(x′)²</div>
+<p>D(x) = distance from x to the nearest centroid chosen so far. In expectation this start is within a factor O(log k) of the optimal J.</p>
+<div class="note"><b>Converged ≠ optimal.</b> Lloyd's algorithm stops at a local minimum; finding the global one is NP-hard. Libraries run several seeded restarts (scikit-learn's <code>n_init</code>) and keep the lowest J.</div>
+<div class="note"><b>Lower J ≠ better k.</b> J keeps falling as k grows and hits 0 at k = n. Choose k by the elbow, a silhouette score, or what the groups are for.</div>`;
+const pl = $('#p-play');
+const addEl = (tag, html, cls) => { const d = document.createElement(tag); d.innerHTML = html; if (cls) d.className = cls; pl.appendChild(d); return d; };
+addEl('p', 'Drag any <b>centroid</b> (amber ring) or any <b>point</b> — every point re-picks its nearest centroid live. Click or drag on empty space to paint new points. Let go and Lloyd carries on from there.');
+addEl('h3', 'Data');
+const ui = {};
+const DS_NAME = { blobs: '4 blobs', uneven: 'uneven sizes', aniso: 'stretched streaks', moons: 'two moons' };
+function onModel() {
+  if (quiet) return; st.forced = null; st.loop = false; if (st.focus !== 'inertia') st.focus = null; restart();
+  $('#caption').innerHTML = `Your setup: <b>${DS_NAME[st.ds]}</b>, k = ${st.k}, ${st.init === 'pp' ? 'k-means++' : 'random'} start. Compare this run (○) with the best J on the elbow chart.`;
+}
+ui.ds = seg(pl, [['blobs', '4 blobs'], ['uneven', 'uneven sizes'], ['aniso', 'stretched'], ['moons', 'two moons']], 'blobs', v => { if (quiet) return; ui.truth.set(v === 'blobs' ? 0 : 1); loadData(v, st.seed); onModel(); });
+const row = addEl('div', '<button class="btn" id="bData">New sample</button> <button class="btn" id="bInit">New random start</button>', 'row');
+row.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px';
+$('#bData').onclick = () => { loadData(st.ds, st.seed + 1); onModel(); };
+$('#bInit').onclick = () => { st.iseed++; onModel(); };
+addEl('h3', 'Model');
+ui.k = slider(pl, 'kS', 'k — how many clusters (centroids) to look for', 1, 8, 1, 4, v => String(v), v => { if (quiet) return; st.k = v; onModel(); });
+addEl('p', 'Initialisation — where the centroids start');
+ui.init = seg(pl, [['random', 'random data points'], ['pp', 'k-means++ (D² sampling)']], 'random', v => { if (quiet) return; st.init = v; onModel(); });
+addEl('h3', 'Display');
+ui.vor = seg(pl, [[1, 'Voronoi cells on'], [0, 'cells off']], 1, v => { st.voronoi = !!v; });
+ui.truth = seg(pl, [[1, 'true groups: show'], [0, 'hide']], 0, v => { st.truth = !!v; });
+ui.gap = slider(pl, 'gS', 'Pause between the two moves', 0, 1.5, 0.05, 0.35, v => v.toFixed(2) + ' s', v => { st.gap = v; });
+
+/* ===== tour & experiments ===== */
+function setup(o) {
+  quiet = true;
+  Object.assign(st, { focus: o.focus || null, loop: !!o.loop, forced: o.forced || null, k: o.k || 4, init: o.init || 'random', iseed: o.iseed || 1, hover: -1, probe: -1 });
+  ui.k.set(st.k); ui.init.set(st.init); ui.ds.set(o.ds); ui.truth.set(o.ds === 'blobs' ? 0 : 1); ui.gap.set(o.gap ?? 0.35);
+  quiet = false;
+  loadData(o.ds, o.seed || 1); restart(); setPlaying(!REDUCED);
+  if (o.cap) $('#caption').innerHTML = o.cap;
+  if (REDUCED) { if (o.focus === 'pp') st.t = 0.5 * ppDur(); else { stepHalf(); if (o.focus !== 'assign') stepHalf(); } } // hold on the step's moment
+  else if (o.pre) { for (let i = 0; i < o.pre; i++) stepHalf(); if (st.phase === 'wait') finish(); } // open the step on its moment
+}
+const STEPS = [
+  { t: 'The dance', d: 'K-means looks for k groups by repeating two simple moves until nothing changes. The amber-ringed dots are the <b>centroids</b> — the only thing the model learns.',
+    cap: '<b>K-means</b> repeats two moves: every point joins its nearest centroid, then every centroid jumps to the middle of its points.',
+    go() { setup({ ds: 'blobs', seed: 1, iseed: 19, loop: true }); } },
+  { t: 'Move 1 · Assign', d: 'Each point measures its distance to every centroid and takes the nearest one\'s colour. The shaded cells (a <b>Voronoi diagram</b>) show which centroid owns each spot. Hover any point to see its distances.',
+    cap: '<b>Assign:</b> the ringed point compares its distance to every centroid — the shortest line wins. Hover any point to check.',
+    go() { setup({ ds: 'blobs', seed: 1, iseed: 7, focus: 'assign', gap: 1.3 }); } },
+  { t: 'Move 2 · Update', d: 'With memberships frozen, each centroid moves to the <b>mean</b> of its points — the one spot that minimises their total squared distance. Dashed ghost = old position, violet arrow = the move.',
+    cap: '<b>Update:</b> each centroid slides to the mean of its points. Dashed ghost = where it was, violet arrow = the move.',
+    go() { setup({ ds: 'blobs', seed: 1, iseed: 18, focus: 'update', gap: 1.3, pre: 1 }); } },
+  { t: 'J only goes down', d: 'J = total squared distance from each point to its centroid. Assign can only shorten a point\'s distance, and the mean is the best centre for fixed members — so J never rises, and the loop must stop.',
+    cap: 'Watch the <b>J chart</b>: both moves can only lower J, so it steps down and flattens once no point switches.',
+    go() { setup({ ds: 'blobs', seed: 2, iseed: 19, focus: 'inertia' }); } },
+  { t: '…to a local minimum', d: '<b>Converged is not correct.</b> Put two centroids in one blob and one between two blobs: every point is already with its nearest centroid, every centroid already at its mean — so Lloyd never escapes.',
+    cap: 'A bad start converges anyway: J gets stuck far above the best (see the elbow chart). This is a <b>local minimum</b>.',
+    go() { setup({ ds: 'blobs', seed: 1, forced: BAD_INIT, focus: 'badinit' }); } },
+  { t: 'k-means++ fixes the start', d: 'Pick the first centroid at random, then each next one with probability ∝ <b>D²</b>, its squared distance to the nearest centroid so far. Dot size shows that probability — a far-off blob is hard to miss.',
+    cap: '<b>k-means++:</b> each new centroid is drawn with probability ∝ D² (dot size), so far-off blobs almost always get one.',
+    go() { setup({ ds: 'blobs', seed: 1, iseed: 1, init: 'pp', focus: 'pp' }); } },
+  { t: 'Where it breaks', d: 'Voronoi cells are always <b>convex</b> — straight borders only. Two interleaved moons can\'t be split by one straight line, so k-means slices across both however well it starts. The true split even has the higher J (◇).',
+    cap: 'Cells are convex, so k-means can only cut with straight lines — it slices the <b>two moons</b> however good the start.',
+    go() { setup({ ds: 'moons', seed: 1, iseed: 1, k: 2, init: 'pp', focus: 'elbow' }); } }
+];
+const TRIES = [
+  { q: 'Predict: on these four clean blobs, will k = 8 give a higher or lower J than k = 4?',
+    run() { setup({ ds: 'blobs', seed: 1, iseed: 2, k: 8, init: 'pp', focus: 'elbow', cap: '<b>Experiment:</b> k = 8 on four blobs. Where does J land on the elbow chart compared with k = 4?' }); },
+    why: '<b>Lower.</b> Extra centroids always help J — at k = n it is exactly 0 — so "lowest J" can never choose k. Look at the <b>elbow</b>: past k = 4 each extra centroid only splits a real blob and buys almost nothing.' },
+  { q: 'k-means++ just rescued the bad start. Predict: one wide cloud plus two small tight groups, k = 3, k-means++. Will it find the three groups?',
+    run() { setup({ ds: 'uneven', seed: 1, iseed: 1, k: 3, init: 'pp', focus: 'elbow', cap: '<b>Experiment:</b> k-means++ on one wide cloud and two tight groups. Does this run (○) reach the best J?' }); },
+    why: '<b>Not this time.</b> The wide cloud holds most of the D² mass, so k-means++ drops two seeds into it and the two small groups end up sharing one centroid. The violet ring sits above the best J — a local minimum. ++ improves the odds, it doesn\'t guarantee; press <b>New random start</b> (Controls) a few times, which is what <code>n_init</code> restarts do.' },
+  { q: 'Predict: three long parallel streaks, k = 3. With the best possible start, will each streak become one cluster?',
+    run() { setup({ ds: 'aniso', seed: 1, iseed: 3, k: 3, init: 'pp', focus: 'elbow', cap: '<b>Experiment:</b> three stretched streaks, k = 3. Compare the clusters with the dashed true groups.' }); },
+    why: '<b>No — and it isn\'t a bad start.</b> Cutting across the streaks gives a lower J (<span class="live" id="jKm">–</span>) than the true grouping (<span class="live" id="jTrue">–</span>, the ◇). J rewards round, equal-spread clusters; the objective itself is wrong for this shape. Rescale / whiten the features or use a Gaussian mixture.' }
+];
+
+/* ===== frame ===== */
+let capH = -1;
+function frame(dt, rdt) {
+  clock += rdt;
+  const ch = $('#caption').offsetHeight; if (ch !== capH || !LY.S) { capH = ch; layout(); }
+  tick(dt); draw();
+  const J = inertia(st.pts, st.L, st.C);
+  setText('sJ', st.hist.length || st.phase === 'drag' ? fmtJ(J) : '–');
+  setText('sIt', st.phase === 'done' ? st.iter + ' ✓' : String(st.iter));
+  setText('sMv', st.hist.length ? String(st.moved) : '–');
+  setText('mJ', fmtJ(J)); setText('mK', String(st.k)); setText('mBest', st.elbow.length ? fmtJ(st.elbow[st.k - 1]) : '–');
+  setText('mMoved', String(st.moved)); setText('mShift', st.shift.toFixed(3));
+  if (st.ds === 'aniso') { setText('jKm', fmtJ(st.elbow[2])); setText('jTrue', fmtJ(st.jTrue)); }
+}
+$('#bStep').onclick = () => { setPlaying(false); stepHalf(); };
+$('#bReset').onclick = () => { restart(); setPlaying(!REDUCED); };
+renderSteps(); renderTries(); goStep(0); requestAnimationFrame(loop);
+window.__demo = { goStep, setPlaying, state: () => ({ phase: st.phase, iter: st.iter, k: st.k, J: inertia(st.pts, st.L, st.C), hist: st.hist.map(h => h.J), ds: st.ds, n: st.pts.length }), st, TRIES, stepHalf };
 </script>
 </body>
 </html>

@@ -3,187 +3,736 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Activation Explorer</title>
+<title>Activation Functions — ML Field Notes</title>
 <style>
-html,body{margin:0;height:100%;overflow:hidden;background:#05010f}
-canvas{display:block;position:fixed;inset:0;touch-action:none}
-#ui{position:fixed;top:12px;left:12px;z-index:10;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#cfe9ff;background:rgba(5,8,22,.74);border:1px solid rgba(80,220,255,.25);border-radius:10px;padding:10px 14px;max-width:360px;max-height:52vh;overflow:auto}
-#ui h1{margin:0 0 2px;font-size:14px;color:#ffd166;text-shadow:0 0 8px #fa0}
-#ui .ex{color:#9fb4d8}
-#ui .hint{color:#6ee7a0;margin-top:4px}
-#ui a{color:#ff7ad9;text-decoration:none}
-#stats{margin-top:6px;color:#e8f6ff;white-space:pre-wrap}
-@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
+/* ===== ML Field Notes design system (shared by every ML/AI demo) =====
+   Colour means the same thing in every demo:
+   --a coral = class A / "positive"     --b teal = class B / "negative"
+   --hl amber = the model's current parameters / guess / selection
+   --grad violet = gradients, updates, errors flowing back
+   --accent = this demo's signature colour (set per demo) */
+:root{
+  --bg:#0c0e1a; --bg2:#10132a; --panel:#13162c; --panel2:#181c38; --line:rgba(190,200,255,.10); --line2:rgba(190,200,255,.18);
+  --ink:#e9ecfa; --dim:#a2a9c8; --faint:#6b7396;
+  --a:#ff7a6b; --b:#3fd0c0; --hl:#ffc857; --grad:#a78bfa; --good:#7ee787; --bad:#ff6b8a;
+  --accent:#6ea8ff;
+  --r:12px; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.5 var(--sans)}
+body{overflow:hidden}
+a{color:var(--accent)}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app{display:grid;grid-template-columns:minmax(0,1fr) 380px;grid-template-rows:48px minmax(0,1fr);height:100vh;height:100dvh}
+.top{grid-column:1/-1;display:flex;align-items:center;gap:12px;padding:0 14px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#11142a,#0d1020)}
+.top a.back{color:var(--dim);text-decoration:none;font-size:13px;white-space:nowrap}
+.top a.back:hover{color:var(--ink)}
+.top .chip{font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 45%,transparent);border-radius:99px;padding:5px 8px}
+.top h1{margin:0;font-size:15px;font-weight:650;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top .sp{flex:1}
+.top .keys{font:11px var(--mono);color:var(--faint);white-space:nowrap}
+.stage{position:relative;min-width:0;min-height:0;background:radial-gradient(ellipse at 50% 40%,#151a3a 0%,var(--bg) 70%)}
+.stage::before{content:"";position:absolute;inset:0;background-image:radial-gradient(rgba(190,200,255,.07) 1px,transparent 1.3px);background-size:24px 24px;pointer-events:none}
+.stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.caption{position:absolute;left:16px;right:16px;top:14px;max-width:640px;padding:10px 14px;border-radius:10px;background:rgba(12,14,30,.78);border:1px solid var(--line2);backdrop-filter:blur(6px);font-size:14px;line-height:1.45;pointer-events:none;transition:opacity .3s}
+.caption b{color:var(--accent)}
+.caption:empty{opacity:0}
+.dock{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;gap:6px;padding:6px;border-radius:99px;background:rgba(12,14,30,.82);border:1px solid var(--line2);backdrop-filter:blur(6px)}
+.dock button{border:0;background:transparent;border-radius:99px;min-width:36px;height:34px;padding:0 12px;cursor:pointer;color:var(--ink);white-space:nowrap}
+.dock button:hover{background:rgba(255,255,255,.08)}
+.dock button.on{background:color-mix(in srgb,var(--accent) 22%,transparent);color:var(--accent)}
+.lesson{border-left:1px solid var(--line);background:var(--panel);overflow:auto;min-height:0;display:flex;flex-direction:column}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border-bottom:1px solid var(--line)}
+.stat{background:var(--panel);padding:10px 12px}
+.stat .k{font:600 10px/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.stat .v{font:600 18px/1.3 var(--mono);font-variant-numeric:tabular-nums;margin-top:3px}
+.tabs{display:flex;gap:2px;padding:10px 12px 0;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);z-index:2}
+.tabs button{border:0;background:none;padding:9px 12px;color:var(--dim);cursor:pointer;border-bottom:2px solid transparent;font-weight:600}
+.tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent)}
+.pane{padding:14px 16px 22px;display:none}
+.pane.on{display:block}
+.pane h3{margin:14px 0 6px;font-size:13px;letter-spacing:.02em}
+.pane p{margin:0 0 10px;color:var(--dim)}
+.pane p b,.pane li b{color:var(--ink)}
+.lede{font-size:15px;color:var(--ink)!important}
+.steps{list-style:none;margin:10px 0 0;padding:0;counter-reset:s}
+.steps li{counter-increment:s;border:1px solid var(--line);border-radius:10px;margin:0 0 8px;padding:10px 12px 10px 40px;position:relative;cursor:pointer;color:var(--dim);background:var(--panel2)}
+.steps li::before{content:counter(s);position:absolute;left:12px;top:10px;width:18px;height:18px;border-radius:99px;display:grid;place-items:center;font:600 11px var(--mono);background:rgba(255,255,255,.07);color:var(--dim)}
+.steps li.on{border-color:color-mix(in srgb,var(--accent) 60%,transparent);color:var(--ink)}
+.steps li.on::before{background:var(--accent);color:#141414}
+.steps li.done::before{content:"✓";background:rgba(126,231,135,.2);color:var(--good)}
+.steps li .t{font-weight:650;color:var(--ink);display:block}
+.steps li .d{display:none;margin-top:4px}
+.steps li.on .d{display:block}
+.tournav{display:flex;gap:8px;margin-top:6px}
+.btn{border:1px solid var(--line2);background:var(--panel2);border-radius:9px;padding:7px 12px;cursor:pointer;color:var(--ink)}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:#15131a;border-color:transparent;font-weight:650}
+.card{border:1px solid var(--line);border-radius:12px;padding:12px;margin:0 0 10px;background:var(--panel2)}
+.card .q{color:var(--ink);font-weight:600;margin-bottom:8px}
+.card .why{display:none;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line2);color:var(--dim)}
+.card.revealed .why{display:block}
+.card .row{display:flex;gap:8px;flex-wrap:wrap}
+.eq{font:14px/1.7 var(--mono);background:#0e1124;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:6px 0 12px;overflow-x:auto;white-space:nowrap}
+.eq .c-a{color:var(--a)} .eq .c-b{color:var(--b)} .eq .c-hl{color:var(--hl)} .eq .c-g{color:var(--grad)} .eq .c-acc{color:var(--accent)}
+.live{font-variant-numeric:tabular-nums;color:var(--hl)}
+.ctrl{display:grid;grid-template-columns:1fr auto;gap:4px 10px;align-items:center;margin:10px 0}
+.ctrl label{color:var(--dim);font-size:13px}
+.ctrl output{font:12px var(--mono);color:var(--ink);font-variant-numeric:tabular-nums}
+.ctrl input[type=range]{grid-column:1/-1;width:100%;accent-color:var(--accent)}
+.seg{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 10px}
+.seg button{border:1px solid var(--line2);background:transparent;border-radius:99px;padding:5px 11px;cursor:pointer;color:var(--dim);font-size:13px}
+.seg button[aria-pressed=true]{background:color-mix(in srgb,var(--accent) 20%,transparent);color:var(--ink);border-color:color-mix(in srgb,var(--accent) 55%,transparent)}
+.note{border-left:3px solid var(--grad);padding:6px 10px;margin:8px 0 12px;color:var(--dim);background:rgba(167,139,250,.06);border-radius:0 8px 8px 0}
+.wild li{margin-bottom:6px;color:var(--dim)}
+@media (max-width:880px){
+  body{overflow:auto}
+  .app{grid-template-columns:1fr;grid-template-rows:48px 58vh auto;height:auto}
+  .stage{height:58vh}
+  .lesson{border-left:0;border-top:1px solid var(--line)}
+  .top .keys{display:none}
+  .caption{font-size:13px;top:10px;left:10px;right:10px}
+  .stats{grid-template-columns:repeat(3,1fr)}
+  .stat .v{font-size:15px}
+}
+@media (prefers-reduced-motion:reduce){.caption{transition:none}}
 </style>
 </head>
 <body>
-<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
-<div id="ui">
-<h1>∿ Activation Explorer</h1>
-<div class="ex">Each activation squashes its input differently — see f(x), its derivative, saturation/dead zones, and how a tiny 2-layer net using it warps space.</div>
-<div class="hint">1 tanh · 2 sigmoid · 3 ReLU · 4 leaky · 5 GELU · 6 swish · mouse x = input</div>
-<div id="stats"></div>
-<div style="margin-top:4px"><a href="index.html">← gallery</a></div>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace;max-width:100vw;white-space:pre-wrap';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div class="app">
+  <header class="top">
+    <a class="back" href="index.html">← Gallery</a>
+    <span class="chip">ML / AI</span>
+    <h1>Activation Functions</h1>
+    <span class="sp"></span>
+    <span class="keys">Space play · ←/→ tour · R reset</span>
+  </header>
+  <section class="stage" id="stage">
+    <canvas id="c" role="img" aria-label="Activation functions and their dashed derivatives with a draggable input probe and tangent line, a bar chart of the gradient reaching each layer of a deep network, and a lab of neurons that die when their input stays negative"></canvas>
+    <div class="caption" id="caption" aria-live="polite"></div>
+    <div class="dock" role="group" aria-label="Simulation controls">
+      <button id="bPlay" class="on" aria-label="Pause">❚❚</button>
+      <button id="bStep" aria-label="Step once">Step</button>
+      <button id="bReset" aria-label="Reset">Reset</button>
+      <button id="bSpeed" aria-label="Speed">1×</button>
+    </div>
+  </section>
+  <aside class="lesson">
+    <div class="stats" id="stats"><!-- 3 stat tiles: .stat > .k + .v#id --></div>
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-tab="learn">Learn</button>
+      <button role="tab" aria-selected="false" data-tab="try">Try this</button>
+      <button role="tab" aria-selected="false" data-tab="math">The math</button>
+      <button role="tab" aria-selected="false" data-tab="play">Controls</button>
+    </div>
+    <div class="pane on" id="p-learn">
+      <p class="lede">An activation is the bend between layers: without it a deep net is one straight line, and its <b>slope f′</b> decides whether learning signal survives the trip back through depth.</p>
+      <ol class="steps" id="steps"></ol>
+      <div class="tournav"><button class="btn" id="tPrev">← Back</button><button class="btn primary" id="tNext">Next step →</button></div>
+      <h3>In the wild</h3>
+      <ul class="wild">
+<li><b>GELU</b> runs inside every GPT-2, BERT and ViT block; <b>SiLU</b> is the gate in SwiGLU, the feed-forward layer of Llama, Mistral and PaLM.</li>
+<li><b>ReLU</b> is still the default in CNNs and ResNets for vision: cheap, and a slope of exactly 1 keeps gradients alive.</li>
+<li><b>Sigmoid</b> and <b>tanh</b> moved out of hidden layers into gates (LSTM/GRU, attention gating) and outputs (probabilities); <b>softplus</b> keeps things positive, e.g. variances and Mamba's step size Δ.</li>
+</ul>
+    </div>
+    <div class="pane" id="p-try"></div>
+    <div class="pane" id="p-math">
+<h3>The function under the probe</h3>
+<div class="eq"><span id="mName" style="font-weight:700">ReLU</span>: f(x) = <span id="mForm">max(0, x)</span><br>f′(x) = <span id="mDForm">1 if x &gt; 0 else 0</span><br>at <span class="c-hl">x = <span class="live" id="mX">0</span></span>: f = <span class="live" id="mF">0</span>, <span class="c-hl">f′ = <span class="live" id="mD">0</span></span></div>
+<h3>Stacked linear layers collapse</h3>
+<div class="eq">W₃(W₂(W₁x + b₁) + b₂) + b₃ = <b>W′x + b′</b></div>
+<p>Any number of linear layers equals one. Only the nonlinearity f between them lets depth add new bends (the net panel).</p>
+<h3>Backprop multiplies by f′ at every layer</h3>
+<div class="eq"><span class="c-g">δ<sub>k</sub></span> = (W<sub>k+1</sub>ᵀ <span class="c-g">δ<sub>k+1</sub></span>) ⊙ <span class="c-hl">f′(z<sub>k</sub>)</span><br>‖<span class="c-g">δ₁</span>‖ ≈ Π<sub>k</sub> (weight gain × <span class="c-hl">mean f′</span>)<br>here: <span class="c-hl">mean f′ = <span class="live" id="mDm">0</span></span> over <span class="live" id="mDepth">12</span> layers<br>→ ‖<span class="c-g">δ₁</span>‖ = <span class="live" id="mG1">0</span></div>
+<div class="eq">σ′(x) = σ(x)(1 − σ(x)) ≤ <b>0.25</b><br>⇒ best case 0.25<sup><span id="mDepth2">12</span></sup> = <span class="live" id="mQ">0</span></div>
+<p>Weights start as W ~ N(0, g²/n): g² = 1 (Xavier) for sigmoid/tanh, g² = 2 (He) for the ReLU family, times the <b>weight scale</b> slider. Same random draws for every function, so the race is fair.</p>
+<div class="note"><b>Misconception:</b> "ReLU solved vanishing gradients." It removed the activation's shrinkage (f′ = 1). The weights still multiply in: at 0.7× init a 30-layer ReLU net vanishes, at 1.5× it explodes. Init, normalization and residual connections do the rest.</div>
+<h3>Why a dead ReLU never recovers</h3>
+<div class="eq">∂L/∂b = mean<sub>n</sub> 2(f(z<sub>n</sub>) − y<sub>n</sub>) · <span class="c-hl">f′(z<sub>n</sub>)</span> = <b>0</b> &nbsp;if z<sub>n</sub> &lt; 0 for every input n</div>
+<div class="note">Leaky ReLU keeps f′ = 0.1 there (PyTorch default 0.01), so the bias still gets pushed back up. GELU and SiLU keep f′ &gt; 0 just below 0 (down to their dips at −0.75 and −1.28), so neurons pushed a little negative recover. Past the dip f′ turns negative and fades to 0, so in this lab they slide further down and can die too.</div>
 </div>
-<canvas id="c"></canvas>
+    <div class="pane" id="p-play"></div>
+  </aside>
+</div>
 <script>
 'use strict';
-const cv=document.getElementById('c'),ctx=cv.getContext('2d'),statsEl=document.getElementById('stats');
-let W=0,H=0,DPR=1,time=0,frame=0;
-let LX0=60,LX1=700,LY0=200,LY1=600,NY=100,RX0=760,RX1=1200,RY0=180,RY1=620;
-const FNS=[
-  {name:'tanh',form:'tanh(x)',f:x=>Math.tanh(x)},
-  {name:'sigmoid',form:'1/(1+e⁻ˣ)',f:x=>1/(1+Math.exp(-x))},
-  {name:'ReLU',form:'max(0,x)',f:x=>Math.max(0,x)},
-  {name:'Leaky ReLU',form:'max(0.1x,x)',f:x=>x>0?x:0.1*x},
-  {name:'GELU',form:'x·Φ(x)',f:x=>0.5*x*(1+Math.tanh(0.7978845608*(x+0.044715*x*x*x)))},
-  {name:'Swish',form:'x·σ(x)',f:x=>x/(1+Math.exp(-x))}
-];
-let fi=0,F=FNS[0].f,ymin=-1.5,ymax=1.5,fmin2=-1,fmax2=1;
-const dF=x=>(F(x+1e-3)-F(x-1e-3))/2e-3;
-const G=13,GC=[];for(let i=0;i<G;i++)GC.push(-1.5+3*i/(G-1));
-let TP=[],bx0=-1.5,bx1=1.5,by0=-1.5,by1=1.5;
-function net(x,y){
-  const h1=F(1.3*x-0.8*y+0.4),h2=F(0.9*x+1.2*y-0.3);
-  return[F(1.2*h1+0.6*h2-0.2),F(-0.7*h1+1.1*h2+0.3)];
+/* ===== shell helpers (keep) ===== */
+const $ = s => document.querySelector(s);
+const cv = $('#c'), ctx = cv.getContext('2d'), stage = $('#stage');
+let W = 0, H = 0, DPR = 1;
+function resize() {
+  const r = stage.getBoundingClientRect(); DPR = Math.min(2, devicePixelRatio || 1);
+  W = Math.max(1, r.width); H = Math.max(1, r.height);
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR); ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  if (typeof onResize === 'function') onResize();
 }
-function computeWarp(){
-  TP=[];bx0=-1.5;bx1=1.5;by0=-1.5;by1=1.5;
-  for(let i=0;i<G;i++){const row=[];
-    for(let j=0;j<G;j++){const q=net(GC[i],GC[j]);row.push(q);
-      if(q[0]<bx0)bx0=q[0];if(q[0]>bx1)bx1=q[0];
-      if(q[1]<by0)by0=q[1];if(q[1]>by1)by1=q[1];}
-    TP.push(row);}
+new ResizeObserver(resize).observe(stage); resize();
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+// tabs
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', x === b));
+  document.querySelectorAll('.pane').forEach(p => p.classList.toggle('on', p.id === 'p-' + b.dataset.tab));
+});
+// playback
+let playing = !REDUCED, speed = 1;
+const SPEEDS = [0.25, 0.5, 1, 2, 4];
+function setPlaying(v) { playing = v; $('#bPlay').textContent = v ? '❚❚' : '▶'; $('#bPlay').classList.toggle('on', v); $('#bPlay').setAttribute('aria-label', v ? 'Pause' : 'Play'); }
+$('#bPlay').onclick = () => setPlaying(!playing);
+$('#bSpeed').onclick = () => { speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]; $('#bSpeed').textContent = speed + '×'; };
+// tour: STEPS = [{t:'title', d:'html', cap:'stage caption html', go(){ /* set demo state */ }}]
+let tour = 0;
+function renderSteps() {
+  const ol = $('#steps'); ol.innerHTML = '';
+  STEPS.forEach((s, i) => { const li = document.createElement('li'); li.className = (i === tour ? 'on' : '') + (i < tour ? ' done' : ''); li.innerHTML = `<span class="t">${s.t}</span><span class="d">${s.d}</span>`; li.onclick = () => goStep(i); ol.appendChild(li); });
+  $('#tPrev').disabled = tour === 0; $('#tNext').textContent = tour === STEPS.length - 1 ? 'Start over ↺' : 'Next step →';
 }
-function setFn(i){
-  fi=i;F=FNS[i].f;
-  ymin=1e9;ymax=-1e9;
-  for(let x=-3.2;x<=3.2;x+=0.05){const a=F(x),b=dF(x);
-    ymin=Math.min(ymin,a,b);ymax=Math.max(ymax,a,b);}
-  ymin=Math.min(ymin,-0.4)-0.25;ymax=Math.max(ymax,1.1)+0.25;
-  fmin2=1e9;fmax2=-1e9;
-  for(let x=-5.5;x<=5.5;x+=0.1){const a=F(x);fmin2=Math.min(fmin2,a);fmax2=Math.max(fmax2,a);}
-  if(fmax2-fmin2<1e-6)fmax2=fmin2+1;
-  computeWarp();
+function goStep(i) { tour = (i + STEPS.length) % STEPS.length; const s = STEPS[tour]; if (s.go) s.go(); $('#caption').innerHTML = s.cap || ''; renderSteps(); }
+$('#tPrev').onclick = () => goStep(Math.max(0, tour - 1));
+$('#tNext').onclick = () => goStep(tour + 1);
+// experiments: TRIES = [{q:'Predict…', run(){…}, why:'html'}]
+function renderTries() {
+  const p = $('#p-try'); p.innerHTML = '<p>Make a prediction first, then run it. Each experiment sets the demo up for you.</p>';
+  TRIES.forEach(x => { const c = document.createElement('div'); c.className = 'card'; c.innerHTML = `<div class="q">${x.q}</div><div class="row"><button class="btn primary">Run it</button><button class="btn">Show why</button></div><div class="why">${x.why}</div>`; const [run, why] = c.querySelectorAll('button'); run.onclick = () => { x.run(); setPlaying(true); }; why.onclick = () => c.classList.toggle('revealed'); p.appendChild(c); });
 }
-function resize(){
-  DPR=Math.min(window.devicePixelRatio||1,2);W=innerWidth;H=innerHeight;
-  cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);
-  cv.style.width=W+'px';cv.style.height=H+'px';
-  ctx.setTransform(DPR,0,0,DPR,0,0);
-  LX0=Math.max(48,W*0.04);LX1=W*0.56;LY0=H*0.27;LY1=H-64;NY=H*0.16;
-  RX0=W*0.60;RX1=W-30;RY0=H*0.26;RY1=H-64;
+// controls helpers
+function slider(parent, id, label, min, max, step, value, fmt, onInput) {
+  const d = document.createElement('div'); d.className = 'ctrl';
+  d.innerHTML = `<label for="${id}">${label}</label><output id="${id}o"></output><input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${value}">`;
+  parent.appendChild(d); const inp = d.querySelector('input'), out = d.querySelector('output');
+  const upd = () => { out.textContent = fmt(+inp.value); onInput(+inp.value); }; inp.oninput = upd; upd();
+  return { set(v) { inp.value = v; upd(); }, get: () => +inp.value };
 }
-const wx2s=x=>LX0+(x+3)/6*(LX1-LX0),sx2w=px=>(px-LX0)/(LX1-LX0)*6-3;
-const my=y=>LY1-(y-ymin)/(ymax-ymin)*(LY1-LY0);
-function drawPlot(curX){
-  ctx.fillStyle='rgba(8,12,30,.55)';ctx.fillRect(LX0,LY0,LX1-LX0,LY1-LY0);
-  let bandStart=null;
-  for(let px=LX0;px<=LX1+2;px+=2){
-    const sat=px<=LX1&&Math.abs(dF(sx2w(px)))<0.06;
-    if(sat&&bandStart===null)bandStart=px;
-    if(!sat&&bandStart!==null){
-      const bw=px-bandStart;
-      ctx.fillStyle='rgba(255,64,96,.10)';ctx.fillRect(bandStart,LY0,bw,LY1-LY0);
-      if(bw>60){ctx.fillStyle='rgba(255,120,140,.8)';ctx.font='10px ui-monospace,monospace';ctx.textAlign='center';
-        ctx.fillText('f′≈0 dead/saturated',bandStart+bw/2,LY1-10);ctx.textAlign='left';}
-      bandStart=null;}
-  }
-  ctx.lineWidth=1;ctx.font='10px ui-monospace,monospace';
-  for(let gx=-3;gx<=3;gx++){
-    ctx.strokeStyle=gx===0?'rgba(140,190,255,.4)':'rgba(90,140,255,.12)';
-    ctx.beginPath();ctx.moveTo(wx2s(gx),LY0);ctx.lineTo(wx2s(gx),LY1);ctx.stroke();
-    ctx.fillStyle='#5f7fa8';ctx.fillText(String(gx),wx2s(gx)+3,LY1-4);
-  }
-  if(0>ymin&&0<ymax){ctx.strokeStyle='rgba(140,190,255,.4)';ctx.beginPath();ctx.moveTo(LX0,my(0));ctx.lineTo(LX1,my(0));ctx.stroke();}
-  ctx.setLineDash([6,5]);ctx.strokeStyle='rgba(255,204,80,.6)';ctx.lineWidth=1.6;ctx.beginPath();
-  for(let px=LX0;px<=LX1;px+=2){const Y=my(dF(sx2w(px)));px===LX0?ctx.moveTo(px,Y):ctx.lineTo(px,Y);}
-  ctx.stroke();ctx.setLineDash([]);
-  ctx.lineJoin='round';
-  for(const pass of[[8,0.14],[2.4,1]]){
-    ctx.strokeStyle='#3dffd4';ctx.globalAlpha=pass[1];ctx.lineWidth=pass[0];ctx.beginPath();
-    for(let px=LX0;px<=LX1;px+=2){const Y=my(F(sx2w(px)));px===LX0?ctx.moveTo(px,Y):ctx.lineTo(px,Y);}
-    ctx.stroke();}
-  ctx.globalAlpha=1;
-  const mxp=wx2s(curX);
-  ctx.strokeStyle='rgba(120,230,255,.55)';ctx.lineWidth=1;
-  ctx.beginPath();ctx.moveTo(mxp,LY0);ctx.lineTo(mxp,LY1);ctx.stroke();
-  ctx.fillStyle='#ffcc50';ctx.beginPath();ctx.arc(mxp,my(dF(curX)),3.5,0,6.283);ctx.fill();
-  ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(mxp,my(F(curX)),4.5,0,6.283);ctx.fill();
-  ctx.strokeStyle='#3dffd4';ctx.beginPath();ctx.arc(mxp,my(F(curX)),7.5,0,6.283);ctx.stroke();
-  ctx.strokeStyle='rgba(120,220,255,.35)';ctx.strokeRect(LX0,LY0,LX1-LX0,LY1-LY0);
-  ctx.font='11px ui-monospace,monospace';
-  ctx.fillStyle='#3dffd4';ctx.fillText('— f(x)  '+FNS[fi].name,LX0,LY0-8);
-  ctx.fillStyle='rgba(255,204,80,.9)';ctx.fillText('┄ f′(x) derivative',LX0+170,LY0-8);
-  ctx.fillStyle='rgba(255,120,140,.9)';ctx.fillText('▨ |f′|<0.06 zone',LX0+330,LY0-8);
+function seg(parent, options, value, onPick) {
+  const d = document.createElement('div'); d.className = 'seg'; parent.appendChild(d);
+  const bs = options.map(([v, label]) => { const b = document.createElement('button'); b.textContent = label; b.setAttribute('aria-pressed', v === value); b.onclick = () => set(v); d.appendChild(b); return [v, b]; });
+  function set(v) { bs.forEach(([k, b]) => b.setAttribute('aria-pressed', k === v)); onPick(v); }
+  return { set };
 }
-function drawNeurons(curX){
-  const n=9,y=NY;
-  ctx.strokeStyle='rgba(120,200,255,.25)';ctx.lineWidth=1;
-  ctx.beginPath();ctx.moveTo(LX0,y);ctx.lineTo(LX1,y);ctx.stroke();
-  for(let k=0;k<n;k++){
-    const cx=LX0+(k+0.5)/n*(LX1-LX0),off=(k-(n-1)/2)*0.6,val=F(curX+off);
-    let nv=(val-fmin2)/(fmax2-fmin2);nv=Math.max(0,Math.min(1,nv));
-    ctx.beginPath();ctx.arc(cx,y,13,0,6.283);
-    ctx.fillStyle='hsla('+(195+nv*115)+',100%,'+(30+nv*35)+'%,'+(0.2+0.75*nv)+')';ctx.fill();
-    ctx.strokeStyle='hsla('+(195+nv*115)+',100%,70%,.8)';ctx.stroke();
-    ctx.fillStyle='rgba(200,230,255,.6)';ctx.font='9px ui-monospace,monospace';ctx.textAlign='center';
-    ctx.fillText(val.toFixed(1),cx,y+28);ctx.textAlign='left';
-  }
-  const sx=LX0+(curX+3)/6*(LX1-LX0);
-  ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(sx,y,3.5,0,6.283);ctx.fill();
-  ctx.strokeStyle='rgba(255,255,255,.5)';ctx.beginPath();ctx.arc(sx,y,7+2*Math.sin(time*6),0,6.283);ctx.stroke();
-  ctx.fillStyle='#7fa8cf';ctx.font='10px ui-monospace,monospace';
-  ctx.fillText('neuron row: brightness = f(x+Δ) as signal x sweeps −3..3',LX0,y-24);
-}
-function drawWarp(){
-  const side=Math.min(RX1-RX0,RY1-RY0),rcx=(RX0+RX1)/2,rcy=(RY0+RY1)/2;
-  ctx.fillStyle='rgba(12,10,30,.55)';ctx.fillRect(rcx-side/2,rcy-side/2,side,side);
-  ctx.strokeStyle='rgba(160,130,255,.35)';ctx.lineWidth=1;ctx.strokeRect(rcx-side/2,rcy-side/2,side,side);
-  const u=(time*0.3)%2;let m=u<1?u:2-u;m=m*m*(3-2*m);
-  const sc=Math.min(side/(bx1-bx0),side/(by1-by0))*0.88,ccx=(bx0+bx1)/2,ccy=(by0+by1)/2;
-  const P=(x,y)=>[rcx+(x-ccx)*sc,rcy-(y-ccy)*sc];
-  ctx.lineWidth=1;
-  for(let i=0;i<G;i++){
-    ctx.strokeStyle='hsla('+(185+i*9)+',100%,65%,.7)';ctx.beginPath();
-    for(let j=0;j<G;j++){
-      const t=TP[i][j],X=GC[i]+(t[0]-GC[i])*m,Y=GC[j]+(t[1]-GC[j])*m,q=P(X,Y);
-      j?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]);}
-    ctx.stroke();}
-  for(let j=0;j<G;j++){
-    ctx.strokeStyle='hsla('+(300+j*5)+',100%,70%,.55)';ctx.beginPath();
-    for(let i=0;i<G;i++){
-      const t=TP[i][j],X=GC[i]+(t[0]-GC[i])*m,Y=GC[j]+(t[1]-GC[j])*m,q=P(X,Y);
-      i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]);}
-    ctx.stroke();}
-  ctx.fillStyle='#b9a8ff';ctx.font='11px ui-monospace,monospace';
-  ctx.fillText('2-layer net  y = f(W₂·f(W₁x+b₁)+b₂)',rcx-side/2,rcy-side/2-10);
-  ctx.fillText('morph '+Math.round(m*100)+'%  input grid ⇄ warped output',rcx-side/2,rcy+side/2+16);
-}
-let mouseX=-1,haveMouse=false;
-cv.addEventListener('pointermove',e=>{mouseX=e.clientX;haveMouse=true;});
-cv.addEventListener('pointerleave',()=>{haveMouse=false;});
-addEventListener('keydown',e=>{if(e.key>='1'&&e.key<='6')setFn(+e.key-1);});
-addEventListener('resize',resize);
-function stats(curX){
-  statsEl.innerHTML='f = <span style="color:#3dffd4">'+FNS[fi].name+'</span>   ('+FNS[fi].form+')\n'
-    +'x = '+curX.toFixed(2)+'   f(x) = '+F(curX).toFixed(3)+'   f′(x) = '+dF(curX).toFixed(3)
-    +(Math.abs(dF(curX))<0.06?'\n<span style="color:#ff7890">gradient ≈ 0 here → learning stalls</span>':'');
-}
-function loop(ts){
-  time=ts/1000;
-  ctx.fillStyle='#05010f';ctx.fillRect(0,0,W,H);
-  const p=(time*0.22)%2,tri=p<1?p:2-p,sweep=-3+6*tri;
-  let curX=sweep;
-  if(haveMouse&&mouseX>=LX0&&mouseX<=LX1)curX=sx2w(mouseX);
-  drawPlot(curX);
-  drawNeurons(curX);
-  drawWarp();
-  frame++;if(frame%4===0)stats(curX);
+function stat(id, label) { const d = document.createElement('div'); d.className = 'stat'; d.innerHTML = `<div class="k">${label}</div><div class="v" id="${id}">–</div>`; $('#stats').appendChild(d); }
+const setText = (id, v) => { const e = document.getElementById(id); if (e && e.textContent !== v) e.textContent = v; };
+// keyboard
+addEventListener('keydown', e => {
+  if (e.target.matches('input,select,textarea')) return;
+  if (e.code === 'Space') { setPlaying(!playing); e.preventDefault(); }
+  else if (e.key === 'ArrowRight') goStep(tour + 1);
+  else if (e.key === 'ArrowLeft') goStep(Math.max(0, tour - 1));
+  else if (e.key === 'r' || e.key === 'R') $('#bReset').click();
+});
+// wall-clock-locked loop (dt clamped to [0, 0.1] — rAF timestamps can precede performance.now())
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.1, Math.max(0, (now - last) / 1000)); last = now;
+  try { frame(playing ? dt * speed : 0, dt); } catch (err) { window.onerror(err.message, '', 0); return; }
   requestAnimationFrame(loop);
 }
-resize();setFn(0);
-requestAnimationFrame(loop);
+
+// ===== DEMO: activation functions =====
+/*CORE-START*/
+// ---- activation functions: f and exact derivative d ----
+const sigm = x => 1 / (1 + Math.exp(-x));
+const GK = Math.sqrt(2 / Math.PI), GC = 0.044715, LEAK = 0.1;
+const FN = {
+  linear:   { name: 'linear',     col: '#9aa0bd', gain2: 1, f: x => x, d: () => 1 },
+  sigmoid:  { name: 'sigmoid',    col: '#ff7a6b', gain2: 1, f: sigm, d: x => { const s = sigm(x); return s * (1 - s); } },
+  tanh:     { name: 'tanh',       col: '#ff66b0', gain2: 1, f: Math.tanh, d: x => { const t = Math.tanh(x); return 1 - t * t; } },
+  softplus: { name: 'softplus',   col: '#d9e36a', gain2: 2, f: x => x > 30 ? x : Math.log1p(Math.exp(x)), d: sigm },
+  relu:     { name: 'ReLU',       col: '#3fd0c0', gain2: 2, f: x => x > 0 ? x : 0, d: x => x > 0 ? 1 : 0 },
+  leaky:    { name: 'Leaky ReLU', col: '#7ee787', gain2: 2 / (1 + LEAK * LEAK), f: x => x > 0 ? x : LEAK * x, d: x => x > 0 ? 1 : LEAK },
+  gelu:     { name: 'GELU',       col: '#5b9dff', gain2: 2,
+    f: x => 0.5 * x * (1 + Math.tanh(GK * (x + GC * x * x * x))),
+    d: x => { const t = Math.tanh(GK * (x + GC * x * x * x)); return 0.5 * (1 + t) + 0.5 * x * (1 - t * t) * GK * (1 + 3 * GC * x * x); } },
+  silu:     { name: 'SiLU/Swish', col: '#e27bff', gain2: 2, f: x => x * sigm(x), d: x => { const s = sigm(x); return s * (1 + x * (1 - s)); } },
+};
+const KEYS = Object.keys(FN);
+// ---- seeded RNG ----
+function mulberry(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const gauss = r => Math.sqrt(-2 * Math.log(1 - r())) * Math.cos(2 * Math.PI * r());
+// ---- depth stack: D layers of width M; same random draws for every activation (fair race) ----
+const M = 32;
+function makeStack(D, seed) {
+  const r = mulberry(seed), W = [];
+  for (let k = 0; k < D; k++) { const w = new Float64Array(M * M); for (let i = 0; i < w.length; i++) w[i] = gauss(r); W.push(w); }
+  const h0 = Float64Array.from({ length: M }, () => gauss(r)), u = Float64Array.from({ length: M }, () => gauss(r));
+  const un = Math.hypot(...u); for (let i = 0; i < M; i++) u[i] /= un;
+  return { D, W, h0, u };
+}
+// forward  z_k = s·W_k h_{k-1},  h_k = f(z_k)          (s = scale·√(gain²/M): Xavier for sigmoid/tanh, He for ReLU family)
+// backward δ_k = ∂L/∂z_k = (s·W_{k+1}ᵀ δ_{k+1}) ⊙ f′(z_k),  δ_D = u ⊙ f′(z_D) with ‖u‖ = 1
+// returns g[k] = ‖δ_k‖ (the signal that trains layer k+1's weights), z[k] (pre-activations), dm[k] = mean |f′(z_k)|
+function gradFlow(fn, st, scale) {
+  const F = FN[fn], s = scale * Math.sqrt(F.gain2 / M), D = st.D, z = [], dm = new Float64Array(D), g = new Float64Array(D);
+  let h = st.h0;
+  for (let k = 0; k < D; k++) {
+    const zk = new Float64Array(M), w = st.W[k];
+    for (let i = 0; i < M; i++) { let a = 0; for (let j = 0; j < M; j++) a += w[i * M + j] * h[j]; zk[i] = s * a; }
+    z.push(zk); h = zk.map(F.f);
+  }
+  let del = st.u.map((v, i) => v * F.d(z[D - 1][i]));
+  for (let k = D - 1; k >= 0; k--) {
+    g[k] = Math.hypot(...del);
+    let m = 0; for (let i = 0; i < M; i++) m += Math.abs(F.d(z[k][i])); dm[k] = m / M;
+    if (k === 0) break;
+    const w = st.W[k], nd = new Float64Array(M);
+    for (let j = 0; j < M; j++) { let a = 0; for (let i = 0; i < M; i++) a += w[i * M + j] * del[i]; nd[j] = s * a * F.d(z[k - 1][j]); }
+    del = nd;
+  }
+  return { g, z, dm };
+}
+// ---- "what can a 3-layer net draw?": 1 → M → M → 1 with biases ----
+function makeNet(seed) {
+  const r = mulberry(seed), G = n => Float64Array.from({ length: n }, () => gauss(r));
+  return { w1: G(M), b1: G(M), w2: G(M * M), b2: G(M), w3: G(M), b3: gauss(r) };
+}
+function netOut(fn, n, x) {
+  const F = FN[fn], s = Math.sqrt(F.gain2 / M), h1 = new Float64Array(M);
+  for (let i = 0; i < M; i++) h1[i] = F.f(1.2 * n.w1[i] * x + 0.8 * n.b1[i]);
+  let y = n.b3;
+  for (let i = 0; i < M; i++) { let a = 0.5 * n.b2[i]; for (let j = 0; j < M; j++) a += s * n.w2[i * M + j] * h1[j]; y += n.w3[i] * F.f(a) / Math.sqrt(M); }
+  return y;
+}
+// ---- dead-neuron lab: N neurons, each fits a teacher y = max(0, v·x + c) on a fixed batch ----
+function makeLab(seed, N = 24, B = 32) {
+  const r = mulberry(seed), X = [];
+  for (let n = 0; n < B; n++) X.push([gauss(r), gauss(r)]);
+  const ns = [];
+  for (let i = 0; i < N; i++) {
+    const v = [gauss(r) * 0.7, gauss(r) * 0.7], c = 0.4 + 0.6 * r();
+    ns.push({ v, c, w: [v[0] + 0.2 * gauss(r), v[1] + 0.2 * gauss(r)], b: c + 0.2 * gauss(r), pulse: 0 });
+  }
+  return { X, ns, r };
+}
+const zOf = (nr, x) => nr.w[0] * x[0] + nr.w[1] * x[1] + nr.b;
+// one SGD step on L = mean (f(z) − y)²; a ReLU neuron with z < 0 on every input gets exactly zero gradient
+function labStep(fn, lab, lr) {
+  const F = FN[fn];
+  for (const nr of lab.ns) {
+    let gb = 0, g0 = 0, g1 = 0;
+    for (const x of lab.X) { const z = zOf(nr, x), y = Math.max(0, nr.v[0] * x[0] + nr.v[1] * x[1] + nr.c), e = 2 * (F.f(z) - y) * F.d(z); gb += e; g0 += e * x[0]; g1 += e * x[1]; }
+    const B = lab.X.length; nr.b -= lr * gb / B; nr.w[0] -= lr * g0 / B; nr.w[1] -= lr * g1 / B;
+  }
+}
+// learning-rate spike: one oversized update that shoves biases negative
+function labKick(lab, size) { for (const nr of lab.ns) { nr.b -= size * (0.15 + 0.85 * lab.r()); nr.pulse = 1; } }
+// per-neuron: fraction of inputs with z > 0, and mean |f'(z)| (the gradient it can receive)
+function labInfo(fn, lab) {
+  const F = FN[fn];
+  return lab.ns.map(nr => { let on = 0, gd = 0, out = 0; for (const x of lab.X) { const z = zOf(nr, x); if (z > 0) on++; gd += Math.abs(F.d(z)); out += F.f(z); } const B = lab.X.length; return { on: on / B, gd: gd / B, out: out / B, dead: gd / B < 1e-4 }; });
+}
+/*CORE-END*/
+
+/* ---------- display metadata ---------- */
+const FORM = {
+  linear: ['x', '1'], sigmoid: ['σ(x) = 1 / (1 + e⁻ˣ)', 'σ(x)(1 − σ(x))'], tanh: ['tanh x', '1 − tanh²x'],
+  softplus: ['ln(1 + eˣ)', 'σ(x)'], relu: ['max(0, x)', '1 if x > 0 else 0'], leaky: ['max(0.1x, x)', '1 if x > 0 else 0.1'],
+  gelu: ['x · Φ(x)  (tanh approx.)', 'Φ(x) + x · φ(x)'], silu: ['x · σ(x)', 'σ(x)(1 + x(1 − σ(x)))'],
+};
+const SHORT = { linear: 'linear', sigmoid: 'sigmoid', tanh: 'tanh', softplus: 'softplus', relu: 'ReLU', leaky: 'Leaky', gelu: 'GELU', silu: 'SiLU' };
+const C = { hl: '#ffc857', grad: '#a78bfa', data: '#c7cbe0', bad: '#ff6b8a', dim: '#a2a9c8', faint: '#6b7396', ink: '#e9ecfa', grey: '#565d80' };
+const XR = [-4, 4];
+const SUP = { '-': '⁻', 0: '⁰', 1: '¹', 2: '²', 3: '³', 4: '⁴', 5: '⁵', 6: '⁶', 7: '⁷', 8: '⁸', 9: '⁹' };
+function sci(v) {
+  if (!(v > 0)) return '0';
+  if (v >= 0.01 && v < 1000) return v >= 10 ? v.toFixed(0) : v.toPrecision(2);
+  const e = Math.floor(Math.log10(v)), m = v / 10 ** e;
+  return (m >= 9.5 ? '1' : m.toFixed(0)) + '×10' + String(m >= 9.5 ? e + 1 : e).split('').map(c => SUP[c]).join('');
+}
+
+/* ---------- state ---------- */
+const STACK_SEED = 7, LAB_SEED = 3;
+const state = {
+  t: 0, x: 1.2, sweep: true, sweepT: 0.7, focus: 'relu', vis: new Set(['linear', 'relu', 'tanh']),
+  depth: 12, scale: 1, spike: 3, stack: makeStack(12, STACK_SEED), flows: {}, dirty: true,
+  netSeed: 11, net: null, cur: {}, prev: null, morph: 1, autoRoll: false, rollT: 0,
+  lab: makeLab(LAB_SEED), info: [], autoKick: false, kickT: 0, acc: 0,
+  hl: null, side: 'net', hover: -1, autoScale: false, scaleT: 0, later: [],
+};
+state.net = makeNet(state.netSeed);
+
+/* ---------- layout (safe rect below the caption, above the dock) ---------- */
+var L = { top: 84 };  // var: the shell's first resize() runs before this line
+function onResize() {
+  if (!L) return;
+  const S = { x: 16, y: L.top, w: W - 32, h: H - L.top - 76 };
+  L.wide = W >= 640 && H >= 520;
+  if (L.wide) {
+    const sw = Math.max(270, Math.min(400, S.w * 0.39)), g = 12, hh = S.h - 2 * g;
+    L.plot = { x: S.x, y: S.y, w: S.w - sw - 18, h: S.h };
+    const cx = S.x + S.w - sw;
+    L.net = { x: cx, y: S.y, w: sw, h: hh * 0.27 };
+    L.grad = { x: cx, y: L.net.y + L.net.h + g, w: sw, h: hh * 0.43 };
+    L.dead = { x: cx, y: L.grad.y + L.grad.h + g, w: sw, h: hh * 0.30 };
+  } else {
+    const ph = Math.round(S.h * 0.55), r = { x: S.x, y: S.y + ph + 10, w: S.w, h: S.h - ph - 10 };
+    L.plot = { x: S.x, y: S.y, w: S.w, h: ph }; L.net = L.grad = L.dead = r;
+  }
+}
+function captionTop() {
+  const c = $('#caption'); if (!c.innerHTML) return 84;
+  return Math.max(84, Math.round(c.getBoundingClientRect().bottom - stage.getBoundingClientRect().top + 8));
+}
+onResize();
+const shown = k => L.wide || state.side === k;
+const inR = (p, r) => r && p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+
+/* ---------- model plumbing ---------- */
+function recompute() {
+  state.flows = {};
+  for (const k of new Set([...state.vis, state.focus])) if (k !== 'linear' || state.focus === 'linear') state.flows[k] = gradFlow(k, state.stack, state.scale);
+  state.dirty = false;
+}
+function netCurve(fn) {
+  const ys = [], n = 120; let lo = 1e9, hi = -1e9;
+  for (let i = 0; i <= n; i++) { const y = netOut(fn, state.net, XR[0] + (XR[1] - XR[0]) * i / n); ys.push(y); lo = Math.min(lo, y); hi = Math.max(hi, y); }
+  const r = hi - lo < 1e-9 ? 1 : hi - lo;
+  return ys.map(y => (y - lo) / r);
+}
+function refreshNet() { state.cur = { linear: netCurve('linear'), [state.focus]: netCurve(state.focus) }; }
+function reroll() { state.prev = state.cur; state.netSeed = (state.netSeed * 48271 + 11) % 2147483647; state.net = makeNet(state.netSeed); refreshNet(); state.morph = 0; }
+function kick() { labKick(state.lab, state.spike); }
+function freshLab() { state.lab = makeLab(LAB_SEED); state.kickT = 3.8; }
+const later = (sec, fn) => state.later.push({ t: sec, fn });
+
+/* ---------- controls tab ---------- */
+const play = $('#p-play');
+play.insertAdjacentHTML('beforeend', '<h3>Functions on the plot</h3>');
+const visWrap = document.createElement('div'); visWrap.className = 'seg'; play.appendChild(visWrap);
+const visBtns = KEYS.map(k => { const b = document.createElement('button'); b.textContent = FN[k].name; b.style.borderLeft = `3px solid ${FN[k].col}`; b.onclick = () => { state.vis.has(k) && k !== state.focus ? state.vis.delete(k) : state.vis.add(k); syncVis(); }; visWrap.appendChild(b); return [k, b]; });
+function syncVis() { visBtns.forEach(([k, b]) => b.setAttribute('aria-pressed', state.vis.has(k))); state.dirty = true; }
+function setVis(list) { state.vis = new Set(list); syncVis(); }
+play.insertAdjacentHTML('beforeend', '<h3>Focus: drives the probe, gradient bars and neuron lab</h3>');
+const focusSeg = seg(play, KEYS.map(k => [k, FN[k].name]), state.focus, k => { state.focus = k; state.vis.add(k); syncVis(); refreshNet(); });
+const sX = slider(play, 'sx', 'Probe input x (drag on the plot too)', -4, 4, 0.01, state.x, v => v.toFixed(2), v => { state.x = v; state.sweep = false; });
+const sDepth = slider(play, 'sdepth', 'Network depth: layers the gradient must cross', 2, 30, 1, 12, v => v + ' layers', v => { state.depth = v; state.stack = makeStack(v, STACK_SEED); state.dirty = true; });
+const sScale = slider(play, 'sscale', 'Weight scale (× Xavier/He recommended init)', 0.5, 1.6, 0.01, 1, v => v.toFixed(2) + '×', v => { state.scale = v; state.autoScale = false; state.dirty = true; });
+slider(play, 'sspike', 'Learning-rate spike size (how hard a kick shoves biases negative)', 1, 5, 0.1, 3, v => v.toFixed(1), v => { state.spike = v; });
+play.insertAdjacentHTML('beforeend', '<div class="row" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="btn" id="cKick">Spike the learning rate</button><button class="btn" id="cRoll">New random weights</button><button class="btn" id="cSweep">Auto-sweep probe</button></div>');
+$('#cKick').onclick = kick; $('#cRoll').onclick = reroll; $('#cSweep').onclick = () => { state.sweep = true; };
+function setScaleQuiet(v) { state.scale = v; $('#sscale').value = v; $('#sscaleo').textContent = v.toFixed(2) + '×'; state.dirty = true; }
+stat('sF', 'f′ at probe'); stat('sG', 'gradient @ layer 1'); stat('sD', 'dead neurons');
+
+/* ---------- tour + experiments ---------- */
+function setup(o) {
+  state.autoRoll = !!o.roll; state.autoKick = !!o.kick; state.autoScale = !!o.pump; state.later = [];
+  state.hl = o.hl || null; state.side = o.side || state.side; state.hover = -1;
+  if (o.vis) setVis(o.vis);
+  if (o.focus) focusSeg.set(o.focus);
+  if (o.depth) sDepth.set(o.depth);
+  if (o.scale) sScale.set(o.scale);
+  if (o.pump) state.autoScale = true;
+  if ('x' in o) { sX.set(o.x); } else { state.sweep = true; }
+  if (o.lab) freshLab();
+}
+const STEPS = [
+  { t: 'Why nonlinearity?', d: 'W₃(W₂(W₁x)) is just one matrix times x. The activation between layers is the only thing that lets depth add new bends.',
+    cap: 'Stack linear layers and you still get <b>one straight line</b> (grey), whatever the weights. Put a <b>ReLU</b> between them and the same net bends. <i>Click the net panel to re-roll.</i>',
+    go() { setup({ vis: ['linear', 'relu', 'tanh'], focus: 'relu', depth: 12, scale: 1, roll: 1, hl: 'net', side: 'net', lab: 1 }); } },
+  { t: 'Sigmoid saturates', d: 'Far from 0 the sigmoid flattens, so its slope, which is the learning signal, drops toward 0. Even at its steepest it is only 0.25.',
+    cap: 'Drag the amber probe. Far from 0 the <b>sigmoid</b> goes flat and <b>f′ ≈ 0</b> (red bands). Even at its steepest the slope is only <b>0.25</b>.',
+    go() { setup({ vis: ['sigmoid', 'tanh'], focus: 'sigmoid', hl: 'peak', side: 'grad' }); } },
+  { t: 'Vanishing gradients through depth', d: 'Backprop multiplies by f′(z) once per layer. Multiply twelve numbers ≤ 0.25 and almost nothing reaches layer 1, so the early layers stop learning.',
+    cap: 'Backprop multiplies by <b>f′(z)</b> at every layer. With sigmoid that is ≤ 0.25 each time, so layer 1 of 12 gets ~10⁻⁸ of the signal. <i>Hover a bar.</i>',
+    go() { setup({ vis: ['sigmoid', 'tanh', 'relu', 'gelu'], focus: 'sigmoid', depth: 12, scale: 1, x: 0, hl: 'layer1', side: 'grad' }); } },
+  { t: 'ReLU fixes it… but neurons can die', d: 'f′ = 1 for z > 0, so the gradient survives depth. But a neuron shoved to z < 0 on every input outputs 0 and receives 0 gradient. It can never recover.',
+    cap: 'ReLU\'s slope is exactly <b>1</b> for z > 0, so gradients survive. But a neuron pushed below 0 on every input gets <b>zero gradient</b> and stays dead. <i>Click the neuron lab.</i>',
+    go() { setup({ vis: ['relu', 'sigmoid'], focus: 'relu', depth: 12, scale: 1, kick: 1, hl: 'dead', side: 'dead', lab: 1 }); } },
+  { t: 'Smooth ReLUs: GELU & SiLU', d: 'ReLU with the corner rounded off and a small dip. Just below 0 the slope is still positive, so lightly kicked neurons climb back. Past the dip (SiLU −1.28, GELU −0.75) the slope turns negative and fades, so a hard kick can still strand them. Transformers use them.',
+    cap: '<b>SiLU</b> and <b>GELU</b> round off ReLU\'s corner. Just below 0 their slope is still <b>positive</b>, so lightly kicked neurons climb back. Kicked past the dip, f′ flips sign and fades, so a few still stick.',
+    go() { setup({ vis: ['relu', 'leaky', 'gelu', 'silu'], focus: 'silu', depth: 12, scale: 1, kick: 1, hl: 'dip', side: 'dead', lab: 1 }); } },
+  { t: 'Limit: the weights multiply too', d: 'A good f′ is not enough. Backprop also multiplies by the weights, so a slightly wrong init scale makes even ReLU vanish (bars sink) or explode (bars rise).',
+    cap: 'Backprop multiplies by the <b>weights</b> too. As their scale pumps 0.65×–1.45×, even a 24-layer ReLU net\'s gradient <b>vanishes, then explodes</b>.',
+    go() { setup({ vis: ['relu', 'gelu', 'sigmoid'], focus: 'relu', depth: 24, scale: 1, pump: 1, hl: 'layer1', side: 'grad' }); state.scaleT = 0; } },
+];
+const SHORTCAP = [
+  'Linear layers stack into <b>one straight line</b> (grey). A <b>ReLU</b> between them lets the net bend. <i>Tap the net panel.</i>',
+  'Drag the probe: far from 0 the <b>sigmoid</b> goes flat (<b>f′ ≈ 0</b>). Its steepest slope is only <b>0.25</b>.',
+  'Backprop multiplies by <b>f′ ≤ 0.25</b> per sigmoid layer: layer 1 of 12 gets ~10⁻⁸. <i>Tap a bar.</i>',
+  'ReLU\'s slope is <b>1</b>, so gradients survive, but a neuron stuck below 0 gets <b>zero gradient</b>. <i>Tap the lab.</i>',
+  '<b>SiLU/GELU</b>: just below 0 the slope is still positive, so lightly kicked neurons climb back. Past the dip, a few still stick.',
+  'Weights multiply too: as their scale pumps 0.65×–1.45×, a 24-layer ReLU net\'s gradient <b>vanishes, then explodes</b>.',
+];
+STEPS.forEach((s, i) => { const long = s.cap; Object.defineProperty(s, 'cap', { get: () => (W < 640 ? SHORTCAP[i] : long) }); });
+const TRIES = [
+  { q: 'Sigmoid\'s steepest slope is 0.25. <b>Predict:</b> at best, how much gradient survives 10 sigmoid layers: about 10%, 1%, or less than a millionth?',
+    run() { setup({ vis: ['sigmoid', 'tanh', 'relu'], focus: 'sigmoid', depth: 10, scale: 1, x: 0, hl: 'layer1', side: 'grad' }); },
+    why: 'Less than a millionth: 0.25¹⁰ ≈ 10⁻⁶, and that is the <b>best</b> case with every neuron sitting exactly at z = 0. Hover the bars: the neurons sit near 0, where f′ ≈ 0.23 on average, so layer 1 lands near 5×10⁻⁷. That cap is why deep sigmoid nets barely trained before ReLU.' },
+  { q: 'ReLU\'s slope is exactly 1, so a 30-layer ReLU net can\'t have vanishing gradients… right? <b>Predict</b> what happens if the weights start at 0.7× the He scale.',
+    run() { setup({ vis: ['relu', 'leaky', 'gelu'], focus: 'relu', depth: 30, scale: 0.7, hl: 'layer1', side: 'grad' }); },
+    why: 'They vanish anyway: each layer now shrinks the signal by about 0.7, and 0.7³⁰ ≈ 2×10⁻⁵ (the bars land near 10⁻⁶). Backprop multiplies by <b>Wᵀ</b> as well as f′. ReLU only removes the activation\'s shrinkage; He init, normalization and residual connections handle the weights. Drag the scale to 1.5× to see it explode.' },
+  { q: 'Leaky ReLU leaks only a 0.1 slope for negative inputs. <b>Predict:</b> can such a tiny slope bring a dead ReLU neuron back to life?',
+    run() { setup({ vis: ['relu', 'leaky'], focus: 'relu', hl: 'dead', side: 'dead', lab: 1 }); kick(); later(3, () => { focusSeg.set('leaky'); $('#caption').innerHTML = 'Same neurons, now <b>Leaky ReLU</b>: the grey ones get a 0.1 gradient. Watch them climb back.'; }); $('#caption').innerHTML = '<b>ReLU</b>: the grey neurons are dead. In 3 s we swap in Leaky ReLU without touching the weights…'; },
+    why: 'Yes. Gradient descent only needs a <b>nonzero</b> slope: 0.1 × error still pushes each bias back up, so every grey neuron recovers. ReLU\'s exact 0 is an absorbing state: no gradient ever reaches a dead neuron again. The price is small negative outputs.' },
+];
+
+/* ---------- pointer: probe drag, focus a curve, re-roll, kick, inspect a layer ---------- */
+let drag = false, hits = [];
+const ptr = e => { const r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+function setProbeFromPx(px) { const I = L.pi; const x = XR[0] + (px - I.x) / I.w * (XR[1] - XR[0]); sX.set(Math.max(-4, Math.min(4, +x.toFixed(2)))); }
+function layerAt(p) { const a = L.ga; if (!a || !shown('grad') || p.x < a.x || p.x > a.x + a.w || p.y < L.grad.y || p.y > L.grad.y + L.grad.h) return -1; return Math.min(state.depth - 1, Math.floor((p.x - a.x) / a.w * state.depth)); }
+cv.addEventListener('pointerdown', e => {
+  const p = ptr(e);
+  for (const h of hits) if (inR(p, h)) { h.act(); return; }
+  if (inR(p, L.plot)) {
+    const I = L.pi, x = XR[0] + (p.x - I.x) / I.w * (XR[1] - XR[0]);
+    let best = null, bd = 12;
+    for (const k of state.vis) { const d = Math.abs(sy(FN[k].f(x)) - p.y); if (d < bd) { bd = d; best = k; } }
+    if (best && best !== state.focus) focusSeg.set(best);
+    drag = true; cv.setPointerCapture(e.pointerId); setProbeFromPx(p.x); return;
+  }
+  if (shown('net') && inR(p, L.net)) { reroll(); state.autoRoll = false; return; }
+  if (shown('dead') && inR(p, L.dead)) { kick(); return; }
+  if (shown('grad') && inR(p, L.grad)) state.hover = layerAt(p);
+});
+cv.addEventListener('pointermove', e => {
+  const p = ptr(e);
+  if (drag) { setProbeFromPx(p.x); return; }
+  if (e.pointerType === 'mouse') state.hover = layerAt(p);
+  let cur = 'default';
+  if (hits.some(h => inR(p, h)) || (shown('net') && inR(p, L.net)) || (shown('dead') && inR(p, L.dead))) cur = 'pointer';
+  else if (inR(p, L.plot)) cur = 'ew-resize'; else if (state.hover >= 0) cur = 'crosshair';
+  cv.style.cursor = cur;
+});
+const endDrag = () => { drag = false; };
+cv.addEventListener('pointerup', endDrag); cv.addEventListener('pointercancel', endDrag);
+cv.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse' && !drag) state.hover = -1; });
+$('#bStep').onclick = () => { setPlaying(false); frame(1 / 60, 1 / 60); };
+$('#bReset').onclick = () => { freshLab(); state.sweep = true; state.sweepT = 0.7; state.netSeed = 11; state.net = makeNet(11); refreshNet(); state.prev = null; state.morph = 1; };
+addEventListener('keydown', e => { const i = +e.key; if (i >= 1 && i <= KEYS.length && !e.target.matches('input')) focusSeg.set(KEYS[i - 1]); });
+
+/* ---------- drawing helpers ---------- */
+const YR = () => L.wide ? [-1.3, 2.7] : [-1.2, 2.2];
+const sx = x => L.pi.x + (x - XR[0]) / (XR[1] - XR[0]) * L.pi.w;
+function sy(y) { const [a, b] = YR(); return L.pi.y + (b - y) / (b - a) * L.pi.h; }
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function pill(text, x, y, col, align = 'left', bg = 'rgba(12,14,30,.86)') {
+  const w = ctx.measureText(text).width + 12, x0 = align === 'center' ? x - w / 2 : align === 'right' ? x - w : x;
+  ctx.fillStyle = bg; rr(x0, y - 9, w, 18, 6); ctx.fill();
+  ctx.fillStyle = col; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(text, x0 + 6, y + 0.5);
+  return { x: x0, y: y - 9, w, h: 18 };
+}
+function ring(x, y, r, label, lx, ly) {
+  const a = 0.55 + 0.45 * Math.sin(state.t * 4);
+  ctx.strokeStyle = C.hl; ctx.lineWidth = 2; ctx.globalAlpha = a; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.stroke(); ctx.globalAlpha = 1;
+  if (label) { ctx.strokeStyle = 'rgba(255,200,87,.6)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x + (lx - x) * r / Math.hypot(lx - x, ly - y), y + (ly - y) * r / Math.hypot(lx - x, ly - y)); ctx.lineTo(lx, ly); ctx.stroke(); ctx.font = '600 12px ' + FONT; pill(label, lx, ly, C.hl, lx < x ? 'right' : 'left'); }
+}
+function panel(R, key, title, right) {
+  const on = state.hl === key;
+  ctx.fillStyle = 'rgba(14,17,36,.72)'; rr(R.x, R.y, R.w, R.h, 12); ctx.fill();
+  ctx.strokeStyle = on ? `rgba(255,200,87,${0.45 + 0.35 * Math.sin(state.t * 4)})` : 'rgba(190,200,255,.12)'; ctx.lineWidth = on ? 1.6 : 1; ctx.stroke();
+  ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  if (L.wide) { ctx.font = '600 12px ' + SANS; ctx.fillStyle = C.ink; ctx.fillText(title, R.x + 12, R.y + 15); }
+  else {
+    let x = R.x + 8;
+    for (const [k, lab] of [['net', 'net'], ['grad', 'gradient'], ['dead', 'neurons']]) {
+      ctx.font = '600 12px ' + SANS; const w = ctx.measureText(lab).width + 18, sel = state.side === k;
+      ctx.fillStyle = sel ? 'rgba(110,168,255,.22)' : 'rgba(255,255,255,.05)'; rr(x, R.y + 5, w, 22, 11); ctx.fill();
+      ctx.fillStyle = sel ? C.ink : C.dim; ctx.fillText(lab, x + 9, R.y + 16.5);
+      hits.push({ x, y: R.y + 3, w, h: 26, act: () => { state.side = k; } }); x += w + 6;
+    }
+  }
+  if (right) { ctx.font = '12px ' + FONT; ctx.textAlign = 'right'; ctx.fillStyle = C.dim; ctx.fillText(right, R.x + R.w - 12, R.y + 16); ctx.textAlign = 'left'; }
+}
+const FONT = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace', SANS = 'ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif';
+function curve(g, w, col, dash, alpha) {
+  const I = L.pi, [a, b] = YR();
+  ctx.beginPath();
+  for (let px = 0; px <= I.w; px += 2) { const y = g(XR[0] + px / I.w * (XR[1] - XR[0])); const Y = sy(Math.max(a - 0.5, Math.min(b + 0.5, y))); px ? ctx.lineTo(I.x + px, Y) : ctx.moveTo(I.x + px, Y); }
+  ctx.strokeStyle = col; ctx.lineWidth = w; ctx.globalAlpha = alpha; ctx.setLineDash(dash ? [7, 5] : []); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+}
+
+/* ---------- main plot: f solid, f′ dashed, probe + tangent ---------- */
+function drawPlot() {
+  const P = L.plot, F = FN[state.focus];
+  // function chips (click = focus)
+  ctx.font = '600 12px ' + SANS; let cx = P.x, cy = P.y + 11;
+  for (const k of KEYS) {
+    if (!L.wide && !state.vis.has(k)) continue;
+    const lab = SHORT[k], w = ctx.measureText(lab).width + 19, isF = k === state.focus, on = state.vis.has(k);
+    if (cx + w > P.x + P.w) { cx = P.x; cy += 26; }
+    ctx.fillStyle = isF ? FN[k].col + '33' : 'rgba(255,255,255,.04)'; rr(cx, cy - 11, w, 22, 11); ctx.fill();
+    ctx.strokeStyle = isF ? FN[k].col : 'rgba(190,200,255,.14)'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = FN[k].col; ctx.globalAlpha = on ? 1 : 0.35; ctx.beginPath(); ctx.arc(cx + 9, cy, 3.5, 0, 7); ctx.fill();
+    ctx.fillStyle = on ? C.ink : C.faint; ctx.textBaseline = 'middle'; ctx.fillText(lab, cx + 15, cy + 0.5); ctx.globalAlpha = 1;
+    hits.push({ x: cx, y: cy - 12, w, h: 24, act: () => focusSeg.set(k) }); cx += w + 3;
+  }
+  const top = cy + 18, I = L.pi = { x: P.x + 28, y: top, w: P.w - 32, h: P.y + P.h - top - 20 };
+  const [ya, yb] = YR();
+  ctx.fillStyle = 'rgba(10,12,28,.5)'; rr(I.x, I.y, I.w, I.h, 8); ctx.fill();
+  ctx.save(); rr(I.x, I.y, I.w, I.h, 8); ctx.clip();
+  // zero-gradient bands for the focus function
+  if (state.focus !== 'linear') {
+    let st = null; const lab = state.focus === 'relu' ? 'dead zone: f′ = 0' : 'saturated: f′ ≈ 0';
+    for (let px = 0; px <= I.w + 3; px += 3) {
+      const flat = px <= I.w && Math.abs(F.d(XR[0] + px / I.w * 8)) < 0.05;
+      if (flat && st === null) st = px;
+      if (!flat && st !== null) { ctx.fillStyle = 'rgba(255,107,138,.08)'; ctx.fillRect(I.x + st, I.y, px - st, I.h); if (px - st > 118) { ctx.font = '12px ' + FONT; ctx.fillStyle = 'rgba(255,140,160,.85)'; ctx.textAlign = 'center'; ctx.fillText(lab, I.x + (st + px) / 2, I.y + I.h - 12); ctx.textAlign = 'left'; } st = null; }
+    }
+  }
+  // grid
+  ctx.lineWidth = 1;
+  for (let gx = -4; gx <= 4; gx++) { ctx.strokeStyle = gx ? 'rgba(190,200,255,.06)' : 'rgba(190,200,255,.25)'; ctx.beginPath(); ctx.moveTo(sx(gx), I.y); ctx.lineTo(sx(gx), I.y + I.h); ctx.stroke(); }
+  for (let gy = Math.ceil(ya); gy <= yb; gy++) { ctx.strokeStyle = gy ? 'rgba(190,200,255,.06)' : 'rgba(190,200,255,.25)'; ctx.beginPath(); ctx.moveTo(I.x, sy(gy)); ctx.lineTo(I.x + I.w, sy(gy)); ctx.stroke(); }
+  // pre-activations of an inspected layer (rug) and their slopes
+  const fl = state.flows[state.focus], li = state.hover >= 0 ? state.hover : -1;
+  if (fl && li >= 0 && li < fl.z.length) {
+    for (const z of fl.z[li]) { const X = sx(Math.max(-4, Math.min(4, z))); ctx.strokeStyle = C.data; ctx.globalAlpha = 0.7; ctx.beginPath(); ctx.moveTo(X, I.y + I.h); ctx.lineTo(X, I.y + I.h - 12); ctx.stroke(); ctx.globalAlpha = 1; ctx.fillStyle = C.grad; ctx.beginPath(); ctx.arc(X, sy(F.d(z)), 3, 0, 7); ctx.fill(); }
+  }
+  // other curves, then the focus curve on top
+  for (const k of state.vis) if (k !== state.focus) { curve(FN[k].f, 1.6, FN[k].col, false, 0.5); curve(FN[k].d, 1.2, FN[k].col, true, 0.4); }
+  curve(F.f, 7, F.col, false, 0.14); curve(F.f, 2.6, F.col, false, 1); curve(F.d, 2, F.col, true, 0.9);
+  ctx.restore();
+  // axis labels
+  ctx.font = '11px ' + FONT; ctx.fillStyle = C.faint; ctx.textBaseline = 'middle'; ctx.textAlign = 'right';
+  for (let gy = Math.ceil(ya); gy <= yb; gy++) ctx.fillText(gy, I.x - 6, sy(gy));
+  ctx.textAlign = 'center'; for (let gx = -4; gx <= 4; gx += L.wide ? 1 : 2) ctx.fillText(gx, sx(gx), I.y + I.h + 10);
+  ctx.textAlign = 'left';
+  // legend for line styles
+  ctx.font = '12px ' + FONT; ctx.fillStyle = C.dim; ctx.fillText('— f(x)   ┄ f′(x) slope', I.x + 8, I.y + 14);
+  // tour highlights
+  if (state.hl === 'peak' && state.focus === 'sigmoid') ring(sx(0), sy(0.25), 9, 'max f′ = 0.25', sx(0) + 40, sy(0.25) + 40);
+  if (state.hl === 'dip' && (state.focus === 'gelu' || state.focus === 'silu')) { const z = -0.5, Y = sy(F.f(z)); ring(sx(z), Y, 10, (L.wide ? 'f′(−0.5) = ' : 'f′ ') + F.d(z).toFixed(2) + (L.wide ? ': still learns' : ''), sx(z) + (L.wide ? 40 : 24), Y + (L.wide ? 40 : 20)); }
+  // probe: vertical line, tangent, dots, readout
+  const x = state.x, fx = F.f(x), dx = F.d(x), X = sx(x);
+  ctx.strokeStyle = 'rgba(255,200,87,.55)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(X, I.y); ctx.lineTo(X, I.y + I.h); ctx.stroke();
+  ctx.save(); rr(I.x, I.y, I.w, I.h, 8); ctx.clip();
+  const span = 1.3; ctx.strokeStyle = C.hl; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(sx(x - span), sy(fx - dx * span)); ctx.lineTo(sx(x + span), sy(fx + dx * span)); ctx.stroke();
+  ctx.fillStyle = F.col; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(X, sy(fx), 6, 0, 7); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#0c0e1a'; ctx.strokeStyle = F.col; ctx.beginPath(); ctx.arc(X, sy(dx), 4.5, 0, 7); ctx.fill(); ctx.stroke();
+  ctx.restore();
+  ctx.fillStyle = C.hl; ctx.beginPath(); ctx.moveTo(X, I.y + I.h - 2); ctx.lineTo(X - 7, I.y + I.h + 9); ctx.lineTo(X + 7, I.y + I.h + 9); ctx.fill();
+  ctx.font = '600 12px ' + FONT;
+  const txt = `x ${x.toFixed(2)}  f ${fx.toFixed(2)}  f′ ${dx.toFixed(2)}`, tw = ctx.measureText(txt).width + 12;
+  pill(txt, Math.max(I.x + 2, Math.min(I.x + I.w - tw - 2, X - tw / 2)), I.y + 36, C.hl);
+}
+
+/* ---------- net panel: what a small net built from f can draw ---------- */
+function drawNet(R) {
+  panel(R, 'net', 'What a 3-layer net can draw', 'click: re-roll');
+  const a = { x: R.x + 12, y: R.y + 46, w: R.w - 24, h: R.h - 56 };
+  const m = state.morph, e = m * m * (3 - 2 * m);
+  const line = (k, col, w, dash) => {
+    const A = state.cur[k], B = state.prev && state.prev[k] ? state.prev[k] : A; if (!A) return;
+    ctx.beginPath();
+    A.forEach((v, i) => { const y = B[i] + (v - B[i]) * e, X = a.x + a.w * i / (A.length - 1), Y = a.y + a.h - y * a.h; i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); });
+    ctx.strokeStyle = col; ctx.lineWidth = w; ctx.setLineDash(dash ? [6, 5] : []); ctx.stroke(); ctx.setLineDash([]);
+  };
+  if (state.focus !== 'linear') line('linear', C.dim, 1.6, true);
+  line(state.focus, FN[state.focus].col, 2.6, false);
+  const X = a.x + (state.x - XR[0]) / (XR[1] - XR[0]) * a.w; ctx.strokeStyle = 'rgba(255,200,87,.5)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(X, a.y); ctx.lineTo(X, a.y + a.h); ctx.stroke();
+  ctx.font = '12px ' + FONT; ctx.textBaseline = 'middle'; ctx.fillStyle = FN[state.focus].col; ctx.fillText('— ' + SHORT[state.focus] + ' net', a.x, R.y + 35);
+  if (state.focus !== 'linear') { ctx.fillStyle = C.dim; ctx.textAlign = 'right'; ctx.fillText('┄ linear net: always a line', a.x + a.w, R.y + 35); ctx.textAlign = 'left'; }
+}
+
+/* ---------- gradient panel: ‖δ_k‖ per layer, log scale, flowing right→left ---------- */
+const LO = -14, HI = 4;
+function drawGrad(R) {
+  const fl = state.flows[state.focus]; if (!fl) return;
+  const D = state.depth, hv = state.hover;
+  panel(R, 'grad', 'Gradient per layer', L.wide ? `layer 1 gets ${sci(fl.g[0])}` : '');
+  const a = L.ga = { x: R.x + 64, y: R.y + 36, w: R.w - 64 - 40, h: R.h - 36 - 24 };
+  const ly = v => a.y + (HI - Math.max(LO, Math.min(HI, Math.log10(Math.max(v, 1e-30))))) / (HI - LO) * a.h;
+  // log grid
+  ctx.font = '11px ' + FONT; ctx.textBaseline = 'middle';
+  for (let e = HI; e >= LO; e -= 4) { const Y = ly(10 ** e); ctx.strokeStyle = e ? 'rgba(190,200,255,.07)' : 'rgba(190,200,255,.35)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(a.x, Y); ctx.lineTo(a.x + a.w, Y); ctx.stroke(); ctx.fillStyle = e ? C.faint : C.dim; ctx.textAlign = 'left'; ctx.fillText(e ? sci(10 ** e).replace(/^1×/, '') : '1×', a.x + a.w + 6, Y); }
+  // bars (focus)
+  const bw = a.w / D, y1 = ly(1);
+  for (let k = 0; k < D; k++) {
+    const g = fl.g[k], Y = ly(g), x = a.x + k * bw + bw * 0.19, w = Math.max(2, bw * 0.62);
+    ctx.fillStyle = g < 1e-6 ? C.grey : g > 100 ? C.bad : C.grad; ctx.globalAlpha = hv === k ? 1 : 0.8;
+    ctx.fillRect(x, Math.min(Y, y1), w, Math.max(1.5, Math.abs(Y - y1))); ctx.globalAlpha = 1;
+    if (g < 10 ** LO) { ctx.fillStyle = C.faint; ctx.textAlign = 'center'; ctx.fillText('▾', x + w / 2, a.y + a.h + 6); }
+  }
+  if (hv >= 0) { ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.strokeRect(a.x + hv * bw, a.y, bw, a.h); }
+  // pulses of gradient travelling backward from the loss
+  for (let j = 0; j < 4; j++) {
+    const p = (state.t * 0.28 + j / 4) % 1, k = Math.min(D - 1, Math.floor((1 - p) * D)), g = fl.g[k], n = (Math.log10(Math.max(g, 1e-30)) - LO) / (HI - LO);
+    if (n <= 0) continue;
+    const X = a.x + a.w * (1 - p), Y = ly(g); ctx.fillStyle = C.grad; ctx.globalAlpha = Math.min(1, 0.25 + n); ctx.beginPath(); ctx.arc(X, Y, 2 + 4 * n, 0, 7); ctx.fill(); ctx.globalAlpha = 1;
+  }
+  // other functions as lines, labelled at layer 1 (staggered)
+  const labs = [];
+  for (const k of Object.keys(state.flows)) {
+    const f = state.flows[k];
+    if (k !== state.focus) { ctx.beginPath(); for (let i = 0; i < D; i++) { const X = a.x + (i + 0.5) * bw, Y = ly(f.g[i]); i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); } ctx.strokeStyle = FN[k].col; ctx.lineWidth = 1.6; ctx.globalAlpha = 0.85; ctx.stroke(); ctx.globalAlpha = 1; }
+    labs.push({ k, y: ly(f.g[0]) });
+  }
+  labs.sort((p, q) => p.y - q.y); for (let i = 1; i < labs.length; i++) labs[i].y = Math.max(labs[i].y, labs[i - 1].y + 13);
+  const over = labs.length ? labs[labs.length - 1].y - (a.y + a.h) : 0; if (over > 0) labs.forEach(l => { l.y -= over; });
+  ctx.textAlign = 'right';
+  for (const l of labs) { ctx.font = (l.k === state.focus ? '700 ' : '') + '11px ' + FONT; ctx.fillStyle = FN[l.k].col; ctx.fillText(SHORT[l.k], a.x - 6, l.y); }
+  ctx.font = '11px ' + FONT; const by = a.y + a.h + 13;
+  if (hv >= 0) { ctx.fillStyle = C.ink; ctx.textAlign = 'center'; ctx.fillText(`layer ${hv + 1}: ${sci(fl.g[hv])} · mean f′ ${fl.dm[hv].toFixed(2)}`, a.x + a.w / 2, by); }
+  else { ctx.fillStyle = C.faint; ctx.textAlign = 'left'; ctx.fillText('layer 1', a.x, by); ctx.textAlign = 'right'; ctx.fillText(`${D} ← loss`, a.x + a.w, by); }
+  ctx.textAlign = 'left';
+  if (state.hl === 'layer1') ring(a.x + bw / 2, ly(fl.g[0]), 9);
+}
+
+/* ---------- dead-neuron lab ---------- */
+function drawDead(R) {
+  const info = state.info, dead = info.filter(n => n.dead).length;
+  panel(R, 'dead', 'Dead-neuron lab', L.wide ? `click: LR spike · dead ${dead}/${info.length}` : '');
+  const a = { x: R.x + 12, y: R.y + 32, w: R.w - 24, h: R.h - 32 - 24 }, N = info.length;
+  let best = { r: 0 };
+  for (const cols of [6, 8, 12, 24]) { const rows = Math.ceil(N / cols), r = Math.min(a.w / cols, a.h / rows) / 2; if (r > best.r) best = { r, cols, rows }; }
+  const { cols, rows } = best, cw = a.w / cols, ch = a.h / rows, r = Math.min(best.r * 0.72, 18), col = FN[state.focus].col;
+  info.forEach((n, i) => {
+    const X = a.x + cw * (i % cols + 0.5), Y = a.y + ch * (Math.floor(i / cols) + 0.5), nr = state.lab.ns[i];
+    if (n.dead) {
+      ctx.fillStyle = '#2a2f4a'; ctx.beginPath(); ctx.arc(X, Y, r, 0, 7); ctx.fill(); ctx.strokeStyle = C.grey; ctx.lineWidth = 1.5; ctx.stroke();
+      const q = r * 0.42; ctx.beginPath(); ctx.moveTo(X - q, Y - q); ctx.lineTo(X + q, Y + q); ctx.moveTo(X + q, Y - q); ctx.lineTo(X - q, Y + q); ctx.stroke();
+    } else {
+      ctx.fillStyle = col; ctx.globalAlpha = 0.12 + 0.88 * Math.min(1, Math.max(0, n.out) / 1.1); ctx.beginPath(); ctx.arc(X, Y, r, 0, 7); ctx.fill(); ctx.globalAlpha = 1;
+      if (n.on === 0) { ctx.strokeStyle = C.grad; ctx.setLineDash([3, 3]); ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]); }
+      else { ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.stroke(); }
+    }
+    if (nr.pulse > 0) { ctx.strokeStyle = C.hl; ctx.globalAlpha = nr.pulse; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(X, Y, r * (1 + (1 - nr.pulse) * 0.9), 0, 7); ctx.stroke(); ctx.globalAlpha = 1; }
+  });
+  ctx.font = '11px ' + FONT; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  const ly = R.y + R.h - 13; let x = R.x + 12;
+  for (const [t, c] of [['● firing', col], [L.wide ? '◌ below 0, f′ ≠ 0' : '◌ below 0', C.grad], [L.wide ? '✕ dead (f′ = 0)' : '✕ dead', C.dim]]) { ctx.fillStyle = c; ctx.fillText(t, x, ly); x += ctx.measureText(t).width + 12; }
+  if (!L.wide) { ctx.textAlign = 'right'; ctx.fillStyle = C.dim; ctx.fillText(`dead ${dead}/${N}`, R.x + R.w - 12, R.y + 16); ctx.textAlign = 'left'; }
+}
+
+/* ---------- frame ---------- */
+function frame(dt, realDt) {
+  const ct = captionTop(); if (ct !== L.top) { L.top = ct; onResize(); }
+  state.t += dt;
+  if (state.sweep && dt > 0) { state.sweepT += dt; state.x = 3.3 * Math.sin(state.sweepT * 0.5); $('#sx').value = state.x; $('#sxo').textContent = state.x.toFixed(2); }
+  for (const l of state.later) { l.t -= dt; if (l.t <= 0) l.fn(); } state.later = state.later.filter(l => l.t > 0);
+  if (state.autoRoll) { state.rollT += dt; if (state.rollT > 2.6) { state.rollT = 0; reroll(); state.autoRoll = true; } }
+  if (state.morph < 1) state.morph = Math.min(1, state.morph + Math.max(dt, realDt * 0.5) / 0.6);
+  if (state.autoScale) { state.scaleT += dt; setScaleQuiet(+(1.05 - 0.4 * Math.cos(state.scaleT * 0.6)).toFixed(3)); }
+  if (state.autoKick) { state.kickT += dt; if (state.kickT > 5) { state.kickT = 0; kick(); } }
+  state.acc += dt; let n = 0;
+  while (state.acc >= 1 / 60 && n < 4) { labStep(state.focus, state.lab, 0.08); state.acc -= 1 / 60; n++; }
+  if (n === 4) state.acc = 0;
+  for (const nr of state.lab.ns) nr.pulse = Math.max(0, nr.pulse - dt * 1.4);
+  if (state.dirty) recompute();
+  state.info = labInfo(state.focus, state.lab);
+  ctx.clearRect(0, 0, W, H); hits = [];
+  drawPlot();
+  if (shown('net')) drawNet(L.net);
+  if (shown('grad')) drawGrad(L.grad);
+  if (shown('dead')) drawDead(L.dead);
+  updateText();
+}
+function updateText() {
+  const F = FN[state.focus], fl = state.flows[state.focus], x = state.x;
+  setText('sF', F.d(x).toFixed(3)); setText('sG', fl ? sci(fl.g[0]) : '–'); setText('sD', `${state.info.filter(n => n.dead).length} / ${state.info.length}`);
+  const nm = $('#mName'); if (nm.textContent !== F.name) { nm.textContent = F.name; nm.style.color = F.col; setText('mForm', FORM[state.focus][0]); setText('mDForm', FORM[state.focus][1]); }
+  setText('mX', x.toFixed(2)); setText('mF', F.f(x).toFixed(3)); setText('mD', F.d(x).toFixed(3));
+  if (fl) { let m = 0; for (const v of fl.dm) m += v; setText('mDm', (m / fl.dm.length).toFixed(3)); setText('mG1', sci(fl.g[0])); }
+  setText('mDepth', String(state.depth)); setText('mDepth2', String(state.depth)); setText('mQ', sci(0.25 ** state.depth));
+}
+
+refreshNet(); syncVis();
+if (REDUCED) setPlaying(false);
+renderSteps(); renderTries(); goStep(0); requestAnimationFrame(loop);
+window.__demo = { goStep, setPlaying, state: () => ({ focus: state.focus, x: state.x, depth: state.depth, scale: state.scale, g1: state.flows[state.focus] && state.flows[state.focus].g[0], dead: state.info.filter(n => n.dead).length }), tries: TRIES };
 </script>
 </body>
 </html>

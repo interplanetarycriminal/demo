@@ -1,288 +1,704 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Evolving Hoppers — Genetic Algorithm</title>
+<title>Evolving Walkers — ML Field Notes</title>
 <style>
-  html,body{margin:0;height:100%;background:#05070d;overflow:hidden}
-  canvas{touch-action:none;display:block;position:fixed;inset:0}
-  #ui{position:fixed;top:12px;left:12px;z-index:10;max-width:340px;
-      font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#c9e8ff;
-      background:rgba(5,10,20,.62);border:1px solid rgba(120,255,200,.2);
-      border-radius:8px;padding:10px 12px;backdrop-filter:blur(4px);max-height:52vh;overflow:auto}
-  #ui h1{margin:0 0 4px;font-size:13px;letter-spacing:.14em;color:#8affc1;text-transform:uppercase}
-  #ui p{margin:0 0 7px;color:#7d9bb0}
-  #ui .k{color:#ffd36e}
-  #ui .s{color:#8affc1}
-  #ui a{color:#8affc1;text-decoration:none;border-bottom:1px solid rgba(138,255,193,.35)}
-  #ui table{border-collapse:collapse;margin:2px 0 6px}
-  #ui td{padding:0 8px 0 0;color:#6f8ea3}
-  #ui td.v{color:#eaffff}
-@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
+/* ===== ML Field Notes design system (shared by every ML/AI demo) =====
+   Colour means the same thing in every demo:
+   --a coral = class A / "positive"     --b teal = class B / "negative"
+   --hl amber = the model's current parameters / guess / selection
+   --grad violet = gradients, updates, errors flowing back
+   --accent = this demo's signature colour (set per demo) */
+:root{
+  --bg:#0c0e1a; --bg2:#10132a; --panel:#13162c; --panel2:#181c38; --line:rgba(190,200,255,.10); --line2:rgba(190,200,255,.18);
+  --ink:#e9ecfa; --dim:#a2a9c8; --faint:#6b7396;
+  --a:#ff7a6b; --b:#3fd0c0; --hl:#ffc857; --grad:#a78bfa; --good:#7ee787; --bad:#ff6b8a;
+  --accent:#9ee06a;
+  --r:12px; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.5 var(--sans)}
+body{overflow:hidden}
+a{color:var(--accent)}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app{display:grid;grid-template-columns:minmax(0,1fr) 380px;grid-template-rows:48px minmax(0,1fr);height:100vh;height:100dvh}
+.top{grid-column:1/-1;display:flex;align-items:center;gap:12px;padding:0 14px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#11142a,#0d1020)}
+.top a.back{color:var(--dim);text-decoration:none;font-size:13px;white-space:nowrap}
+.top a.back:hover{color:var(--ink)}
+.top .chip{font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 45%,transparent);border-radius:99px;padding:5px 8px}
+.top h1{margin:0;font-size:15px;font-weight:650;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top .sp{flex:1}
+.top .keys{font:11px var(--mono);color:var(--faint);white-space:nowrap}
+.stage{position:relative;min-width:0;min-height:0;background:radial-gradient(ellipse at 50% 40%,#151a3a 0%,var(--bg) 70%)}
+.stage::before{content:"";position:absolute;inset:0;background-image:radial-gradient(rgba(190,200,255,.07) 1px,transparent 1.3px);background-size:24px 24px;pointer-events:none}
+.stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.caption{position:absolute;left:16px;right:16px;top:14px;max-width:640px;padding:10px 14px;border-radius:10px;background:rgba(12,14,30,.78);border:1px solid var(--line2);backdrop-filter:blur(6px);font-size:14px;line-height:1.45;pointer-events:none;transition:opacity .3s}
+.caption b{color:var(--accent)}
+.caption:empty{opacity:0}
+.dock{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;gap:6px;padding:6px;border-radius:99px;background:rgba(12,14,30,.82);border:1px solid var(--line2);backdrop-filter:blur(6px)}
+.dock button{border:0;background:transparent;border-radius:99px;min-width:36px;height:34px;padding:0 12px;cursor:pointer;color:var(--ink);white-space:nowrap}
+.dock button:hover{background:rgba(255,255,255,.08)}
+.dock button.on{background:color-mix(in srgb,var(--accent) 22%,transparent);color:var(--accent)}
+.lesson{border-left:1px solid var(--line);background:var(--panel);overflow:auto;min-height:0;display:flex;flex-direction:column}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border-bottom:1px solid var(--line)}
+.stat{background:var(--panel);padding:10px 12px}
+.stat .k{font:600 10px/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.stat .v{font:600 18px/1.3 var(--mono);font-variant-numeric:tabular-nums;margin-top:3px}
+.tabs{display:flex;gap:2px;padding:10px 12px 0;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);z-index:2}
+.tabs button{border:0;background:none;padding:9px 12px;color:var(--dim);cursor:pointer;border-bottom:2px solid transparent;font-weight:600}
+.tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent)}
+.pane{padding:14px 16px 22px;display:none}
+.pane.on{display:block}
+.pane h3{margin:14px 0 6px;font-size:13px;letter-spacing:.02em}
+.pane p{margin:0 0 10px;color:var(--dim)}
+.pane p b,.pane li b{color:var(--ink)}
+.lede{font-size:15px;color:var(--ink)!important}
+.steps{list-style:none;margin:10px 0 0;padding:0;counter-reset:s}
+.steps li{counter-increment:s;border:1px solid var(--line);border-radius:10px;margin:0 0 8px;padding:10px 12px 10px 40px;position:relative;cursor:pointer;color:var(--dim);background:var(--panel2)}
+.steps li::before{content:counter(s);position:absolute;left:12px;top:10px;width:18px;height:18px;border-radius:99px;display:grid;place-items:center;font:600 11px var(--mono);background:rgba(255,255,255,.07);color:var(--dim)}
+.steps li.on{border-color:color-mix(in srgb,var(--accent) 60%,transparent);color:var(--ink)}
+.steps li.on::before{background:var(--accent);color:#141414}
+.steps li.done::before{content:"✓";background:rgba(126,231,135,.2);color:var(--good)}
+.steps li .t{font-weight:650;color:var(--ink);display:block}
+.steps li .d{display:none;margin-top:4px}
+.steps li.on .d{display:block}
+.tournav{display:flex;gap:8px;margin-top:6px}
+.btn{border:1px solid var(--line2);background:var(--panel2);border-radius:9px;padding:7px 12px;cursor:pointer;color:var(--ink)}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:#15131a;border-color:transparent;font-weight:650}
+.card{border:1px solid var(--line);border-radius:12px;padding:12px;margin:0 0 10px;background:var(--panel2)}
+.card .q{color:var(--ink);font-weight:600;margin-bottom:8px}
+.card .why{display:none;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line2);color:var(--dim)}
+.card.revealed .why{display:block}
+.card .row{display:flex;gap:8px;flex-wrap:wrap}
+.eq{font:14px/1.7 var(--mono);background:#0e1124;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:6px 0 12px;overflow-x:auto;white-space:nowrap}
+.eq .c-a{color:var(--a)} .eq .c-b{color:var(--b)} .eq .c-hl{color:var(--hl)} .eq .c-g{color:var(--grad)} .eq .c-acc{color:var(--accent)}
+.live{font-variant-numeric:tabular-nums;color:var(--hl)}
+.ctrl{display:grid;grid-template-columns:1fr auto;gap:4px 10px;align-items:center;margin:10px 0}
+.ctrl label{color:var(--dim);font-size:13px}
+.ctrl output{font:12px var(--mono);color:var(--ink);font-variant-numeric:tabular-nums}
+.ctrl input[type=range]{grid-column:1/-1;width:100%;accent-color:var(--accent)}
+.seg{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 10px}
+.seg button{border:1px solid var(--line2);background:transparent;border-radius:99px;padding:5px 11px;cursor:pointer;color:var(--dim);font-size:13px}
+.seg button[aria-pressed=true]{background:color-mix(in srgb,var(--accent) 20%,transparent);color:var(--ink);border-color:color-mix(in srgb,var(--accent) 55%,transparent)}
+.note{border-left:3px solid var(--grad);padding:6px 10px;margin:8px 0 12px;color:var(--dim);background:rgba(167,139,250,.06);border-radius:0 8px 8px 0}
+.wild li{margin-bottom:6px;color:var(--dim)}
+@media (max-width:880px){
+  body{overflow:auto}
+  .app{grid-template-columns:1fr;grid-template-rows:48px 58vh auto;height:auto}
+  .stage{height:58vh}
+  .lesson{border-left:0;border-top:1px solid var(--line)}
+  .top .keys{display:none}
+  .caption{font-size:13px;top:10px;left:10px;right:10px}
+  .stats{grid-template-columns:repeat(3,1fr)}
+  .stat .v{font-size:15px}
+}
+@media (prefers-reduced-motion:reduce){.caption{transition:none}}
 </style>
+</head>
 <body>
-<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
-<canvas id="c"></canvas>
-<div id="ui">
-  <h1>Evolving Hoppers</h1>
-  <p>30 two-blob creatures with a sinusoidal muscle genome are selected and mutated each round until they learn to bounce rightward.</p>
-  <table>
-    <tr><td>generation</td><td class="v" id="gen">1</td></tr>
-    <tr><td>round time</td><td class="v" id="t">0.0s</td></tr>
-    <tr><td>leader now</td><td class="v" id="lead">0.0 m</td></tr>
-    <tr><td>best ever</td><td class="v s" id="best">0.0 m</td></tr>
-    <tr><td>gen average</td><td class="v" id="avg">0.0 m</td></tr>
-    <tr><td>mutation σ</td><td class="v" id="mu">0.20</td></tr>
-  </table>
-  <p><span class="k">F</span> fast-forward · <span class="k">R</span> restart evolution</p>
-  <a href="index.html">← gallery</a>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace;max-width:100vw;white-space:pre-wrap';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div class="app">
+  <header class="top">
+    <a class="back" href="index.html">← Gallery</a>
+    <span class="chip">ML / AI</span>
+    <h1>Evolving Walkers</h1>
+    <span class="sp"></span>
+    <span class="keys">Space play · ←/→ tour · R reset</span>
+  </header>
+  <section class="stage" id="stage">
+    <canvas id="c" role="img" aria-label="A generation of spring-and-muscle creatures racing along the ground, the amber champion leading with a distance flag; below, a fitness-per-generation chart and the champion's genome with one rotating phase dial per muscle"></canvas>
+    <div class="caption" id="caption" aria-live="polite"></div>
+    <div class="dock" role="group" aria-label="Simulation controls">
+      <button id="bPlay" class="on" aria-label="Pause">❚❚</button>
+      <button id="bStep" aria-label="Step once">Step</button>
+      <button id="bReset" aria-label="Reset">Reset</button>
+      <button id="bSpeed" aria-label="Speed">1×</button>
+    </div>
+  </section>
+  <aside class="lesson">
+    <div class="stats" id="stats"><!-- 3 stat tiles: .stat > .k + .v#id --></div>
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-tab="learn">Learn</button>
+      <button role="tab" aria-selected="false" data-tab="try">Try this</button>
+      <button role="tab" aria-selected="false" data-tab="math">The math</button>
+      <button role="tab" aria-selected="false" data-tab="play">Controls</button>
+    </div>
+    <div class="pane on" id="p-learn">
+      <p class="lede">Nobody tells these bodies how to walk: the ones that happen to travel furthest get copied with small random changes, and after a few dozen generations coordinated gaits appear on their own.</p>
+      <ol class="steps" id="steps"></ol>
+      <div class="tournav"><button class="btn" id="tPrev">← Back</button><button class="btn primary" id="tNext">Next step →</button></div>
+      <h3>In the wild</h3>
+      <ul class="wild"><li><b>Robot gaits</b> — evolutionary search tunes legged-robot controllers in simulation before they touch hardware (and the sim-to-real gap is exactly step 7's overfitting).</li><li><b>Evolution strategies for RL</b> — OpenAI's ES trained MuJoCo walkers by mutating policy weights and keeping what scored higher, no backprop needed.</li><li><b>Neuroevolution &amp; PBT</b> — NEAT evolves network structure with speciation; DeepMind's population-based training breeds hyperparameters for large models.</li></ul>
+    </div>
+    <div class="pane" id="p-try"><!-- .card experiments: predict → run → why --></div>
+    <div class="pane" id="p-math"><!-- .eq blocks with colour-coded terms + .live spans; .note for misconceptions --></div>
+    <div class="pane" id="p-play"><!-- .ctrl sliders, .seg segmented choices --></div>
+  </aside>
 </div>
 <script>
-(function(){
-"use strict";
-var cv=document.getElementById('c'),ctx=cv.getContext('2d'),W=0,H=0,DPR=1;
-function resize(){
-  DPR=Math.min(2,window.devicePixelRatio||1);
-  W=window.innerWidth;H=window.innerHeight;
-  cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);
-  cv.style.width=W+'px';cv.style.height=H+'px';
-  ctx.setTransform(DPR,0,0,DPR,0,0);
+'use strict';
+/* ===== shell helpers (keep) ===== */
+const $ = s => document.querySelector(s);
+const cv = $('#c'), ctx = cv.getContext('2d'), stage = $('#stage');
+let W = 0, H = 0, DPR = 1;
+function resize() {
+  const r = stage.getBoundingClientRect(); DPR = Math.min(2, devicePixelRatio || 1);
+  W = Math.max(1, r.width); H = Math.max(1, r.height);
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR); ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  if (typeof onResize === 'function') onResize();
 }
-window.addEventListener('resize',resize);resize();
+new ResizeObserver(resize).observe(stage); resize();
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+// tabs
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', x === b));
+  document.querySelectorAll('.pane').forEach(p => p.classList.toggle('on', p.id === 'p-' + b.dataset.tab));
+});
+// playback
+let playing = !REDUCED, speed = 1;
+const SPEEDS = [0.25, 0.5, 1, 2, 4];
+function setPlaying(v) { playing = v; $('#bPlay').textContent = v ? '❚❚' : '▶'; $('#bPlay').classList.toggle('on', v); $('#bPlay').setAttribute('aria-label', v ? 'Pause' : 'Play'); }
+$('#bPlay').onclick = () => setPlaying(!playing);
+$('#bSpeed').onclick = () => { speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]; $('#bSpeed').textContent = speed + '×'; };
+// tour: STEPS = [{t:'title', d:'html', cap:'stage caption html', go(){ /* set demo state */ }}]
+let tour = 0;
+function renderSteps() {
+  const ol = $('#steps'); ol.innerHTML = '';
+  STEPS.forEach((s, i) => { const li = document.createElement('li'); li.className = (i === tour ? 'on' : '') + (i < tour ? ' done' : ''); li.innerHTML = `<span class="t">${s.t}</span><span class="d">${s.d}</span>`; li.onclick = () => goStep(i); ol.appendChild(li); });
+  $('#tPrev').disabled = tour === 0; $('#tNext').textContent = tour === STEPS.length - 1 ? 'Start over ↺' : 'Next step →';
+}
+function goStep(i) { tour = (i + STEPS.length) % STEPS.length; const s = STEPS[tour]; if (s.go) s.go(); $('#caption').innerHTML = s.cap || ''; renderSteps(); }
+$('#tPrev').onclick = () => goStep(Math.max(0, tour - 1));
+$('#tNext').onclick = () => goStep(tour + 1);
+// experiments: TRIES = [{q:'Predict…', run(){…}, why:'html'}]
+function renderTries() {
+  const p = $('#p-try'); p.innerHTML = '<p>Make a prediction first, then run it. Each experiment sets the demo up for you.</p>';
+  TRIES.forEach(x => { const c = document.createElement('div'); c.className = 'card'; c.innerHTML = `<div class="q">${x.q}</div><div class="row"><button class="btn primary">Run it</button><button class="btn">Show why</button></div><div class="why">${x.why}</div>`; const [run, why] = c.querySelectorAll('button'); run.onclick = () => { x.run(); setPlaying(true); }; why.onclick = () => c.classList.toggle('revealed'); p.appendChild(c); });
+}
+// controls helpers
+function slider(parent, id, label, min, max, step, value, fmt, onInput) {
+  const d = document.createElement('div'); d.className = 'ctrl';
+  d.innerHTML = `<label for="${id}">${label}</label><output id="${id}o"></output><input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${value}">`;
+  parent.appendChild(d); const inp = d.querySelector('input'), out = d.querySelector('output');
+  const upd = () => { out.textContent = fmt(+inp.value); onInput(+inp.value); }; inp.oninput = upd; upd();
+  return { set(v) { inp.value = v; upd(); }, get: () => +inp.value };
+}
+function seg(parent, options, value, onPick) {
+  const d = document.createElement('div'); d.className = 'seg'; parent.appendChild(d);
+  const bs = options.map(([v, label]) => { const b = document.createElement('button'); b.textContent = label; b.setAttribute('aria-pressed', v === value); b.onclick = () => set(v); d.appendChild(b); return [v, b]; });
+  function set(v) { bs.forEach(([k, b]) => b.setAttribute('aria-pressed', k === v)); onPick(v); }
+  return { set };
+}
+function stat(id, label) { const d = document.createElement('div'); d.className = 'stat'; d.innerHTML = `<div class="k">${label}</div><div class="v" id="${id}">–</div>`; $('#stats').appendChild(d); }
+const setText = (id, v) => { const e = document.getElementById(id); if (e && e.textContent !== v) e.textContent = v; };
+// keyboard
+addEventListener('keydown', e => {
+  if (e.target.matches('input,select,textarea')) return;
+  if (e.code === 'Space') { setPlaying(!playing); e.preventDefault(); }
+  else if (e.key === 'ArrowRight') goStep(tour + 1);
+  else if (e.key === 'ArrowLeft') goStep(Math.max(0, tour - 1));
+  else if (e.key === 'r' || e.key === 'R') $('#bReset').click();
+});
+// wall-clock-locked loop (dt clamped to [0, 0.1] — rAF timestamps can precede performance.now())
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.1, Math.max(0, (now - last) / 1000)); last = now;
+  try { frame(playing ? dt * speed : 0, dt); } catch (err) { window.onerror(err.message, '', 0); return; }
+  requestAnimationFrame(loop);
+}
 
-var POP=30, ROUND=6.0, DT=1/60, G=1400, MUT=0.20;
-var groundY=0, PPM=26; // pixels per "metre"
-function layout(){ groundY=H*0.74; }
-layout();
-window.addEventListener('resize',layout);
+// ===== DEMO CODE: Evolving Walkers =====
+/*CORE-START*/
+// ---- seeded RNG ----
+function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function gauss(r) { let u = 1 - r(), v = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(6.283185 * v); }
+const TAU = Math.PI * 2, DT = 1 / 60, GRAV = 9.8, ITERS = 4, MAXN = 6, MINN = 3;
+const clamp = (v, lo, hi) => v < lo ? lo : v > hi ? hi : v;
 
-var pop=[], gen=1, t=0, bestEver=0, genAvg=0, history=[], cam=0, fast=false;
+// ---- terrain: height of the ground (m) at x (m) ----
+function groundH(kind, x) {
+  if (kind !== 'bumpy' || x < 0.8) return 0;
+  const s = x - 0.8;
+  return 0.16 * (1 - Math.cos(s * 2.3)) * (0.6 + 0.4 * Math.sin(s * 0.7)) + 0.05 * (1 - Math.cos(s * 6.1));
+}
 
-function rnd(a,b){return a+Math.random()*(b-a);}
-function gauss(){var u=1-Math.random(),v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(6.2832*v);}
-
-function randomGenome(){
-  return {
-    amp:rnd(0.25,1.0),      // muscle contraction amplitude (fraction of rest length)
-    freq:rnd(1.0,5.0),      // Hz
-    phase:rnd(0,6.2832),    // phase offset
-    rest:rnd(38,72),        // rest length px
-    lean:rnd(-0.9,0.9),     // asymmetry: forward tilt of the muscle axis
-    stiff:rnd(400,1500),    // spring constant
-    fricA:rnd(0.01,0.35),   // per-blob ground friction (asymmetry = ratcheting)
-    fricB:rnd(0.01,0.35)
-  };
-}
-function mutate(g){
-  function j(v,s,lo,hi){v+=gauss()*s*MUT;return v<lo?lo:(v>hi?hi:v);}
-  return {
-    amp:j(g.amp,0.35,0.05,1.0),
-    freq:j(g.freq,1.6,0.4,7.0),
-    phase:(g.phase+gauss()*1.4*MUT+6.2832)%6.2832,
-    rest:j(g.rest,18,22,92),
-    lean:j(g.lean,0.45,-1.4,1.4),
-    stiff:j(g.stiff,420,150,2000),
-    fricA:j(g.fricA,0.16,0.005,0.5),
-    fricB:j(g.fricB,0.16,0.005,0.5)
-  };
-}
-function makeCreature(g){
-  var r1=7+g.rest*0.10, r2=6+g.rest*0.08;
-  return {
-    g:g,
-    a:{x:0,y:groundY-r1-g.rest*0.35,vx:0,vy:0,r:r1,m:1.5},
-    b:{x:g.rest*0.7,y:groundY-r2,vx:0,vy:0,r:r2,m:1.0},
-    fit:0,alive:true,hue:rnd(150,205)
-  };
-}
-function initPop(){
-  pop=[];
-  for(var i=0;i<POP;i++) pop.push(makeCreature(randomGenome()));
-  gen=1;t=0;bestEver=0;history=[];cam=0;
-}
-function resetBodies(){
-  for(var i=0;i<pop.length;i++){
-    var c=pop[i],g=c.g;
-    var r1=7+g.rest*0.10,r2=6+g.rest*0.08;
-    c.a={x:0,y:groundY-r1-g.rest*0.35,vx:0,vy:0,r:r1,m:1.5};
-    c.b={x:g.rest*0.7,y:groundY-r2,vx:0,vy:0,r:r2,m:1.0};
-    c.fit=0;
+// ---- genome: nodes (x, y, grip) + one muscle per edge (amp, phase) + one shared tempo ----
+// Edges are rebuilt from node order: each node links to its 2 nearest earlier nodes (a rigid triangle mesh).
+function edgesFor(nodes) {
+  const E = [[0, 1]];
+  for (let i = 2; i < nodes.length; i++) {
+    const d = [];
+    for (let j = 0; j < i; j++) d.push([Math.hypot(nodes[i].x - nodes[j].x, nodes[i].y - nodes[j].y), j]);
+    d.sort((p, q) => p[0] - q[0]);
+    E.push([d[0][1], i], [d[1][1], i]);
   }
+  return E;
 }
-
-function integrate(c,time){
-  var g=c.g,a=c.a,b=c.b;
-  // target muscle length on a sinusoid — the genome
-  var L=Math.max(12,g.rest*(1-g.amp*0.5*(1+Math.sin(time*6.2832*g.freq+g.phase))));
-  var dx=b.x-a.x, dy=b.y-a.y;
-  var d=Math.sqrt(dx*dx+dy*dy)||1e-6;
-  var nx=dx/d, ny=dy/d;
-  // lean rotates the spring axis so the push has a horizontal component
-  var cs=Math.cos(g.lean),sn=Math.sin(g.lean);
-  var ax=nx*cs-ny*sn, ay=nx*sn+ny*cs;
-  var f=g.stiff*(d-L);
-  var damp=3.5*((b.vx-a.vx)*nx+(b.vy-a.vy)*ny);
-  var fx=(f+damp)*ax, fy=(f+damp)*ay;
-  if(fx>4000)fx=4000; if(fx<-4000)fx=-4000;
-  if(fy>4000)fy=4000; if(fy<-4000)fy=-4000;
-  a.vx+=fx/a.m*DT; a.vy+=fy/a.m*DT;
-  b.vx-=fx/b.m*DT; b.vy-=fy/b.m*DT;
-  a.vy+=G*DT; b.vy+=G*DT;
-  a.vx*=0.9995;b.vx*=0.9995;
-  step(a,g.fricA);step(b,g.fricB);
+function rebuild(g, r) { // keep muscle genes for edges that survive a structural change
+  const old = new Map(g.muscles.map(m => [m.a + ',' + m.b, m]));
+  g.muscles = edgesFor(g.nodes).map(([a, b]) => old.get(a + ',' + b) || { a, b, amp: r() * 0.3, phase: r() * TAU });
+  return g;
 }
-function step(p,fric){
-  p.x+=p.vx*DT;p.y+=p.vy*DT;
-  var fl=groundY-p.r;
-  if(p.y>fl){
-    p.y=fl;
-    if(p.vy>0) p.vy*=-0.15;
-    p.vx*=(1-fric);     // asymmetric friction is what converts wiggling into travel
+function randomNode(r, nodes) {
+  for (let k = 0; k < 40; k++) {
+    const n = { x: (r() - 0.5) * 1.2, y: r() * 0.8, grip: r() };
+    if (nodes.every(o => Math.hypot(o.x - n.x, o.y - n.y) > 0.3)) return n;
   }
-  if(p.vx>1800)p.vx=1800; if(p.vx<-1800)p.vx=-1800;
-  if(p.vy<-2200)p.vy=-2200;
+  return { x: (r() - 0.5) * 1.2, y: 0.9, grip: r() };
 }
-
-function simStep(){
-  t+=DT;
-  for(var i=0;i<pop.length;i++){
-    var c=pop[i];
-    integrate(c,t);
-    var cx=(c.a.x+c.b.x)*0.5;
-    if(cx/PPM>c.fit) c.fit=cx/PPM;
-    if(!isFinite(cx)||!isFinite(c.a.y)){c.a.x=0;c.b.x=0;c.a.vx=c.a.vy=c.b.vx=c.b.vy=0;c.fit=0;}
+function randomGenome(r) {
+  const n = MINN + Math.floor(r() * 3), nodes = [];
+  for (let i = 0; i < n; i++) nodes.push(randomNode(r, nodes));
+  return rebuild({ freq: 0.6 + r() * 1.6, nodes, muscles: [], mut: [] }, r);
+}
+const cloneG = g => ({ freq: g.freq, nodes: g.nodes.map(n => ({ ...n })), muscles: g.muscles.map(m => ({ ...m })), mut: [] });
+function mutate(g0, mu, r) {
+  const g = cloneG(g0), mut = [];
+  if (r() < mu) g.freq = clamp(g.freq + gauss(r) * 0.25, 0.3, 2.2);
+  for (const n of g.nodes) {
+    if (r() < mu) n.grip = clamp(n.grip + gauss(r) * 0.25, 0, 1);
+    if (r() < mu) { n.x = clamp(n.x + gauss(r) * 0.12, -0.9, 0.9); n.y = clamp(n.y + gauss(r) * 0.12, 0, 1.1); }
   }
-  if(t>=ROUND) evolve();
+  g.muscles.forEach((m, i) => {
+    let ch = false;
+    if (r() < mu) { m.phase = ((m.phase + gauss(r) * 1.0) % TAU + TAU) % TAU; ch = true; }
+    if (r() < mu) { m.amp = clamp(m.amp + gauss(r) * 0.08, 0, 0.35); ch = true; }
+    if (ch) mut.push(m.a + ',' + m.b);
+  });
+  const s = r();
+  if (s < mu * 0.3 && g.nodes.length < MAXN) g.nodes.push(randomNode(r, g.nodes));
+  else if (s > 1 - mu * 0.3 && g.nodes.length > MINN) g.nodes.splice(1 + Math.floor(r() * (g.nodes.length - 1)), 1);
+  rebuild(g, r);
+  g.mut = g.muscles.map((m, i) => mut.includes(m.a + ',' + m.b) ? i : -1).filter(i => i >= 0);
+  return g;
+}
+const speciesOf = g => g.nodes.length; // body plan = node count
+
+// ---- physics: Verlet point masses, position-based muscles, ground contact with per-node grip ----
+function makeBody(g, kind) {
+  let mx = 0, my = Infinity;
+  for (const n of g.nodes) { mx += n.x / g.nodes.length; my = Math.min(my, n.y); }
+  const P = g.nodes.map(n => { const x = n.x - mx, y = n.y - my + 0.04 + groundH(kind, n.x - mx); return { x, y, px: x, py: y }; });
+  const rest = g.muscles.map(m => Math.hypot(g.nodes[m.a].x - g.nodes[m.b].x, g.nodes[m.a].y - g.nodes[m.b].y));
+  return { P, rest, t: 0, x0: centroidX(P) };
+}
+function centroidX(P) { let s = 0; for (const p of P) s += p.x; return s / P.length; }
+const muscleLen = (g, body, i) => body.rest[i] * (1 + g.muscles[i].amp * Math.sin(TAU * g.freq * body.t + g.muscles[i].phase));
+function stepBody(g, body, kind) {
+  const P = body.P, g2 = GRAV * DT * DT;
+  for (const p of P) { const vx = (p.x - p.px) * 0.995, vy = (p.y - p.py) * 0.995; p.px = p.x; p.py = p.y; p.x += vx; p.y += vy - g2; }
+  body.t += DT;
+  const L = g.muscles.map((m, i) => muscleLen(g, body, i));
+  for (let it = 0; it < ITERS; it++) {
+    g.muscles.forEach((m, i) => {
+      const a = P[m.a], b = P[m.b], dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 1e-6, k = 0.5 * 0.6 * (d - L[i]) / d;
+      a.x += dx * k; a.y += dy * k; b.x -= dx * k; b.y -= dy * k;
+    });
+    for (const p of P) { const h = groundH(kind, p.x); if (p.y < h) p.y = h; }
+  }
+  P.forEach((p, i) => { // friction: a grounded node keeps only part of its sideways slide
+    if (p.y <= groundH(kind, p.x) + 1e-4) { const f = 0.15 + 0.8 * g.nodes[i].grip; p.x = p.px + (p.x - p.px) * (1 - f); }
+  });
+}
+const fitnessOf = body => { const v = centroidX(body.P) - body.x0; return isFinite(v) ? v : 0; };
+function evalGenome(g, kind, T) {
+  const b = makeBody(g, kind), n = Math.round(T / DT);
+  for (let s = 0; s < n; s++) stepBody(g, b, kind);
+  return fitnessOf(b);
 }
 
-function leader(){
-  var bi=0,bf=-Infinity;
-  for(var i=0;i<pop.length;i++) if(pop[i].fit>bf){bf=pop[i].fit;bi=i;}
+// ---- genetic algorithm ----
+// opts: {N, mu, T, terrain, sel:'trunc'|'random', share:bool}
+function newRun(seed, opts) {
+  const r = mulberry32(seed), pop = [];
+  for (let i = 0; i < opts.N; i++) pop.push({ g: randomGenome(r), fit: 0, id: i });
+  const run = { r, opts, pop, gen: 1, hist: [], nextId: opts.N };
+  evalPop(run); return run;
+}
+function evalPop(run) { for (const c of run.pop) c.fit = evalGenome(c.g, run.opts.terrain, run.opts.T); }
+function summarize(run) {
+  const fs = run.pop.map(c => c.fit), best = run.pop.reduce((a, c) => c.fit > a.fit ? c : a);
+  const sp = {}; for (const c of run.pop) sp[speciesOf(c.g)] = (sp[speciesOf(c.g)] || 0) + 1;
+  return { gen: run.gen, terrain: run.opts.terrain, best: best.fit, mean: fs.reduce((a, b) => a + b, 0) / fs.length, sp, champ: cloneG(best.g), ranked: fs.slice().sort((a, b) => b - a) };
+}
+function breed(run) { // record this generation, then make the next one
+  const { N, mu, sel, share } = run.opts, r = run.r;
+  run.hist.push(summarize(run));
+  let ranked;
+  if (sel === 'random') ranked = run.pop.map(c => [r(), c]).sort((a, b) => a[0] - b[0]).map(x => x[1]);
+  else {
+    const cnt = {}; for (const c of run.pop) cnt[speciesOf(c.g)] = (cnt[speciesOf(c.g)] || 0) + 1;
+    const score = c => share ? Math.max(0, c.fit) / cnt[speciesOf(c.g)] : c.fit;
+    ranked = run.pop.slice().sort((a, b) => score(b) - score(a));
+    const champ = run.pop.reduce((a, c) => c.fit > a.fit ? c : a); // elitism: the raw best always survives
+    ranked = [champ, ...ranked.filter(c => c !== champ)];
+  }
+  const keep = Math.ceil(N / 2), surv = ranked.slice(0, keep), next = surv.map(c => ({ g: c.g, fit: c.fit, id: c.id, kept: true, you: c.you }));
+  run.hist.at(-1).kept = run.pop.slice().sort((a, b) => b.fit - a.fit).map(c => surv.includes(c)); // survival flags in raw-F rank order
+  while (next.length < N) {
+    const p = sel === 'random' ? surv[Math.floor(r() * keep)] : surv[Math.floor(r() * r() * keep)];
+    next.push({ g: mutate(p.g, mu, r), fit: 0, id: run.nextId++, parent: p.id });
+  }
+  for (const c of next) if (!c.kept) c.fit = evalGenome(c.g, run.opts.terrain, run.opts.T);
+  next.forEach(c => { if (c.kept) c.g = { ...c.g, mut: [] }; });
+  run.pop = next; run.gen++;
+}
+/*CORE-END*/
+
+/* ===== state ===== */
+const COL = { hl: '#ffc857', grad: '#a78bfa', data: '#c7cbe0', acc: '#9ee06a', ink: '#e9ecfa', dim: '#a2a9c8', faint: '#6b7396' };
+const SPC = { 3: '#8fb8ff', 4: '#f59ac5', 5: '#f2a65a', 6: '#6fd6e8' }; // body plan (node count) colours
+const DEF = { N: 30, mu: 0.15, T: 8, terrain: 'flat', sel: 'trunc', share: false };
+const st = { seed: 7, opts: { ...DEF }, run: null, bodies: [], hold: 0, sel: -1, fossil: -1, edit: null, compare: null, focus: null, flash: 0, cam: -1, acc: 0, hoverM: -1, hoverG: -1, drag: null, clock: 0, capT: -1, capB: 70 };
+let terrSeg, sN, sMu, sT;
+
+function restart(seed, opts, gens = 0) {
+  st.seed = seed; st.opts = { ...opts }; st.run = newRun(seed, st.opts);
+  for (let i = 0; i < gens; i++) breed(st.run);
+  st.sel = -1; st.fossil = -1; st.edit = null; st.compare = null;
+  startLive(); syncControls();
+}
+function startLive() { st.bodies = st.run.pop.map(c => makeBody(c.g, st.opts.terrain)); st.hold = 0; st.acc = 0; st.flash = 1.4; st.cam = -1; }
+function champIdx() { const p = st.run.pop; let bi = 0; for (let i = 1; i < p.length; i++) if (p[i].fit > p[bi].fit) bi = i; return bi; }
+function tick() { // one fixed 1/60 s step of the live race; a short hold at the end, then selection
+  if (st.bodies[0].t >= st.opts.T - 1e-9) { st.hold += DT; if (st.hold > 0.9) nextGen(1); return; }
+  st.run.pop.forEach((c, i) => stepBody(c.g, st.bodies[i], st.opts.terrain));
+}
+function nextGen(n) { for (let i = 0; i < n; i++) breed(st.run); st.sel = -1; st.edit = null; startLive(); }
+function advance(sec) { for (let s = 0; s < sec / DT; s++) tick(); }
+const bestH = () => st.run.hist.reduce((m, h) => !m || h.best > m.best ? h : m, null), bestEver = () => { const h = bestH(); return h ? Math.max(0, h.best) : 0; };
+function reEval() { evalPop(st.run); if (st.edit) st.edit.fit = evalGenome(st.edit.g, st.opts.terrain, st.opts.T); startLive(); }
+function setTerrain(v) { if (v === st.opts.terrain) return; st.opts.terrain = v; reEval(); }
+function inspected() {
+  const pop = st.run.pop, ci = champIdx();
+  if (st.edit) return { g: st.edit.g, fit: st.edit.fit, idx: -1, label: 'your edit — release to race it' };
+  const h = st.run.hist[st.fossil];
+  if (h) return { g: h.champ, fit: h.best, idx: -1, label: `fossil: gen ${h.gen} champion` };
+  const i = pop[st.sel] ? st.sel : ci, c = pop[i];
+  return { g: c.g, fit: c.fit, idx: i, label: c.tag || (c.you ? 'your edit' : i === ci ? 'champion' : `#${c.id} · ${c.kept ? 'survivor' : 'new mutant'}`) };
+}
+function commitEdit() { // your edited genome replaces the weakest racer, and the race restarts
+  const pop = st.run.pop; let wi = pop.findIndex(c => c.you);
+  if (wi < 0) { wi = 0; pop.forEach((c, i) => { if (c.fit < pop[wi].fit) wi = i; }); }
+  pop[wi] = { g: cloneG(st.edit.g), fit: st.edit.fit, id: st.run.nextId++, you: true };
+  st.edit = null; st.fossil = -1; startLive(); st.sel = wi; setPlaying(true);
+}
+
+/* ===== layout (safe rect: below caption, above dock) ===== */
+var L;
+function onResize() {
+  const sx = 16, sy = 84, sw = W - 32, sh = Math.max(220, H - 160), small = W < 600;
+  const th = Math.round(sh * (small ? 0.5 : 0.54)), py = sy + th + 10, ph = sh - th - 10, cw = Math.round((sw - 10) * (small ? 0.54 : 0.56));
+  L = { small, track: { x: sx, y: sy, w: sw, h: th }, ground: sy + th * (small ? 0.78 : 0.8), ppm: small ? Math.max(34, th * 0.3) : Math.min(130, th * 0.4),
+    chart: { x: sx, y: py, w: cw, h: ph }, gen: { x: sx + cw + 10, y: py, w: sw - cw - 10, h: ph }, dials: [], plot: null, undo: null };
+}
+const inR = (p, r) => r && p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+const X = x => L.track.x + (x - st.cam) * L.ppm, Y = y => L.ground - y * L.ppm;
+function camTarget() { const b = st.bodies[champIdx()]; return Math.max(-1, centroidX(b.P) - 0.42 * L.track.w / L.ppm); }
+
+/* ===== drawing helpers ===== */
+function txt(s, x, y, c, f = '11px', a = 'left') { ctx.fillStyle = c; ctx.font = f.includes('px ') ? f : f + ' ' + 'ui-monospace,Menlo,monospace'; ctx.textAlign = a; ctx.fillText(s, x, y); }
+function pill(s, x, y, c, a = 'center') {
+  ctx.font = '600 11px ui-monospace,Menlo,monospace'; const w = ctx.measureText(s).width + 12, x0 = a === 'center' ? x - w / 2 : a === 'right' ? x - w : x;
+  ctx.fillStyle = 'rgba(12,14,30,.88)'; ctx.strokeStyle = c; ctx.lineWidth = 1; ctx.beginPath(); ctx.roundRect(x0, y - 10, w, 19, 9); ctx.fill(); ctx.stroke();
+  txt(s, x0 + 6, y + 4, c, '600 11px');
+}
+function panel(b, title, right) {
+  ctx.fillStyle = 'rgba(16,19,42,.78)'; ctx.strokeStyle = 'rgba(190,200,255,.14)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.roundRect(b.x, b.y, b.w, b.h, 12); ctx.fill(); ctx.stroke();
+  txt(title, b.x + 12, b.y + 19, COL.ink, '600 11px'); if (right) txt(right, b.x + b.w - 12, b.y + 19, COL.faint, '10px', 'right');
+}
+function focusBox(r, pad = 4) { // tour highlight: animated amber dashed outline
+  ctx.save(); ctx.strokeStyle = COL.hl; ctx.globalAlpha = 0.55 + 0.35 * Math.sin(st.clock * 4); ctx.lineWidth = 2; ctx.setLineDash([6, 5]); ctx.lineDashOffset = -st.clock * 20;
+  ctx.beginPath(); ctx.roundRect(r.x - pad, r.y - pad, r.w + pad * 2, r.h + pad * 2, 12); ctx.stroke(); ctx.restore();
+}
+
+/* ===== the race track ===== */
+function drawTrack() {
+  const T = L.track, ppm = L.ppm, pop = st.run.pop, ci = champIdx(), kind = st.opts.terrain, x0 = st.cam - T.x / ppm, x1 = st.cam + (W - T.x) / ppm;
+  // ground
+  const gr = ctx.createLinearGradient(0, L.ground, 0, T.y + T.h); gr.addColorStop(0, 'rgba(30,36,72,.9)'); gr.addColorStop(1, 'rgba(12,14,26,0)');
+  ctx.beginPath(); ctx.moveTo(0, T.y + T.h);
+  for (let sx = 0; sx <= W; sx += 4) ctx.lineTo(sx, Y(groundH(kind, x0 + sx / ppm)));
+  ctx.lineTo(W, T.y + T.h); ctx.closePath(); ctx.fillStyle = gr; ctx.fill();
+  ctx.beginPath(); for (let sx = 0; sx <= W; sx += 4) ctx[sx ? 'lineTo' : 'moveTo'](sx, Y(groundH(kind, x0 + sx / ppm)));
+  ctx.strokeStyle = 'rgba(158,224,106,.55)'; ctx.lineWidth = 1.5; ctx.stroke();
+  const every = ppm < 50 ? 2 : 1;
+  for (let m = Math.ceil(x0); m <= x1; m++) {
+    const sx = X(m), gy = Y(groundH(kind, m)); ctx.fillStyle = 'rgba(190,200,255,.25)'; ctx.fillRect(sx, gy + 12, 1, m % 5 ? 4 : 8);
+    if (m % every === 0) txt(m + ' m', sx + 3, gy + 26, COL.faint, '10px');
+  }
+  // start line + best-so-far marker
+  ctx.setLineDash([3, 4]); ctx.strokeStyle = 'rgba(190,200,255,.35)'; ctx.beginPath(); ctx.moveTo(X(0), L.ground); ctx.lineTo(X(0), T.y + 40); ctx.stroke();
+  const be = bestEver();
+  if (be > 0.5 && X(be) < W - 20) { ctx.strokeStyle = 'rgba(255,200,87,.4)'; ctx.beginPath(); ctx.moveTo(X(be), Y(groundH(kind, be))); ctx.lineTo(X(be), T.y + 42); ctx.stroke(); }
+  ctx.setLineDash([]);
+  if (be > 0.5 && X(be) < W - 20) { // record pill; slides left (with a leader) when it would sit on the clock / "time!" text
+    const lab = (bestH().terrain !== kind ? 'record on ' + bestH().terrain + ' ' : 'record ') + be.toFixed(1) + ' m', ccy = Math.max(T.y + 10, st.capB + 16), rc = 'rgba(255,200,87,.75)';
+    ctx.font = '600 11px ui-monospace,Menlo,monospace'; const pw = ctx.measureText(lab).width + 12;
+    const colW = st.hold > 0 ? ctx.measureText('time! a random half survives →').width : Math.max(ctx.measureText(`gen ${st.run.gen} · 0.0 / ${st.opts.T} s`).width, L.small ? 110 : 150);
+    const edge = T.x + T.w - colW - 8;
+    if (T.y + 22 < ccy + (st.hold > 0 ? 28 : 10) && X(be) + pw / 2 > edge) { ctx.strokeStyle = rc; ctx.beginPath(); ctx.moveTo(edge, T.y + 32); ctx.lineTo(X(be), T.y + 32); ctx.lineTo(X(be), T.y + 42); ctx.stroke(); pill(lab, edge, T.y + 32, rc, 'right'); }
+    else pill(lab, X(be), T.y + 32, rc);
+  }
+  // score ticks: where every racer's centre is right now (its fitness if the clock stopped)
+  pop.forEach((c, i) => { const cx = centroidX(st.bodies[i].P), sx = X(cx); if (sx < -5 || sx > W + 5) return; ctx.fillStyle = i === ci ? COL.hl : c.you ? COL.grad : SPC[c.g.nodes.length]; ctx.globalAlpha = i === ci ? 1 : 0.6; ctx.fillRect(sx - 1, Y(groundH(kind, cx)) + 3, 2, 7); });
+  ctx.globalAlpha = 1;
+  // racers: ghosts first, then selected / yours, champion on top
+  const insp = st.edit || st.fossil >= 0 ? -1 : (pop[st.sel] ? st.sel : ci);
+  pop.forEach((c, i) => { if (i !== ci && i !== st.sel && !c.you) drawBody(i, 'ghost'); });
+  pop.forEach((c, i) => { if (i !== ci && (i === st.sel || c.you)) drawBody(i, c.you ? 'you' : 'sel'); });
+  drawBody(ci, 'champ', insp === ci);
+  if (insp >= 0 && insp !== ci) drawBody(insp, pop[insp].you ? 'you' : 'sel', true);
+  // champion distance flag
+  const cb = st.bodies[ci], cx = centroidX(cb.P), fx = X(cx), top = Math.min(...cb.P.map(p => Y(p.y))) - 16;
+  ctx.strokeStyle = 'rgba(255,200,87,.7)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(fx, Y(groundH(kind, cx))); ctx.lineTo(fx, top); ctx.stroke();
+  pill('champion ' + fitnessOf(cb).toFixed(2) + ' m', fx, top - 8, COL.hl);
+  if (insp >= 0 && insp !== ci) { const b = st.bodies[insp], sx = X(centroidX(b.P)), ty = Math.min(...b.P.map(p => Y(p.y))) - 14; let py2 = ty - 8; if (Math.abs(sx - fx) < 150 && Math.abs(py2 - (top - 8)) < 22) py2 = top - 32; pill((pop[insp].tag || (pop[insp].you ? 'yours' : '#' + pop[insp].id)) + ' ' + fitnessOf(b).toFixed(2) + ' m', sx, py2, pop[insp].you ? COL.grad : COL.ink); }
+  // clock
+  const t = st.bodies[0].t, bw = L.small ? 110 : 150, rx = T.x + T.w - bw;
+  const cy = Math.max(T.y + 10, st.capB + 16); // clock sits just below the caption, whatever its height
+  txt(`gen ${st.run.gen} · ${Math.min(t, st.opts.T).toFixed(1)} / ${st.opts.T} s`, T.x + T.w, cy, COL.dim, '600 11px', 'right');
+  ctx.fillStyle = 'rgba(190,200,255,.12)'; ctx.fillRect(rx, cy + 6, bw, 3); ctx.fillStyle = COL.acc; ctx.fillRect(rx, cy + 6, bw * Math.min(1, t / st.opts.T), 3);
+  if (st.hold > 0) txt(st.opts.sel === 'random' ? 'time! a random half survives →' : 'time! top half survives →', T.x + T.w, cy + 24, COL.acc, '600 11px', 'right');
+  if (st.flash > 0) { ctx.globalAlpha = Math.min(1, st.flash); const gs = 'Generation ' + st.run.gen, gy = cy + (L.small ? 48 : 64); ctx.font = `650 ${L.small ? 18 : 26}px ui-sans-serif,system-ui,sans-serif`; ctx.textAlign = 'right'; ctx.strokeStyle = '#0c0e1a'; ctx.lineWidth = 6; ctx.lineJoin = 'round'; ctx.strokeText(gs, T.x + T.w, gy); ctx.fillStyle = COL.ink; ctx.fillText(gs, T.x + T.w, gy); ctx.globalAlpha = 1; }
+  if (st.focus === 'dist') focusBox({ x: 0, y: L.ground - 4, w: W, h: 20 }, 0);
+  if (st.focus === 'champ') { ctx.strokeStyle = COL.hl; ctx.globalAlpha = 0.5 + 0.4 * Math.sin(st.clock * 4); ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(fx, (top + L.ground) / 2 + 8, 0.9 * ppm, 0, TAU); ctx.stroke(); ctx.globalAlpha = 1; }
+}
+function drawBody(i, mode, inspecting) {
+  const c = st.run.pop[i], b = st.bodies[i], g = c.g, P = b.P, ppm = L.ppm;
+  const col = mode === 'champ' ? COL.hl : mode === 'you' ? COL.grad : mode === 'sel' ? COL.ink : SPC[g.nodes.length], ghost = mode === 'ghost';
+  ctx.lineCap = 'round';
+  g.muscles.forEach((m, k) => {
+    const a = P[m.a], z = P[m.b], squeeze = Math.max(0, -Math.sin(TAU * g.freq * b.t + m.phase)); // 1 = fully contracted
+    const lw = ghost ? 1.4 : 1.5 + m.amp * 12 * ppm / 90;
+    ctx.beginPath(); ctx.moveTo(X(a.x), Y(a.y)); ctx.lineTo(X(z.x), Y(z.y)); ctx.strokeStyle = col;
+    if (!ghost) { ctx.globalAlpha = 0.14; ctx.lineWidth = lw + 6; ctx.stroke(); }
+    ctx.globalAlpha = ghost ? 0.26 : m.amp < 0.03 ? 0.4 : 0.45 + 0.55 * squeeze; ctx.lineWidth = lw; ctx.stroke();
+    if (inspecting && k === st.hoverM) { ctx.globalAlpha = 1; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke(); }
+  });
+  const r = Math.max(2.5, 0.055 * ppm);
+  P.forEach((p, k) => {
+    ctx.globalAlpha = ghost ? 0.3 : 1; ctx.beginPath(); ctx.arc(X(p.x), Y(p.y), ghost ? r * 0.7 : r, 0, TAU);
+    ctx.fillStyle = '#0c0e1a'; ctx.fill(); if (!ghost) { ctx.globalAlpha = 0.2 + 0.8 * g.nodes[k].grip; ctx.fillStyle = col; ctx.fill(); ctx.globalAlpha = 1; }
+    ctx.strokeStyle = col; ctx.lineWidth = 1.2; ctx.stroke();
+  });
+  ctx.globalAlpha = 1;
+}
+
+/* ===== fitness chart + selection strip + species strip ===== */
+function drawChart() {
+  const b = L.chart, hist = st.run.hist, sm = L.small;
+  panel(b, sm ? '' : 'Distance per generation', sm ? '' : 'click a point → fossil genome');
+  if (sm) { txt('best', b.x + 12, b.y + 19, COL.hl, '600 11px'); txt('· mean  m/gen', b.x + 46, b.y + 19, COL.data, '600 11px'); }
+  const stripH = sm ? 40 : 62, P = { x: b.x + 34, y: b.y + 34, w: b.w - 34 - (sm ? 10 : 80), h: b.h - 34 - stripH - 32 }; L.plot = P;
+  const lines = [hist.map(h => h.best), hist.map(h => h.mean)], cmp = st.compare ? st.compare.hist.map(h => h.best) : [], cmpM = st.compare ? st.compare.hist.map(h => h.mean) : [];
+  const n = Math.max(10, hist.length, cmp.length), all = [...lines[0], ...lines[1], ...cmp, ...cmpM, 1];
+  const ymax = Math.max(...all) * 1.1, ymin = Math.min(0, ...all);
+  const px = i => P.x + (n > 1 ? i / (n - 1) : 0) * P.w, py = v => P.y + P.h - (v - ymin) / (ymax - ymin) * P.h;
+  ctx.strokeStyle = 'rgba(190,200,255,.12)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(P.x, py(0)); ctx.lineTo(P.x + P.w, py(0)); ctx.moveTo(P.x, P.y); ctx.lineTo(P.x, P.y + P.h); ctx.stroke();
+  txt(ymax.toFixed(0) + ' m', P.x - 4, P.y + 8, COL.faint, '10px', 'right'); txt('0', P.x - 4, py(0) + 3, COL.faint, '10px', 'right');
+  txt('gen 1', P.x, P.y + P.h + 13, COL.faint, '10px'); txt('gen ' + n, P.x + P.w, P.y + P.h + 13, COL.faint, '10px', 'right');
+  const line = (vs, c, w, dash) => { if (!vs.length) return; ctx.setLineDash(dash || []); ctx.beginPath(); vs.forEach((v, i) => ctx[i ? 'lineTo' : 'moveTo'](px(i), py(v))); ctx.strokeStyle = c; ctx.lineWidth = w; ctx.stroke(); ctx.setLineDash([]); if (vs.length === 1) { ctx.fillStyle = c; ctx.fillRect(px(0) - 2, py(vs[0]) - 2, 4, 4); } };
+  line(cmp, 'rgba(255,200,87,.5)', 1.5, [5, 4]); line(cmpM, 'rgba(199,203,224,.5)', 1.5, [2, 3]); line(lines[1], COL.data, 1.5); line(lines[0], COL.hl, 2.2);
+  if (!hist.length) txt('first round running…', P.x + P.w / 2, P.y + P.h / 2, COL.faint, '11px', 'center');
+  // end labels (staggered so they never overprint)
+  const labs = [];
+  if (hist.length) labs.push([py(lines[0].at(-1)), 'best ' + lines[0].at(-1).toFixed(1), COL.hl], [py(lines[1].at(-1)), 'mean ' + lines[1].at(-1).toFixed(1), COL.data]);
+  if (cmp.length) labs.push([py(cmp.at(-1)), st.compare.label + ' best', 'rgba(255,200,87,.7)'], [py(cmpM.at(-1)), st.compare.label + ' mean', COL.dim]);
+  if (!sm) { labs.sort((p, q) => p[0] - q[0]); let yy = -1e9; const lx = px(Math.max(hist.length, cmp.length) - 1) + 6; for (const l of labs) { yy = Math.max(l[0] + 3, yy + 13); txt(l[1], lx, Math.min(yy, P.y + P.h + 3), l[2], '10px'); } }
+  if (st.hoverG >= 0 && hist[st.hoverG]) { const h = hist[st.hoverG], x = px(st.hoverG); ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.beginPath(); ctx.moveTo(x, P.y); ctx.lineTo(x, P.y + P.h); ctx.stroke(); pill(`gen ${h.gen}: ${h.best.toFixed(1)} m`, Math.min(Math.max(x, P.x + 50), P.x + P.w - 40), P.y + 6, COL.ink); }
+  if (st.fossil >= 0 && hist[st.fossil]) { ctx.beginPath(); ctx.arc(px(st.fossil), py(hist[st.fossil].best), 5, 0, TAU); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke(); }
+  // selection strip: last round's racers ranked; top half kept, bottom half replaced by mutants
+  const sy = P.y + P.h + 32, sw = b.w - 24, sx = b.x + 12, rh = sm ? 14 : 22, last = hist.at(-1);
+  const half = n => Math.ceil(n / 2), kp = last ? last.kept || last.ranked.map((v, i) => i < half(last.ranked.length)) : [], clean = kp.every((k, i) => k === (i < half(kp.length)));
+  txt(sm ? 'last round, ranked' : clean ? 'last round, ranked:  kept  |  replaced by mutants' : 'last round, ranked:  bright = kept, faint = replaced', sx, sy - 3, COL.faint, '10px');
+  if (last) {
+    const rk = last.ranked, mx = Math.max(0.1, rk[0]), bw = sw / rk.length;
+    rk.forEach((v, i) => { const h = Math.max(1, Math.max(0, v) / mx * rh); ctx.fillStyle = i === 0 ? COL.hl : kp[i] ? COL.data : COL.grad; ctx.globalAlpha = kp[i] ? 0.85 : 0.35; ctx.fillRect(sx + i * bw + 0.5, sy + 2 + rh - h, Math.max(1, bw - 1.5), h); });
+    ctx.globalAlpha = 1; if (clean) { ctx.fillStyle = COL.ink; ctx.fillRect(sx + half(rk.length) * bw - 1, sy, 1.5, rh + 4); }
+  }
+  if (st.focus === 'rank') focusBox({ x: sx, y: sy - 14, w: sw, h: rh + 18 });
+  // species strip: share of each body plan per generation
+  const ky = sy + rh + 8, kh = sm ? 8 : 10, cols = [...hist.map(h => h.sp)], cw = sw / Math.max(10, cols.length);
+  if (!sm) txt('body plans', sx, ky + kh + 11, COL.faint, '10px');
+  cols.forEach((sp, i) => { let y = ky; const tot = Object.values(sp).reduce((a, v) => a + v, 0); for (const k of [3, 4, 5, 6]) if (sp[k]) { const h = sp[k] / tot * kh; ctx.fillStyle = SPC[k]; ctx.fillRect(sx + i * cw, y, Math.ceil(cw), h + 0.3); y += h; } });
+  if (!sm) { let lx = sx + 74; for (const k of [3, 4, 5, 6]) { ctx.fillStyle = SPC[k]; ctx.fillRect(lx, ky + kh + 4, 8, 8); txt(k + '-node', lx + 11, ky + kh + 11, COL.faint, '10px'); lx += 62; } }
+  if (st.focus === 'species') focusBox({ x: sx, y: ky, w: sw, h: kh });
+}
+
+/* ===== genome inspector: body diagram + one phase dial per muscle ===== */
+function drawGenome() {
+  const b = L.gen, ins = inspected(), g = ins.g, t = st.bodies[0].t, sm = L.small;
+  panel(b, sm ? 'Genome' : 'Genome · ' + ins.label);
+  L.undo = null;
+  if (st.edit) { L.undo = { x: b.x + b.w - 56, y: b.y + 8, w: 46, h: 16 }; txt('undo ✕', b.x + b.w - 12, b.y + 19, COL.grad, '600 10px', 'right'); }
+  txt(sm ? ins.label : `${g.nodes.length} nodes · ${g.muscles.length} muscles · tempo ${g.freq.toFixed(2)} Hz`, b.x + 12, b.y + 34, COL.dim, '10px');
+  const D = { x: b.x + 14, y: b.y + 44, w: b.w - 28, h: b.h - 44 - (sm ? 30 : 40) };
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity; for (const n of g.nodes) { x0 = Math.min(x0, n.x); x1 = Math.max(x1, n.x); y0 = Math.min(y0, n.y); y1 = Math.max(y1, n.y); }
+  const s = Math.min(D.w / (x1 - x0 + 0.35), D.h / (y1 - y0 + 0.35), 260), cx = D.x + D.w / 2, cy = D.y + D.h / 2;
+  const NX = n => cx + (n.x - (x0 + x1) / 2) * s, NY = n => cy - (n.y - (y0 + y1) / 2) * s;
+  const R = Math.max(sm ? 5 : 7, Math.min(12, s * 0.07)), mut = new Set(g.mut || []);
+  // muscles: thickness = amplitude; brightness = contracting right now
+  g.muscles.forEach((m, k) => {
+    const a = g.nodes[m.a], z = g.nodes[m.b], sq = Math.max(0, -Math.sin(TAU * g.freq * t + m.phase));
+    ctx.beginPath(); ctx.moveTo(NX(a), NY(a)); ctx.lineTo(NX(z), NY(z)); ctx.strokeStyle = k === st.hoverM ? '#fff' : COL.hl;
+    ctx.globalAlpha = m.amp < 0.03 ? 0.3 : 0.3 + 0.6 * sq; ctx.lineWidth = 1.5 + m.amp * 22; ctx.lineCap = 'round'; ctx.stroke(); ctx.globalAlpha = 1;
+  });
+  g.nodes.forEach(n => { ctx.beginPath(); ctx.arc(NX(n), NY(n), 6, 0, TAU); ctx.fillStyle = '#0c0e1a'; ctx.fill(); ctx.globalAlpha = 0.15 + 0.85 * n.grip; ctx.fillStyle = COL.data; ctx.fill(); ctx.globalAlpha = 1; ctx.strokeStyle = COL.data; ctx.lineWidth = 1.2; ctx.stroke(); });
+  // dials at muscle midpoints, nudged apart so they never overlap
+  const dl = g.muscles.map((m, i) => ({ i, x: (NX(g.nodes[m.a]) + NX(g.nodes[m.b])) / 2, y: (NY(g.nodes[m.a]) + NY(g.nodes[m.b])) / 2 }));
+  for (let it = 0; it < 12; it++) for (const p of dl) for (const q of dl) { if (p === q) continue; const dx = q.x - p.x, dy = q.y - p.y, d = Math.hypot(dx, dy) || 0.01; if (d < R * 2.4) { const k = (R * 2.4 - d) / d * 0.3; p.x -= dx * k; p.y -= dy * k; q.x += dx * k; q.y += dy * k; } }
+  dl.forEach(p => { p.x = Math.max(D.x + R, Math.min(D.x + D.w - R, p.x)); p.y = Math.max(D.y + R, Math.min(D.y + D.h - R, p.y)); });
+  L.dials = dl.map(p => ({ ...p, r: R, g }));
+  dl.forEach(p => {
+    const m = g.muscles[p.i], ang = TAU * g.freq * t + m.phase - Math.PI / 2, edited = st.edit && st.edit.mi === p.i;
+    const ring = edited ? COL.grad : mut.has(p.i) ? COL.grad : p.i === st.hoverM ? '#fff' : 'rgba(255,200,87,.8)';
+    ctx.beginPath(); ctx.arc(p.x, p.y, R, 0, TAU); ctx.fillStyle = '#0e1124'; ctx.fill(); ctx.strokeStyle = ring; ctx.lineWidth = mut.has(p.i) || edited ? 2 : 1.2; ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x + Math.cos(ang) * (R - 2), p.y + Math.sin(ang) * (R - 2)); ctx.strokeStyle = m.amp < 0.03 ? COL.faint : COL.hl; ctx.lineWidth = 2; ctx.stroke();
+  });
+  // score line
+  const champ = st.run.pop[champIdx()], by = b.y + b.h - (sm ? 10 : 14);
+  if (st.edit) txt(`edit: ${st.edit.fit.toFixed(2)} m  (was ${st.edit.base.toFixed(2)} m)`, b.x + 12, by, COL.grad, '600 11px');
+  else txt(`${st.opts.T} s distance: ${ins.fit.toFixed(2)} m` + (ins.idx === champIdx() || sm ? '' : `  · champ ${champ.fit.toFixed(2)}`), b.x + 12, by, ins.idx >= 0 && st.run.pop[ins.idx].you ? COL.grad : COL.ink, '600 11px');
+  if (!sm) txt('● grip  ○ slides   drag a dial ↻', b.x + b.w - 12, by - 16, COL.faint, '10px', 'right');
+  if (st.focus === 'genome') focusBox(b, 3);
+}
+
+/* ===== frame ===== */
+function frame(dt, realDt) {
+  if (st.clock - st.capT > 0.4) { st.capT = st.clock; const c = $('#caption'); st.capB = c.textContent ? c.getBoundingClientRect().bottom - stage.getBoundingClientRect().top : 0; }
+  st.clock += realDt; st.flash = Math.max(0, st.flash - realDt);
+  st.acc += dt; let n = 0; while (st.acc >= DT && n < 30) { tick(); st.acc -= DT; n++; } if (n >= 30) st.acc = 0;
+  const tg = camTarget(); st.cam = st.cam < -0.99 && tg <= -0.99 ? tg : st.cam + (tg - st.cam) * Math.min(1, realDt * 5);
+  ctx.clearRect(0, 0, W, H);
+  drawTrack(); drawChart(); drawGenome();
+  const last = st.run.hist.at(-1), ins = inspected(), ch = st.run.pop[champIdx()], big = ins.g.muscles.reduce((a, m) => m.amp > a.amp ? m : a, ins.g.muscles[0]);
+  setText('sGen', String(st.run.gen)); setText('sBest', last ? last.best.toFixed(2) + ' m' : '–'); setText('sMean', last ? last.mean.toFixed(2) + ' m' : '–');
+  setText('mF', ins.g.freq.toFixed(2)); setText('mA', big.amp.toFixed(2)); setText('mP', (big.phase * 180 / Math.PI).toFixed(0) + '°');
+  setText('mT', String(st.opts.T)); setText('mFit', ins.fit.toFixed(2)); setText('mMu', st.opts.mu.toFixed(2)); setText('mKeep', String(Math.ceil(st.opts.N / 2))); setText('mN', String(st.opts.N));
+  setText('mRule', st.opts.sel === 'random' ? 'chance (no selection!)' : st.opts.share ? 'F ÷ |body plan|' : 'F'); setText('mChamp', ch.fit.toFixed(2));
+}
+
+/* ===== pointer: click racers, click the chart, drag phase dials ===== */
+const pt = e => { const r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+const dialAt = p => L.dials.find(d => Math.hypot(p.x - d.x, p.y - d.y) < d.r + 5);
+function racerAt(p) {
+  let bi = -1, bd = 60; st.bodies.forEach((b, i) => { const d = Math.hypot(X(centroidX(b.P)) - p.x, Y(b.P.reduce((a, q) => a + q.y, 0) / b.P.length) - p.y); if (d < bd) { bd = d; bi = i; } });
   return bi;
 }
-
-function evolve(){
-  var sorted=pop.slice().sort(function(x,y){return y.fit-x.fit;});
-  var sum=0;for(var i=0;i<pop.length;i++) sum+=pop[i].fit;
-  genAvg=sum/pop.length;
-  if(sorted[0].fit>bestEver) bestEver=sorted[0].fit;
-  history.push({best:sorted[0].fit,avg:genAvg});
-  if(history.length>140) history.shift();
-
-  var elite=Math.max(2,Math.round(POP*0.18));
-  var next=[];
-  for(i=0;i<elite;i++) next.push(makeCreature(sorted[i].g)); // keep elites verbatim
-  while(next.length<POP){
-    // tournament selection of 3
-    var p=null;
-    for(var k=0;k<3;k++){
-      var cand=sorted[Math.floor(Math.random()*Math.min(sorted.length,Math.max(4,POP*0.6)))];
-      if(!p||cand.fit>p.fit)p=cand;
-    }
-    next.push(makeCreature(mutate(p.g)));
-  }
-  pop=next;
-  resetBodies();
-  gen++;t=0;
+function genAt(p) { const P = L.plot, n = Math.max(10, st.run.hist.length); if (!P || p.x < P.x - 6 || p.x > P.x + P.w + 6 || p.y < P.y - 6 || p.y > P.y + P.h + 6) return -1; const i = Math.round((p.x - P.x) / P.w * (n - 1)); return i >= 0 && i < st.run.hist.length ? i : -1; }
+function setPhase(p) {
+  const d = st.drag, m = st.edit.g.muscles[d.i], t = st.bodies[0].t;
+  m.phase = ((Math.atan2(p.y - d.y, p.x - d.x) + Math.PI / 2 - TAU * st.edit.g.freq * t) % TAU + TAU) % TAU;
+  st.edit.fit = evalGenome(st.edit.g, st.opts.terrain, st.opts.T);
 }
-
-// ---- render -----------------------------------------------------------
-function drawGround(off){
-  ctx.fillStyle='rgba(6,14,24,0.9)';
-  ctx.fillRect(0,groundY,W,H-groundY);
-  ctx.beginPath();ctx.moveTo(0,groundY);ctx.lineTo(W,groundY);
-  ctx.strokeStyle='rgba(120,255,200,0.55)';ctx.lineWidth=1.6;
-  ctx.shadowBlur=12;ctx.shadowColor='rgba(80,255,190,0.6)';ctx.stroke();ctx.shadowBlur=0;
-  // metre markers
-  ctx.font='10px ui-monospace,monospace';
-  var m0=Math.floor(off/PPM)-1;
-  for(var m=m0;m<m0+Math.ceil(W/PPM)+3;m++){
-    var x=m*PPM-off;
-    if(x<-20||x>W+20)continue;
-    var major=(m%5===0);
-    ctx.beginPath();ctx.moveTo(x,groundY);ctx.lineTo(x,groundY+(major?14:7));
-    ctx.strokeStyle=major?'rgba(120,255,200,0.35)':'rgba(120,255,200,0.14)';
-    ctx.lineWidth=1;ctx.stroke();
-    if(major){ctx.fillStyle='rgba(130,190,180,0.6)';ctx.fillText(m+'m',x+3,groundY+24);}
-  }
-}
-function drawCreature(c,off,isBest){
-  var a=c.a,b=c.b;
-  var ax=a.x-off, bx=b.x-off;
-  if(Math.max(ax,bx)<-80||Math.min(ax,bx)>W+80)return;
-  var col=isBest?'rgba(255,206,84,':'hsla('+c.hue.toFixed(0)+',80%,65%,';
-  ctx.beginPath();ctx.moveTo(ax,a.y);ctx.lineTo(bx,b.y);
-  ctx.strokeStyle=col+(isBest?0.95:0.35)+')';
-  ctx.lineWidth=isBest?3.2:2;
-  if(isBest){ctx.shadowBlur=14;ctx.shadowColor='rgba(255,190,60,0.9)';}
-  ctx.stroke();ctx.shadowBlur=0;
-  ctx.beginPath();ctx.arc(ax,a.y,a.r,0,6.2832);
-  ctx.fillStyle=col+(isBest?0.9:0.28)+')';ctx.fill();
-  ctx.beginPath();ctx.arc(bx,b.y,b.r,0,6.2832);
-  ctx.fillStyle=col+(isBest?0.7:0.2)+')';ctx.fill();
-  if(isBest){
-    ctx.beginPath();ctx.arc(ax,a.y,a.r+6,0,6.2832);
-    ctx.strokeStyle='rgba(255,206,84,0.5)';ctx.lineWidth=1;ctx.stroke();
-  }
-}
-function drawGraph(){
-  var w=300,h=86,x0=W-w-22,y0=H-h-26;
-  ctx.fillStyle='rgba(5,10,20,0.62)';ctx.strokeStyle='rgba(120,255,200,0.2)';ctx.lineWidth=1;
-  ctx.beginPath();ctx.rect(x0-8,y0-18,w+16,h+34);ctx.fill();ctx.stroke();
-  ctx.fillStyle='rgba(130,190,180,0.8)';ctx.font='10px ui-monospace,monospace';
-  ctx.fillText('distance per generation  (gold=best, cyan=avg)',x0-4,y0-6);
-  if(history.length<2)return;
-  var mx=1;
-  for(var i=0;i<history.length;i++) if(history[i].best>mx) mx=history[i].best;
-  function line(key,style,lw){
-    ctx.beginPath();
-    for(var i=0;i<history.length;i++){
-      var x=x0+(i/(history.length-1))*w;
-      var y=y0+h-Math.max(0,history[i][key]/mx)*h;
-      if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
-    }
-    ctx.strokeStyle=style;ctx.lineWidth=lw;ctx.stroke();
-  }
-  line('avg','rgba(90,220,255,0.7)',1.2);
-  line('best','rgba(255,206,84,0.95)',1.8);
-  ctx.fillStyle='rgba(130,190,180,0.65)';
-  ctx.fillText(mx.toFixed(1)+'m',x0+w-34,y0+10);
-}
-
-var last=performance.now();
-function frame(now){
-  var dt=Math.min(0.05,(now-last)/1000);last=now;
-  var steps=fast?26:Math.max(1,Math.round(dt/DT));
-  if(steps>30)steps=30;
-  for(var s=0;s<steps;s++) simStep();
-
-  ctx.fillStyle='rgba(5,7,13,0.30)';ctx.fillRect(0,0,W,H);
-
-  var bi=leader();
-  var target=(pop[bi].a.x+pop[bi].b.x)*0.5-W*0.35;
-  if(target<0)target=0;
-  cam+=(target-cam)*0.10;
-
-  drawGround(cam);
-  for(var i=0;i<pop.length;i++) if(i!==bi) drawCreature(pop[i],cam,false);
-  drawCreature(pop[bi],cam,true);
-  drawGraph();
-
-  document.getElementById('gen').textContent=gen;
-  document.getElementById('t').textContent=t.toFixed(1)+'s';
-  document.getElementById('lead').textContent=pop[bi].fit.toFixed(1)+' m';
-  document.getElementById('best').textContent=bestEver.toFixed(1)+' m';
-  document.getElementById('avg').textContent=genAvg.toFixed(1)+' m';
-  document.getElementById('mu').textContent=MUT.toFixed(2)+(fast?'  ⏩':'');
-  requestAnimationFrame(frame);
-}
-
-window.addEventListener('keydown',function(e){
-  var k=e.key.toLowerCase();
-  if(k==='f')fast=!fast;
-  else if(k==='r'){initPop();resetBodies();}
+cv.addEventListener('pointerdown', e => {
+  const p = pt(e), d = dialAt(p);
+  if (d) { const ins = inspected(); if (!st.edit) st.edit = { g: cloneG(ins.g), base: ins.fit }; st.edit.mi = d.i; st.drag = d; setPlaying(false); cv.setPointerCapture(e.pointerId); cv.style.cursor = 'grabbing'; setPhase(p); return; }
+  if (inR(p, L.undo)) { st.edit = null; setPlaying(true); return; }
+  if (inR(p, L.chart)) { const g = genAt(p); if (g >= 0) { st.fossil = g; st.sel = -1; st.edit = null; } return; }
+  if (inR(p, L.gen)) return;
+  st.sel = racerAt(p); st.fossil = -1; st.edit = null;
 });
+cv.addEventListener('pointermove', e => {
+  const p = pt(e);
+  if (st.drag) { setPhase(p); return; }
+  const d = dialAt(p); st.hoverM = d ? d.i : -1; st.hoverG = inR(p, L.chart) ? genAt(p) : -1;
+  cv.style.cursor = d ? 'grab' : st.hoverG >= 0 || (inR(p, L.track) && racerAt(p) >= 0) || inR(p, L.undo) ? 'pointer' : 'default';
+});
+const endDrag = () => { if (st.drag) { st.drag = null; cv.style.cursor = 'grab'; commitEdit(); } };
+cv.addEventListener('pointerup', endDrag); cv.addEventListener('pointercancel', endDrag);
+cv.addEventListener('pointerleave', () => { st.hoverM = -1; st.hoverG = -1; });
+$('#bStep').onclick = () => nextGen(1);
+$('#bReset').onclick = () => restart(st.seed, st.opts, 0);
+addEventListener('keydown', e => { if ((e.key === 'f' || e.key === 'F') && !e.target.matches('input')) nextGen(10); });
 
-initPop();resetBodies();
-ctx.fillStyle='#05070d';ctx.fillRect(0,0,W,H);
-requestAnimationFrame(frame);
-})();
+/* ===== lesson panes ===== */
+function stepTo(gens, extra = {}, focus = null) { restart(7, { ...DEF, ...extra }, gens); st.focus = focus; if (REDUCED) advance(3.5); }
+let overfit = { flat: 0, bumpy: 0, rival: 0 };
+const cap = h => { $('#caption').innerHTML = h; st.capT = -1; };
+const STEPS = [
+  { t: 'Evolution, already at work', d: 'Eighteen generations ago these were random blobs. Nobody designed the gait you are watching: it was bred.',
+    cap: '18 generations ago these were <b>random blobs</b>. The amber <b>champion</b> now has a gait; faint ghosts are its rivals. Click any racer to read its genome.',
+    go() { stepTo(18, {}, 'champ'); } },
+  { t: 'Generation 1: random bodies flail', d: 'Random node positions, random grip on each foot, random muscle timing. Most twitch in place; the leader is just the luckiest flailer.',
+    cap: '<b>Generation 1.</b> Bodies, grip and muscle timing are all random. Most twitch in place. The amber leader is just the luckiest flailer.',
+    go() { stepTo(0, {}, null); } },
+  { t: 'Fitness = distance travelled', d: 'Each creature gets one number: how far its centre moved in 8 seconds. That is the only thing evolution ever sees — not style, not effort.',
+    cap: '<b>Fitness is one number:</b> how far the centre moves in 8 s. The ticks under the ground are every racer\'s score so far.',
+    go() { if (st.run.gen > 2 || st.seed !== 7 || Object.keys(DEF).some(k => st.opts[k] !== DEF[k])) stepTo(0); st.focus = 'dist'; } },
+  { t: 'The best reproduce, with mutation', d: 'When time is up the top half survives unchanged. Each empty slot is filled by a copy of a survivor with a few genes nudged at random (violet dials).',
+    cap: 'Time up: the <b>top half survives</b>, the rest are replaced by <b>mutated copies</b> of survivors. Violet dials = genes that just mutated.',
+    go() { stepTo(3, {}, 'rank'); const i = st.run.pop.findIndex(c => !c.kept && c.g.mut.length); st.sel = i; } },
+  { t: 'Gaits emerge from timing', d: 'Every muscle beats at one shared tempo; each dial shows where its muscle is in the cycle. What evolves is the <b>offset</b> between dials. Drag one to retime a muscle; your edit joins the race.',
+    cap: 'All dials spin at <b>one tempo</b>. What evolved is their <b>offsets</b> — that coordination is the gait. <b>Drag a dial</b> to retime one muscle.',
+    go() { stepTo(25, {}, 'genome'); } },
+  { t: 'Diversity keeps exploring', d: 'Left alone, one body plan takes over and the search narrows. <b>Fitness sharing</b> divides a score by how crowded its body plan is, so rare designs get time to improve. The price: in the short run the best line climbs more slowly, because slots go to weaker-but-different bodies.',
+    cap: '<b>Fitness sharing</b> divides a score by how crowded its body plan is, so rare designs survive. The colour strip shows species coexisting.',
+    go() { stepTo(25, { share: true }, 'species'); } },
+  { t: 'Overfit: bred on flat, fails on bumps', d: 'Evolution optimises exactly the world it is tested in. The flat-ground champion exploits a perfectly level floor; put it on bumps and its gait breaks.',
+    get cap() { return `Bred on flat: <b>${overfit.flat.toFixed(1)} m</b>. Same body on bumps: <b>${overfit.bumpy.toFixed(1)} m</b>. Selection only ever saw flat ground; a less specialised rival (amber, ${overfit.rival.toFixed(1)} m) now leads.`; },
+    go() { stepTo(25, {}, null); const c = st.run.pop[champIdx()]; overfit.flat = c.fit; c.tag = 'flat champion'; terrSeg.set('bumpy'); st.sel = st.run.pop.indexOf(c); overfit.bumpy = c.fit; overfit.rival = st.run.pop[champIdx()].fit; st.focus = null; } },
+];
+const TRIES = [
+  { q: 'Turn <b>selection off</b>: parents are picked at random, mutation unchanged. Will walkers still improve over 25 generations?',
+    run() { const a = newRun(18, { ...DEF }); for (let i = 0; i < 25; i++) breed(a); restart(18, { ...DEF, sel: 'random' }, 25); st.compare = { label: 'sel.', hist: a.hist }; st.focus = 'rank'; cap('Selection <b>off</b>: parents are drawn at random. Dashed lines = the same world <b>with</b> selection. The strip shows a random half surviving.'); },
+    why: 'Barely. The <b>mean</b> hovers near 0 m (≈12 m with selection, dotted) and the best line lurches up and down, because lucky variants are lost as often as they are found. Over 20 test worlds the gen-25 best had a median of 2.7 m with random parents against 16.6 m with selection. Try <i>New random world</i> in Controls to see the spread. Mutation only <i>proposes</i> changes; selection is the ratchet that keeps the good ones. Evolution is random variation plus <b>non-random</b> survival.' },
+  { q: 'The champion\'s gait uses every muscle. Flip just its <b>strongest</b> muscle\'s timing by 180°. How much distance will it lose?',
+    run() { restart(7, { ...DEF }, 25); const ci = champIdx(), c = st.run.pop[ci], g = cloneG(c.g); let mi = 0; g.muscles.forEach((m, i) => { if (m.amp > g.muscles[mi].amp) mi = i; }); g.muscles[mi].phase = (g.muscles[mi].phase + Math.PI) % TAU; st.edit = { g, base: c.fit, mi, fit: evalGenome(g, 'flat', st.opts.T) }; commitEdit(); st.focus = 'genome'; cap('The violet <b>yours</b> is the champion with one muscle retimed by 180°. Same body, same tempo — watch it fall behind.'); },
+    why: 'Usually most of it (here ~18 m → ~6 m). A gait is not stored in any one muscle but in the <b>relative timing</b> of all of them: shift one and its push lands while the foot is in the air. Watch the violet “yours” fall behind.' },
+  { q: 'Most mutations make a walker worse. So would a gentle mutation rate (μ = 0.02) breed better walkers than μ = 0.15?',
+    run() { const a = newRun(7, { ...DEF }); for (let i = 0; i < 25; i++) breed(a); restart(7, { ...DEF, mu: 0.02 }, 25); st.compare = { label: 'μ.15', hist: a.hist }; st.focus = null; cap('Mutation rate <b>μ = 0.02</b>. Dashed line = the same world at μ = 0.15.'); },
+    why: 'No. It climbs early, then plateaus (dashed = μ 0.15). At μ = 0.02 roughly 60–70% of children are exact copies of their parent. Selection can only choose among variants that exist, so with so little variation there is almost nothing new to choose. Evolution needs a steady <b>supply of variation</b>.' },
+];
+
+function buildPanes() {
+  $('#p-math').innerHTML = `
+    <h3>A muscle is a spring with a clock</h3>
+    <div class="eq"><span class="c-hl">L<sub>i</sub>(t)</span> = r<sub>i</sub> · (1 + <span class="c-hl">a<sub>i</sub></span> · sin(2π·<span class="c-hl">f</span>·t + <span class="c-hl">φ<sub>i</sub></span>))</div>
+    <p>Inspected genome: tempo <span class="c-hl">f</span> = <span class="live" id="mF">–</span> Hz shared by all muscles; its strongest muscle has <span class="c-hl">a</span> = <span class="live" id="mA">–</span>, <span class="c-hl">φ</span> = <span class="live" id="mP">–</span>. The dial needle is the angle 2π·f·t + φ.</p>
+    <h3>Feet grip or slide</h3>
+    <div class="eq">x ← x<sub>prev</sub> + (1 − <span class="c-acc">γ<sub>j</sub></span>)·Δx<br><span class="c-acc">γ<sub>j</sub></span> = 0.15 + 0.8·grip<sub>j</sub> &nbsp;(on ground)</div>
+    <p>A grippy node (filled) barely slides; a slippery one (hollow) skates. Pushing against a grippy foot while a slippery one glides is how a body moves forward.</p>
+    <h3>Fitness is distance</h3>
+    <div class="eq"><span class="c-hl">F</span> = x̄(<span class="live" id="mT">8</span> s) − x̄(0) = <span class="live" id="mFit">–</span> m<br>champion: <span class="live" id="mChamp">–</span> m</div>
+    <h3>One generation</h3>
+    <div class="eq">rank by <span class="live" id="mRule">F</span><br>→ keep top <span class="live" id="mKeep">15</span> of <span class="live" id="mN">30</span><br>parent: a survivor, biased to the top<br>child: <span class="c-g">θ′ = θ + σ·ε</span>, ε ~ N(0,1)<br>&nbsp; each gene with prob. <span class="c-g">μ</span> = <span class="live" id="mMu">–</span></div>
+    <p>σ depends on the gene (phase 1 rad, position 0.12 m, amplitude 0.08). Rarely a node is added or removed, which changes the body plan.</p>
+    <div class="note"><b>Not random search.</b> Mutation is random; survival is not. Turn selection off (Try this #1) and the mean goes nowhere.</div>
+    <div class="note"><b>No gradients.</b> Nothing here knows physics or computes a derivative. The only signal is which bodies went further, so evolution happily exploits quirks of the simulator.</div>`;
+  const p = $('#p-play');
+  p.innerHTML = '<h3>World</h3>';
+  terrSeg = seg(p, [['flat', 'Flat ground'], ['bumpy', 'Bumpy ground']], st.opts.terrain, setTerrain);
+  p.insertAdjacentHTML('beforeend', '<h3>Who gets to breed</h3>');
+  seg(p, [['trunc', 'Top half survive'], ['random', 'Random (no selection)']], 'trunc', v => { st.opts.sel = v; });
+  seg(p, [[false, 'No diversity bonus'], [true, 'Fitness sharing']], false, v => { st.opts.share = v; });
+  sMu = slider(p, 'mu', 'Mutation rate μ — chance each gene is nudged', 0, 0.6, 0.01, st.opts.mu, v => v.toFixed(2), v => { st.opts.mu = v; });
+  sN = slider(p, 'pop', 'Population — racers per generation (restarts)', 10, 60, 2, st.opts.N, v => v + '', v => { if (st.run && v !== st.opts.N) restart(st.seed, { ...st.opts, N: v }, 0); });
+  sT = slider(p, 'len', 'Test length — seconds each body is judged', 4, 12, 1, st.opts.T, v => v + ' s', v => { if (st.run && v !== st.opts.T) { st.opts.T = v; reEval(); } });
+  p.insertAdjacentHTML('beforeend', '<h3>Fast-forward (F = +10)</h3><div class="row" style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-ff="1">+1 gen</button><button class="btn" data-ff="10">+10 gens</button><button class="btn" data-ff="30">+30 gens</button><button class="btn" id="bSeed">New random world</button></div><p style="margin-top:10px">Speed (dock) slows or speeds the live race; the numbers are identical either way — the simulation is deterministic for a given seed.</p>');
+  p.querySelectorAll('[data-ff]').forEach(b => b.onclick = () => nextGen(+b.dataset.ff));
+  $('#bSeed').onclick = () => restart(1 + Math.floor(Math.random() * 1e6), st.opts, 0);
+}
+function syncControls() {
+  if (!terrSeg) return;
+  const pr = (el, i) => el.querySelectorAll('button').forEach((b, k) => b.setAttribute('aria-pressed', k === i));
+  const segs = $('#p-play').querySelectorAll('.seg');
+  pr(segs[0], st.opts.terrain === 'bumpy' ? 1 : 0); pr(segs[1], st.opts.sel === 'random' ? 1 : 0); pr(segs[2], st.opts.share ? 1 : 0);
+  sMu.set(st.opts.mu); sN.set(st.opts.N); sT.set(st.opts.T);
+}
+['sGen', 'sBest', 'sMean'].forEach((id, i) => stat(id, ['Generation', 'Best, last gen', 'Mean, last gen'][i]));
+buildPanes();
+onResize();
+renderSteps(); renderTries(); goStep(0); requestAnimationFrame(loop);
+window.__demo = { goStep, setPlaying, state: () => ({ gen: st.run.gen, best: bestEver(), hist: st.run.hist.map(h => [h.best, h.mean]), terrain: st.opts.terrain, sel: st.sel, t: st.bodies[0].t }), tries: TRIES, st };
 </script>
+</body>
+</html>

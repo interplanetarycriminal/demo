@@ -1,367 +1,736 @@
-<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
-<title>Q-Learning Gridworld</title>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Q-Learning — ML Field Notes</title>
 <style>
-  html,body{margin:0;height:100%;background:#05070d;overflow:hidden}
-  canvas{touch-action:none;display:block;position:fixed;inset:0}
-  #ui{position:fixed;top:0;left:0;margin:12px;padding:10px 12px;background:rgba(6,10,20,.72);
-      border:1px solid rgba(80,200,255,.25);border-radius:8px;color:#bfe9ff;
-      font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;max-width:330px;z-index:10;
-      backdrop-filter:blur(6px);text-shadow:0 0 8px rgba(80,200,255,.35);max-height:52vh;overflow:auto}
-  #ui h1{margin:0 0 4px;font-size:14px;letter-spacing:.11em;color:#6ff;text-transform:uppercase}
-  #ui .e{color:#8fb4c9;margin:0 0 7px}
-  #ui .k{color:#5d7f95}
-  #ui b{color:#fff;font-weight:600}
-  #ui a{color:#ff7bd5;text-decoration:none;display:inline-block;margin-top:7px}
-  #ui a:hover{text-decoration:underline}
-  #ui hr{border:0;border-top:1px solid rgba(80,200,255,.16);margin:7px 0}
-@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
+/* ===== ML Field Notes design system (shared by every ML/AI demo) =====
+   Colour means the same thing in every demo:
+   --a coral = class A / "positive"     --b teal = class B / "negative"
+   --hl amber = the model's current parameters / guess / selection
+   --grad violet = gradients, updates, errors flowing back
+   --accent = this demo's signature colour (set per demo) */
+:root{
+  --bg:#0c0e1a; --bg2:#10132a; --panel:#13162c; --panel2:#181c38; --line:rgba(190,200,255,.10); --line2:rgba(190,200,255,.18);
+  --ink:#e9ecfa; --dim:#a2a9c8; --faint:#6b7396;
+  --a:#ff7a6b; --b:#3fd0c0; --hl:#ffc857; --grad:#a78bfa; --good:#7ee787; --bad:#ff6b8a;
+  --accent:#7ee787;
+  --r:12px; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.5 var(--sans)}
+body{overflow:hidden}
+a{color:var(--accent)}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app{display:grid;grid-template-columns:minmax(0,1fr) 380px;grid-template-rows:48px minmax(0,1fr);height:100vh;height:100dvh}
+.top{grid-column:1/-1;display:flex;align-items:center;gap:12px;padding:0 14px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#11142a,#0d1020)}
+.top a.back{color:var(--dim);text-decoration:none;font-size:13px;white-space:nowrap}
+.top a.back:hover{color:var(--ink)}
+.top .chip{font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 45%,transparent);border-radius:99px;padding:5px 8px}
+.top h1{margin:0;font-size:15px;font-weight:650;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top .sp{flex:1}
+.top .keys{font:11px var(--mono);color:var(--faint);white-space:nowrap}
+.stage{position:relative;min-width:0;min-height:0;background:radial-gradient(ellipse at 50% 40%,#151a3a 0%,var(--bg) 70%)}
+.stage::before{content:"";position:absolute;inset:0;background-image:radial-gradient(rgba(190,200,255,.07) 1px,transparent 1.3px);background-size:24px 24px;pointer-events:none}
+.stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.caption{position:absolute;left:16px;right:16px;top:14px;max-width:640px;padding:10px 14px;border-radius:10px;background:rgba(12,14,30,.78);border:1px solid var(--line2);backdrop-filter:blur(6px);font-size:14px;line-height:1.45;pointer-events:none;transition:opacity .3s}
+.caption b{color:var(--accent)}
+.caption:empty{opacity:0}
+.dock{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;gap:6px;padding:6px;border-radius:99px;background:rgba(12,14,30,.82);border:1px solid var(--line2);backdrop-filter:blur(6px)}
+.dock button{border:0;background:transparent;border-radius:99px;min-width:36px;height:34px;padding:0 12px;cursor:pointer;color:var(--ink);white-space:nowrap}
+.dock button:hover{background:rgba(255,255,255,.08)}
+.dock button.on{background:color-mix(in srgb,var(--accent) 22%,transparent);color:var(--accent)}
+.lesson{border-left:1px solid var(--line);background:var(--panel);overflow:auto;min-height:0;display:flex;flex-direction:column}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border-bottom:1px solid var(--line)}
+.stat{background:var(--panel);padding:10px 12px}
+.stat .k{font:600 10px/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.stat .v{font:600 18px/1.3 var(--mono);font-variant-numeric:tabular-nums;margin-top:3px}
+.tabs{display:flex;gap:2px;padding:10px 12px 0;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);z-index:2}
+.tabs button{border:0;background:none;padding:9px 12px;color:var(--dim);cursor:pointer;border-bottom:2px solid transparent;font-weight:600}
+.tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent)}
+.pane{padding:14px 16px 22px;display:none}
+.pane.on{display:block}
+.pane h3{margin:14px 0 6px;font-size:13px;letter-spacing:.02em}
+.pane p{margin:0 0 10px;color:var(--dim)}
+.pane p b,.pane li b{color:var(--ink)}
+.lede{font-size:15px;color:var(--ink)!important}
+.steps{list-style:none;margin:10px 0 0;padding:0;counter-reset:s}
+.steps li{counter-increment:s;border:1px solid var(--line);border-radius:10px;margin:0 0 8px;padding:10px 12px 10px 40px;position:relative;cursor:pointer;color:var(--dim);background:var(--panel2)}
+.steps li::before{content:counter(s);position:absolute;left:12px;top:10px;width:18px;height:18px;border-radius:99px;display:grid;place-items:center;font:600 11px var(--mono);background:rgba(255,255,255,.07);color:var(--dim)}
+.steps li.on{border-color:color-mix(in srgb,var(--accent) 60%,transparent);color:var(--ink)}
+.steps li.on::before{background:var(--accent);color:#141414}
+.steps li.done::before{content:"✓";background:rgba(126,231,135,.2);color:var(--good)}
+.steps li .t{font-weight:650;color:var(--ink);display:block}
+.steps li .d{display:none;margin-top:4px}
+.steps li.on .d{display:block}
+.tournav{display:flex;gap:8px;margin-top:6px}
+.btn{border:1px solid var(--line2);background:var(--panel2);border-radius:9px;padding:7px 12px;cursor:pointer;color:var(--ink)}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:#15131a;border-color:transparent;font-weight:650}
+.card{border:1px solid var(--line);border-radius:12px;padding:12px;margin:0 0 10px;background:var(--panel2)}
+.card .q{color:var(--ink);font-weight:600;margin-bottom:8px}
+.card .why{display:none;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line2);color:var(--dim)}
+.card.revealed .why{display:block}
+.card .row{display:flex;gap:8px;flex-wrap:wrap}
+.eq{font:14px/1.7 var(--mono);background:#0e1124;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:6px 0 12px;overflow-x:auto;white-space:nowrap}
+.eq .c-a{color:var(--a)} .eq .c-b{color:var(--b)} .eq .c-hl{color:var(--hl)} .eq .c-g{color:var(--grad)} .eq .c-acc{color:var(--accent)}
+.live{font-variant-numeric:tabular-nums;color:var(--hl)}
+.ctrl{display:grid;grid-template-columns:1fr auto;gap:4px 10px;align-items:center;margin:10px 0}
+.ctrl label{color:var(--dim);font-size:13px}
+.ctrl output{font:12px var(--mono);color:var(--ink);font-variant-numeric:tabular-nums}
+.ctrl input[type=range]{grid-column:1/-1;width:100%;accent-color:var(--accent)}
+.seg{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 10px}
+.seg button{border:1px solid var(--line2);background:transparent;border-radius:99px;padding:5px 11px;cursor:pointer;color:var(--dim);font-size:13px}
+.seg button[aria-pressed=true]{background:color-mix(in srgb,var(--accent) 20%,transparent);color:var(--ink);border-color:color-mix(in srgb,var(--accent) 55%,transparent)}
+.note{border-left:3px solid var(--grad);padding:6px 10px;margin:8px 0 12px;color:var(--dim);background:rgba(167,139,250,.06);border-radius:0 8px 8px 0}
+.wild li{margin-bottom:6px;color:var(--dim)}
+@media (max-width:880px){
+  body{overflow:auto}
+  .app{grid-template-columns:1fr;grid-template-rows:48px 58vh auto;height:auto}
+  .stage{height:58vh}
+  .lesson{border-left:0;border-top:1px solid var(--line)}
+  .top .keys{display:none}
+  .caption{font-size:13px;top:10px;left:10px;right:10px}
+  .stats{grid-template-columns:repeat(3,1fr)}
+  .stat .v{font-size:15px}
+}
+@media (prefers-reduced-motion:reduce){.caption{transition:none}}
 </style>
+</head>
 <body>
-<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
-<canvas id="c"></canvas>
-<div id="ui">
-  <h1>Q-Learning Gridworld</h1>
-  <p class="e">The agent learns a value for every move by trial and error, and the goal's reward flows backward through the grid.</p>
-  <div class="k">click walls &middot; L lava &middot; G goal &middot; Space pause &middot; F fast &middot; R reset</div>
-  <hr>
-  <div id="stats"></div>
-  <a href="index.html">&larr; gallery</a>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace;max-width:100vw;white-space:pre-wrap';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div class="app">
+  <header class="top">
+    <a class="back" href="index.html">← Gallery</a>
+    <span class="chip">ML / AI</span>
+    <h1>Q-Learning</h1>
+    <span class="sp"></span>
+    <span class="keys">Space play · ←/→ tour · R reset</span>
+  </header>
+  <section class="stage" id="stage">
+    <canvas id="c" role="img" aria-label="An editable gridworld. Each square is coloured by the agent&#39;s learned value, with four wedges for the values of its four moves and an arrow for the best move. Below: the latest Q-update with numbers, and charts of reward and steps per episode."></canvas>
+    <div class="caption" id="caption" aria-live="polite"></div>
+    <div class="dock" role="group" aria-label="Simulation controls">
+      <button id="bPlay" class="on" aria-label="Pause">❚❚</button>
+      <button id="bStep" aria-label="Step once">Step</button>
+      <button id="bReset" aria-label="Reset">Reset</button>
+      <button id="bSpeed" aria-label="Speed">1×</button>
+    </div>
+  </section>
+  <aside class="lesson">
+    <div class="stats" id="stats"><!-- 3 stat tiles: .stat > .k + .v#id --></div>
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-tab="learn">Learn</button>
+      <button role="tab" aria-selected="false" data-tab="try">Try this</button>
+      <button role="tab" aria-selected="false" data-tab="math">The math</button>
+      <button role="tab" aria-selected="false" data-tab="play">Controls</button>
+    </div>
+    <div class="pane on" id="p-learn">
+      <p class="lede">Q-learning gives every move in every square a number: how much reward it eventually leads to. The agent learns those numbers by trial and error, and the goal&#39;s reward seeps backward one square per visit.</p>
+      <ol class="steps" id="steps"></ol>
+      <div class="tournav"><button class="btn" id="tPrev">← Back</button><button class="btn primary" id="tNext">Next step →</button></div>
+      <h3>In the wild</h3>
+      <ul class="wild"><li><b>DQN</b> (DeepMind, 2015) swapped the table for a neural net and learned 49 Atari games from pixels, using this same max-Q target.</li><li>The <b>TD error δ</b> closely matches the firing of dopamine neurons: the brain seems to run a reward-prediction-error signal like this one.</li><li>Learned <b>value functions</b> with TD targets sit inside AlphaZero-style game engines, robot controllers and recommender systems that optimise long-term engagement.</li></ul>
+    </div>
+    <div class="pane" id="p-try"><!-- .card experiments: predict → run → why --></div>
+    <div class="pane" id="p-math">
+      <h3>The update, after every single move</h3>
+      <div class="eq"><span class="c-hl">Q(s,a)</span> ← <span class="c-hl">Q(s,a)</span> + α·<span class="c-g">δ</span></div>
+      <div class="eq"><span class="c-g">δ</span> = <span class="c-a">r</span> + <span class="c-acc">γ</span>·max<sub>a′</sub> <span class="c-hl">Q(s′,a′)</span> − <span class="c-hl">Q(s,a)</span></div>
+      <p>Latest move, <span class="live" id="mSA">–</span>, with its real numbers:</p>
+      <div class="eq" style="white-space:normal"><span class="c-g">δ</span> = <span class="c-a" id="mR">–</span> + <span class="c-acc" id="mG">–</span> × <span class="live" id="mMax">–</span> − <span class="live" id="mOld">–</span> = <span class="c-g" id="mErr">–</span><br><span class="c-hl">Q</span> ← <span class="live" id="mOld2">–</span> + <span id="mA">–</span> × <span class="c-g">δ</span> = <span class="live" id="mNew">–</span></div>
+      <p>δ is the <b>TD error</b>, the surprise: what you got plus what the next square promises, minus what you expected. Positive δ nudges Q up, negative nudges it down. At a goal or pit there is no next square, so the target is just r.</p>
+      <h3>Choosing a move: ε-greedy</h3>
+      <div class="eq">a = random move, with prob. <span class="c-acc">ε</span> = <span class="live" id="mEps">–</span><br>a = argmax<sub>a</sub> <span class="c-hl">Q(s,a)</span>, otherwise</div>
+      <h3>What it converges to</h3>
+      <div class="eq" style="white-space:normal">V(s) = max<sub>a</sub> <span class="c-hl">Q(s,a)</span> → <span class="c-acc">γ</span><sup>d−1</sup>·<span class="c-a">R<sub>goal</sub></span><br>start: d = <span class="live" id="mD">–</span>, γ<sup>d−1</sup>R = <span class="live" id="mPred">–</span>, learned <span class="live" id="mV">–</span></div>
+      <p>Exact when the step cost is 0 and the floor is solid; a step cost subtracts a little per move.</p>
+      <div class="note"><b>Off-policy.</b> The target uses the <i>best</i> next move, max Q(s′,·), not the move the agent will actually take. So it learns the optimal values even while acting at random (tour step 4), and it ignores its own exploration risk on the cliff (step 7). SARSA, which uses the move actually taken, learns the safer path.</div>
+      <div class="note"><b>No map.</b> The agent never "knows where the goal is". It has four numbers per square, and they change only when it visits. Move the goal and it must re-learn by experience (Try this #3).</div>
+    </div>
+
+    <div class="pane" id="p-play"><!-- .ctrl sliders, .seg segmented choices --></div>
+  </aside>
 </div>
 <script>
 'use strict';
-var cv = document.getElementById('c'), ctx = cv.getContext('2d');
-var statsEl = document.getElementById('stats');
-var W = 12, H = 8;
-var EMPTY = 0, WALL = 1, LAVA = 2, GOAL = 3;
-var grid, Q, gx, gy, ax, ay, sx, sy;
-var eps = 1.0, EPS_MIN = 0.05, EPS_DECAY = 0.992;
-var ALPHA = 0.35, GAMMA = 0.95;
-var episode = 0, steps = 0, epReward = 0, totalSteps = 0, lastReward = 0;
-var history = [], trail = [];
-var paused = false, fast = false, mode = 'wall';
-var ACT = [[0,-1],[1,0],[0,1],[-1,0]];
-
-function idx(x,y){ return y*W + x; }
-
-function resetQ(){
-  Q = new Float32Array(W*H*4);
-  episode = 0; history = []; eps = 1.0; totalSteps = 0;
+/* ===== shell helpers (keep) ===== */
+const $ = s => document.querySelector(s);
+const cv = $('#c'), ctx = cv.getContext('2d'), stage = $('#stage');
+let W = 0, H = 0, DPR = 1;
+function resize() {
+  const r = stage.getBoundingClientRect(); DPR = Math.min(2, devicePixelRatio || 1);
+  W = Math.max(1, r.width); H = Math.max(1, r.height);
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR); ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  if (typeof onResize === 'function') onResize();
 }
-
-function buildWorld(){
-  grid = new Uint8Array(W*H);
-  // a few walls
-  var walls = [[3,1],[3,2],[3,3],[3,4],[7,3],[7,4],[7,5],[7,6],[5,6],[9,1],[9,2]];
-  for (var i=0;i<walls.length;i++) grid[idx(walls[i][0],walls[i][1])] = WALL;
-  var lava = [[4,5],[5,5],[6,1],[6,2],[8,5],[2,6],[10,4]];
-  for (var j=0;j<lava.length;j++) grid[idx(lava[j][0],lava[j][1])] = LAVA;
-  sx = 0; sy = H-1;
-  gx = W-1; gy = 0;
-  grid[idx(gx,gy)] = GOAL;
-  grid[idx(sx,sy)] = EMPTY;
-  resetQ();
-  newEpisode();
+new ResizeObserver(resize).observe(stage); resize();
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+// tabs
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', x === b));
+  document.querySelectorAll('.pane').forEach(p => p.classList.toggle('on', p.id === 'p-' + b.dataset.tab));
+});
+// playback
+let playing = !REDUCED, speed = 1;
+const SPEEDS = [0.25, 0.5, 1, 2, 4];
+function setPlaying(v) { playing = v; $('#bPlay').textContent = v ? '❚❚' : '▶'; $('#bPlay').classList.toggle('on', v); $('#bPlay').setAttribute('aria-label', v ? 'Pause' : 'Play'); }
+$('#bPlay').onclick = () => setPlaying(!playing);
+$('#bSpeed').onclick = () => { speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]; $('#bSpeed').textContent = speed + '×'; };
+// tour: STEPS = [{t:'title', d:'html', cap:'stage caption html', go(){ /* set demo state */ }}]
+let tour = 0;
+function renderSteps() {
+  const ol = $('#steps'); ol.innerHTML = '';
+  STEPS.forEach((s, i) => { const li = document.createElement('li'); li.className = (i === tour ? 'on' : '') + (i < tour ? ' done' : ''); li.innerHTML = `<span class="t">${s.t}</span><span class="d">${s.d}</span>`; li.onclick = () => goStep(i); ol.appendChild(li); });
+  $('#tPrev').disabled = tour === 0; $('#tNext').textContent = tour === STEPS.length - 1 ? 'Start over ↺' : 'Next step →';
 }
-
-function newEpisode(){
-  ax = sx; ay = sy; steps = 0; epReward = 0; trail = [];
+function goStep(i) { tour = (i + STEPS.length) % STEPS.length; const s = STEPS[tour]; if (s.go) s.go(); $('#caption').innerHTML = s.cap || ''; renderSteps(); }
+$('#tPrev').onclick = () => goStep(Math.max(0, tour - 1));
+$('#tNext').onclick = () => goStep(tour + 1);
+// experiments: TRIES = [{q:'Predict…', run(){…}, why:'html'}]
+function renderTries() {
+  const p = $('#p-try'); p.innerHTML = '<p>Make a prediction first, then run it. Each experiment sets the demo up for you.</p>';
+  TRIES.forEach(x => { const c = document.createElement('div'); c.className = 'card'; c.innerHTML = `<div class="q">${x.q}</div><div class="row"><button class="btn primary">Run it</button><button class="btn">Show why</button></div><div class="why">${x.why}</div>`; const [run, why] = c.querySelectorAll('button'); run.onclick = () => { x.run(); setPlaying(true); }; why.onclick = () => c.classList.toggle('revealed'); p.appendChild(c); });
 }
-
-function maxQ(s){
-  var b = Q[s*4];
-  for (var a=1;a<4;a++) if (Q[s*4+a] > b) b = Q[s*4+a];
-  return b;
+// controls helpers
+function slider(parent, id, label, min, max, step, value, fmt, onInput) {
+  const d = document.createElement('div'); d.className = 'ctrl';
+  d.innerHTML = `<label for="${id}">${label}</label><output id="${id}o"></output><input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${value}">`;
+  parent.appendChild(d); const inp = d.querySelector('input'), out = d.querySelector('output');
+  const upd = () => { out.textContent = fmt(+inp.value); onInput(+inp.value); }; inp.oninput = upd; upd();
+  return { set(v) { inp.value = v; upd(); }, get: () => +inp.value };
 }
-function argmaxQ(s){
-  var b = 0;
-  for (var a=1;a<4;a++) if (Q[s*4+a] > Q[s*4+b]) b = a;
-  return b;
+function seg(parent, options, value, onPick) {
+  const d = document.createElement('div'); d.className = 'seg'; parent.appendChild(d);
+  const bs = options.map(([v, label]) => { const b = document.createElement('button'); b.textContent = label; b.setAttribute('aria-pressed', v === value); b.onclick = () => set(v); d.appendChild(b); return [v, b]; });
+  function set(v) { bs.forEach(([k, b]) => b.setAttribute('aria-pressed', k === v)); onPick(v); }
+  return { set };
 }
-
-function stepAgent(){
-  var s = idx(ax,ay);
-  var a;
-  if (Math.random() < eps) a = (Math.random()*4)|0;
-  else a = argmaxQ(s);
-  var nx = ax + ACT[a][0], ny = ay + ACT[a][1];
-  if (nx<0||ny<0||nx>=W||ny>=H||grid[idx(nx,ny)] === WALL){ nx = ax; ny = ay; }
-  var ns = idx(nx,ny);
-  var cell = grid[ns];
-  var r = -0.02, done = false;
-  if (cell === GOAL){ r = 1.0; done = true; }
-  else if (cell === LAVA){ r = -1.0; done = true; }
-
-  var target = done ? r : (r + GAMMA * maxQ(ns));
-  Q[s*4+a] += ALPHA * (target - Q[s*4+a]);
-
-  ax = nx; ay = ny; steps++; epReward += r; totalSteps++;
-  trail.push([ax,ay]);
-  if (trail.length > 40) trail.shift();
-
-  if (done || steps > 260){
-    lastReward = epReward;
-    history.push(epReward);
-    if (history.length > 400) history.shift();
-    episode++;
-    eps = Math.max(EPS_MIN, eps * EPS_DECAY);
-    newEpisode();
-  }
-}
-
-// ---------- rendering ----------
-var dpr = 1, cw = 0, ch = 0, cell = 40, ox = 0, oy = 0;
-function resize(){
-  dpr = Math.min(2, window.devicePixelRatio || 1);
-  cw = window.innerWidth; ch = window.innerHeight;
-  cv.width = Math.floor(cw*dpr); cv.height = Math.floor(ch*dpr);
-  cv.style.width = cw+'px'; cv.style.height = ch+'px';
-  ctx.setTransform(dpr,0,0,dpr,0,0);
-  var pad = 60;
-  cell = Math.min((cw - pad*2)/W, (ch - pad*2 - 90)/H);
-  cell = Math.max(24, cell);
-  ox = (cw - cell*W)/2;
-  oy = (ch - cell*H)/2 - 30;
-}
-window.addEventListener('resize', resize);
-
-function heat(v){
-  // v in [-1,1] -> deep blue (low) to cyan/green to hot yellow
-  var t = Math.max(-1, Math.min(1, v));
-  var r,g,b;
-  if (t < 0){
-    var k = -t;
-    r = 90*k + 10; g = 8*(1-k)+6; b = 40*(1-k)+30;
-  } else {
-    r = 12 + 240*Math.pow(t,1.5);
-    g = 30 + 200*Math.pow(t,0.75);
-    b = 70 + 90*(1-t);
-  }
-  return 'rgb('+(r|0)+','+(g|0)+','+(b|0)+')';
-}
-
-function drawArrow(cx, cy, a, alpha, len){
-  var d = ACT[a];
-  ctx.save();
-  ctx.strokeStyle = 'rgba(255,255,255,'+alpha+')';
-  ctx.fillStyle = 'rgba(255,255,255,'+alpha+')';
-  ctx.lineWidth = Math.max(1, cell*0.045);
-  ctx.beginPath();
-  ctx.moveTo(cx - d[0]*len*0.5, cy - d[1]*len*0.5);
-  ctx.lineTo(cx + d[0]*len*0.5, cy + d[1]*len*0.5);
-  ctx.stroke();
-  var hx = cx + d[0]*len*0.5, hy = cy + d[1]*len*0.5;
-  var px = -d[1], py = d[0], hs = len*0.28;
-  ctx.beginPath();
-  ctx.moveTo(hx + d[0]*hs, hy + d[1]*hs);
-  ctx.lineTo(hx + px*hs*0.6, hy + py*hs*0.6);
-  ctx.lineTo(hx - px*hs*0.6, hy - py*hs*0.6);
-  ctx.closePath(); ctx.fill();
-  ctx.restore();
-}
-
-var t0 = performance.now();
-function draw(now){
-  var time = now*0.001;
-  ctx.fillStyle = '#05070d';
-  ctx.fillRect(0,0,cw,ch);
-
-  // grid cells
-  for (var y=0;y<H;y++){
-    for (var x=0;x<W;x++){
-      var s = idx(x,y), c = grid[s];
-      var px = ox + x*cell, py = oy + y*cell;
-      if (c === WALL){
-        ctx.fillStyle = '#141a26';
-        ctx.fillRect(px+1,py+1,cell-2,cell-2);
-        ctx.strokeStyle = 'rgba(120,150,190,.22)';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(px+1.5,py+1.5,cell-3,cell-3);
-        continue;
-      }
-      if (c === LAVA){
-        var pulse = 0.55 + 0.2*Math.sin(time*3 + x*0.7 + y);
-        ctx.fillStyle = 'rgba('+(220*pulse|0)+',40,60,.95)';
-        ctx.fillRect(px+1,py+1,cell-2,cell-2);
-        ctx.strokeStyle = 'rgba(255,90,110,.65)';
-        ctx.strokeRect(px+1.5,py+1.5,cell-3,cell-3);
-        continue;
-      }
-      if (c === GOAL){
-        var g = 0.7 + 0.3*Math.sin(time*4);
-        ctx.fillStyle = 'rgba(60,255,180,'+(0.55+0.3*g)+')';
-        ctx.fillRect(px+1,py+1,cell-2,cell-2);
-        ctx.save();
-        ctx.shadowColor = '#3fffb4'; ctx.shadowBlur = 22*g;
-        ctx.strokeStyle = '#aaffdd'; ctx.lineWidth = 2;
-        ctx.strokeRect(px+2,py+2,cell-4,cell-4);
-        ctx.restore();
-        continue;
-      }
-      var v = maxQ(s);
-      ctx.fillStyle = heat(v);
-      ctx.fillRect(px+1,py+1,cell-2,cell-2);
-      ctx.strokeStyle = 'rgba(90,140,190,.10)';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(px+1.5,py+1.5,cell-3,cell-3);
-      // best action arrow
-      var mag = Math.abs(v);
-      if (mag > 0.004){
-        var a = argmaxQ(s);
-        drawArrow(px+cell/2, py+cell/2, a, Math.min(0.9, 0.25 + mag*0.9), cell*0.44);
-      }
-      if (cell > 44){
-        ctx.fillStyle = 'rgba(255,255,255,.42)';
-        ctx.font = Math.round(cell*0.19)+'px ui-monospace,monospace';
-        ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-        ctx.fillText(v.toFixed(2), px+4, py+3);
-      }
-    }
-  }
-
-  // start marker
-  ctx.strokeStyle = 'rgba(150,190,255,.55)';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(ox+sx*cell+3, oy+sy*cell+3, cell-6, cell-6);
-
-  // trail
-  for (var i=0;i<trail.length;i++){
-    var tt = (i+1)/trail.length;
-    ctx.fillStyle = 'rgba(120,230,255,'+(tt*0.30)+')';
-    var r = cell*0.11*tt + 1;
-    ctx.beginPath();
-    ctx.arc(ox+trail[i][0]*cell+cell/2, oy+trail[i][1]*cell+cell/2, r, 0, 6.2832);
-    ctx.fill();
-  }
-
-  // agent orb
-  var acx = ox+ax*cell+cell/2, acy = oy+ay*cell+cell/2;
-  var gr = ctx.createRadialGradient(acx,acy,0,acx,acy,cell*0.55);
-  gr.addColorStop(0,'rgba(255,255,255,.95)');
-  gr.addColorStop(0.35,'rgba(120,235,255,.85)');
-  gr.addColorStop(1,'rgba(60,180,255,0)');
-  ctx.fillStyle = gr;
-  ctx.beginPath(); ctx.arc(acx,acy,cell*0.55,0,6.2832); ctx.fill();
-  ctx.fillStyle = '#fff';
-  ctx.beginPath(); ctx.arc(acx,acy,cell*0.16,0,6.2832); ctx.fill();
-
-  drawSparkline();
-  drawLegend();
-}
-
-function drawSparkline(){
-  var gw = Math.min(420, cw*0.42), gh = 62;
-  var gxp = ox, gyp = oy + H*cell + 26;
-  if (gyp + gh > ch - 8){ gyp = ch - gh - 10; }
-  ctx.fillStyle = 'rgba(10,16,28,.7)';
-  ctx.fillRect(gxp, gyp, gw, gh);
-  ctx.strokeStyle = 'rgba(80,200,255,.22)';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(gxp+.5, gyp+.5, gw-1, gh-1);
-  ctx.fillStyle = 'rgba(150,200,230,.65)';
-  ctx.font = '10px ui-monospace,monospace';
-  ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-  ctx.fillText('episode reward', gxp+6, gyp+5);
-
-  // zero line
-  var mid = gyp + gh*0.5;
-  ctx.strokeStyle = 'rgba(255,255,255,.14)';
-  ctx.beginPath(); ctx.moveTo(gxp,mid); ctx.lineTo(gxp+gw,mid); ctx.stroke();
-
-  if (history.length > 1){
-    ctx.beginPath();
-    for (var i=0;i<history.length;i++){
-      var v = Math.max(-1.6, Math.min(1.2, history[i]));
-      var px = gxp + (i/(history.length-1))*(gw-4) + 2;
-      var py = mid - (v/1.6)*(gh*0.42);
-      if (i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
-    }
-    ctx.strokeStyle = '#6ff';
-    ctx.lineWidth = 1.6;
-    ctx.shadowColor = '#3ee'; ctx.shadowBlur = 8;
-    ctx.stroke();
-    ctx.shadowBlur = 0;
-  }
-}
-
-function drawLegend(){
-  var lw = 150, lh = 14;
-  var lx = cw - lw - 22, ly = ch - 46;
-  for (var i=0;i<lw;i++){
-    ctx.fillStyle = heat(-1 + 2*(i/lw));
-    ctx.fillRect(lx+i, ly, 1, lh);
-  }
-  ctx.strokeStyle = 'rgba(255,255,255,.2)';
-  ctx.strokeRect(lx+.5, ly+.5, lw, lh);
-  ctx.fillStyle = 'rgba(180,215,235,.7)';
-  ctx.font = '10px ui-monospace,monospace';
-  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-  ctx.fillText('max Q(s,a)', lx+lw/2, ly+lh+4);
-  ctx.textAlign = 'right'; ctx.fillText('-1', lx-4, ly+2);
-  ctx.textAlign = 'left'; ctx.fillText('+1', lx+lw+4, ly+2);
-}
-
-function updateStats(){
-  var avg = 0, n = Math.min(20, history.length);
-  for (var i=history.length-n;i<history.length;i++) avg += history[i];
-  avg = n ? avg/n : 0;
-  statsEl.innerHTML =
-    'episode <b>'+episode+'</b> &nbsp; step <b>'+steps+'</b><br>'+
-    '&epsilon; (explore) <b>'+eps.toFixed(3)+'</b><br>'+
-    '&alpha; '+ALPHA+' &nbsp; &gamma; '+GAMMA+'<br>'+
-    'last reward <b>'+lastReward.toFixed(2)+'</b><br>'+
-    'avg(20) <b>'+avg.toFixed(2)+'</b> &nbsp; total steps <b>'+totalSteps+'</b><br>'+
-    'paint mode: <b>'+mode+'</b>'+(paused?' &nbsp; <b>PAUSED</b>':'')+(fast?' &nbsp; <b>FAST</b>':'');
-}
-
-var acc = 0;
-function loop(now){
-  if (!paused){
-    var n = fast ? 300 : 40;
-    for (var i=0;i<n;i++) stepAgent();
-  }
-  draw(now);
-  acc++;
-  if (acc % 6 === 0) updateStats();
+function stat(id, label) { const d = document.createElement('div'); d.className = 'stat'; d.innerHTML = `<div class="k">${label}</div><div class="v" id="${id}">–</div>`; $('#stats').appendChild(d); }
+const setText = (id, v) => { const e = document.getElementById(id); if (e && e.textContent !== v) e.textContent = v; };
+// keyboard
+addEventListener('keydown', e => {
+  if (e.target.matches('input,select,textarea')) return;
+  if (e.code === 'Space') { setPlaying(!playing); e.preventDefault(); }
+  else if (e.key === 'ArrowRight') goStep(tour + 1);
+  else if (e.key === 'ArrowLeft') goStep(Math.max(0, tour - 1));
+  else if (e.key === 'r' || e.key === 'R') $('#bReset').click();
+});
+// wall-clock-locked loop (dt clamped to [0, 0.1] — rAF timestamps can precede performance.now())
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.1, Math.max(0, (now - last) / 1000)); last = now;
+  try { frame(playing ? dt * speed : 0, dt); } catch (err) { window.onerror(err.message, '', 0); return; }
   requestAnimationFrame(loop);
 }
 
-// ---------- interaction ----------
-function cellAt(mx,my){
-  var x = Math.floor((mx-ox)/cell), y = Math.floor((my-oy)/cell);
-  if (x<0||y<0||x>=W||y>=H) return null;
-  return [x,y];
+// ===== DEMO CODE =====
+/*CORE-START*/
+const ACT = [[0, -1], [1, 0], [0, 1], [-1, 0]], ARROW = ['↑', '→', '↓', '←'];
+const EMPTY = 0, WALL = 1, PIT = 2, GOAL = 3;
+function mulberry(seed) {
+  let a = seed >>> 0;
+  return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 }
-cv.addEventListener('pointerdown', function(ev){
-  var p = cellAt(ev.clientX, ev.clientY);
-  if (!p) return;
-  var s = idx(p[0],p[1]);
-  if (grid[s] === GOAL) return;
-  if (p[0]===sx && p[1]===sy) return;
-  if (mode === 'wall') grid[s] = (grid[s] === WALL) ? EMPTY : WALL;
-  else grid[s] = (grid[s] === LAVA) ? EMPTY : LAVA;
-  if (grid[idx(ax,ay)] === WALL) newEpisode();
-});
-window.addEventListener('keydown', function(ev){
-  var k = ev.key.toLowerCase();
-  if (k === ' ' || ev.code === 'Space'){ paused = !paused; ev.preventDefault(); }
-  else if (k === 'f') fast = !fast;
-  else if (k === 'l') mode = (mode === 'lava') ? 'wall' : 'lava';
-  else if (k === 'g'){
-    // move goal to a random free cell, reset Q
-    grid[idx(gx,gy)] = EMPTY;
-    var tries = 0, nx, ny;
-    do { nx = (Math.random()*W)|0; ny = (Math.random()*H)|0; tries++; }
-    while (tries < 200 && (grid[idx(nx,ny)] !== EMPTY || (nx===sx&&ny===sy)));
-    gx = nx; gy = ny; grid[idx(gx,gy)] = GOAL;
-    resetQ(); newEpisode();
+const WORLDS = {
+  room: ['........G', '.x..#.x..', '.x..#.x..', '....#....', '..###....', 'S........'],
+  cliff: ['..........', '..........', '..........', 'S........G', 'xxxxxxxxxx'],
+  corridor: ['S........G'],
+};
+function parseWorld(rows) {
+  const h = rows.length, w = rows[0].length, cells = new Uint8Array(w * h); let start = 0;
+  rows.forEach((row, y) => [...row].forEach((ch, x) => {
+    const i = y * w + x;
+    cells[i] = ch === '#' ? WALL : ch === 'x' ? PIT : ch === 'G' ? GOAL : EMPTY;
+    if (ch === 'S') start = i;
+  }));
+  return { w, h, cells, start };
+}
+const vmax = (Q, s) => Math.max(Q[s * 4], Q[s * 4 + 1], Q[s * 4 + 2], Q[s * 4 + 3]);
+function greedy(Q, s) { let b = 0; for (let a = 1; a < 4; a++) if (Q[s * 4 + a] > Q[s * 4 + b]) b = a; return b; }
+// one move of the environment: walls and edges block; goal and pit end the episode
+function envStep(world, s, a, p, rand) {
+  if (p.slip > 0 && rand() < p.slip) a = (a + (rand() < 0.5 ? 1 : 3)) % 4;      // slide sideways
+  const x = s % world.w + ACT[a][0], y = ((s / world.w) | 0) + ACT[a][1];
+  let s2 = s;
+  if (x >= 0 && y >= 0 && x < world.w && y < world.h && world.cells[y * world.w + x] !== WALL) s2 = y * world.w + x;
+  const c = world.cells[s2];
+  if (c === GOAL) return { s2, r: p.rGoal, done: true, kind: 'goal' };
+  if (c === PIT) return { s2, r: p.rPit, done: true, kind: 'pit' };
+  return { s2, r: p.rStep, done: false, kind: '' };
+}
+// the Q-learning (TD) update, returned with every intermediate number for display
+function tdUpdate(Q, s, a, r, s2, done, alpha, gamma) {
+  const qOld = Q[s * 4 + a], maxNext = done ? 0 : vmax(Q, s2);
+  const target = r + (done ? 0 : gamma * maxNext), delta = target - qOld, qNew = qOld + alpha * delta;
+  Q[s * 4 + a] = qNew;
+  return { s, a, r, s2, done, qOld, maxNext, target, delta, qNew, alpha, gamma };
+}
+function makeAgent(world, p, seed) {
+  return { world, p, Q: new Float64Array(world.w * world.h * 4), rand: mulberry(seed), s: world.start, t: 0, ret: 0, episode: 0, total: 0, hist: [], last: null };
+}
+// ε-greedy with random tie-breaking (all-zero Q must not always pick "up")
+function chooseAction(ag) {
+  if (ag.rand() < ag.p.eps) return (ag.rand() * 4) | 0;
+  const b = ag.s * 4; let best = -Infinity, n = 0, pick = 0;
+  for (let a = 0; a < 4; a++) {
+    const q = ag.Q[b + a];
+    if (q > best + 1e-12) { best = q; n = 1; pick = a; } else if (q >= best - 1e-12 && ag.rand() * ++n < 1) pick = a;
   }
-  else if (k === 'r'){ buildWorld(); }
-  else if (k === 'w') mode = 'wall';
-});
+  return pick;
+}
+function learnStep(ag) {
+  const a = chooseAction(ag), e = envStep(ag.world, ag.s, a, ag.p, ag.rand);
+  const rec = tdUpdate(ag.Q, ag.s, a, e.r, e.s2, e.done, ag.p.alpha, ag.p.gamma);
+  rec.kind = e.kind; rec.n = ++ag.total;
+  ag.t++; ag.ret += e.r; ag.s = e.s2;
+  if (e.done || ag.t >= ag.p.maxSteps) {
+    rec.end = { ret: ag.ret, steps: ag.t, kind: e.kind || 'timeout' };
+    ag.hist.push(rec.end); if (ag.hist.length > 400) ag.hist.shift();
+    ag.episode++;
+    if (ag.p.eps > ag.p.epsMin) ag.p.eps = Math.max(ag.p.epsMin, ag.p.eps * ag.p.decay);
+    ag.s = ag.world.start; ag.t = 0; ag.ret = 0;
+  }
+  ag.last = rec;
+  return rec;
+}
+function train(ag, episodes, cap = 3e6) { const end = ag.episode + episodes; for (let n = 0; ag.episode < end && n < cap; n++) learnStep(ag); }
+// moves-to-goal for every square (BFS from the goals; walls and pits block), -1 = unreachable
+function distToGoal(world) {
+  const n = world.w * world.h, d = new Int32Array(n).fill(-1), q = [];
+  for (let i = 0; i < n; i++) if (world.cells[i] === GOAL) { d[i] = 0; q.push(i); }
+  for (let k = 0; k < q.length; k++) {
+    const s = q[k], x = s % world.w, y = (s / world.w) | 0;
+    for (const [dx, dy] of ACT) {
+      const nx = x + dx, ny = y + dy, j = ny * world.w + nx;
+      if (nx < 0 || ny < 0 || nx >= world.w || ny >= world.h || d[j] >= 0) continue;
+      if (world.cells[j] === WALL || world.cells[j] === PIT) continue;
+      d[j] = d[s] + 1; q.push(j);
+    }
+  }
+  return d;
+}
+/*CORE-END*/
 
-resize();
-buildWorld();
-requestAnimationFrame(loop);
+/* ===== state ===== */
+const SANS = getComputedStyle(document.body).fontFamily, MONO = getComputedStyle(document.documentElement).getPropertyValue('--mono');
+const A = '#ff7a6b', B = '#3fd0c0', HL = '#ffc857', G = '#a78bfa', ACC = '#7ee787', INK = '#e9ecfa', DIM = '#a2a9c8', FAINT = '#6b7396', DATA = '#c7cbe0';
+const P = { alpha: 0.5, gamma: 0.9, eps: 1, decay: 0.95, epsMin: 0.05, rGoal: 1, rPit: -1, rStep: -0.01, slip: 0, maxSteps: 300 };
+let worldName = 'room', world = parseWorld(WORLDS.room), dist = distToGoal(world), seed = 7, eps0 = 1;
+let ag = makeAgent(world, P, seed);
+let rate = 25, acc = 0, prevS = world.start, trail = [], flashes = [], focus = null, hover = -1, drag = null, clock = 0, frameN = 0;
+let L = null;                                   // layout rects (see layout())
+const UI = {};                                  // slider / seg handles
+
+function loadWorld(name) {
+  worldName = name; world = parseWorld(WORLDS[name]); dist = distToGoal(world); layout();
+}
+function newAgent(s) {
+  seed = s; ag = makeAgent(world, P, seed); acc = 0; prevS = world.start; trail = []; flashes = [];
+}
+function setCell(i, t) {
+  world.cells[i] = t; dist = distToGoal(world);
+  if (world.cells[ag.s] !== EMPTY) { ag.s = world.start; ag.t = 0; ag.ret = 0; prevS = ag.s; trail = []; }
+}
+function moveStart(i) {
+  if (world.cells[i] !== EMPTY) world.cells[i] = EMPTY;
+  world.start = i; dist = distToGoal(world); ag.s = i; ag.t = 0; ag.ret = 0; prevS = i; trail = [];
+}
+// one call sets up a whole scenario (tour steps and experiments use it)
+function configure(c) {
+  const d = Object.assign({ world: 'room', alpha: 0.5, gamma: 0.9, eps: 1, decay: 0.95, rGoal: 1, rPit: -1, rStep: -0.01, slip: 0, rate: 25, pre: 0, seed: 7, focus: null }, c);
+  loadWorld(d.world);
+  UI.world.set(d.world, true); UI.alpha.set(d.alpha); UI.gamma.set(d.gamma); UI.eps.set(d.eps); UI.decay.set(d.decay);
+  UI.rGoal.set(d.rGoal); UI.rPit.set(d.rPit); UI.rStep.set(d.rStep); UI.slip.set(d.slip); UI.rate.set(d.rate);
+  newAgent(d.seed);
+  if (d.pre) train(ag, d.pre);
+  if (d.epsAfter !== undefined) P.eps = d.epsAfter;
+  prevS = ag.s; focus = d.focus; setPlaying(!REDUCED);
+}
+function onStep(rec) {
+  if (rec.end) {
+    flashes.push({ i: rec.s2, col: rec.end.kind === 'goal' ? A : rec.end.kind === 'pit' ? B : FAINT, t: clock });
+    if (flashes.length > 6) flashes.shift();
+    trail = []; prevS = world.start;
+  } else { prevS = rec.s; trail.push(rec.s2); if (trail.length > 24) trail.shift(); }
+}
+const effRate = () => rate * speed;
+const detailed = () => !playing || effRate() <= 60;
+
+/* ===== layout: grid + update card + two charts inside the safe rect ===== */
+function layout() {
+  const wide = W >= 640, sx = 16, sy = wide ? 84 : 92, sw = W - 32, sh = H - sy - (wide ? 76 : 68);
+  const pH = world.h === 1 ? (wide ? Math.max(150, Math.min(300, sh - 260)) : 84) : 0;      // corridor: room for the value-profile chart
+  let cell, gx, gy, td, ch, pr;
+  if (wide) {
+    const cw = Math.min(300, Math.max(210, sw * 0.3)), gw = sw - cw - 24, tdH = 86, gap = pH ? 16 : 0;
+    cell = Math.floor(Math.min(gw / world.w, (sh - tdH - 16 - pH - gap) / world.h, 78));
+    const gW = cell * world.w, gH = cell * world.h, top = sy + Math.max(0, (sh - gH - 16 - tdH - pH - gap) / 2);
+    gx = sx + (gw - gW) / 2; gy = top;
+    pr = { x: gx, y: gy + gH + 16, w: gW, h: pH };
+    const tw = Math.min(gw, Math.max(gW, 500));
+    td = { x: sx + (gw - tw) / 2, y: gy + gH + 16 + pH + gap, w: tw, h: tdH };
+    const chH = Math.min(sh, 2 * 176 + 14), cy = sy + (sh - chH) / 2, x = sx + sw - cw, hh = (chH - 14) / 2;
+    ch = [{ x, y: cy, w: cw, h: hh }, { x, y: cy + hh + 14, w: cw, h: hh }];
+  } else {
+    const tdH = 56, chH = 62, gap = pH ? 10 : 0, avail = sh - tdH - chH - 20 - pH - gap;
+    cell = Math.floor(Math.min(sw / world.w, avail / world.h, 64));
+    const gW = cell * world.w, gH = cell * world.h, top = sy + Math.max(0, (sh - gH - 20 - tdH - chH - pH - gap) / 2);
+    gx = sx + (sw - gW) / 2; gy = top;
+    pr = { x: gx, y: gy + gH + 10, w: gW, h: pH };
+    td = { x: sx, y: gy + gH + 10 + pH + gap, w: sw, h: tdH };
+    const cy = td.y + tdH + 10, hw = (sw - 10) / 2;
+    ch = [{ x: sx, y: cy, w: hw, h: chH }, { x: sx + hw + 10, y: cy, w: hw, h: chH }];
+  }
+  L = { cell, gx, gy, td, ch, pr, compact: td.w < 470 };
+}
+var booted;                                     // shell calls onResize() before this block runs
+function onResize() { if (booted) layout(); }
+const cellXY = i => [L.gx + (i % world.w) * L.cell, L.gy + ((i / world.w) | 0) * L.cell];
+const cellC = i => { const [x, y] = cellXY(i); return [x + L.cell / 2, y + L.cell / 2]; };
+function cellAt(px, py) {
+  const x = Math.floor((px - L.gx) / L.cell), y = Math.floor((py - L.gy) / L.cell);
+  return x >= 0 && y >= 0 && x < world.w && y < world.h ? y * world.w + x : -1;
+}
+
+/* ===== drawing primitives ===== */
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+const BASE = [22, 26, 52], TBASE = [31, 36, 70], CA = [255, 122, 107], CB = [63, 208, 192];
+// value → colour: coral for positive (reward ahead), teal for negative (cost/pit ahead)
+function heat(v, k, base) {
+  const sc = v >= 0 ? Math.max(1e-6, P.rGoal) : Math.max(1e-6, -P.rPit), c = v >= 0 ? CA : CB;
+  const t = Math.min(1, Math.pow(Math.abs(v) / sc, 0.8)) * k;
+  return `rgb(${base[0] + (c[0] - base[0]) * t | 0},${base[1] + (c[1] - base[1]) * t | 0},${base[2] + (c[2] - base[2]) * t | 0})`;
+}
+function triPath(x, y, c, a) {           // small wedge on edge a, pointing at the centre
+  const m = c * 0.08, d = c * 0.25, b = c * 0.27, cx = x + c / 2, cy = y + c / 2;
+  ctx.beginPath();
+  if (a === 0) { ctx.moveTo(cx - b, y + m); ctx.lineTo(cx + b, y + m); ctx.lineTo(cx, y + m + d); }
+  else if (a === 1) { ctx.moveTo(x + c - m, cy - b); ctx.lineTo(x + c - m, cy + b); ctx.lineTo(x + c - m - d, cy); }
+  else if (a === 2) { ctx.moveTo(cx - b, y + c - m); ctx.lineTo(cx + b, y + c - m); ctx.lineTo(cx, y + c - m - d); }
+  else { ctx.moveTo(x + m, cy - b); ctx.lineTo(x + m, cy + b); ctx.lineTo(x + m + d, cy); }
+  ctx.closePath();
+}
+function arrow(cx, cy, a, len, col, lw) {
+  const [dx, dy] = ACT[a], h = len * 0.34, px = -dy, py = dx;
+  ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = lw; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(cx - dx * len / 2, cy - dy * len / 2); ctx.lineTo(cx + dx * (len / 2 - h * 0.6), cy + dy * (len / 2 - h * 0.6)); ctx.stroke();
+  const tx = cx + dx * len / 2, ty = cy + dy * len / 2;
+  ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(tx - dx * h + px * h * 0.6, ty - dy * h + py * h * 0.6); ctx.lineTo(tx - dx * h - px * h * 0.6, ty - dy * h - py * h * 0.6); ctx.closePath(); ctx.fill();
+}
+const hatch = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 8; const g = c.getContext('2d');
+  g.fillStyle = '#0a0c19'; g.fillRect(0, 0, 8, 8); g.strokeStyle = 'rgba(160,170,220,.18)'; g.lineWidth = 1;
+  g.beginPath(); g.moveTo(0, 8); g.lineTo(8, 0); g.moveTo(-2, 2); g.lineTo(2, -2); g.moveTo(6, 10); g.lineTo(10, 6); g.stroke();
+  return ctx.createPattern(c, 'repeat');
+})();
+function segs(x, y, parts) { for (const [t, c] of parts) { ctx.fillStyle = c; ctx.fillText(t, x, y); x += ctx.measureText(t).width; } return x; }
+const f3 = v => (v < 0 ? '−' : '') + Math.abs(v).toFixed(3);
+const fr = v => (v < 0 ? '−' : '+') + Math.abs(v).toFixed(2);
+const SUP = '⁰¹²³⁴⁵⁶⁷⁸⁹', sup = n => String(n).split('').map(d => SUP[+d]).join('');
+const xy = s => `(${s % world.w},${(s / world.w) | 0})`;
+
+/* ===== scene ===== */
+function drawGrid() {
+  const c = L.cell, Q = ag.Q, n = world.w * world.h, pulse = REDUCED ? 0.5 : 0.5 + 0.5 * Math.sin(clock * 3);
+  ctx.fillStyle = 'rgba(6,8,20,.7)'; rr(L.gx - 6, L.gy - 6, world.w * c + 12, world.h * c + 12, 12); ctx.fill();
+  ctx.font = `600 ${Math.max(9, Math.min(15, c * 0.3))}px ${SANS}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (let i = 0; i < n; i++) {
+    const [x, y] = cellXY(i), t = world.cells[i], cx = x + c / 2, cy = y + c / 2;
+    if (t === WALL) { ctx.fillStyle = hatch; ctx.fillRect(x + 1, y + 1, c - 2, c - 2); continue; }
+    if (t === PIT) {
+      ctx.fillStyle = '#05121a'; ctx.fillRect(x + 1, y + 1, c - 2, c - 2);
+      ctx.strokeStyle = 'rgba(63,208,192,.55)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(cx, cy, c * 0.3, 0, 7); ctx.stroke();
+      if (c >= 30) { ctx.fillStyle = B; ctx.fillText(fr(P.rPit).replace('.00', ''), cx, cy); }
+      continue;
+    }
+    if (t === GOAL) {
+      ctx.fillStyle = A; rr(x + 2, y + 2, c - 4, c - 4, 6); ctx.fill();
+      ctx.strokeStyle = `rgba(255,122,107,${0.12 + 0.18 * pulse})`; ctx.lineWidth = 6; rr(x - 1, y - 1, c + 2, c + 2, 8); ctx.stroke();
+      ctx.fillStyle = '#2a0e0b'; ctx.fillText(fr(P.rGoal).replace('.00', ''), cx, cy);
+      continue;
+    }
+    const b = i * 4, v = vmax(Q, i), touched = Q[b] || Q[b + 1] || Q[b + 2] || Q[b + 3];
+    ctx.fillStyle = heat(touched ? v : 0, 0.6, BASE); ctx.fillRect(x + 1, y + 1, c - 2, c - 2);
+    for (let a = 0; a < 4; a++) { triPath(x, y, c, a); ctx.fillStyle = heat(Q[b + a], 1, TBASE); ctx.fill(); }
+    // greedy arrow: bright once the square expects reward, faint while it only knows step costs
+    if (touched && !(Q[b] === Q[b + 1] && Q[b] === Q[b + 2] && Q[b] === Q[b + 3])) arrow(cx, cy, greedy(Q, i), c * 0.34, v > 0 ? HL : 'rgba(255,200,87,.28)', Math.max(1.5, c * 0.05));
+  }
+  // start square (drag it)
+  const [sx, sy] = cellC(world.start);
+  ctx.setLineDash([3, 3]); ctx.strokeStyle = DATA; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(sx, sy, c * 0.4, 0, 7); ctx.stroke(); ctx.setLineDash([]);
+  ctx.font = `700 ${Math.max(9, c * 0.2)}px ${SANS}`; ctx.fillStyle = DATA; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  ctx.fillText('S', sx - c / 2 + 4, sy - c / 2 + 3);
+}
+function drawLastUpdate() {
+  const r = ag.last; if (!r || !detailed()) return;
+  const c = L.cell, [x, y] = cellXY(r.s);
+  if (!r.done && r.s2 !== r.s) { const [x2, y2] = cellXY(r.s2); ctx.setLineDash([4, 3]); ctx.strokeStyle = HL; ctx.lineWidth = 1.5; ctx.strokeRect(x2 + 2.5, y2 + 2.5, c - 5, c - 5); ctx.setLineDash([]); }
+  triPath(x, y, c, r.a); ctx.strokeStyle = 'rgba(167,139,250,.35)'; ctx.lineWidth = 6; ctx.stroke(); ctx.strokeStyle = G; ctx.lineWidth = 2; ctx.stroke();
+}
+function agentPos() {
+  const [x1, y1] = cellC(ag.s);
+  if (!playing || effRate() > 20 || prevS === ag.s) return [x1, y1];
+  const [x0, y0] = cellC(prevS), f = Math.min(1, acc), e = f * f * (3 - 2 * f);
+  return [x0 + (x1 - x0) * e, y0 + (y1 - y0) * e];
+}
+function drawAgent() {
+  const c = L.cell;
+  if (detailed() && trail.length > 1) {
+    for (let k = 1; k < trail.length; k++) {
+      const [x0, y0] = cellC(trail[k - 1]), [x1, y1] = cellC(trail[k]);
+      ctx.strokeStyle = `rgba(233,236,250,${0.05 + 0.3 * k / trail.length})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+    }
+  }
+  for (const f of flashes) {
+    const t = (clock - f.t) / 0.7; if (t > 1) continue;
+    const [fx, fy] = cellC(f.i); ctx.strokeStyle = f.col; ctx.globalAlpha = 1 - t; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(fx, fy, c * (0.35 + 0.6 * t), 0, 7); ctx.stroke(); ctx.globalAlpha = 1;
+  }
+  const [ax, ay] = agentPos(), r = Math.max(5, c * 0.17);
+  ctx.fillStyle = 'rgba(233,236,250,.18)'; ctx.beginPath(); ctx.arc(ax, ay, r * 1.7, 0, 7); ctx.fill();
+  ctx.fillStyle = INK; ctx.strokeStyle = '#0c0e1a'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(ax, ay, r, 0, 7); ctx.fill(); ctx.stroke();
+}
+function drawCard() {
+  const { x, y, w, h } = L.td, r = ag.last, cp = L.compact, fs = cp ? 10.5 : 12.5, lh = fs * 1.5, mono = MONO;
+  ctx.fillStyle = 'rgba(12,14,30,.86)'; rr(x, y, w, h, 10); ctx.fill(); ctx.strokeStyle = 'rgba(190,200,255,.18)'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.font = `${fs}px ${mono}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  const x0 = x + 12, y0 = y + (h - 3 * lh) / 2 + lh / 2;
+  if (!r) { ctx.fillStyle = FAINT; ctx.fillText('Press Step or Play: every move writes one Q-update here.', x0, y + h / 2); return; }
+  const rc = r.r >= 0 ? A : B, ar = ARROW[r.a];
+  segs(x0, y0, [[cp ? `#${r.n}  ` : `LATEST UPDATE #${r.n}   `, FAINT], [`s ${xy(r.s)}  a ${ar}`, HL], [`  → s′ ${xy(r.s2)}  `, DIM], [`r ${fr(r.r)}`, rc]]);
+  const l1 = r.done
+    ? [['target = ', INK], ['r', rc], [' = ', INK], [fr(r.r), rc], [cp ? '  (episode ends)' : `   ${r.kind === 'goal' ? 'goal' : 'pit'}: episode ends, no future term`, FAINT]]
+    : [['target = ', INK], ...(cp ? [] : [['r', rc], [' + ', INK], ['γ', ACC], ['·max Q(s′,·) = ', INK]]), [fr(r.r), rc], [' + ', INK], [r.gamma.toFixed(2), ACC], [' × ', INK], [f3(r.maxNext), HL], [' = ', INK], [f3(r.target), INK]];
+  segs(x0, y0 + lh, l1);
+  const l2 = [[`Q(s,${ar})`, HL], [' ← ', INK], ...(cp ? [] : [['Q + α·δ = ', DIM]]), [f3(r.qOld), HL], [' + ', INK], [r.alpha.toFixed(2), INK], [' × ', INK], [f3(r.delta), G], [' = ', INK], [f3(r.qNew), HL]];
+  const ex = segs(x0, y0 + 2 * lh, l2);
+  if (!cp && ex + 120 < x + w) { ctx.fillStyle = G; ctx.fillText('δ = TD error', ex + 16, y0 + 2 * lh); }
+  if (!playing) {             // leader line while inspecting: card → the wedge that just changed
+    const [cx, cy] = cellXY(r.s), c = L.cell, tx = cx + c / 2 + ACT[r.a][0] * c * 0.34, ty = cy + c / 2 + ACT[r.a][1] * c * 0.34;
+    ctx.strokeStyle = 'rgba(167,139,250,.55)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(Math.max(x + 20, Math.min(x + w - 20, tx)), y); ctx.lineTo(tx, ty); ctx.stroke();
+    ctx.fillStyle = G; ctx.beginPath(); ctx.arc(tx, ty, 2.5, 0, 7); ctx.fill();
+  }
+}
+// corridor only: V(s) per square as bars, with the γ^(d−1)·R it should converge to as ticks
+function drawProfile() {
+  const { x, y, w, h } = L.pr; if (!h) return;
+  const c = L.cell, top = y + 30, base = y + h - 6, hh = base - top, sc = Math.max(1e-6, P.rGoal);
+  ctx.fillStyle = 'rgba(12,14,30,.6)'; rr(x - 6, y, w + 12, h, 10); ctx.fill();
+  ctx.font = `600 ${L.compact ? 10 : 11.5}px ${SANS}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = DIM;
+  ctx.fillText('V(s) = max Q per square', x + 4, y + 11); ctx.fillStyle = ACC; ctx.textAlign = 'right'; ctx.fillText('— target γ^(d−1)·R', x + w - 4, y + 11);
+  ctx.strokeStyle = 'rgba(190,200,255,.18)'; ctx.beginPath(); ctx.moveTo(x, base); ctx.lineTo(x + w, base); ctx.stroke();
+  ctx.textAlign = 'center';
+  for (let i = 0; i < world.w; i++) {
+    if (world.cells[i] !== EMPTY) continue;
+    const v = Math.max(0, vmax(ag.Q, i)), bx = x + i * c + c * 0.22, bw = c * 0.56, bh = Math.min(1, v / sc) * hh;
+    ctx.fillStyle = heat(v, 1, TBASE); ctx.fillRect(bx, base - bh, bw, bh);
+    if (dist[i] > 0) { const ty = base - Math.min(1, Math.pow(P.gamma, dist[i] - 1)) * hh; ctx.fillStyle = ACC; ctx.fillRect(bx - 2, ty - 1, bw + 4, 2); }
+    if (v > 0.005 && c >= 34) { ctx.fillStyle = INK; ctx.font = `${L.compact ? 9 : 10.5}px ${MONO}`; ctx.fillText(v.toFixed(2), bx + bw / 2, Math.max(top + 4, base - bh - 8)); }
+  }
+}
+function drawChart(k, title, vals, lo, hi, colOf, ref) {
+  const { x, y, w, h } = L.ch[k], small = h < 100, pad = small ? 6 : 10, top = small ? 18 : 26;
+  ctx.fillStyle = 'rgba(12,14,30,.6)'; rr(x, y, w, h, 10); ctx.fill(); ctx.strokeStyle = 'rgba(190,200,255,.10)'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.font = `600 ${small ? 10 : 11.5}px ${SANS}`; ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.fillStyle = DIM;
+  ctx.fillText(title, x + pad, y + top / 2 + 2);
+  const px = x + pad, py = y + top, pw = w - 2 * pad, ph = h - top - pad, Y = v => py + ph - Math.min(1, Math.max(0, (v - lo) / (hi - lo))) * ph;   // outliers pin to the edge
+  if (lo < 0 && hi > 0) { ctx.strokeStyle = 'rgba(190,200,255,.12)'; ctx.beginPath(); ctx.moveTo(px, Y(0)); ctx.lineTo(px + pw, Y(0)); ctx.stroke(); }
+  const N = Math.min(vals.length, 150), off = vals.length - N;
+  if (ref > 0) {
+    ctx.setLineDash([4, 4]); ctx.strokeStyle = ACC; ctx.beginPath(); ctx.moveTo(px, Y(ref)); ctx.lineTo(px + pw, Y(ref)); ctx.stroke(); ctx.setLineDash([]);
+    ctx.font = `${small ? 9 : 10.5}px ${SANS}`; const lw = ctx.measureText(`shortest ${ref}`).width + 8; ctx.fillStyle = 'rgba(12,14,30,.85)'; ctx.fillRect(px + pw - lw, Y(ref) - 14, lw, 13);
+    ctx.fillStyle = ACC; ctx.textAlign = 'right'; ctx.fillText(`shortest ${ref}`, px + pw - 3, Y(ref) - 7);
+  }
+  if (!N) { ctx.fillStyle = FAINT; ctx.textAlign = 'center'; ctx.fillText('no episodes yet', x + w / 2, py + ph / 2); return; }
+  const X = j => px + (N === 1 ? pw / 2 : j / (N - 1) * pw);
+  for (let j = 0; j < N; j++) { ctx.fillStyle = colOf(off + j); ctx.fillRect(X(j) - 1.2, Y(vals[off + j]) - 1.2, 2.4, 2.4); }
+  ctx.strokeStyle = INK; ctx.lineWidth = 1.6; ctx.beginPath();
+  for (let j = 0; j < N; j++) { let s = 0, m = 0; for (let q = Math.max(0, off + j - 9); q <= off + j; q++) { s += vals[q]; m++; } j ? ctx.lineTo(X(j), Y(s / m)) : ctx.moveTo(X(j), Y(s / m)); }
+  ctx.stroke();
+  ctx.textAlign = 'right'; ctx.fillStyle = INK; ctx.font = `600 ${small ? 10 : 12}px ${SANS}`;
+  const lastV = vals[vals.length - 1]; ctx.fillText(Number.isInteger(lastV) ? String(lastV) : fr(lastV), x + w - pad, y + top / 2 + 2);
+}
+function drawCharts() {
+  const hs = ag.hist, rets = hs.map(e => e.ret), steps = hs.map(e => e.steps);
+  const col = j => hs[j].kind === 'goal' ? A : hs[j].kind === 'pit' ? B : FAINT;
+  const lo = Math.min(P.rPit, -0.2, ...rets.slice(-150)), hi = Math.max(P.rGoal, 0.2, ...rets.slice(-150));
+  drawChart(0, L.compact ? 'Reward / episode' : 'Reward per episode', rets, lo - 0.05 * (hi - lo), hi + 0.08 * (hi - lo), col);
+  const sp = dist[world.start], sh = Math.max(10, sp * 1.6, ...steps.slice(-50)) * 1.08;   // scale to recent episodes so 17 vs 13 is visible
+  drawChart(1, L.compact ? 'Steps / episode' : 'Steps per episode', steps, 0, sh, () => DATA, sp);
+}
+function focusRect() {
+  if (!focus) return null;
+  if (focus.chart !== undefined) { const r = L.ch[focus.chart]; return { x: r.x - 4, y: r.y - 4, w: r.w + 8, h: r.h + 8 }; }
+  if (focus.agent) { const [x, y] = agentPos(), s = L.cell * 0.46; return { x: x - s, y: y - s, w: 2 * s, h: 2 * s }; }
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (const i of focus.cells) { const [x, y] = cellXY(i); x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x + L.cell); y1 = Math.max(y1, y + L.cell); }
+  return { x: x0 - 3, y: y0 - 3, w: x1 - x0 + 6, h: y1 - y0 + 6 };
+}
+function drawFocus() {
+  const r = focusRect(); if (!r) return;
+  const a = REDUCED ? 0.9 : 0.65 + 0.35 * Math.sin(clock * 4);
+  rr(r.x, r.y, r.w, r.h, 8); ctx.strokeStyle = `rgba(126,231,135,${0.18 * a})`; ctx.lineWidth = 7; ctx.stroke(); ctx.strokeStyle = `rgba(126,231,135,${a})`; ctx.lineWidth = 1.8; ctx.stroke();
+  const text = typeof focus.label === 'function' ? focus.label() : focus.label; if (!text) return;
+  ctx.font = `600 ${L.compact ? 11 : 12.5}px ${SANS}`;
+  const tw = ctx.measureText(text).width + 20, th = 26, blocked = [L.td, ...L.ch].filter(b => !(b.x >= r.x && b.y >= r.y && b.x + b.w <= r.x + r.w + 1 && b.y + b.h <= r.y + r.h + 1));
+  for (let i = 0; i < world.cells.length; i++) if (world.cells[i] === GOAL || i === world.start) { const [x, y] = cellXY(i); blocked.push({ x, y, w: L.cell, h: L.cell }); }   // never hide the goal or S
+  const capB = Math.max(84, $('#caption').getBoundingClientRect().bottom - stage.getBoundingClientRect().top + 6);
+  const hit = (x, y) => y < capB || y + th > H - 70 || blocked.some(b => x < b.x + b.w && x + tw > b.x && y < b.y + b.h && y + th > b.y);
+  const cl = x => Math.max(16, Math.min(W - 16 - tw, x)), xs = [cl(r.x + r.w / 2 - tw / 2), cl(r.x + r.w - tw), cl(r.x)];
+  let lx = 0, ly = 0, ok = false;
+  for (const y of [r.y - th - 14, r.y + r.h + 14]) { for (const x of xs) if (!hit(x, y)) { lx = x; ly = y; ok = true; break; } if (ok) break; }
+  if (!ok) return;
+  const above = ly < r.y;
+  ctx.strokeStyle = ACC; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(Math.max(lx + 12, Math.min(lx + tw - 12, r.x + r.w / 2)), above ? ly + th : ly); ctx.lineTo(r.x + r.w / 2, above ? r.y : r.y + r.h); ctx.stroke();
+  ctx.fillStyle = 'rgba(12,14,30,.92)'; rr(lx, ly, tw, th, 13); ctx.fill(); ctx.strokeStyle = 'rgba(126,231,135,.6)'; ctx.stroke();
+  ctx.fillStyle = INK; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(text, lx + 10, ly + th / 2 + 0.5);
+}
+function drawHover() {
+  if (hover < 0 || drag || world.cells[hover] !== EMPTY) return;
+  const Q = ag.Q, b = hover * 4, g = greedy(Q, hover), [x, y] = cellXY(hover), c = L.cell, bw = 150, bh = 104;
+  ctx.strokeStyle = 'rgba(233,236,250,.7)'; ctx.lineWidth = 1.5; ctx.strokeRect(x + 1.5, y + 1.5, c - 3, c - 3);
+  const right = W >= 640 ? L.ch[0].x - 8 : W - 8;          // keep clear of the chart column
+  let bx = x + c + 8; if (bx + bw > right) bx = Math.max(8, x - bw - 8); const by = Math.max(88, Math.min(H - 74 - bh, y + c / 2 - bh / 2));
+  ctx.fillStyle = 'rgba(12,14,30,.94)'; rr(bx, by, bw, bh, 9); ctx.fill(); ctx.strokeStyle = 'rgba(190,200,255,.25)'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.font = `11px ${MONO}`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = DIM; ctx.fillText(`square ${xy(hover)}  d=${dist[hover] < 0 ? '∞' : dist[hover]}`, bx + 10, by + 14);
+  for (let a = 0; a < 4; a++) { ctx.fillStyle = a === g && Q[b + a] ? HL : DATA; ctx.fillText(`Q(s,${ARROW[a]}) ${f3(Q[b + a]).padStart(7)}`, bx + 10, by + 34 + a * 17); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  if (!L) layout();
+  drawGrid(); drawLastUpdate(); drawAgent(); drawProfile(); drawCharts(); drawCard(); drawFocus(); drawHover();
+}
+
+/* ===== loop ===== */
+function frame(dt, realDt) {
+  clock += realDt; frameN++;
+  if (dt > 0) {
+    acc += dt * rate; let n = 0;
+    while (acc >= 1 && n < 5000) { acc -= 1; onStep(learnStep(ag)); n++; }
+    if (n >= 5000) acc = 0;
+  }
+  if (frameN % 6 === 0) {
+    const e = $('#cE'); if (e && Math.abs(+e.value - P.eps) > 0.004) { e.value = P.eps; $('#cEo').textContent = P.eps.toFixed(2); }
+    const last = ag.hist[ag.hist.length - 1], sp = dist[world.start];
+    setText('sEp', String(ag.episode)); setText('sEps', P.eps.toFixed(2)); setText('sSteps', `${last ? last.steps : '–'} · ${sp > 0 ? sp : '—'}`);
+    const r = ag.last;
+    if (r) {
+      setText('mNew', f3(r.qNew)); setText('mOld', f3(r.qOld)); setText('mOld2', f3(r.qOld)); setText('mA', r.alpha.toFixed(2)); setText('mR', fr(r.r));
+      setText('mG', r.gamma.toFixed(2)); setText('mMax', r.done ? '0 (end)' : f3(r.maxNext)); setText('mErr', f3(r.delta)); setText('mSA', `s=${xy(r.s)}, a=${ARROW[r.a]}`);
+    }
+    setText('mEps', P.eps.toFixed(2));
+    const d = dist[world.start]; setText('mD', d > 0 ? String(d) : '—'); setText('mPred', d > 0 ? f3(Math.pow(P.gamma, d - 1) * P.rGoal) : '—'); setText('mV', f3(vmax(ag.Q, world.start)));
+  }
+  draw();
+}
+
+/* ===== direct manipulation: tap = cycle square, drag S = move start, drag = paint ===== */
+function ptr(e) { const b = cv.getBoundingClientRect(); return [e.clientX - b.left, e.clientY - b.top]; }
+cv.addEventListener('pointerdown', e => {
+  const i = cellAt(...ptr(e)); if (i < 0) return;
+  try { cv.setPointerCapture(e.pointerId); } catch (_) { /* synthetic events */ }
+  focus = null;
+  if (i === world.start) { drag = { mode: 'start' }; cv.style.cursor = 'grabbing'; return; }
+  const t = (world.cells[i] + 1) % 4; setCell(i, t); drag = { mode: 'paint', t, last: i };
+});
+cv.addEventListener('pointermove', e => {
+  const i = cellAt(...ptr(e)); hover = e.pointerType === 'mouse' ? i : -1;
+  if (drag && i >= 0) {
+    if (drag.mode === 'start' && i !== world.start) moveStart(i);
+    else if (drag.mode === 'paint' && i !== drag.last && i !== world.start) { setCell(i, drag.t); drag.last = i; }
+  }
+  cv.style.cursor = drag ? (drag.mode === 'start' ? 'grabbing' : 'crosshair') : i === world.start ? 'grab' : i >= 0 ? 'pointer' : 'default';
+});
+const endDrag = () => { drag = null; };
+cv.addEventListener('pointerup', endDrag); cv.addEventListener('pointercancel', endDrag);
+cv.addEventListener('pointerleave', () => { hover = -1; });
+$('#bStep').onclick = () => { setPlaying(false); onStep(learnStep(ag)); };
+$('#bReset').onclick = () => { P.eps = eps0; newAgent(seed + 1); focus = null; };
+
+/* ===== controls pane ===== */
+(function buildControls() {
+  const p = $('#p-play'), h = (t, s) => { const e = document.createElement(t); e.innerHTML = s; p.appendChild(e); };
+  h('h3', 'World');
+  UI.world = (() => { const s = seg(p, [['room', 'Room'], ['cliff', 'Cliff'], ['corridor', 'Corridor']], 'room', v => { if (!UI.ready) return; loadWorld(v); newAgent(seed); focus = null; }); return { set: (v, quiet) => { UI.ready = !quiet; s.set(v); UI.ready = true; } }; })();
+  h('p', '<b>Tap</b> a square to cycle empty → wall → pit → goal. <b>Drag across</b> squares to paint. <b>Drag S</b> to move the start. The agent keeps its Q-table, so you can watch it re-learn.');
+  h('h3', 'Learning');
+  UI.alpha = slider(p, 'cA', 'α learning rate — how far each update moves Q toward its target', 0.05, 1, 0.05, P.alpha, v => v.toFixed(2), v => P.alpha = v);
+  UI.gamma = slider(p, 'cG', 'γ discount — what a reward one step later is worth now', 0.5, 0.99, 0.01, P.gamma, v => v.toFixed(2), v => P.gamma = v);
+  UI.eps = slider(p, 'cE', 'ε exploration — chance of a random move instead of the best one', 0, 1, 0.01, P.eps, v => v.toFixed(2), v => { P.eps = v; eps0 = v; });
+  h('p', 'ε decay after each episode:');
+  UI.decay = seg(p, [[1, 'off'], [0.99, '×0.99 slow'], [0.95, '×0.95 fast']], 0.95, v => P.decay = v);
+  h('h3', 'Rewards');
+  UI.rGoal = slider(p, 'cRg', 'Reaching the goal', 0.2, 2, 0.1, P.rGoal, v => fr(v), v => P.rGoal = v);
+  UI.rPit = slider(p, 'cRp', 'Falling in a pit', -2, 0, 0.1, P.rPit, v => fr(v), v => P.rPit = v);
+  UI.rStep = slider(p, 'cRs', 'Every move (a small cost makes short paths better)', -0.1, 0, 0.01, P.rStep, v => fr(v), v => P.rStep = v);
+  h('h3', 'Floor');
+  UI.slip = seg(p, [[0, 'solid'], [0.2, 'slippery: 20% of moves slide sideways']], 0, v => P.slip = v);
+  h('h3', 'Speed & fast-forward');
+  UI.rate = seg(p, [[4, '4 moves/s'], [12, '12'], [25, '25'], [60, '60'], [400, '400'], [4000, 'warp']], 25, v => { rate = v; acc = 0; });
+  const row = document.createElement('div'); row.className = 'row'; row.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap';
+  [['+10 episodes', 10], ['+100 episodes', 100], ['+1000 episodes', 1000]].forEach(([t, n]) => { const b = document.createElement('button'); b.className = 'btn'; b.textContent = t; b.onclick = () => { train(ag, n); prevS = ag.s; trail = []; }; row.appendChild(b); });
+  p.appendChild(row);
+  UI.ready = true;
+})();
+stat('sEp', 'Episode'); stat('sEps', 'Explore rate'); stat('sSteps', 'Steps · best');
+
+/* ===== guided tour ===== */
+const startCell = () => world.start;
+const STEPS = [
+  { t: 'Value seeps back from the goal', d: 'Each square\'s <b>glow</b> is its best Q-value: how much reward the agent now expects from there. The four <b>wedges</b> are the values of the four moves; <b style="color:var(--hl)">amber arrows</b> are the move it currently rates best.',
+    cap: 'Started knowing nothing. The <b>coral glow</b> is expected reward, seeping back from the goal. Tap squares to edit.',
+    go() { configure({ pre: 30, rate: 25 }); } },
+  { t: 'Exploring at random', d: 'With a blank Q-table and <b>ε = 1</b> every move is a coin toss. Each move costs −0.01, so squares it wanders through tint faintly <b style="color:var(--b)">teal</b>: "been here, nothing good yet".',
+    cap: 'Blank slate, <b>ε = 1</b>: every move is random. Each step costs −0.01 (the faint teal).',
+    go() { configure({ eps: 1, decay: 1, rate: 12, focus: { agent: true, label: 'agent: moving at random' } }); } },
+  { t: 'Stumbling onto the goal', d: 'Only the <b>one move</b> that entered the goal gets credit: its Q jumps by α·(1 − 0). Nothing else knows yet. Read the update in the card, then press <b>Step</b> to see the next ones.',
+    cap: 'Found it! Only the <b>last move</b> gets credit so far. Read its update in the card, then press <b>Step</b>.',
+    go() {
+      configure({ eps: 1, decay: 1, rate: 4 });
+      for (let n = 0; n < 2e5; n++) { const r = learnStep(ag); if (r.end && r.end.kind === 'goal') break; }
+      prevS = ag.s; setPlaying(false);
+      const r = ag.last; focus = { cells: [r.s], label: () => `only this move has value: Q(s,${ARROW[r.a]}) = ${f3(ag.Q[r.s * 4 + r.a])}` };
+    } },
+  { t: 'One square per visit', d: 'A square gains value only when the agent moves from it into a square that <b>already has value</b>: the max Q(s′,·) term passes it back like a relay. Here the agent moves completely at random, yet the arrows all end up pointing right. Q-learning learns the best policy from any behaviour (<b>off-policy</b>).',
+    cap: 'Value creeps back <b>one square per visit</b>. The moves are random, yet every arrow ends up right.',
+    go() { configure({ world: 'corridor', eps: 1, decay: 1, rStep: 0, rate: 60 }); } },
+  { t: 'γ: every step away costs a factor γ', d: 'Once learning has settled (step cost 0), a square <b>d moves</b> from the goal is worth exactly <b>γ<sup>d−1</sup>·R</b>. Change γ in Controls and watch the glow stretch (γ→1) or shrink (γ→0.5).',
+    cap: 'Converged: a square d moves away is worth <b>γ<sup>d−1</sup>·R</b>. Closer to the goal = brighter.',
+    go() { configure({ eps: 1, decay: 1, rStep: 0, pre: 3000, epsAfter: 0.1, rate: 12, focus: { cells: [startCell()], label: () => { const d = dist[world.start]; return `${d} moves away: γ${sup(d - 1)}·R = ${f3(Math.pow(P.gamma, d - 1) * P.rGoal)}   learned V = ${f3(vmax(ag.Q, world.start))}`; } } }); } },
+  { t: 'ε: explore first, exploit later', d: 'ε starts at 1 (pure exploring) and decays ×0.95 each episode. As the agent trusts its Q-table more, <b>steps per episode</b> fall toward the dashed shortest-path line, and reward per episode climbs.',
+    cap: 'ε decays from 1 to 0.05, so <b>steps per episode</b> fall to the dashed shortest-path line.',
+    go() { configure({ eps: 1, decay: 0.95, rate: 400, focus: { chart: 1, label: 'steps fall toward the shortest path' } }); } },
+  { t: 'Cliffs: optimal is not safe', d: 'Q-learning learns the value of the <b>best path assuming every later move is the best one</b>: right along the cliff edge. But the agent still explores 10% of the time, so it keeps falling in (teal dots in the reward chart). Also a limit: one table cell per square does not scale. Real problems swap the table for a neural net (DQN).',
+    cap: 'The learned path <b>hugs the cliff</b>: shortest, but at ε = 0.1 about one episode in five ends in a pit.',
+    go() { configure({ world: 'cliff', eps: 0.1, decay: 1, pre: 400, rate: 12, focus: { cells: [31, 32, 33, 34, 35, 36, 37, 38], label: 'greedy path: one slip from the pits' } }); } },
+];
+const cap = html => { $('#caption').innerHTML = html; };
+const TRIES = [
+  { q: 'Predict: with <b>ε = 0</b> (never explore on purpose), does it still end up on the 13-move shortest route?',
+    run() { configure({ eps: 0, decay: 1, rStep: 0, pre: 120, rate: 25, seed: 37, focus: { chart: 1, label: 'does it reach the dashed line?' } }); cap('Experiment: <b>ε = 0</b>, pure greedy, 120 episodes in. Count its moves: is this the shortest route?'); },
+    why: 'Not here: it locked onto a <b>17-move</b> route by episode 45 and never improves (steps flatline above the dashed line). With ε = 0, once a square has one move with positive Q, greedy takes it forever; its other moves stay at 0, never tried, never corrected. So whichever route first carried value back gets locked in. With other seeds that happens to be the shortest one, but that is luck, not learning. Exploration is how better routes are found.' },
+  { q: 'Predict: make the cliff <b>slippery</b> (20% of moves slide sideways). Does the learned path still hug the edge?',
+    run() { configure({ world: 'cliff', alpha: 0.2, slip: 0.2, eps: 0.1, decay: 1, pre: 2500, rate: 12, focus: { cells: [20, 21, 22, 23, 24, 25, 26, 27, 28, 29], label: 'the new path keeps one row of margin' } }); cap('Experiment: a <b>slippery</b> cliff. Where do the arrows next to the pits point now?'); },
+    why: 'No, it moves one row up. Q(s,a) is an <b>expected</b> return: on the edge, a 10% chance of sliding into a −1 pit outweighs the two extra moves of the detour. Same algorithm, different world, different optimum. (α is lowered to 0.2 because noisy outcomes need averaging.)' },
+  { q: 'Predict: after it has learned, the goal <b>moves</b> to the top-left corner. Will the agent head straight there?',
+    run() {
+      configure({ pre: 300, rate: 60 });
+      setCell(8, EMPTY); setCell(0, GOAL); P.eps = 0.1;
+      focus = { cells: [8], label: 'stale value: the goal is no longer here' };
+      cap('Experiment: the goal <b>moved</b> to the top-left corner. Where does the agent go?');
+    },
+    why: 'No. It marches to where the goal <b>used to be</b>. Q-learning is <b>model-free</b>: it has no map, only cached numbers, and they change only when it re-experiences them. The stale glow fades visit by visit, steps spike, and the new goal has to be found by exploring.' },
+];
+
+booted = true; layout();
+renderSteps(); renderTries(); goStep(0); requestAnimationFrame(loop);
+window.__demo = { goStep, setPlaying, state: () => ({ world: worldName, episode: ag.episode, eps: P.eps, total: ag.total, shortest: dist[world.start], last: ag.last, playing }) };
 </script>
 </body>
+</html>

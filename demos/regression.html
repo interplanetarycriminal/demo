@@ -3,179 +3,766 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Least Squares Lab — Live Regression</title>
+<title>Least Squares — ML Field Notes</title>
 <style>
-html,body{margin:0;height:100%;overflow:hidden;background:#05010f}
-canvas{touch-action:none;display:block;position:fixed;inset:0;cursor:crosshair}
-#ui{position:fixed;top:12px;left:12px;z-index:10;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;color:#cfe9ff;background:rgba(5,8,22,.74);border:1px solid rgba(80,220,255,.25);border-radius:10px;padding:10px 14px;max-width:360px;max-height:52vh;overflow:auto}
-#ui h1{margin:0 0 2px;font-size:14px;color:#59ffc8;text-shadow:0 0 8px #0f8}
-#ui .ex{color:#9fb4d8}
-#ui .hint{color:#6ee7a0;margin-top:4px}
-#ui a{color:#ff7ad9;text-decoration:none}
-#stats{margin-top:6px;color:#e8f6ff;white-space:pre-wrap}
-@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
+/* ===== ML Field Notes design system (shared by every ML/AI demo) =====
+   Colour means the same thing in every demo:
+   --a coral = class A / "positive"     --b teal = class B / "negative"
+   --hl amber = the model's current parameters / guess / selection
+   --grad violet = gradients, updates, errors flowing back
+   --accent = this demo's signature colour (set per demo) */
+:root{
+  --bg:#0c0e1a; --bg2:#10132a; --panel:#13162c; --panel2:#181c38; --line:rgba(190,200,255,.10); --line2:rgba(190,200,255,.18);
+  --ink:#e9ecfa; --dim:#a2a9c8; --faint:#6b7396;
+  --a:#ff7a6b; --b:#3fd0c0; --hl:#ffc857; --grad:#a78bfa; --good:#7ee787; --bad:#ff6b8a;
+  --accent:#5ab8ff;
+  --r:12px; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.5 var(--sans)}
+body{overflow:hidden}
+a{color:var(--accent)}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app{display:grid;grid-template-columns:minmax(0,1fr) 380px;grid-template-rows:48px minmax(0,1fr);height:100vh;height:100dvh}
+.top{grid-column:1/-1;display:flex;align-items:center;gap:12px;padding:0 14px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#11142a,#0d1020)}
+.top a.back{color:var(--dim);text-decoration:none;font-size:13px;white-space:nowrap}
+.top a.back:hover{color:var(--ink)}
+.top .chip{font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 45%,transparent);border-radius:99px;padding:5px 8px}
+.top h1{margin:0;font-size:15px;font-weight:650;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top .sp{flex:1}
+.top .keys{font:11px var(--mono);color:var(--faint);white-space:nowrap}
+.stage{position:relative;min-width:0;min-height:0;background:radial-gradient(ellipse at 50% 40%,#151a3a 0%,var(--bg) 70%)}
+.stage::before{content:"";position:absolute;inset:0;background-image:radial-gradient(rgba(190,200,255,.07) 1px,transparent 1.3px);background-size:24px 24px;pointer-events:none}
+.stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.caption{position:absolute;left:16px;right:16px;top:14px;max-width:640px;padding:10px 14px;border-radius:10px;background:rgba(12,14,30,.78);border:1px solid var(--line2);backdrop-filter:blur(6px);font-size:14px;line-height:1.45;pointer-events:none;transition:opacity .3s}
+.caption b{color:var(--accent)}
+.caption:empty{opacity:0}
+.dock{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;gap:6px;padding:6px;border-radius:99px;background:rgba(12,14,30,.82);border:1px solid var(--line2);backdrop-filter:blur(6px)}
+.dock button{border:0;background:transparent;border-radius:99px;min-width:36px;height:34px;padding:0 12px;cursor:pointer;color:var(--ink);white-space:nowrap}
+.dock button:hover{background:rgba(255,255,255,.08)}
+.dock button.on{background:color-mix(in srgb,var(--accent) 22%,transparent);color:var(--accent)}
+.lesson{border-left:1px solid var(--line);background:var(--panel);overflow:auto;min-height:0;display:flex;flex-direction:column}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border-bottom:1px solid var(--line)}
+.stat{background:var(--panel);padding:10px 12px}
+.stat .k{font:600 10px/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.stat .v{font:600 18px/1.3 var(--mono);font-variant-numeric:tabular-nums;margin-top:3px}
+.tabs{display:flex;gap:2px;padding:10px 12px 0;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);z-index:2}
+.tabs button{border:0;background:none;padding:9px 12px;color:var(--dim);cursor:pointer;border-bottom:2px solid transparent;font-weight:600}
+.tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent)}
+.pane{padding:14px 16px 22px;display:none}
+.pane.on{display:block}
+.pane h3{margin:14px 0 6px;font-size:13px;letter-spacing:.02em}
+.pane p{margin:0 0 10px;color:var(--dim)}
+.pane p b,.pane li b{color:var(--ink)}
+.lede{font-size:15px;color:var(--ink)!important}
+.steps{list-style:none;margin:10px 0 0;padding:0;counter-reset:s}
+.steps li{counter-increment:s;border:1px solid var(--line);border-radius:10px;margin:0 0 8px;padding:10px 12px 10px 40px;position:relative;cursor:pointer;color:var(--dim);background:var(--panel2)}
+.steps li::before{content:counter(s);position:absolute;left:12px;top:10px;width:18px;height:18px;border-radius:99px;display:grid;place-items:center;font:600 11px var(--mono);background:rgba(255,255,255,.07);color:var(--dim)}
+.steps li.on{border-color:color-mix(in srgb,var(--accent) 60%,transparent);color:var(--ink)}
+.steps li.on::before{background:var(--accent);color:#141414}
+.steps li.done::before{content:"✓";background:rgba(126,231,135,.2);color:var(--good)}
+.steps li .t{font-weight:650;color:var(--ink);display:block}
+.steps li .d{display:none;margin-top:4px}
+.steps li.on .d{display:block}
+.tournav{display:flex;gap:8px;margin-top:6px}
+.btn{border:1px solid var(--line2);background:var(--panel2);border-radius:9px;padding:7px 12px;cursor:pointer;color:var(--ink)}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:#15131a;border-color:transparent;font-weight:650}
+.card{border:1px solid var(--line);border-radius:12px;padding:12px;margin:0 0 10px;background:var(--panel2)}
+.card .q{color:var(--ink);font-weight:600;margin-bottom:8px}
+.card .why{display:none;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line2);color:var(--dim)}
+.card.revealed .why{display:block}
+.card .row{display:flex;gap:8px;flex-wrap:wrap}
+.eq{font:14px/1.7 var(--mono);background:#0e1124;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:6px 0 12px;overflow-x:auto;white-space:nowrap}
+.eq .c-a{color:var(--a)} .eq .c-b{color:var(--b)} .eq .c-hl{color:var(--hl)} .eq .c-g{color:var(--grad)} .eq .c-acc{color:var(--accent)} .eq .c-ok{color:var(--good)}
+.live{font-variant-numeric:tabular-nums;color:var(--hl)}
+.ctrl{display:grid;grid-template-columns:1fr auto;gap:4px 10px;align-items:center;margin:10px 0}
+.ctrl label{color:var(--dim);font-size:13px}
+.ctrl output{font:12px var(--mono);color:var(--ink);font-variant-numeric:tabular-nums}
+.ctrl input[type=range]{grid-column:1/-1;width:100%;accent-color:var(--accent)}
+.seg{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 10px}
+.seg button{border:1px solid var(--line2);background:transparent;border-radius:99px;padding:5px 11px;cursor:pointer;color:var(--dim);font-size:13px}
+.seg button[aria-pressed=true]{background:color-mix(in srgb,var(--accent) 20%,transparent);color:var(--ink);border-color:color-mix(in srgb,var(--accent) 55%,transparent)}
+.note{border-left:3px solid var(--grad);padding:6px 10px;margin:8px 0 12px;color:var(--dim);background:rgba(167,139,250,.06);border-radius:0 8px 8px 0}
+.wild li{margin-bottom:6px;color:var(--dim)}
+@media (max-width:880px){
+  body{overflow:auto}
+  .app{grid-template-columns:1fr;grid-template-rows:48px 58vh auto;height:auto}
+  .stage{height:58vh}
+  .lesson{border-left:0;border-top:1px solid var(--line)}
+  .top .keys{display:none}
+  .caption{font-size:13px;top:10px;left:10px;right:10px}
+  .stats{grid-template-columns:repeat(3,1fr)}
+  .stat .v{font-size:15px}
+}
+@media (prefers-reduced-motion:reduce){.caption{transition:none}}
 </style>
 </head>
 <body>
-<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
-<div id="ui">
-<h1>◢ Least Squares Lab</h1>
-<div class="ex">Click to drop data points and watch gradient descent fit a polynomial live by shrinking the sum of squared residuals (red segments &amp; boxes).</div>
-<div class="hint">click: add point · P: degree 1-7 · D: preset data · C: clear · B: error boxes</div>
-<div id="stats"></div>
-<div style="margin-top:4px"><a href="index.html">← gallery</a></div>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace;max-width:100vw;white-space:pre-wrap';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div class="app">
+  <header class="top">
+    <a class="back" href="index.html">← Gallery</a>
+    <span class="chip">ML / AI</span>
+    <h1>Least Squares</h1>
+    <span class="sp"></span>
+    <span class="keys">Space play · ←/→ tour · R reset</span>
+  </header>
+  <section class="stage" id="stage">
+    <canvas id="c" role="img" aria-label="Scatter plot with a fitted line; each residual is drawn as a square whose area is its squared error. Beside it, a contour map of the loss over slope and intercept shows gradient descent walking to the closed-form solution."></canvas>
+    <div class="caption" id="caption" aria-live="polite"></div>
+    <div class="dock" role="group" aria-label="Simulation controls">
+      <button id="bPlay" class="on" aria-label="Pause">❚❚</button>
+      <button id="bStep" aria-label="Step once">Step</button>
+      <button id="bReset" aria-label="Reset">Reset</button>
+      <button id="bSpeed" aria-label="Speed">1×</button>
+    </div>
+  </section>
+  <aside class="lesson">
+    <div class="stats" id="stats"><!-- 3 stat tiles: .stat > .k + .v#id --></div>
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-tab="learn">Learn</button>
+      <button role="tab" aria-selected="false" data-tab="try">Try this</button>
+      <button role="tab" aria-selected="false" data-tab="math">The math</button>
+      <button role="tab" aria-selected="false" data-tab="play">Controls</button>
+    </div>
+    <div class="pane on" id="p-learn">
+      <p class="lede">Least squares picks the line whose error squares, one built on each point’s vertical miss, add up to the smallest total area.</p>
+      <ol class="steps" id="steps"></ol>
+      <div class="tournav"><button class="btn" id="tPrev">← Back</button><button class="btn primary" id="tNext">Next step →</button></div>
+      <h3>In the wild</h3>
+      <ul class="wild"><li><b>Every regression head</b>: price and demand forecasts, the value head of an RL agent, and reward models all train on squared error.</li><li><b>Diffusion models</b> (image and video generators) learn by least squares: predict the added noise ε and minimise ‖ε − ε̂‖².</li><li><b>GPS and sensor fusion</b>: your phone solves a least-squares problem to find where it is, and a Kalman filter is recursive least squares with a motion model. Object detectors switch to smooth-L1 for box regression so outliers can’t take over.</li></ul>
+    </div>
+    <div class="pane" id="p-try"><!-- .card experiments: predict → run → why --></div>
+    <div class="pane" id="p-math">
+      <p>Colours match the stage: <span style="color:var(--hl)">amber</span> = the model’s weights, <span style="color:var(--grad)">violet</span> = residuals and gradients, <span style="color:var(--good)">green</span> = the exact solution.</p>
+      <h3>1 · Residual — the vertical miss</h3>
+      <div class="eq"><span class="c-g">r<sub>i</sub></span> = y<sub>i</sub> − <span class="c-hl">ŷ</span>(x<sub>i</sub>)<br><span class="c-hl">ŷ</span>(x) = <span class="live" id="mPoly">…</span></div>
+      <h3>2 · Loss = mean square area</h3>
+      <div class="eq">L(<span class="c-hl">w</span>) = <sup>1</sup>⁄<sub>n</sub> Σ <span class="c-g">r<sub>i</sub>²</span> = <span class="live" id="mSse">…</span> ⁄ <span id="mN">n</span> = <span class="live" id="mLoss">…</span></div>
+      <h3>3 · Gradient descent</h3>
+      <div class="eq"><span class="c-g">∂L/∂w₀</span> = −<sup>2</sup>⁄<sub>n</sub> Σ <span class="c-g">r<sub>i</sub></span> = <span class="live" id="mG0">…</span><br><span class="c-g">∂L/∂w₁</span> = −<sup>2</sup>⁄<sub>n</sub> Σ <span class="c-g">r<sub>i</sub></span>x<sub>i</sub> = <span class="live" id="mG1">…</span><br><span class="c-hl">w</span> ← <span class="c-hl">w</span> − <span class="c-acc">η</span> <span class="c-g">∇L</span>,&nbsp; <span class="c-acc">η</span> = <span class="live" id="mLr">…</span></div>
+      <p>Stable only if <span class="c-acc">η</span> &lt; 2/λ<sub>max</sub>, where λ<sub>max</sub> is the bowl’s steepest curvature (the largest eigenvalue of <sup>2</sup>⁄<sub>n</sub>XᵀX).</p>
+      <h3>4 · Closed form — the normal equations</h3>
+      <div class="eq">∇L = 0 &nbsp;⇒&nbsp; (XᵀX) <span class="c-ok">w*</span> = Xᵀy<br><span class="c-ok">w*</span> = (<span class="live" id="mStar">…</span>)</div>
+      <p>X has one row per point, [1, x<sub>i</sub>, x<sub>i</sub>², …]. The gradient is linear in w, so setting it to zero is one linear solve — the ★.</p>
+      <h3>5 · Absolute loss (L1)</h3>
+      <div class="eq">L₁ = <sup>1</sup>⁄<sub>n</sub> Σ |<span class="c-g">r<sub>i</sub></span>| = <span class="live" id="mL1">…</span><br>∂L₁/∂w<sub>j</sub> = −<sup>1</sup>⁄<sub>n</sub> Σ sign(<span class="c-g">r<sub>i</sub></span>) x<sub>i</sub><sup>j</sup><br>L1 optimum ◆ = (<span class="live" id="mL1opt">…</span>)</div>
+      <p>sign(r) means every point pulls with the same force however far away it is, which is why one outlier can’t take over. There is no closed form, so the ◆ here is found by iteratively re-weighted least squares, polished to the exact corner of the kinked bowl (an L1 fit passes through d+1 of the points), and the amber dot uses sub-gradient steps that shrink over time.</p>
+      <div class="note"><b>Least squares uses vertical gaps, not perpendicular distance.</b> Swap the roles of x and y and you get a different line. The line nearest in perpendicular distance is <i>total</i> least squares, which is PCA.</div>
+      <div class="note"><b>Squaring isn’t arbitrary.</b> If the noise is Gaussian, minimising Σr² is exactly maximum likelihood, and it gives the bowl a single smooth bottom. It is also why a 3× miss costs 9× — the outlier problem.</div>
+    </div>
+    <div class="pane" id="p-play"></div>
+  </aside>
 </div>
-<canvas id="c"></canvas>
 <script>
 'use strict';
-const cv=document.getElementById('c'),ctx=cv.getContext('2d'),statsEl=document.getElementById('stats');
-let W=0,H=0,DPR=1,time=0,frame=0;
-let PX0=60,PX1=600,PY0=70,PY1=400;
-let pts=[],D=1,w=[],vel=[],mse=0,hist=[],boxes=true,presetIdx=0,presetName='linear';
-const SUP=['','','²','³','⁴','⁵','⁶','⁷'];
-const PRESETS=['linear','curved','outlier'];
-function resize(){
-  DPR=Math.min(window.devicePixelRatio||1,2);W=innerWidth;H=innerHeight;
-  cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);
-  cv.style.width=W+'px';cv.style.height=H+'px';
-  ctx.setTransform(DPR,0,0,DPR,0,0);
-  PX0=Math.max(56,W*0.06);PX1=W-Math.max(40,W*0.05);
-  PY0=Math.max(70,H*0.10);PY1=H-Math.max(56,H*0.09);
+/* ===== shell helpers (keep) ===== */
+const $ = s => document.querySelector(s);
+const cv = $('#c'), ctx = cv.getContext('2d'), stage = $('#stage');
+let W = 0, H = 0, DPR = 1;
+function resize() {
+  const r = stage.getBoundingClientRect(); DPR = Math.min(2, devicePixelRatio || 1);
+  W = Math.max(1, r.width); H = Math.max(1, r.height);
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR); ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  if (typeof onResize === 'function') onResize();
 }
-const w2x=x=>PX0+(x+1)/2*(PX1-PX0),w2y=y=>PY1-(y+1)/2*(PY1-PY0);
-const x2w=px=>(px-PX0)/(PX1-PX0)*2-1,y2w=py=>(PY1-py)/(PY1-PY0)*2-1;
-function resetFit(){w=new Array(D+1).fill(0);vel=new Array(D+1).fill(0);hist=[];mse=0;}
-function predict(x){let v=0;for(let j=D;j>=0;j--)v=v*x+w[j];return v;}
-const pw_=new Array(8);
-function stepFit(iters){
-  const n=pts.length;if(!n)return;
-  const lr=0.7/(D+1);
-  for(let it=0;it<iters;it++){
-    const g=new Array(D+1).fill(0);let L=0;
-    for(const p of pts){
-      let pred=0,xp=1;
-      for(let j=0;j<=D;j++){pw_[j]=xp;pred+=w[j]*xp;xp*=p.x;}
-      const e=pred-p.y;L+=e*e;
-      for(let j=0;j<=D;j++)g[j]+=2*e*pw_[j];
-    }
-    L/=n;
-    for(let j=0;j<=D;j++){g[j]/=n;vel[j]=0.9*vel[j]-lr*g[j];w[j]+=vel[j];}
-    mse=L;
-  }
-  if(!isFinite(mse))resetFit();
+new ResizeObserver(resize).observe(stage); resize();
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+// tabs
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', x === b));
+  document.querySelectorAll('.pane').forEach(p => p.classList.toggle('on', p.id === 'p-' + b.dataset.tab));
+});
+// playback
+let playing = !REDUCED, speed = 1;
+const SPEEDS = [0.25, 0.5, 1, 2, 4];
+function setPlaying(v) { playing = v; $('#bPlay').textContent = v ? '❚❚' : '▶'; $('#bPlay').classList.toggle('on', v); $('#bPlay').setAttribute('aria-label', v ? 'Pause' : 'Play'); }
+$('#bPlay').onclick = () => setPlaying(!playing);
+$('#bSpeed').onclick = () => { speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]; $('#bSpeed').textContent = speed + '×'; };
+// tour: STEPS = [{t:'title', d:'html', cap:'stage caption html', go(){ /* set demo state */ }}]
+let tour = 0;
+function renderSteps() {
+  const ol = $('#steps'); ol.innerHTML = '';
+  STEPS.forEach((s, i) => { const li = document.createElement('li'); li.className = (i === tour ? 'on' : '') + (i < tour ? ' done' : ''); li.innerHTML = `<span class="t">${s.t}</span><span class="d">${s.d}</span>`; li.onclick = () => goStep(i); ol.appendChild(li); });
+  $('#tPrev').disabled = tour === 0; $('#tNext').textContent = tour === STEPS.length - 1 ? 'Start over ↺' : 'Next step →';
 }
-function loadPreset(k){
-  pts=[];const N=15,rnd=()=>(Math.random()*2-1);
-  for(let i=0;i<N;i++){
-    const x=-0.9+1.8*i/(N-1)+rnd()*0.03;let y;
-    if(k===0)y=0.6*x+0.05+rnd()*0.08;
-    else if(k===1)y=0.75*Math.sin(2.5*x)+rnd()*0.07;
-    else y=0.5*x+rnd()*0.06;
-    pts.push({x:x,y:Math.max(-0.95,Math.min(0.95,y))});
-  }
-  if(k===2)pts.push({x:0.15,y:-0.85});
-  presetName=PRESETS[k];resetFit();
+function goStep(i) { tour = (i + STEPS.length) % STEPS.length; const s = STEPS[tour]; if (s.go) s.go(); $('#caption').innerHTML = s.cap || ''; renderSteps(); }
+$('#tPrev').onclick = () => goStep(Math.max(0, tour - 1));
+$('#tNext').onclick = () => goStep(tour + 1);
+// experiments: TRIES = [{q:'Predict…', run(){…}, why:'html'}]
+function renderTries() {
+  const p = $('#p-try'); p.innerHTML = '<p>Make a prediction first, then run it. Each experiment sets the demo up for you.</p>';
+  TRIES.forEach(x => { const c = document.createElement('div'); c.className = 'card'; c.innerHTML = `<div class="q">${x.q}</div><div class="row"><button class="btn primary">Run it</button><button class="btn">Show why</button></div><div class="why">${x.why}</div>`; const [run, why] = c.querySelectorAll('button'); run.onclick = () => { x.run(); setPlaying(true); }; why.onclick = () => c.classList.toggle('revealed'); p.appendChild(c); });
 }
-function drawGrid(){
-  ctx.fillStyle='#05010f';ctx.fillRect(0,0,W,H);
-  ctx.lineWidth=1;
-  for(let g=-1;g<=1.001;g+=0.25){
-    const major=Math.abs(g)<1e-9;
-    ctx.strokeStyle=major?'rgba(120,180,255,.35)':'rgba(90,140,255,.10)';
-    ctx.beginPath();ctx.moveTo(w2x(g),PY0);ctx.lineTo(w2x(g),PY1);ctx.stroke();
-    ctx.beginPath();ctx.moveTo(PX0,w2y(g));ctx.lineTo(PX1,w2y(g));ctx.stroke();
-  }
-  ctx.strokeStyle='rgba(120,220,255,.35)';ctx.strokeRect(PX0,PY0,PX1-PX0,PY1-PY0);
+// controls helpers
+function slider(parent, id, label, min, max, step, value, fmt, onInput) {
+  const d = document.createElement('div'); d.className = 'ctrl';
+  d.innerHTML = `<label for="${id}">${label}</label><output id="${id}o"></output><input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${value}">`;
+  parent.appendChild(d); const inp = d.querySelector('input'), out = d.querySelector('output');
+  const upd = () => { out.textContent = fmt(+inp.value); onInput(+inp.value); }; inp.oninput = upd; upd();
+  return { set(v) { inp.value = v; upd(); }, get: () => +inp.value };
 }
-function draw(){
-  drawGrid();
-  const syn=(PY1-PY0)/2;
-  pts.forEach((p,i)=>{
-    const yc=predict(p.x),sx=w2x(p.x),sy=w2y(p.y);
-    const syC=w2y(Math.max(-1.8,Math.min(1.8,yc)));
-    ctx.strokeStyle='rgba(255,120,120,.6)';ctx.lineWidth=1.2;
-    ctx.beginPath();ctx.moveTo(sx,sy);ctx.lineTo(sx,syC);ctx.stroke();
-    if(boxes){
-      let hpx=Math.min(Math.abs(sy-syC),200);
-      const dir=(sx+hpx>PX1)?-1:1,rx=dir>0?sx:sx-hpx,yTop=Math.min(sy,syC);
-      const al=0.05+0.05*(0.5+0.5*Math.sin(time*2.5+i*1.7));
-      ctx.fillStyle='rgba(255,90,140,'+al.toFixed(3)+')';ctx.fillRect(rx,yTop,hpx,hpx);
-      ctx.strokeStyle='rgba(255,90,140,.25)';ctx.strokeRect(rx,yTop,hpx,hpx);
-    }
-  });
-  if(pts.length){
-    ctx.save();ctx.beginPath();ctx.rect(PX0,PY0,PX1-PX0,PY1-PY0);ctx.clip();
-    ctx.lineJoin='round';ctx.lineCap='round';
-    for(const pass of[[7,0.15],[2.2,0.95]]){
-      ctx.strokeStyle='#28f7c9';ctx.globalAlpha=pass[1];ctx.lineWidth=pass[0];
-      ctx.beginPath();let first=true;
-      for(let x=-1.02;x<=1.021;x+=0.008){
-        let y=predict(x);if(!isFinite(y))continue;
-        y=Math.max(-60,Math.min(60,y));
-        const X=w2x(x),Y=w2y(y);
-        if(first){ctx.moveTo(X,Y);first=false;}else ctx.lineTo(X,Y);
-      }
-      ctx.stroke();
-    }
-    ctx.globalAlpha=1;ctx.restore();
-  }
-  for(const p of pts){
-    const sx=w2x(p.x),sy=w2y(p.y);
-    ctx.fillStyle='rgba(90,200,255,.25)';ctx.beginPath();ctx.arc(sx,sy,7,0,6.283);ctx.fill();
-    ctx.fillStyle='#6ee7ff';ctx.beginPath();ctx.arc(sx,sy,3.5,0,6.283);ctx.fill();
-  }
-  drawSpark();
+function seg(parent, options, value, onPick) {
+  const d = document.createElement('div'); d.className = 'seg'; parent.appendChild(d);
+  const bs = options.map(([v, label]) => { const b = document.createElement('button'); b.textContent = label; b.setAttribute('aria-pressed', v === value); b.onclick = () => set(v); d.appendChild(b); return [v, b]; });
+  function set(v) { bs.forEach(([k, b]) => b.setAttribute('aria-pressed', k === v)); onPick(v); }
+  return { set };
 }
-function drawSpark(){
-  if(hist.length<2)return;
-  const pw=240,ph=90,px=W-pw-14,py=H-ph-14;
-  ctx.fillStyle='rgba(4,7,20,.78)';ctx.fillRect(px,py,pw,ph);
-  ctx.strokeStyle='rgba(255,120,160,.3)';ctx.lineWidth=1;ctx.strokeRect(px,py,pw,ph);
-  ctx.fillStyle='#ff9bbd';ctx.font='10px ui-monospace,monospace';ctx.fillText('log₁₀ MSE',px+8,py+14);
-  let mn=1e9,mx=-1e9;
-  for(const v of hist){const lv=Math.log10(v+1e-9);if(lv<mn)mn=lv;if(lv>mx)mx=lv;}
-  const rng=(mx-mn)||1;
-  ctx.strokeStyle='#ff5a8c';ctx.lineWidth=1.4;ctx.beginPath();
-  for(let j=0;j<hist.length;j++){
-    const lv=Math.log10(hist[j]+1e-9);
-    const X=px+4+j/(hist.length-1)*(pw-8),Y=py+ph-8-((lv-mn)/rng)*(ph-28);
-    if(j)ctx.lineTo(X,Y);else ctx.moveTo(X,Y);
-  }
-  ctx.stroke();
-}
-function eqStr(){
-  if(!w.length)return'';
-  let s='ŷ = '+w[0].toFixed(2);
-  for(let j=1;j<=D;j++)s+=(w[j]<0?' − ':' + ')+Math.abs(w[j]).toFixed(2)+'x'+SUP[j];
-  return s;
-}
-function stats(){
-  let s='degree '+D+' · '+pts.length+' pts ('+presetName+') · 120 GD iters/frame\n';
-  s+='MSE = '+(pts.length?mse.toExponential(3):'—')+'\n'+eqStr();
-  if(D>=5)s+='\n<span style="color:#ffb054">high degree → wiggly curve = overfitting</span>';
-  statsEl.innerHTML=s;
-}
-function loop(ts){
-  time=ts/1000;
-  stepFit(120);
-  if(pts.length){hist.push(mse);if(hist.length>240)hist.shift();}
-  draw();frame++;if(frame%5===0)stats();
+function stat(id, label) { const d = document.createElement('div'); d.className = 'stat'; d.innerHTML = `<div class="k">${label}</div><div class="v" id="${id}">–</div>`; $('#stats').appendChild(d); }
+const setText = (id, v) => { const e = document.getElementById(id); if (e && e.textContent !== v) e.textContent = v; };
+// keyboard
+addEventListener('keydown', e => {
+  if (e.target.matches('input,select,textarea')) return;
+  if (e.code === 'Space') { setPlaying(!playing); e.preventDefault(); }
+  else if (e.key === 'ArrowRight') goStep(tour + 1);
+  else if (e.key === 'ArrowLeft') goStep(Math.max(0, tour - 1));
+  else if (e.key === 'r' || e.key === 'R') $('#bReset').click();
+});
+// wall-clock-locked loop (dt clamped to [0, 0.1] — rAF timestamps can precede performance.now())
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.1, Math.max(0, (now - last) / 1000)); last = now;
+  try { frame(playing ? dt * speed : 0, dt); } catch (err) { window.onerror(err.message, '', 0); return; }
   requestAnimationFrame(loop);
 }
-cv.addEventListener('click',e=>{
-  const x=x2w(e.clientX),y=y2w(e.clientY);
-  if(x>=-1.05&&x<=1.05&&y>=-1.05&&y<=1.05){pts.push({x:x,y:y});presetName='custom';}
+
+// ===== DEMO CODE: Least Squares =====
+/*CORE-START*/
+// ---- pure model code: data, polynomial model, losses, gradients, solvers ----
+function rng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const gauss = r => Math.sqrt(-2 * Math.log(1 - r())) * Math.cos(2 * Math.PI * r());
+const clampX = x => Math.max(-1.05, Math.min(1.05, x)), clampY = y => Math.max(-1.05, Math.min(1.05, y));
+const trueLine = x => 0.55 * x + 0.1;
+function makeData(kind, seed) {
+  const r = rng(seed), pts = [];
+  if (kind === 'empty') return pts;
+  const n = kind === 'curve' ? 16 : 14;
+  for (let i = 0; i < n; i++) {
+    const x = -0.9 + 1.8 * i / (n - 1) + (r() - 0.5) * 0.08;
+    const y = kind === 'curve' ? 0.75 * Math.sin(2.4 * x) + 0.07 * gauss(r) : trueLine(x) + 0.1 * gauss(r);
+    pts.push({ x, y: clampY(y) });
+  }
+  if (kind === 'outlier') pts.push({ x: 0.88, y: -1.0 });
+  return pts;
+}
+// ŷ(x) = w0 + w1 x + w2 x² + …
+function predict(w, x) { let y = 0, p = 1; for (let j = 0; j < w.length; j++) { y += w[j] * p; p *= x; } return y; }
+// L2: mean of r² (mean square area).  L1: mean of |r|.
+function loss(pts, w, type) {
+  if (!pts.length) return 0; let s = 0;
+  for (const p of pts) { const r = p.y - predict(w, p.x); s += type === 'L1' ? Math.abs(r) : r * r; }
+  return s / pts.length;
+}
+// ∂L/∂wj = −(2/n) Σ r xʲ  (L2)   or   −(1/n) Σ sign(r) xʲ  (L1 subgradient)
+function grad(pts, w, type) {
+  const g = new Array(w.length).fill(0), n = pts.length; if (!n) return g;
+  for (const p of pts) {
+    const r = p.y - predict(w, p.x), c = type === 'L1' ? Math.sign(r) : 2 * r; let xp = 1;
+    for (let j = 0; j < w.length; j++) { g[j] -= c * xp / n; xp *= p.x; }
+  }
+  return g;
+}
+// L1 has no smooth bottom, so its subgradient steps must shrink over time
+const stepSize = (lr, type, t) => type === 'L1' ? lr * 0.6 / (1 + t / 10) : lr;
+function gdStep(pts, w, lr, type, t) { const g = grad(pts, w, type), a = stepSize(lr, type, t); return w.map((v, j) => v - a * g[j]); }
+function solveLinear(A, b) { // Gauss–Jordan with partial pivoting
+  const n = b.length, M = A.map((row, i) => [...row, b[i]]);
+  for (let c = 0; c < n; c++) {
+    let p = c; for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
+    [M[c], M[p]] = [M[p], M[c]];
+    const d = M[c][c] || 1e-12;
+    for (let r = 0; r < n; r++) if (r !== c) { const f = M[r][c] / d; for (let k = c; k <= n; k++) M[r][k] -= f * M[c][k]; }
+  }
+  return M.map((row, i) => row[n] / (row[i] || 1e-12));
+}
+// minimise Σ vᵢ rᵢ²  ⇔  (XᵀVX) w = XᵀVy   (v = 1 gives the normal equations)
+function weightedLS(pts, d, v) {
+  const m = d + 1, A = Array.from({ length: m }, () => new Array(m).fill(0)), b = new Array(m).fill(0);
+  pts.forEach((p, i) => {
+    const f = []; let xp = 1; for (let j = 0; j < m; j++) { f.push(xp); xp *= p.x; }
+    const wt = v ? v[i] : 1;
+    for (let j = 0; j < m; j++) { b[j] += wt * f[j] * p.y; for (let k = 0; k < m; k++) A[j][k] += wt * f[j] * f[k]; }
+  });
+  for (let j = 0; j < m; j++) A[j][j] += 1e-9 * (A[j][j] + 1);
+  return solveLinear(A, b);
+}
+const normalEq = (pts, d) => weightedLS(pts, d, null);
+// L1 optimum: IRLS (weights 1/|r|) to get close, then exact polish. The L1 fit is a linear program whose
+// optimum passes through d+1 data points, so swap points in/out of that set while the loss keeps dropping.
+function l1Fit(pts, d) {
+  let w = normalEq(pts, d);
+  for (let it = 0; it < 60; it++) w = weightedLS(pts, d, pts.map(p => 1 / Math.max(1e-4, Math.abs(p.y - predict(w, p.x)))));
+  if (pts.length <= d + 1) return w;
+  let B = pts.map((p, i) => [Math.abs(p.y - predict(w, p.x)), i]).sort((a, b) => a[0] - b[0]).slice(0, d + 1).map(a => a[1]);
+  const fit = C => normalEq(C.map(j => pts[j]), d);
+  let bw = fit(B), bl = loss(pts, bw, 'L1');
+  for (let moved = true, g = 0; moved && g < 60; g++) {
+    moved = false;
+    for (let k = 0; k <= d; k++) for (let i = 0; i < pts.length; i++) {
+      if (B.includes(i)) continue;
+      const C = B.slice(); C[k] = i; const v = fit(C), l = loss(pts, v, 'L1');
+      if (l < bl - 1e-12) { B = C; bw = v; bl = l; moved = true; }
+    }
+  }
+  return bl <= loss(pts, w, 'L1') ? bw : w;
+}
+const dist = (a, b) => Math.hypot(...a.map((v, j) => v - (b[j] || 0)));
+/*CORE-END*/
+
+/* ===== demo state ===== */
+var READY = false; // shell calls resize() before this block runs; layout waits for it
+const C = { a: '#ff7a6b', b: '#3fd0c0', hl: '#ffc857', grad: '#a78bfa', data: '#c7cbe0', good: '#7ee787', acc: '#5ab8ff', ink: '#e9ecfa', dim: '#a2a9c8', faint: '#6b7396', bad: '#ff6b8a' };
+const DOM = { x0: -1.1, x1: 1.1, y0: -1.1, y1: 1.1 };      // data window
+const MAP = { s0: -2.6, s1: 2.6, b0: -1.6, b1: 1.6 };      // (slope, intercept) window — equal aspect so −∇L ⟂ contours
+const STARTS = [[0.6, -1.2], [-1.0, 2.1], [1.1, 1.8], [-0.9, -1.6]]; // [intercept, slope] on the rim of the map
+const SUP = ['', '', '²', '³', '⁴', '⁵', '⁶'];
+const S = {
+  pts: [], deg: 1, type: 'L2', lr: 0.25, w: STARTS[0].slice(), t: 0, path: [], hist: [],
+  star: [0, 0], l1: [0, 0], base: 0, without: null, special: -1, ver: 0, showCF: true,
+  focus: null, loop: false, loopI: 0, sweep: false, sweepT: 0, acc: 0, hold: 0, diverged: false, done: false,
+  jump: null, ghost: null, drag: null, hover: -1, hot: -1, barSegs: [], barRect: null, time: 0
+};
+const heat = { key: '', cv: document.createElement('canvas'), segs: [], gw: 1, gh: 1 };
+let P = { x: 0, y: 0, w: 1, h: 1 }, M = P, Lp = P;
+const pad = (w, d) => { const o = w.slice(0, d + 1); while (o.length < d + 1) o.push(0); return o; };
+const opt = () => S.type === 'L2' ? S.star : S.l1;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+/* ===== layout: plot left, loss map + loss bar right (stacked below on phones) ===== */
+function onResize() {
+  if (!READY) return;
+  const cap = $('#caption'), sx = 16, sy = Math.max(84, cap.offsetTop + cap.offsetHeight + 8), sw = W - 32, sh = H - 76 - sy; // a long caption pushes the scene down
+  if (W >= 640) {
+    const side = Math.min(360, sw * 0.4);
+    P = { x: sx + 24, y: sy, w: sw - side - 44, h: sh - 18 };
+    M = { x: sx + sw - side, y: sy + 30, w: side, h: side / 1.625 };
+    const ly = M.y + M.h + 58; Lp = { x: M.x, y: ly, w: side, h: Math.min(210, sy + sh - ly) };
+  } else {
+    const ph = Math.round(sh * 0.56);
+    P = { x: sx + 20, y: sy, w: sw - 20, h: ph - 20 };
+    const my = sy + ph + 16, mh = Math.min(sy + sh - my - 14, (sw * 0.55) / 1.625);
+    M = { x: sx, y: my, w: mh * 1.625, h: mh };
+    Lp = { x: M.x + M.w + 14, y: my - 12, w: sx + sw - (M.x + M.w + 14), h: mh + 24 };
+  }
+  heat.key = '';
+}
+const X = x => P.x + (x - DOM.x0) / (DOM.x1 - DOM.x0) * P.w, Y = y => P.y + (DOM.y1 - y) / (DOM.y1 - DOM.y0) * P.h;
+const iX = px => DOM.x0 + (px - P.x) / P.w * (DOM.x1 - DOM.x0), iY = py => DOM.y1 - (py - P.y) / P.h * (DOM.y1 - DOM.y0);
+const MX = s => M.x + (s - MAP.s0) / (MAP.s1 - MAP.s0) * M.w, MY = b => M.y + (MAP.b1 - b) / (MAP.b1 - MAP.b0) * M.h;
+
+/* ===== model bookkeeping ===== */
+function dataChanged() {
+  S.ver++; S.done = false; const n = S.pts.length;
+  S.star = n ? normalEq(S.pts, S.deg) : pad([], S.deg);
+  S.l1 = n ? l1Fit(S.pts, S.deg) : S.star.slice();
+  S.without = S.special >= 0 ? normalEq(S.pts.filter((_, i) => i !== S.special), S.deg) : null;
+  S.base = loss(S.pts, S.w, S.type); // divergence baseline (see gdTick)
+}
+function resetFit(w) {
+  S.w = pad(w || STARTS[0], S.deg); S.t = 0; S.acc = 0; S.hold = 0; S.diverged = false; S.done = false; S.jump = null;
+  S.path = [[S.w[1], S.w[0]]]; S.hist = [loss(S.pts, S.w, S.type)]; S.base = S.hist[0];
+}
+function loadPreset(kind) { S.pts = makeData(kind, 11); S.special = kind === 'outlier' ? S.pts.length - 1 : -1; dataChanged(); resetFit(S.w); }
+function setDeg(d) { S.deg = d; dataChanged(); resetFit(S.w); }
+const hz = () => S.deg === 1 ? 5 : 90; // GD steps per second at 1× (a line is slow enough to watch every step)
+function gdTick() {
+  if (!S.pts.length) return;
+  S.w = gdStep(S.pts, S.w, S.lr, S.type, S.t); S.t++;
+  const L = loss(S.pts, S.w, S.type); // stable L2 GD never raises the loss, so a 10× rise means it is blowing up
+  if (!S.w.every(v => Math.abs(v) < 40) || (S.type === 'L2' && !(L < 10 * S.base + 1e-9))) { S.diverged = true; S.hold = 0; return; } // NaN fails too
+  S.path.push([S.w[1], S.w[0]]); if (S.path.length > 600) S.path.shift();
+  S.hist.push(L); if (S.hist.length > 400) S.hist.shift();
+  S.done = S.type === 'L2' ? Math.hypot(...grad(S.pts, S.w, 'L2')) < 1e-7 : S.t > 500;
+}
+function startJump() { // closed form vs GD from the same start
+  const from = pad([-1.0, 2.1], S.deg); resetFit(from); S.jump = { from, u: -0.8 };
+  let w = from.slice(); const g = [[w[1], w[0]]];
+  for (let k = 0; k < 400 && dist(w, S.star) > 0.004; k++) { w = gdStep(S.pts, w, S.lr, 'L2', k); g.push([w[1], w[0]]); }
+  S.ghost = g;
+}
+function update(dt) {
+  if (S.sweep && S.special >= 0) { // leverage experiment: slide one point along the data at a fixed gap
+    S.sweepT += dt * 0.6; const p = S.pts[S.special];
+    p.x = 0.86 * Math.sin(S.sweepT); p.y = clampY(trueLine(p.x) - 0.8); dataChanged();
+    S.w = S.star.slice(); S.path = [[S.w[1], S.w[0]]]; S.t = 0; return;
+  }
+  if (S.jump) {
+    const J = S.jump; J.u += dt / 0.9; const e = clamp(J.u, 0, 1), s = e * e * (3 - 2 * e);
+    S.w = J.from.map((v, j) => v + (S.star[j] - v) * s); S.t = J.u >= 1 ? 1 : 0;
+    if (J.u > 3.6) J.u = -0.8; return;
+  }
+  if (!S.pts.length || (S.drag && S.drag.kind === 'map')) return;
+  if (S.diverged) { S.hold += dt; if (S.hold > 1.8) resetFit(STARTS[0]); return; }
+  if (S.loop && dist(S.w, S.star) < 0.004) { S.hold += dt; if (S.hold > 2) { S.loopI = (S.loopI + 1) % STARTS.length; resetFit(STARTS[S.loopI]); } return; }
+  if (S.done) return;
+  S.acc += dt * hz(); let k = 0;
+  while (S.acc >= 1 && k++ < 30) { S.acc -= 1; gdTick(); if (S.diverged) break; }
+  if (S.acc > 1) S.acc = 0;
+}
+
+/* ===== loss map: heat + marching-squares contours, cached per data/slice ===== */
+const sliceKey = () => [S.ver, S.deg, S.type, M.x | 0, M.y | 0, M.w | 0, S.deg > 1 ? S.w.slice(2).map(v => v.toFixed(2)).join() : ''].join('|');
+function iso(G, gw, gh, lv) {
+  const out = [], v = (i, j) => G[j * (gw + 1) + i];
+  for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) {
+    const a = v(i, j), b = v(i + 1, j), c = v(i + 1, j + 1), d = v(i, j + 1), q = [];
+    if ((a < lv) !== (b < lv)) q.push(i + (lv - a) / (b - a), j);
+    if ((b < lv) !== (c < lv)) q.push(i + 1, j + (lv - b) / (c - b));
+    if ((d < lv) !== (c < lv)) q.push(i + (lv - d) / (c - d), j + 1);
+    if ((a < lv) !== (d < lv)) q.push(i, j + (lv - a) / (d - a));
+    if (q.length >= 4) out.push(...q.slice(0, 8));
+  }
+  return out;
+}
+function buildHeat() {
+  const gw = Math.max(20, Math.round(M.w / 3)), gh = Math.max(14, Math.round(M.h / 3)), n = S.pts.length, L1 = S.type === 'L1';
+  const rest = S.w.slice(); rest[0] = rest[1] = 0; // higher-order weights held at their current values (a slice)
+  const ys = S.pts.map(p => p.y - predict(rest, p.x)), xs = S.pts.map(p => p.x), G = new Float32Array((gw + 1) * (gh + 1));
+  let mn = Infinity;
+  for (let j = 0; j <= gh; j++) {
+    const b = MAP.b1 - j / gh * (MAP.b1 - MAP.b0);
+    for (let i = 0; i <= gw; i++) {
+      const s = MAP.s0 + i / gw * (MAP.s1 - MAP.s0); let a = 0;
+      for (let q = 0; q < n; q++) { const r = ys[q] - b - s * xs[q]; a += L1 ? Math.abs(r) : r * r; }
+      const val = n ? a / n : 0; G[j * (gw + 1) + i] = val; if (val < mn) mn = val;
+    }
+  }
+  const sorted = Float32Array.from(G).sort(), q = Math.max(mn + 1e-6, sorted[Math.floor(sorted.length * 0.5)]);
+  const f = v => { const u = Math.max(0, (v - mn) / (q - mn)); return L1 ? u : Math.sqrt(u); }; // ≈ distance from the bottom
+  heat.cv.width = gw + 1; heat.cv.height = gh + 1;
+  const hx = heat.cv.getContext('2d'), img = hx.createImageData(gw + 1, gh + 1);
+  for (let p = 0; p < G.length; p++) {
+    const t = Math.max(0, 1 - f(G[p]) / 1.7) ** 2;
+    img.data[p * 4] = 16 + t * 58; img.data[p * 4 + 1] = 20 + t * 118; img.data[p * 4 + 2] = 44 + t * 176; img.data[p * 4 + 3] = 255;
+  }
+  hx.putImageData(img, 0, 0);
+  heat.segs = [];
+  for (let k = 1; k <= 12; k++) heat.segs.push(iso(G, gw, gh, mn + (q - mn) * (L1 ? k / 6 : (k / 6) ** 2)));
+  heat.gw = gw; heat.gh = gh; heat.key = sliceKey();
+}
+
+/* ===== drawing helpers ===== */
+const FONT = s => `${s}px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace`;
+function rr(x, y, w, h, r) { ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(x, y, w, h, r); else ctx.rect(x, y, w, h); }
+function seg2(x0, y0, x1, y1) { ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke(); }
+function txt(s, x, y, col, size, align) { ctx.font = FONT(size || 12); ctx.fillStyle = col; ctx.textAlign = align || 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillText(s, x, y); }
+function box(s, x, y, align, size) {
+  ctx.font = FONT(size); const w = ctx.measureText(s).width + 12, h = size + 9;
+  const bx = clamp(align === 'right' ? x - w : align === 'center' ? x - w / 2 : x, 8, W - w - 8);
+  return { x: bx, y: clamp(y - h / 2, 86, H - 78 - h), w, h };
+}
+function pill(b, s, col, size) {
+  ctx.fillStyle = 'rgba(12,14,30,.9)'; rr(b.x, b.y, b.w, b.h, 6); ctx.fill();
+  ctx.strokeStyle = col; ctx.globalAlpha = .45; ctx.lineWidth = 1; ctx.stroke(); ctx.globalAlpha = 1;
+  ctx.font = FONT(size); ctx.fillStyle = col; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(s, b.x + 6, b.y + b.h / 2 + 1);
+}
+function tag(px, py, s, col, dx, dy) { // annotation: leader line + pill
+  const size = W < 640 ? 11 : 12, b = box(s, px + dx, py + dy, dx < 0 ? 'right' : 'left', size);
+  ctx.strokeStyle = col; ctx.globalAlpha = .75; ctx.lineWidth = 1; seg2(px, py, dx < 0 ? b.x + b.w : b.x, b.y + b.h / 2); ctx.globalAlpha = 1;
+  pill(b, s, col, size);
+}
+function ring(x, y, r, col) {
+  const k = 1 + 0.1 * Math.sin(S.time * 4); ctx.strokeStyle = col;
+  ctx.globalAlpha = .22; ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(x, y, r * k, 0, 7); ctx.stroke();
+  ctx.globalAlpha = 1; ctx.lineWidth = 1.5; ctx.stroke();
+}
+function ringRect(R, col) {
+  const k = 3 + 2 * Math.sin(S.time * 4); ctx.strokeStyle = col;
+  ctx.globalAlpha = .2; ctx.lineWidth = 6; rr(R.x - k, R.y - k, R.w + 2 * k, R.h + 2 * k, 12); ctx.stroke();
+  ctx.globalAlpha = 1; ctx.lineWidth = 1.5; ctx.stroke();
+}
+function starPath(x, y, r) { ctx.beginPath(); for (let k = 0; k < 10; k++) { const a = -Math.PI / 2 + k * Math.PI / 5, q = k % 2 ? r * 0.45 : r; ctx.lineTo(x + q * Math.cos(a), y + q * Math.sin(a)); } ctx.closePath(); }
+function curve(w, col, lw, dash, alpha) {
+  ctx.beginPath();
+  for (let i = 0; i <= 140; i++) { const x = DOM.x0 + i / 140 * (DOM.x1 - DOM.x0), y = clamp(Y(predict(w, x)), P.y - 300, P.y + P.h + 300); i ? ctx.lineTo(X(x), y) : ctx.moveTo(X(x), y); }
+  ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.globalAlpha = alpha || 1; ctx.setLineDash(dash || []); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+}
+function polyStr(w, short) {
+  if (short && w.length > 3) return `ŷ = degree-${w.length - 1} polynomial`;
+  let s = 'ŷ = ' + w[0].toFixed(2);
+  for (let j = 1; j < w.length; j++) s += (w[j] < 0 ? ' − ' : ' + ') + Math.abs(w[j]).toFixed(2) + 'x' + SUP[j];
+  return s;
+}
+const residuals = () => S.pts.map(p => p.y - predict(S.w, p.x));
+const worst = res => res.reduce((b, r, i) => Math.abs(r) > Math.abs(res[b] || 0) ? i : b, 0);
+
+/* ===== scene ===== */
+function drawPlot() {
+  S.hot = S.focus === 'square' || S.focus === 'resid' ? worst(residuals()) : -1;
+  const n = S.pts.length, L2 = S.type === 'L2', k = P.h / (DOM.y1 - DOM.y0), res = residuals(), small = W < 640;
+  ctx.fillStyle = 'rgba(19,22,44,.62)'; rr(P.x, P.y, P.w, P.h, 10); ctx.fill();
+  ctx.lineWidth = 1;
+  for (let g = -1; g <= 1.001; g += 0.5) {
+    ctx.strokeStyle = Math.abs(g) < 1e-9 ? 'rgba(190,200,255,.2)' : 'rgba(190,200,255,.07)';
+    seg2(X(g), P.y, X(g), P.y + P.h); seg2(P.x, Y(g), P.x + P.w, Y(g));
+  }
+  for (const g of [-1, 0, 1]) { txt(String(g), X(g), P.y + P.h + 13, C.faint, 11, 'center'); txt(String(g), P.x - 6, Y(g) + 4, C.faint, 11, 'right'); }
+  ctx.save(); rr(P.x, P.y, P.w, P.h, 10); ctx.clip();
+  // every residual becomes a square: side |r| (y-units) → area r²
+  S.pts.forEach((p, i) => {
+    const r = res[i], side = Math.abs(r) * k, px = X(p.x), top = Math.min(Y(p.y), Y(p.y - r));
+    const left = px + side > P.x + P.w - 4 ? px - side : px, hot = i === S.hover || i === S.hot;
+    if (L2) { ctx.fillStyle = C.grad; ctx.globalAlpha = hot ? .34 : .12; ctx.fillRect(left, top, side, side); }
+    ctx.strokeStyle = C.grad; ctx.globalAlpha = L2 ? (hot ? 1 : .6) : .22; ctx.setLineDash(L2 ? [] : [3, 4]);
+    ctx.strokeRect(left + .5, top + .5, Math.max(0, side - 1), Math.max(0, side - 1)); ctx.setLineDash([]); ctx.globalAlpha = 1;
+  });
+  ctx.strokeStyle = C.grad; ctx.lineWidth = L2 ? 1.5 : 3;
+  S.pts.forEach((p, i) => seg2(X(p.x), Y(p.y), X(p.x), Y(p.y - res[i])));
+  if (n && S.showCF) curve(S.star, C.good, 1.6, [7, 6], .85);
+  if (S.focus === 'lev' && S.without) curve(S.without, C.ink, 1.3, [2, 5], .7);
+  if (n) { curve(S.w, C.hl, 8, null, .16); curve(S.w, C.hl, 2.4); }
+  S.pts.forEach((p, i) => {
+    const out = S.drag && S.drag.kind === 'pt' && S.drag.i === i && S.drag.out;
+    ctx.fillStyle = out ? C.bad : C.data; ctx.beginPath(); ctx.arc(X(p.x), Y(p.y), i === S.hover ? 6.5 : 5, 0, 7); ctx.fill();
+    ctx.strokeStyle = '#0c0e1a'; ctx.lineWidth = 2; ctx.stroke();
+  });
+  ctx.restore();
+  ctx.strokeStyle = 'rgba(190,200,255,.14)'; ctx.lineWidth = 1; rr(P.x, P.y, P.w, P.h, 10); ctx.stroke();
+  if (!n) txt('Click anywhere to drop data points', P.x + P.w / 2, P.y + P.h / 2, C.dim, 14, 'center');
+  // legend (bottom-left of the plot, where the data rarely goes)
+  const fs = small ? 11 : 12, lh = fs + 6, lx = P.x + 12; let ly = P.y + 8 + lh;
+  const rows = [[C.hl, [], polyStr(S.w, true)]];
+  if (S.showCF) rows.push([C.good, [5, 4], '★ closed form (normal eq.)']);
+  rows.push([C.grad, null, L2 ? `squares: Σr² = ${(loss(S.pts, S.w, 'L2') * n).toFixed(3)}` : `gaps: Σ|r| = ${(loss(S.pts, S.w, 'L1') * n).toFixed(3)}`]);
+  ctx.font = FONT(fs); const lw = Math.max(...rows.map(r => ctx.measureText(r[2]).width)) + 40;
+  ctx.fillStyle = 'rgba(12,14,30,.72)'; rr(P.x + 4, P.y + 4, lw, rows.length * lh + 10, 8); ctx.fill();
+  rows.forEach(([col, dash, s]) => {
+    if (dash) { ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.setLineDash(dash); seg2(lx, ly - 4, lx + 18, ly - 4); ctx.setLineDash([]); }
+    else { ctx.fillStyle = col; ctx.globalAlpha = .35; ctx.fillRect(lx + 4, ly - 10, 10, 10); ctx.globalAlpha = 1; ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.strokeRect(lx + 4.5, ly - 9.5, 9, 9); }
+    txt(s, lx + 26, ly, col, fs); ly += lh;
+  });
+  if (S.diverged) txt('η too large — the steps overshoot and blow up. Restarting…', P.x + P.w / 2, P.y + 28, C.bad, small ? 11 : 13, 'center');
+  const D = S.drag; if (D && D.kind === 'pt' && D.out) tag(D.px, D.py, 'release to delete', C.bad, 16, -26);
+}
+function drawMap() {
+  if (heat.key !== sliceKey()) buildHeat();
+  const n = S.pts.length, small = W < 640, fs = small ? 10 : 11;
+  ctx.save(); rr(M.x, M.y, M.w, M.h, 10); ctx.clip();
+  ctx.fillStyle = '#10142c'; ctx.fillRect(M.x, M.y, M.w, M.h);
+  if (n) {
+    ctx.imageSmoothingEnabled = true; ctx.drawImage(heat.cv, M.x, M.y, M.w, M.h);
+    const gx = i => M.x + i / heat.gw * M.w, gy = j => M.y + j / heat.gh * M.h;
+    ctx.lineWidth = 1;
+    heat.segs.forEach((sg, k) => {
+      ctx.strokeStyle = `rgba(150,205,255,${(0.55 - k * 0.035).toFixed(3)})`; ctx.beginPath();
+      for (let p = 0; p < sg.length; p += 4) { ctx.moveTo(gx(sg[p]), gy(sg[p + 1])); ctx.lineTo(gx(sg[p + 2]), gy(sg[p + 3])); }
+      ctx.stroke();
+    });
+  }
+  ctx.strokeStyle = 'rgba(190,200,255,.18)'; seg2(MX(0), M.y, MX(0), M.y + M.h); seg2(M.x, MY(0), M.x + M.w, MY(0));
+  const cur = [MX(S.w[1]), MY(S.w[0])], st = [MX(S.star[1]), MY(S.star[0])];
+  if (S.jump && S.ghost) { // GD's route (dotted) vs the one-step solve (dashed green)
+    ctx.strokeStyle = C.hl; ctx.globalAlpha = .8; ctx.lineWidth = 2; ctx.setLineDash([2, 4]); ctx.beginPath();
+    S.ghost.forEach(([s, b], i) => i ? ctx.lineTo(MX(s), MY(b)) : ctx.moveTo(MX(s), MY(b))); ctx.stroke();
+    ctx.globalAlpha = 1; ctx.strokeStyle = C.good; ctx.lineWidth = 2; ctx.setLineDash([6, 5]);
+    seg2(MX(S.jump.from[1]), MY(S.jump.from[0]), cur[0], cur[1]); ctx.setLineDash([]);
+  } else if (S.path.length > 1) {
+    ctx.strokeStyle = C.hl; ctx.lineWidth = 1.6; ctx.globalAlpha = .9; ctx.beginPath();
+    S.path.forEach(([s, b], i) => i ? ctx.lineTo(MX(s), MY(b)) : ctx.moveTo(MX(s), MY(b))); ctx.stroke(); ctx.globalAlpha = 1;
+    if (S.deg === 1) { ctx.fillStyle = C.hl; S.path.forEach(([s, b]) => { ctx.beginPath(); ctx.arc(MX(s), MY(b), 1.8, 0, 7); ctx.fill(); }); }
+  }
+  if (S.type === 'L1' && n) { // L1 optimum: diamond
+    const d = [MX(S.l1[1]), MY(S.l1[0])]; ctx.fillStyle = C.ink; ctx.beginPath();
+    ctx.moveTo(d[0], d[1] - 6); ctx.lineTo(d[0] + 6, d[1]); ctx.lineTo(d[0], d[1] + 6); ctx.lineTo(d[0] - 6, d[1]); ctx.closePath(); ctx.fill();
+  }
+  if (n) { starPath(st[0], st[1], 8); ctx.fillStyle = C.good; ctx.fill(); ctx.strokeStyle = '#0c0e1a'; ctx.lineWidth = 1.5; ctx.stroke(); }
+  if (n && !S.jump && !S.done && !S.sweep) { // −∇L arrow: where the next step goes
+    const g = grad(S.pts, S.w, S.type), sc = M.w / (MAP.s1 - MAP.s0);
+    const vx = -g[1] * sc, vy = g[0] * sc, m = Math.hypot(vx, vy);
+    if (m > 1e-6) {
+      const len = 14 + 40 * Math.min(1, m / (2 * sc)), ux = vx / m, uy = vy / m, ex = cur[0] + ux * len, ey = cur[1] + uy * len;
+      ctx.strokeStyle = C.grad; ctx.lineWidth = 2; seg2(cur[0], cur[1], ex, ey);
+      ctx.fillStyle = C.grad; ctx.beginPath(); ctx.moveTo(ex + ux * 6, ey + uy * 6); ctx.lineTo(ex - uy * 4, ey + ux * 4); ctx.lineTo(ex + uy * 4, ey - ux * 4); ctx.closePath(); ctx.fill();
+      S.arrowTip = [ex, ey];
+    }
+  }
+  ctx.fillStyle = C.hl; ctx.beginPath(); ctx.arc(cur[0], cur[1], 5.5, 0, 7); ctx.fill(); ctx.strokeStyle = '#0c0e1a'; ctx.lineWidth = 2; ctx.stroke();
+  ctx.restore();
+  ctx.strokeStyle = 'rgba(190,200,255,.22)'; ctx.lineWidth = 1; rr(M.x, M.y, M.w, M.h, 10); ctx.stroke();
+  txt((small ? 'LOSS MAP' : 'LOSS MAP · every spot is one line') + (S.deg > 1 ? ' (w₀,w₁ slice)' : ''), M.x, M.y - 9, C.acc, fs);
+  txt('↑ intercept w₀', M.x, M.y + M.h + 13, C.faint, fs); txt('slope w₁ →', M.x + M.w, M.y + M.h + 13, C.faint, fs, 'right');
+  if (!small) { // map legend
+    let x = M.x, y = M.y + M.h + 34; const item = (draw, s, col) => { draw(x + 6, y - 4); txt(s, x + 16, y, col, 11); x += ctx.measureText(s).width + 30; };
+    item((a, b) => { ctx.fillStyle = C.hl; ctx.beginPath(); ctx.arc(a, b, 4, 0, 7); ctx.fill(); }, 'current w', C.hl);
+    item((a, b) => { starPath(a, b, 6); ctx.fillStyle = C.good; ctx.fill(); }, S.type === 'L1' ? 'L2 ★' : 'closed form', C.good);
+    if (S.type === 'L1') item((a, b) => { ctx.fillStyle = C.ink; ctx.beginPath(); ctx.moveTo(a, b - 5); ctx.lineTo(a + 5, b); ctx.lineTo(a, b + 5); ctx.lineTo(a - 5, b); ctx.closePath(); ctx.fill(); }, 'L1 optimum ◆', C.ink);
+    else item((a, b) => { ctx.strokeStyle = C.grad; ctx.lineWidth = 2; seg2(a - 5, b, a + 5, b); }, '−∇L', C.grad);
+  }
+}
+function drawLoss() {
+  const R = Lp, n = S.pts.length; if (R.h < 60 || R.w < 100) return;
+  const L2 = S.type === 'L2', small = W < 640, fs = small ? 10 : 11, res = residuals();
+  const c = res.map(r => L2 ? r * r : Math.abs(r)), tot = c.reduce((a, b) => a + b, 0);
+  txt(L2 ? (small ? 'Σ AREA' : 'TOTAL SQUARE AREA  (the loss × n)') : (small ? 'Σ GAP' : 'TOTAL GAP LENGTH  (L1 loss × n)'), R.x, R.y + 10, C.faint, fs);
+  txt(tot.toFixed(3), R.x + R.w, R.y + 10, C.grad, fs + 1, 'right');
+  const by = R.y + 20, bh = small ? 12 : 18, sc = R.w / Math.max(tot, 1e-9); // bar = every square, side by side
+  ctx.fillStyle = 'rgba(190,200,255,.06)'; rr(R.x, by, R.w, bh, 4); ctx.fill();
+  const order = c.map((_, i) => i).sort((a, b) => c[b] - c[a]); let x = R.x; S.barSegs = [];
+  order.forEach((i, k) => {
+    const w = c[i] * sc; ctx.fillStyle = i === S.hover ? C.ink : C.grad; ctx.globalAlpha = i === S.hover ? 1 : (k % 2 ? .55 : .9);
+    ctx.fillRect(x, by, Math.max(0, w - 1), bh); S.barSegs.push([x, x + w, i]); x += w;
+  });
+  ctx.globalAlpha = 1; S.barRect = { x: R.x, y: by, w: R.w, h: bh };
+  if (n) {
+    const share = c[order[0]] / (tot || 1);
+    txt(small ? `biggest: ${(share * 100).toFixed(0)}%` : `biggest ${L2 ? 'square' : 'gap'} = ${(share * 100).toFixed(0)}% of the total`, R.x, by + bh + 15, share > 0.4 ? C.a : C.dim, fs);
+  }
+  // loss curve (log) over GD steps
+  const y0 = by + bh + 26, y1 = R.y + R.h - (small ? 4 : 18), hs = S.hist; if (y1 - y0 < 24) return;
+  ctx.strokeStyle = 'rgba(190,200,255,.12)'; ctx.lineWidth = 1; rr(R.x, y0, R.w, y1 - y0, 6); ctx.stroke();
+  if (!small) txt('loss per GD step (log scale)', R.x, y1 + 14, C.faint, 11);
+  if (hs.length < 2) { txt(small ? (playing ? 'loss curve soon' : '▶ play: loss curve') : playing ? 'loss curve appears as GD runs' : '▶ play to watch the loss fall', R.x + R.w / 2, (y0 + y1) / 2, C.faint, fs, 'center'); return; }
+  const lg = hs.map(v => Math.log10(v + 1e-9)); let lo = Math.min(...lg), hi = Math.max(...lg); if (hi - lo < 0.3) { lo -= 0.15; hi += 0.15; }
+  ctx.strokeStyle = C.acc; ctx.lineWidth = 1.6; ctx.beginPath();
+  lg.forEach((v, i) => { const px = R.x + 4 + i / (lg.length - 1) * (R.w - 8), py = y1 - 4 - (v - lo) / (hi - lo) * (y1 - y0 - 8); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); });
+  ctx.stroke();
+}
+function drawFocus() {
+  const n = S.pts.length; if (!n) return; const res = residuals(), f = S.focus, small = W < 640;
+  if (f === 'resid' || f === 'square') {
+    const i = worst(res), p = S.pts[i], r = res[i], px = X(p.x), py = Y(p.y), side = Math.abs(r) * P.h / (DOM.y1 - DOM.y0);
+    const right = px + side <= P.x + P.w - 4, dx = px > P.x + P.w * 0.55 ? -70 : 70;
+    if (f === 'resid') { ring(px, (py + Y(p.y - r)) / 2, Math.max(12, side / 2 + 6), C.grad); tag(px, (py + Y(p.y - r)) / 2, `r = y − ŷ = ${r >= 0 ? '+' : '−'}${Math.abs(r).toFixed(2)}`, C.grad, dx, -34); }
+    else {
+      const cx = right ? px + side / 2 : px - side / 2, cy = Math.min(py, Y(p.y - r)) + side / 2;
+      ringRect({ x: cx - side / 2, y: cy - side / 2, w: side, h: side }, C.grad); tag(cx, cy + side / 2, `area = r² = ${(r * r).toFixed(3)}`, C.grad, dx, 30);
+      if (S.barRect) ringRect(S.barRect, C.grad);
+    }
+  } else if (f === 'map') { ringRect(M, C.acc); tag(MX(S.w[1]), MY(S.w[0]), 'this dot = the amber line', C.hl, 26, 30); }
+  else if (f === 'grad' && S.arrowTip && inside(M, S.arrowTip[0], S.arrowTip[1]) && !S.done && !S.diverged) tag(S.arrowTip[0], S.arrowTip[1], '−∇L: steepest way down', C.grad, 18, 26);
+  else if (f === 'star' && S.ghost) {
+    const st = [MX(S.star[1]), MY(S.star[0])], mid = S.ghost[Math.floor(S.ghost.length * 0.35)];
+    tag(st[0], st[1], S.jump && S.jump.u >= 1 ? 'landed: ∇L = 0' : 'closed form w*', C.good, 24, 28);
+    tag(MX(mid[0]), MY(mid[1]), `GD: ${S.ghost.length - 1} steps`, C.hl, -30, -26);
+  } else if ((f === 'outlier' || f === 'lev') && S.special >= 0) {
+    const p = S.pts[S.special], px = X(p.x), py = Y(p.y); ring(px, py, 13, C.a);
+    if (f === 'outlier') {
+      const r2 = S.pts.map(q => (q.y - predict(S.star, q.x)) ** 2), sh = r2[S.special] / r2.reduce((a, b) => a + b, 0);
+      tag(px, py, small ? `${(sh * 100).toFixed(0)}% of L2 loss` : `outlier = ${(sh * 100).toFixed(0)}% of the L2 loss`, C.a, -40, -30);
+    } else if (!S.sweep) tag(px, py, 'drag me along the data', C.a, -40, -30);
+    if (f === 'lev' && S.without) { const lx = -0.55; tag(X(lx), Y(predict(S.without, lx)), 'fit without it', C.ink, 20, -36); }
+  }
+}
+function draw() { ctx.clearRect(0, 0, W, H); drawPlot(); drawMap(); drawLoss(); drawFocus(); }
+
+/* ===== live numbers ===== */
+const f3 = v => (v < 0 ? '−' : '') + Math.abs(v).toFixed(3);
+function updateText() {
+  const n = S.pts.length, g = grad(S.pts, S.w, 'L2'), mse = loss(S.pts, S.w, 'L2'), gap = n ? dist(S.w, opt()) : 0;
+  setText('sLoss', n ? loss(S.pts, S.w, S.type).toFixed(4) : '–');
+  setText('sStep', S.jump ? (S.t ? '1 · solved' : '0') : String(S.t));
+  setText('sGap', n ? (gap < 5e-4 ? '0.000 ✓' : gap.toFixed(3)) : '–');
+  setText('mPoly', polyStr(S.w).slice(4)); setText('mSse', (mse * n).toFixed(3)); setText('mN', String(n)); setText('mLoss', mse.toFixed(4));
+  setText('mG0', f3(g[0])); setText('mG1', f3(g[1])); setText('mLr', S.lr.toFixed(2));
+  setText('mStar', S.star.map(f3).join(', ')); setText('mL1', loss(S.pts, S.w, 'L1').toFixed(4)); setText('mL1opt', S.l1.map(f3).join(', '));
+}
+function frame(dt, realDt) { S.time += realDt; update(dt); draw(); updateText(); }
+
+/* ===== direct manipulation: drag/add/delete points, click the map to choose a line ===== */
+const local = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+const inside = (R, x, y, m = 0) => R && x >= R.x - m && x <= R.x + R.w + m && y >= R.y - m && y <= R.y + R.h + m;
+function pick(x, y) { let b = -1, bd = 18 * 18; S.pts.forEach((p, i) => { const d = (X(p.x) - x) ** 2 + (Y(p.y) - y) ** 2; if (d < bd) { bd = d; b = i; } }); return b; }
+function barHit(x, y) { if (!inside(S.barRect, x, y, 3)) return -1; const s = S.barSegs.find(([a, b]) => x >= a && x < b); return s ? s[2] : -1; }
+function mapSet(x, y) {
+  const w = S.w.slice(); w[1] = clamp(MAP.s0 + (x - M.x) / M.w * (MAP.s1 - MAP.s0), MAP.s0, MAP.s1); w[0] = clamp(MAP.b1 - (y - M.y) / M.h * (MAP.b1 - MAP.b0), MAP.b0, MAP.b1);
+  resetFit(w);
+}
+cv.addEventListener('pointerdown', e => {
+  const [x, y] = local(e); S.sweep = false;
+  if (inside(M, x, y)) { S.loop = false; S.ghost = null; S.drag = { kind: 'map' }; mapSet(x, y); }
+  else if (inside(P, x, y, 10)) {
+    let i = pick(x, y);
+    if (i < 0) { if (S.pts.length >= 60) return; S.pts.push({ x: clampX(iX(x)), y: clampY(iY(y)) }); i = S.pts.length - 1; dataChanged(); }
+    S.loop = false; S.drag = { kind: 'pt', i, out: false }; S.hover = i; cv.style.cursor = 'grabbing';
+  } else return;
+  cv.setPointerCapture(e.pointerId); e.preventDefault();
 });
-addEventListener('keydown',e=>{
-  const k=e.key.toLowerCase();
-  if(k==='p'){D=D%7+1;resetFit();}
-  else if(k==='d'){presetIdx=(presetIdx+1)%3;loadPreset(presetIdx);}
-  else if(k==='c'){pts=[];presetName='empty';resetFit();}
-  else if(k==='b'){boxes=!boxes;}
+cv.addEventListener('pointermove', e => {
+  const [x, y] = local(e), D = S.drag;
+  if (D && D.kind === 'map') { mapSet(x, y); return; }
+  if (D && D.kind === 'pt') { const p = S.pts[D.i]; p.x = clampX(iX(x)); p.y = clampY(iY(y)); D.out = !inside(P, x, y, 26); D.px = x; D.py = y; dataChanged(); return; }
+  const inP = inside(P, x, y, 10); S.hover = inP ? pick(x, y) : barHit(x, y);
+  cv.style.cursor = inside(M, x, y) ? 'crosshair' : inP ? (S.hover >= 0 ? 'grab' : 'copy') : 'default';
 });
-addEventListener('resize',resize);
-resize();loadPreset(0);
-requestAnimationFrame(loop);
+function endDrag() {
+  const D = S.drag;
+  if (D && D.kind === 'pt' && D.out) { S.pts.splice(D.i, 1); S.special = S.special === D.i ? -1 : S.special > D.i ? S.special - 1 : S.special; S.hover = -1; dataChanged(); }
+  S.drag = null; cv.style.cursor = 'default';
+}
+cv.addEventListener('pointerup', endDrag); cv.addEventListener('pointercancel', endDrag);
+cv.addEventListener('pointerleave', () => { if (!S.drag) S.hover = -1; });
+
+/* ===== side panel: stats + controls ===== */
+stat('sLoss', 'loss · mean r²'); stat('sStep', 'GD steps'); stat('sGap', 'gap to optimum');
+const ctl = {};
+{
+  const p = $('#p-play'), h = s => p.insertAdjacentHTML('beforeend', s);
+  h('<h3>Loss function</h3>');
+  ctl.type = seg(p, [['L2', 'Squared r² (L2)'], ['L1', 'Absolute |r| (L1)']], 'L2', v => {
+    S.type = v; S.t = 0; S.done = false; S.path = [[S.w[1], S.w[0]]]; S.hist = [loss(S.pts, S.w, v)]; S.base = S.hist[0];
+    $('#sLoss').previousElementSibling.textContent = v === 'L2' ? 'loss · mean r²' : 'loss · mean |r|';
+  });
+  h('<h3>Model</h3>');
+  ctl.deg = slider(p, 'cDeg', 'Polynomial degree — 1 is a straight line', 1, 6, 1, 1, v => v === 1 ? '1 · line' : v + ' · curve', v => setDeg(v));
+  ctl.lr = slider(p, 'cLr', 'Learning rate η — how far each downhill step goes', 0.02, 1.1, 0.01, 0.25, v => v.toFixed(2), v => { S.lr = v; S.done = false; S.base = loss(S.pts, S.w, S.type); });
+  h('<h3>Data</h3>');
+  ctl.data = seg(p, [['line', 'Noisy line'], ['curve', 'Curve'], ['outlier', 'Line + outlier'], ['empty', 'Clear']], 'line', loadPreset);
+  ctl.cf = seg(p, [[true, 'Show ★ closed-form fit'], [false, 'Hide it']], true, v => { S.showCF = v; });
+  h('<p><b>On the stage:</b> click empty space to add a point · drag a point to move it · drag it off the plot to delete · click or drag in the loss map to pick any line, then let gradient descent take over.</p>');
+}
+function config(o) {
+  S.focus = o.focus || null; S.loop = !!o.loop; S.sweep = false; S.ghost = null; S.jump = null;
+  ctl.type.set(o.type || 'L2'); ctl.lr.set(o.lr || 0.25); ctl.cf.set(o.cf !== false);
+  S.deg = o.deg || 1; ctl.data.set(o.data || 'line'); ctl.deg.set(S.deg);
+  resetFit(o.start === 'star' ? S.star : o.w || STARTS[0]);
+  setPlaying(o.play !== false && !REDUCED);
+}
+
+/* ===== tour + experiments ===== */
+const STEPS = [
+  { t: 'Watch a line learn', d: 'Gradient descent starts from a bad line and nudges it, step by step, until the total error is as small as it can be. Grab any point — the fit follows.',
+    cap: 'The <b>amber line</b> is the model’s guess. Each <b>violet square</b> is one point’s error, squared. Watch gradient descent shrink them.',
+    go() { config({ loop: true }); S.loopI = 0; if (REDUCED) for (let k = 0; k < 12; k++) gdTick(); } },
+  { t: 'Residual = the vertical miss', d: 'For each point the residual r = y − ŷ is the <b>vertical</b> gap between the data and the line — not the perpendicular distance, because we predict y from x.',
+    cap: 'Paused on a so-so line. The ringed gap is a <b>residual</b>: data minus prediction. Drag a point up or down and watch its gap stretch.',
+    go() { config({ w: [0.2, 0.3], focus: 'resid', play: false }); } },
+  { t: 'Square it — literally', d: 'Build a square on each gap: its area is r². Twice the miss costs four times the area. Add every square up and you have the loss (divide by n for the mean).',
+    cap: 'Each gap becomes a <b>square of area r²</b>. The bar on the right stacks every square: <b>total area = the loss</b>.',
+    go() { config({ w: [0.2, 0.3], focus: 'square', play: false }); } },
+  { t: 'Every line is a point in a map', d: 'A line is just two numbers (slope, intercept). Colour every possible pair by its total square area and you get a bowl — for squared error always a perfect paraboloid with elliptical contours and one bottom.',
+    cap: 'Every spot in the <b>loss map</b> is a whole line. Click or drag inside it: the amber line jumps to match. Brighter = less square area.',
+    go() { config({ w: [0.5, -0.5], focus: 'map', play: false }); } },
+  { t: 'Gradient descent walks downhill', d: 'The gradient ∇L points uphill; each step moves the opposite way, scaled by η. The path drops fast down the steep intercept wall, then crawls along the flat slope valley.',
+    cap: 'The <b>violet arrow</b> is −∇L, the steepest way down — always at right angles to the contours. Each step moves the amber dot along it.',
+    go() { config({ w: [-1.0, 2.1], focus: 'grad' }); } },
+  { t: 'Closed form: the bottom in one step', d: 'Because the bowl is exactly quadratic, you can solve ∇L = 0 directly: the normal equations XᵀX w = Xᵀy. No learning rate, no iterations — one linear solve.',
+    cap: 'The <b>★</b> is the normal-equation solution. Gradient descent needs dozens of steps (dotted); the closed form lands on the bottom in <b>one</b>.',
+    go() { config({ focus: 'star' }); startJump(); } },
+  { t: 'When squares go wrong: outliers', d: 'Squares punish big misses quadratically, so one bad point can own most of the loss and drag the line toward it. Absolute error (L1) grows only linearly — every point pulls with the same force — so the fit stays with the crowd. The price: a kinked bowl and no closed form.',
+    cap: 'One outlier owns most of the square area, so the <b>green L2 fit</b> tilts toward it. Switched to <b>L1 (|r|)</b>: the amber line walks back to the crowd.',
+    go() { config({ data: 'outlier', type: 'L1', start: 'star', focus: 'outlier' }); } },
+];
+const TRIES = [
+  { q: 'Predict: raise the learning rate from 0.25 to 1.06. Does gradient descent reach the ★ four times faster?',
+    run() { config({ w: [0.6, -1.2], lr: 1.06, focus: 'grad' }); $('#caption').innerHTML = 'η = 1.06. Watch the amber dot in the <b>loss map</b> bounce between the walls of the bowl.'; },
+    why: 'It never arrives — it zig-zags and explodes. Across the intercept the bowl’s curvature is λ ≈ 2, and plain GD is only stable when <b>η &lt; 2/λ = 1</b>; above that every step overshoots further than the last. The slope direction is far flatter and could take a bigger step, but one η has to suit the <i>steepest</i> direction. That mismatch is exactly what momentum, RMSProp and Adam are designed to fix.' },
+  { q: 'Two points sit equally far below the trend — one in the middle of the data, one at the far edge. Which tilts the least-squares line more?',
+    run() { config({ data: 'outlier', start: 'star', focus: 'lev' }); S.sweep = true; S.sweepT = Math.PI / 2; $('#caption').innerHTML = 'The ringed point slides along the data at a <b>fixed gap</b> below the trend. The amber fit is re-solved every frame — watch when it swings.'; },
+    why: 'The edge point, by far. A miss in the middle only shifts the whole line down a little (it cannot tilt it); a miss at the edge is cheapest to fix by <b>tilting</b> the line, which shrinks that one big square fast. This is <b>leverage</b>: h = 1/n + (x − x̄)²/Σ(x − x̄)². It is why one faulty reading at the end of a time series can wreck a trend line.' },
+  { q: 'Switch to a degree-5 polynomial on curved data. Will gradient descent reach the closed-form curve as quickly as it reached the line?',
+    run() { config({ data: 'curve', deg: 5, w: [0], lr: 0.3 }); $('#caption').innerHTML = 'Degree 5, starting flat. The <b>green dashed curve</b> is the exact answer. Watch how long gradient descent takes to bend into it.'; },
+    why: 'It gets close in loss quickly, then crawls: the coefficients stay far from w* for thousands of steps. The features 1, x, x², …, x⁵ are nearly collinear on [−1, 1], so the bowl is a canyon whose flattest directions are thousands of times shallower than its steepest. η must suit the steep walls, so progress along the floor is glacial. Small regressions are therefore <b>solved</b> (normal equations, or better QR/SVD); GD wins only when the data are too big to solve directly.' },
+];
+
+$('#bStep').onclick = () => { setPlaying(false); S.jump = null; S.ghost = null; S.sweep = false; S.loop = false; gdTick(); };
+$('#bReset').onclick = () => { S.loop = false; S.sweep = false; S.ghost = null; resetFit(STARTS[0]); };
+READY = true; resize(); new ResizeObserver(() => onResize()).observe($('#caption'));
+renderSteps(); renderTries(); goStep(0); requestAnimationFrame(loop);
+window.__demo = { goStep, setPlaying, state: () => ({ w: S.w.slice(), star: S.star.slice(), l1: S.l1.slice(), t: S.t, n: S.pts.length, type: S.type, deg: S.deg, loss: loss(S.pts, S.w, S.type) }), tries: TRIES };
 </script>
 </body>
 </html>

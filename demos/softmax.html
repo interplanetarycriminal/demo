@@ -1,273 +1,645 @@
-<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
-<title>Softmax &amp; Sampling</title>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Softmax &amp; Sampling — ML Field Notes</title>
 <style>
-  html,body{margin:0;height:100%;background:#070510;overflow:hidden;font-family:ui-monospace,Menlo,Consolas,monospace}
-  canvas{touch-action:none;display:block;position:fixed;inset:0;cursor:crosshair}
-  #ui{position:fixed;top:14px;left:14px;z-index:10;background:rgba(10,8,22,.74);border:1px solid rgba(200,140,255,.28);
-      border-radius:10px;padding:12px 14px;color:#ecdcff;font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;
-      max-width:380px;backdrop-filter:blur(6px);max-height:52vh;overflow:auto}
-  #ui h1{margin:0 0 6px;font-size:15px;letter-spacing:.16em;color:#c78bff;text-transform:uppercase}
-  #ui p{margin:0 0 8px;color:#9c8ab8}
-  .hint{color:#8073a0}
-  #ui a{color:#5df0ff;text-decoration:none}
-  #ui a:hover{text-decoration:underline}
-  input[type=range]{width:100%;accent-color:#c78bff;margin:2px 0 4px}
-  .stat{color:#5df0ff}
-  .on{color:#7dffa8}.off{color:#5a4d72}
-@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
+/* ===== ML Field Notes design system (shared by every ML/AI demo) =====
+   Colour means the same thing in every demo:
+   --a coral = class A / "positive"     --b teal = class B / "negative"
+   --hl amber = the model's current parameters / guess / selection
+   --grad violet = gradients, updates, errors flowing back
+   --accent = this demo's signature colour (set per demo) */
+:root{
+  --bg:#0c0e1a; --bg2:#10132a; --panel:#13162c; --panel2:#181c38; --line:rgba(190,200,255,.10); --line2:rgba(190,200,255,.18);
+  --ink:#e9ecfa; --dim:#a2a9c8; --faint:#6b7396;
+  --a:#ff7a6b; --b:#3fd0c0; --hl:#ffc857; --grad:#a78bfa; --good:#7ee787; --bad:#ff6b8a;
+  --accent:#8fb8ff;
+  --r:12px; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.5 var(--sans)}
+body{overflow:hidden}
+a{color:var(--accent)}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app{display:grid;grid-template-columns:minmax(0,1fr) 380px;grid-template-rows:48px minmax(0,1fr);height:100vh;height:100dvh}
+.top{grid-column:1/-1;display:flex;align-items:center;gap:12px;padding:0 14px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#11142a,#0d1020)}
+.top a.back{color:var(--dim);text-decoration:none;font-size:13px;white-space:nowrap}
+.top a.back:hover{color:var(--ink)}
+.top .chip{font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 45%,transparent);border-radius:99px;padding:5px 8px}
+.top h1{margin:0;font-size:15px;font-weight:650;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top .sp{flex:1}
+.top .keys{font:11px var(--mono);color:var(--faint);white-space:nowrap}
+.stage{position:relative;min-width:0;min-height:0;background:radial-gradient(ellipse at 50% 40%,#151a3a 0%,var(--bg) 70%)}
+.stage::before{content:"";position:absolute;inset:0;background-image:radial-gradient(rgba(190,200,255,.07) 1px,transparent 1.3px);background-size:24px 24px;pointer-events:none}
+.stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.caption{position:absolute;left:16px;right:16px;top:14px;max-width:640px;padding:10px 14px;border-radius:10px;background:rgba(12,14,30,.78);border:1px solid var(--line2);backdrop-filter:blur(6px);font-size:14px;line-height:1.45;pointer-events:none;transition:opacity .3s}
+.caption b{color:var(--accent)}
+.caption:empty{opacity:0}
+.dock{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;gap:6px;padding:6px;border-radius:99px;background:rgba(12,14,30,.82);border:1px solid var(--line2);backdrop-filter:blur(6px)}
+.dock button{border:0;background:transparent;border-radius:99px;min-width:36px;height:34px;padding:0 12px;cursor:pointer;color:var(--ink);white-space:nowrap}
+.dock button:hover{background:rgba(255,255,255,.08)}
+.dock button.on{background:color-mix(in srgb,var(--accent) 22%,transparent);color:var(--accent)}
+.lesson{border-left:1px solid var(--line);background:var(--panel);overflow:auto;min-height:0;display:flex;flex-direction:column}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border-bottom:1px solid var(--line)}
+.stat{background:var(--panel);padding:10px 12px}
+.stat .k{font:600 10px/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.stat .v{font:600 18px/1.3 var(--mono);font-variant-numeric:tabular-nums;margin-top:3px}
+.tabs{display:flex;gap:2px;padding:10px 12px 0;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);z-index:2}
+.tabs button{border:0;background:none;padding:9px 12px;color:var(--dim);cursor:pointer;border-bottom:2px solid transparent;font-weight:600}
+.tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent)}
+.pane{padding:14px 16px 22px;display:none}
+.pane.on{display:block}
+.pane h3{margin:14px 0 6px;font-size:13px;letter-spacing:.02em}
+.pane p{margin:0 0 10px;color:var(--dim)}
+.pane p b,.pane li b{color:var(--ink)}
+.lede{font-size:15px;color:var(--ink)!important}
+.steps{list-style:none;margin:10px 0 0;padding:0;counter-reset:s}
+.steps li{counter-increment:s;border:1px solid var(--line);border-radius:10px;margin:0 0 8px;padding:10px 12px 10px 40px;position:relative;cursor:pointer;color:var(--dim);background:var(--panel2)}
+.steps li::before{content:counter(s);position:absolute;left:12px;top:10px;width:18px;height:18px;border-radius:99px;display:grid;place-items:center;font:600 11px var(--mono);background:rgba(255,255,255,.07);color:var(--dim)}
+.steps li.on{border-color:color-mix(in srgb,var(--accent) 60%,transparent);color:var(--ink)}
+.steps li.on::before{background:var(--accent);color:#141414}
+.steps li.done::before{content:"✓";background:rgba(126,231,135,.2);color:var(--good)}
+.steps li .t{font-weight:650;color:var(--ink);display:block}
+.steps li .d{display:none;margin-top:4px}
+.steps li.on .d{display:block}
+.tournav{display:flex;gap:8px;margin-top:6px}
+.btn{border:1px solid var(--line2);background:var(--panel2);border-radius:9px;padding:7px 12px;cursor:pointer;color:var(--ink)}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:#15131a;border-color:transparent;font-weight:650}
+.card{border:1px solid var(--line);border-radius:12px;padding:12px;margin:0 0 10px;background:var(--panel2)}
+.card .q{color:var(--ink);font-weight:600;margin-bottom:8px}
+.card .why{display:none;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line2);color:var(--dim)}
+.card.revealed .why{display:block}
+.card .row{display:flex;gap:8px;flex-wrap:wrap}
+.eq{font:14px/1.7 var(--mono);background:#0e1124;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:6px 0 12px;overflow-x:auto;white-space:nowrap}
+.eq .c-a{color:var(--a)} .eq .c-b{color:var(--b)} .eq .c-hl{color:var(--hl)} .eq .c-g{color:var(--grad)} .eq .c-acc{color:var(--accent)}
+.live{font-variant-numeric:tabular-nums;color:var(--hl)}
+.ctrl{display:grid;grid-template-columns:1fr auto;gap:4px 10px;align-items:center;margin:10px 0}
+.ctrl label{color:var(--dim);font-size:13px}
+.ctrl output{font:12px var(--mono);color:var(--ink);font-variant-numeric:tabular-nums}
+.ctrl input[type=range]{grid-column:1/-1;width:100%;accent-color:var(--accent)}
+.seg{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 10px}
+.seg button{border:1px solid var(--line2);background:transparent;border-radius:99px;padding:5px 11px;cursor:pointer;color:var(--dim);font-size:13px}
+.seg button[aria-pressed=true]{background:color-mix(in srgb,var(--accent) 20%,transparent);color:var(--ink);border-color:color-mix(in srgb,var(--accent) 55%,transparent)}
+.note{border-left:3px solid var(--grad);padding:6px 10px;margin:8px 0 12px;color:var(--dim);background:rgba(167,139,250,.06);border-radius:0 8px 8px 0}
+.wild li{margin-bottom:6px;color:var(--dim)}
+@media (max-width:880px){
+  body{overflow:auto}
+  .app{grid-template-columns:1fr;grid-template-rows:48px 58vh auto;height:auto}
+  .stage{height:58vh}
+  .lesson{border-left:0;border-top:1px solid var(--line)}
+  .top .keys{display:none}
+  .caption{font-size:13px;top:10px;left:10px;right:10px}
+  .stats{grid-template-columns:repeat(3,1fr)}
+  .stat .v{font-size:15px}
+}
+@media (prefers-reduced-motion:reduce){.caption{transition:none}}
 </style>
-<canvas id="c"></canvas>
-<div id="ui">
-  <h1>Softmax &amp; Sampling</h1>
-  <p>Softmax turns raw scores into probabilities, and temperature decides how boldly the model gambles.</p>
-  <label class="hint">temperature <span class="stat" id="tv">1.00</span></label>
-  <input type="range" id="temp" min="0.1" max="3" step="0.01" value="1">
-  <label class="hint">sampling rate <span class="stat" id="rv">12/s</span></label>
-  <input type="range" id="rate" min="1" max="60" step="1" value="12">
-  <div class="hint">drag bars · [A] auto-animate · [K] top-k=3 · [P] top-p=0.9 · [R] reset</div>
-  <div class="hint">auto <span id="fA" class="off">off</span> · top-k <span id="fK" class="off">off</span>
-     · top-p <span id="fP" class="off">off</span></div>
-  <div class="hint">samples <span class="stat" id="ns">0</span> · argmax <span class="stat" id="am">—</span>
-     · p_max <span class="stat" id="pm">—</span> · entropy <span class="stat" id="en">—</span></div>
-  <div class="hint">L1 error to true p: <span class="stat" id="er">—</span></div>
-  <p class="hint" style="margin-top:8px">p<sub>i</sub> = exp(z<sub>i</sub>/T) / Σ<sub>j</sub> exp(z<sub>j</sub>/T) — the last step of every LLM forward pass.</p>
-  <a href="index.html">← gallery</a>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace;max-width:100vw;white-space:pre-wrap';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div class="app">
+  <header class="top">
+    <a class="back" href="index.html">← Gallery</a>
+    <span class="chip">ML / AI</span>
+    <h1>Softmax &amp; Sampling</h1>
+    <span class="sp"></span>
+    <span class="keys">Space play · ←/→ tour · R reset</span>
+  </header>
+  <section class="stage" id="stage">
+    <canvas id="c" role="img" aria-label="Next-word prediction for “The cat sat on the ___”: draggable logit bars for ten candidate words, their exponentials, the probability distribution with top-k and top-p cut-offs and cumulative mass line, a dice strip, and a histogram of sampled words converging to the probabilities"></canvas>
+    <div class="caption" id="caption" aria-live="polite"></div>
+    <div class="dock" role="group" aria-label="Simulation controls">
+      <button id="bPlay" class="on" aria-label="Pause">❚❚</button>
+      <button id="bStep" aria-label="Step once">Step</button>
+      <button id="bReset" aria-label="Reset">Reset</button>
+      <button id="bSpeed" aria-label="Speed">1×</button>
+    </div>
+  </section>
+  <aside class="lesson">
+    <div class="stats" id="stats"><!-- 3 stat tiles: .stat > .k + .v#id --></div>
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-tab="learn">Learn</button>
+      <button role="tab" aria-selected="false" data-tab="try">Try this</button>
+      <button role="tab" aria-selected="false" data-tab="math">The math</button>
+      <button role="tab" aria-selected="false" data-tab="play">Controls</button>
+    </div>
+    <div class="pane on" id="p-learn">
+      <p class="lede">A language model never outputs a word. It outputs a <b>score for every word</b>; softmax turns the scores into odds, and the decoding knobs decide how boldly it rolls the dice.</p>
+      <ol class="steps" id="steps"></ol>
+      <div class="tournav"><button class="btn" id="tPrev">← Back</button><button class="btn primary" id="tNext">Next step →</button></div>
+      <h3>In the wild</h3>
+      <ul class="wild">
+        <li><b>Every LLM API</b> exposes <code>temperature</code> and <code>top_p</code>; open models ship a generation config with top-k / top-p defaults. This pipeline runs once per generated token.</li>
+        <li>The same softmax turns scores into weights inside every <b>attention head</b>, and ends almost every <b>classifier</b>.</li>
+        <li><b>Knowledge distillation</b> raises T so a student can learn from a teacher’s tail probabilities, and RL agents explore with softmax (Boltzmann) policies.</li>
+      </ul>
+    </div>
+    <div class="pane" id="p-try"><!-- .card experiments: predict → run → why --></div>
+    <div class="pane" id="p-math">
+      <h3>1 · Softmax with temperature</h3>
+      <div class="eq"><span class="c-acc">p<sub>i</sub></span> = e<sup><span class="c-a">z<sub>i</sub></span>/<span class="c-hl">T</span></sup> ⁄ Σ<sub>j</sub> e<sup><span class="c-a">z<sub>j</sub></span>/<span class="c-hl">T</span></sup></div>
+      <div class="eq">p(<span class="live" id="mTok">mat</span>) = e<sup><span class="live" id="mZ">3.20</span>/<span class="live" id="mT">1.00</span></sup> ⁄ Σ<br>&nbsp; &nbsp; &nbsp; &nbsp; = <span class="live" id="mE">24.5</span> ⁄ <span class="live" id="mS">58</span> = <span class="live" id="mP">0.420</span></div>
+      <p>Follows the token you hover or drag (else the top one). Columns: <span style="color:var(--a)">coral</span> positive and <span style="color:var(--b)">teal</span> negative logits, grey exp, <span style="color:var(--accent)">blue</span> probability.</p>
+      <h3>2 · Cut the tail, then renormalise</h3>
+      <div class="eq">top-k: keep the <span class="c-hl">k</span> largest p<sub>i</sub> &nbsp;· k = <span class="live" id="mK">off</span></div>
+      <div class="eq">top-p: smallest S, Σ<sub>S</sub> p<sub>i</sub> ≥ <span class="c-hl">p</span> = <span class="live" id="mPP">off</span><br>→ |S| = <span class="live" id="mPN">10</span>, mass <span class="live" id="mMass">1.000</span></div>
+      <div class="eq"><span class="c-hl">q<sub>i</sub></span> = p<sub>i</sub> ⁄ Σ<sub>kept</sub> p<sub>j</sub><br>kept <span class="live" id="mKeep">10</span> → q = <span class="live" id="mQ">0.420</span></div>
+      <h3>3 · How spread out is the choice?</h3>
+      <div class="eq">H = −Σ q<sub>i</sub> log₂ q<sub>i</sub> = <span class="live" id="mH">2.1</span> bits<br>effective choices = 2<sup>H</sup> = <span class="live" id="mEff">4.3</span></div>
+      <div class="note"><b>Misconception:</b> “temperature changes which word is most likely.” It never does. Dividing by any T &gt; 0 keeps the order; T only changes how far apart the probabilities are. And adding the same number to every logit changes nothing at all.</div>
+      <div class="note"><b>Order matters:</b> temperature is applied <i>before</i> top-p, so a hot T grows the nucleus. Here top-k and top-p both read the same temperature-scaled p. Hugging Face applies top-p after top-k has renormalised, which can trim slightly more.</div>
+      <div class="note"><b>Sampling</b> is inverse-CDF: draw u ~ U[0,1) and pick the token whose slice of the dice strip contains u. After N rolls, the histogram’s gap (half the L1 distance) shrinks like 1/√N.</div>
+    </div>
+    <div class="pane" id="p-play"><!-- .ctrl sliders, .seg segmented choices --></div>
+  </aside>
 </div>
 <script>
-(function(){
-var c=document.getElementById('c'),x=c.getContext('2d');
-var W=0,H=0,DPR=1;
-function resize(){DPR=Math.min(2,window.devicePixelRatio||1);W=innerWidth;H=innerHeight;
-  c.width=W*DPR;c.height=H*DPR;x.setTransform(DPR,0,0,DPR,0,0);}
-addEventListener('resize',resize);
-
-var NAMES=['the','cat','sat','on','mat','sky','ran','dog','and','why'];
-var N=NAMES.length;
-var Z=[],P=[],MASK=[],counts=[],total=0,chips=[];
-var flags={auto:false,k:false,p:false};
-var K=3,TOPP=0.9;
-
-function reset(){
-  Z=[];for(var i=0;i<N;i++)Z.push(2.6*Math.sin(i*1.9+0.7)+1.2*Math.cos(i*0.6));
-  counts=[];for(var i2=0;i2<N;i2++)counts.push(0);
-  total=0;chips=[];
+'use strict';
+/* ===== shell helpers (keep) ===== */
+const $ = s => document.querySelector(s);
+const cv = $('#c'), ctx = cv.getContext('2d'), stage = $('#stage');
+let W = 0, H = 0, DPR = 1;
+function resize() {
+  const r = stage.getBoundingClientRect(); DPR = Math.min(2, devicePixelRatio || 1);
+  W = Math.max(1, r.width); H = Math.max(1, r.height);
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR); ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  if (typeof onResize === 'function') onResize();
 }
-reset();
-
-function softmax(){
-  var T=parseFloat(document.getElementById('temp').value)||1;
-  var mx=-1e9;for(var i=0;i<N;i++)if(Z[i]>mx)mx=Z[i];
-  var e=[],s=0;
-  for(var i2=0;i2<N;i2++){var v=Math.exp((Z[i2]-mx)/T);e.push(v);s+=v;}
-  var base=[];for(var i3=0;i3<N;i3++)base.push(e[i3]/s);
-
-  MASK=[];for(var i4=0;i4<N;i4++)MASK.push(true);
-  var order=base.map(function(v,i){return[v,i]}).sort(function(a,b){return b[0]-a[0]});
-  if(flags.k){for(var q=K;q<N;q++)MASK[order[q][1]]=false;}
-  if(flags.p){
-    var cum=0,cut=N;
-    for(var q2=0;q2<N;q2++){cum+=base[order[q2][1]];if(cum>=TOPP){cut=q2+1;break;}}
-    for(var q3=cut;q3<N;q3++)MASK[order[q3][1]]=false;
-  }
-  // renormalize over kept set
-  var ks=0;for(var i5=0;i5<N;i5++)if(MASK[i5])ks+=base[i5];
-  if(ks<=0){for(var i6=0;i6<N;i6++)MASK[i6]=true;ks=1;}
-  P=[];for(var i7=0;i7<N;i7++)P.push(MASK[i7]?base[i7]/ks:0);
-}
-
-function sample(){
-  var r=Math.random(),acc=0;
-  for(var i=0;i<N;i++){acc+=P[i];if(r<=acc)return i;}
-  return N-1;
-}
-
-var drag=-1,mouse={x:-999,y:-999};
-function geom(){
-  var pad=Math.max(70,W*0.05);
-  var right=Math.min(360,W*0.30);
-  var left=pad+280;  // clear of overlay
-  var bw=Math.max(120,W-left-right-pad);
-  return {lx:left,bw:bw,rx:W-right-pad*0.4,rw:right,
-          zTop:H*0.16,zH:H*0.24,pTop:H*0.52,pH:H*0.26};
-}
-function barX(g,i){var s=g.bw/N;return {x:g.lx+i*s+s*0.14,w:s*0.72};}
-
-function pt(e){var r=c.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top};}
-c.addEventListener('mousedown',function(e){var m=pt(e),g=geom();mouse=m;
-  for(var i=0;i<N;i++){var b=barX(g,i);
-    if(m.x>=b.x-4&&m.x<=b.x+b.w+4&&m.y>g.zTop-20&&m.y<g.zTop+g.zH+30){drag=i;setZ(i,m.y,g);flags.auto=false;upd();break;}}});
-addEventListener('mousemove',function(e){var m=pt(e);mouse=m;if(drag>=0)setZ(drag,m.y,geom());});
-addEventListener('mouseup',function(){drag=-1;});
-function setZ(i,my,g){
-  var mid=g.zTop+g.zH/2;
-  Z[i]=Math.max(-6,Math.min(6,(mid-my)/(g.zH/2)*6));
-}
-addEventListener('keydown',function(e){
-  var k=e.key.toLowerCase();
-  if(k==='a'){flags.auto=!flags.auto;}
-  else if(k==='k'){flags.k=!flags.k;counts=counts.map(function(){return 0});total=0;chips=[];}
-  else if(k==='p'){flags.p=!flags.p;counts=counts.map(function(){return 0});total=0;chips=[];}
-  else if(k==='r'){reset();}
-  upd();
+new ResizeObserver(resize).observe(stage); resize();
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+// tabs
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', x === b));
+  document.querySelectorAll('.pane').forEach(p => p.classList.toggle('on', p.id === 'p-' + b.dataset.tab));
 });
-function upd(){
-  document.getElementById('fA').textContent=flags.auto?'on':'off';
-  document.getElementById('fA').className=flags.auto?'on':'off';
-  document.getElementById('fK').textContent=flags.k?'on (k=3)':'off';
-  document.getElementById('fK').className=flags.k?'on':'off';
-  document.getElementById('fP').textContent=flags.p?'on (p=0.9)':'off';
-  document.getElementById('fP').className=flags.p?'on':'off';
+// playback
+let playing = !REDUCED, speed = 1;
+const SPEEDS = [0.25, 0.5, 1, 2, 4];
+function setPlaying(v) { playing = v; $('#bPlay').textContent = v ? '❚❚' : '▶'; $('#bPlay').classList.toggle('on', v); $('#bPlay').setAttribute('aria-label', v ? 'Pause' : 'Play'); }
+$('#bPlay').onclick = () => setPlaying(!playing);
+$('#bSpeed').onclick = () => { speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]; $('#bSpeed').textContent = speed + '×'; };
+// tour: STEPS = [{t:'title', d:'html', cap:'stage caption html', go(){ /* set demo state */ }}]
+let tour = 0;
+function renderSteps() {
+  const ol = $('#steps'); ol.innerHTML = '';
+  STEPS.forEach((s, i) => { const li = document.createElement('li'); li.className = (i === tour ? 'on' : '') + (i < tour ? ' done' : ''); li.innerHTML = `<span class="t">${s.t}</span><span class="d">${s.d}</span>`; li.onclick = () => goStep(i); ol.appendChild(li); });
+  $('#tPrev').disabled = tour === 0; $('#tNext').textContent = tour === STEPS.length - 1 ? 'Start over ↺' : 'Next step →';
 }
-upd();
+function goStep(i) { tour = (i + STEPS.length) % STEPS.length; const s = STEPS[tour]; if (s.go) s.go(); $('#caption').innerHTML = s.cap || ''; renderSteps(); }
+$('#tPrev').onclick = () => goStep(Math.max(0, tour - 1));
+$('#tNext').onclick = () => goStep(tour + 1);
+// experiments: TRIES = [{q:'Predict…', run(){…}, why:'html'}]
+function renderTries() {
+  const p = $('#p-try'); p.innerHTML = '<p>Make a prediction first, then run it. Each experiment sets the demo up for you.</p>';
+  TRIES.forEach(x => { const c = document.createElement('div'); c.className = 'card'; c.innerHTML = `<div class="q">${x.q}</div><div class="row"><button class="btn primary">Run it</button><button class="btn">Show why</button></div><div class="why">${x.why}</div>`; const [run, why] = c.querySelectorAll('button'); run.onclick = () => { x.run(); setPlaying(true); }; why.onclick = () => c.classList.toggle('revealed'); p.appendChild(c); });
+}
+// controls helpers
+function slider(parent, id, label, min, max, step, value, fmt, onInput) {
+  const d = document.createElement('div'); d.className = 'ctrl';
+  d.innerHTML = `<label for="${id}">${label}</label><output id="${id}o"></output><input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${value}">`;
+  parent.appendChild(d); const inp = d.querySelector('input'), out = d.querySelector('output');
+  const upd = () => { out.textContent = fmt(+inp.value); onInput(+inp.value); }; inp.oninput = upd; upd();
+  return { set(v) { inp.value = v; upd(); }, get: () => +inp.value };
+}
+function seg(parent, options, value, onPick) {
+  const d = document.createElement('div'); d.className = 'seg'; parent.appendChild(d);
+  const bs = options.map(([v, label]) => { const b = document.createElement('button'); b.textContent = label; b.setAttribute('aria-pressed', v === value); b.onclick = () => set(v); d.appendChild(b); return [v, b]; });
+  function set(v) { bs.forEach(([k, b]) => b.setAttribute('aria-pressed', k === v)); onPick(v); }
+  return { set };
+}
+function stat(id, label) { const d = document.createElement('div'); d.className = 'stat'; d.innerHTML = `<div class="k">${label}</div><div class="v" id="${id}">–</div>`; $('#stats').appendChild(d); }
+const setText = (id, v) => { const e = document.getElementById(id); if (e && e.textContent !== v) e.textContent = v; };
+// keyboard
+addEventListener('keydown', e => {
+  if (e.target.matches('input,select,textarea')) return;
+  if (e.code === 'Space') { setPlaying(!playing); e.preventDefault(); }
+  else if (e.key === 'ArrowRight') goStep(tour + 1);
+  else if (e.key === 'ArrowLeft') goStep(Math.max(0, tour - 1));
+  else if (e.key === 'r' || e.key === 'R') $('#bReset').click();
+});
+// wall-clock-locked loop (dt clamped to [0, 0.1] — rAF timestamps can precede performance.now())
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.1, Math.max(0, (now - last) / 1000)); last = now;
+  try { frame(playing ? dt * speed : 0, dt); } catch (err) { window.onerror(err.message, '', 0); return; }
+  requestAnimationFrame(loop);
+}
 
-function rr(X,Y,w,h,r){r=Math.min(r,w/2,Math.abs(h)/2);x.beginPath();
-  x.moveTo(X+r,Y);x.lineTo(X+w-r,Y);x.quadraticCurveTo(X+w,Y,X+w,Y+r);
-  x.lineTo(X+w,Y+h-r);x.quadraticCurveTo(X+w,Y+h,X+w-r,Y+h);x.lineTo(X+r,Y+h);
-  x.quadraticCurveTo(X,Y+h,X,Y+h-r);x.lineTo(X,Y+r);x.quadraticCurveTo(X,Y,X+r,Y);x.closePath();}
+// ===== DEMO CODE: Softmax & Sampling =====
+/*CORE-START*/
+// Seeded RNG so every run of the tour is reproducible.
+function mulberry32(a) { return function () { a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+// Softmax with temperature, max-shifted for numerical safety. T → 0 is the argmax limit.
+function softmax(z, T) {
+  const m = Math.max(...z);
+  if (T < 1e-6) { const top = z.map(v => v === m ? 1 : 0), c = top.reduce((a, b) => a + b, 0); return top.map(v => v / c); }
+  const e = z.map(v => Math.exp((v - m) / T)), s = e.reduce((a, b) => a + b, 0);
+  return e.map(v => v / s);
+}
+// temperature → top-k and top-p (both read the same temperature-scaled p) → renormalise the survivors.
+function decode(z, T, k, topP) {
+  const n = z.length, p = softmax(z, T);
+  const order = p.map((_, i) => i).sort((a, b) => p[b] - p[a] || a - b);
+  const cum = []; let c = 0; for (const i of order) { c += p[i]; cum.push(c); }
+  const kN = Math.max(1, Math.min(n, k));
+  const pN = topP < 1 ? (cum.findIndex(v => v >= topP - 1e-12) + 1 || n) : n; // smallest prefix with mass ≥ p
+  const keepN = Math.min(kN, pN), keep = new Array(n).fill(0);
+  for (let j = 0; j < keepN; j++) keep[order[j]] = 1;
+  const mass = cum[keepN - 1], q = p.map((v, i) => keep[i] ? v / mass : 0);
+  return { p, order, cum, kN, pN, keepN, keep, mass, q };
+}
+const entropyBits = q => q.reduce((h, v) => v > 0 ? h - v * Math.log2(v) : h, 0);
+// Inverse-CDF sampling: walk tokens in `order`, stop where the running mass passes u ∈ [0,1).
+function sampleFrom(q, order, u) { let c = 0, lastKept = order[0]; for (const i of order) { if (q[i] <= 0) continue; lastKept = i; c += q[i]; if (u < c) return i; } return lastKept; }
+/*CORE-END*/
 
-var t0=performance.now(),acc=0,phase=0;
-function frame(now){
-  var dt=Math.min(0.05,(now-t0)/1000);t0=now;phase+=dt;
-  if(flags.auto&&drag<0){for(var i=0;i<N;i++)Z[i]=3.4*Math.sin(phase*0.55+i*1.15)+1.1*Math.cos(phase*0.31+i*2.2);}
-  softmax();
-  var g=geom();
+/* ---------- data + state ---------- */
+const TOK = ['mat', 'floor', 'sofa', 'bed', 'rug', 'chair', 'roof', 'box', 'moon', 'piano'], N = TOK.length;
+const SCEN = {
+  bal: [3.2, 2.5, 2.1, 1.6, 1.3, 0.8, 0.2, -0.3, -1.4, -2.2],
+  sure: [5.5, 2.0, 1.4, 1.0, 0.6, 0.2, -0.4, -0.8, -1.8, -2.5],
+  unsure: [1.6, 1.4, 1.3, 1.2, 1.0, 0.9, 0.7, 0.5, 0.1, -0.2]
+};
+const ZMAX = 6, ZMIN = -3;
+const C = { a: '#ff7a6b', b: '#3fd0c0', hl: '#ffc857', grad: '#a78bfa', data: '#c7cbe0', acc: '#8fb8ff', ink: '#e9ecfa', dim: '#a2a9c8', faint: '#6b7396', off: '#343a5c' };
+const MONO = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace', SANS = 'ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif';
+const S = {
+  z: SCEN.bal.slice(), T: 1, k: N, p: 1, greedy: false, rate: 8,
+  counts: new Array(N).fill(0), n: 0, acc: 0, acc2: 0, leaky: false, rng: mulberry32(7), clock: 0,
+  last: -1, lastU: 0, uFade: 0, pop: 0, recent: [], chips: [],
+  anim: null, animT: 0, focus: [], pin: -1, hover: -1, drag: -1, prefill: 0,
+  pos: TOK.map((_, i) => i)
+};
+let D = decode(S.z, S.T, S.k, S.p), prevQ = D.q.slice(), eff = D.q;
+var LAY, ready; // `var`: the shell calls onResize() before this block runs
 
-  x.fillStyle='#070510';x.fillRect(0,0,W,H);
-  var bg=x.createRadialGradient(W*0.5,H*0.5,0,W*0.5,H*0.5,Math.max(W,H)*0.7);
-  bg.addColorStop(0,'rgba(80,30,150,.16)');bg.addColorStop(1,'rgba(0,0,0,0)');
-  x.fillStyle=bg;x.fillRect(0,0,W,H);
+/* ---------- small helpers ---------- */
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const smooth = t => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
+const pct = v => v >= 0.995 ? '100%' : v >= 0.1 ? (v * 100).toFixed(0) + '%' : v >= 0.001 ? (v * 100).toFixed(1) + '%' : v > 0 ? '<0.1%' : '0%';
+const fmtE = v => (v >= 1e5 || (v > 0 && v < 0.01)) ? v.toExponential(1).replace('e+', 'e') : v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2);
+const colX = i => LAY.cx0 + (S.pos[i] + 0.5) * LAY.cw;
+function stopAnim() { S.anim = null; }
+function clearCounts() { S.counts.fill(0); S.n = 0; S.leaky = false; S.acc2 = 0; }
 
-  // sampling
-  var rate=parseFloat(document.getElementById('rate').value)||12;
-  acc+=dt*rate;
-  while(acc>=1){acc-=1;var s=sample();counts[s]++;total++;
-    chips.push({i:s,x:g.rx+g.rw*0.5,y:H*0.20,vy:0,life:1,t:NAMES[s]});
-    if(chips.length>60)chips.shift();}
+/* ---------- layout (safe rect: y 84 … H-76) ---------- */
+function layout() {
+  const ph = W < 600, x0 = 16, y0 = ph ? 88 : 84, w = W - 32, h = H - 76 - y0;
+  const gut = ph ? 0 : 118, axR = ph ? 0 : 38;
+  const L = { ph, x0, y0, w, h, cx0: x0 + gut, cx1: x0 + w - axR };
+  L.cw = (L.cx1 - L.cx0) / N;
+  const g = ph ? 6 : 10, tb = ph ? 14 : 18, sh = ph ? 12 : 16;
+  let y = y0;
+  const row = hh => { const r = { y, h: hh }; y += hh; return r; };
+  L.head = row(ph ? 38 : 48); y += g;
+  const R = Math.max(120, y0 + h - y - tb - sh - 4 * g);
+  L.lg = row(R * 0.33); L.tb = row(tb); y += g;
+  L.ex = row(R * 0.13); y += g;
+  L.pr = row(R * 0.33); y += g;
+  L.st = row(sh); y += g * 0.6;
+  L.hi = row(R * 0.21);
+  L.zero = L.lg.y + L.lg.h * ZMAX / (ZMAX - ZMIN); L.zs = L.lg.h / (ZMAX - ZMIN);
+  LAY = L;
+}
+function onResize() { if (ready) layout(); }
 
-  x.textAlign='center';x.textBaseline='middle';
+/* ---------- sampling ---------- */
+function sampleOne(visual) {
+  const u = S.rng(), i = S.greedy ? D.order[0] : sampleFrom(D.q, D.order, u);
+  S.counts[i]++; S.n++; S.last = i; S.pop = 1;
+  if (!S.greedy) { S.lastU = u; S.uFade = 1; }
+  S.recent.unshift({ i, q: eff[i], top: i === D.order[0] }); if (S.recent.length > 9) S.recent.pop();
+  if (visual) { S.chips.push({ i, t: 0, u: S.greedy ? 0.5 : u }); if (S.chips.length > 2) S.chips.shift(); }
+}
+function rollMany(n) { for (let j = 0; j < n - 1; j++) sampleOne(false); sampleOne(true); }
 
-  // ---- logits row ----
-  var zMid=g.zTop+g.zH/2;
-  x.strokeStyle='rgba(160,140,220,.28)';x.lineWidth=1;
-  x.beginPath();x.moveTo(g.lx-10,zMid);x.lineTo(g.lx+g.bw+10,zMid);x.stroke();
-  x.textAlign='left';x.font='11px ui-monospace,monospace';x.fillStyle='rgba(180,160,225,.75)';
-  x.fillText('LOGITS  z  (drag me)',g.lx-8,g.zTop-16);
-  x.textAlign='center';
-  for(var i2=0;i2<N;i2++){
-    var b=barX(g,i2),h=Z[i2]/6*(g.zH/2),on=MASK[i2];
-    var col=on?'199,139,255':'90,77,114';
-    var y0=zMid,y1=zMid-h;
-    rr(b.x,Math.min(y0,y1),b.w,Math.abs(h)||1,4);
-    x.fillStyle='rgba('+col+',.30)';x.fill();
-    x.strokeStyle='rgba('+col+',.95)';x.lineWidth=1.4;
-    x.shadowColor='rgba('+col+',.9)';x.shadowBlur=on?14:0;x.stroke();x.shadowBlur=0;
-    // handle
-    x.beginPath();x.arc(b.x+b.w/2,y1,4,0,6.2832);
-    x.fillStyle=on?'#e9d0ff':'#5a4d72';x.fill();
-    x.font='11px ui-monospace,monospace';
-    x.fillStyle='rgba(200,180,240,'+(on?.9:.35)+')';
-    x.fillText(Z[i2].toFixed(1),b.x+b.w/2,y1+(h>=0?-14:14));
+/* ---------- drawing primitives ---------- */
+function glow(pts, col, w, a = 1) { // 2-pass stroke instead of shadowBlur
+  ctx.strokeStyle = col; ctx.lineJoin = 'round';
+  for (const [lw, al] of [[w + 5, 0.14 * a], [w, a]]) { ctx.globalAlpha = al; ctx.lineWidth = lw; ctx.beginPath(); pts.forEach(([x, y], j) => j ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.stroke(); }
+  ctx.globalAlpha = 1;
+}
+function text(t, x, y, col, font, align = 'center', base = 'alphabetic', back = true) {
+  ctx.font = font; ctx.textAlign = align; ctx.textBaseline = base;
+  if (back) { ctx.lineWidth = 3; ctx.lineJoin = 'round'; ctx.strokeStyle = 'rgba(12,14,26,.9)'; ctx.strokeText(t, x, y); }
+  ctx.fillStyle = col; ctx.fillText(t, x, y);
+}
+function rich(parts, x, y, font) { ctx.font = font; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; for (const [t, c] of parts) { ctx.fillStyle = c; ctx.fillText(t, x, y); x += ctx.measureText(t).width; } return x; }
+function box(x, y, w, h, r, fill) { ctx.beginPath(); ctx.roundRect(x, y, w, Math.max(0, h), Math.min(r, Math.max(0, h) / 2, w / 2)); ctx.fillStyle = fill; ctx.fill(); }
+function dashed(x1, y1, x2, y2, col, a = 1) { ctx.save(); ctx.setLineDash([4, 4]); ctx.globalAlpha = a; ctx.strokeStyle = col; ctx.lineWidth = 1.3; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore(); }
+
+/* ---------- scene ---------- */
+function draw() {
+  const L = LAY; ctx.clearRect(0, 0, W, H);
+  const bw = Math.min(46, L.cw * 0.62), act = S.drag >= 0 ? S.drag : S.hover >= 0 ? S.hover : S.pin;
+  if (act >= 0) { ctx.fillStyle = 'rgba(255,200,87,.06)'; ctx.fillRect(colX(act) - L.cw / 2, L.lg.y - 6, L.cw, L.hi.y + L.hi.h - L.lg.y + 10); }
+  drawFocus(); drawCutShade();
+  drawHeader(act); drawLogits(bw, act); drawExp(bw); drawProbs(bw); drawStrip(); drawHist(bw); drawRowLabels(); drawChips();
+}
+function rowRect(name) {
+  const L = LAY;
+  return { head: [L.head.y, L.head.h], logits: [L.lg.y, L.tb.y + L.tb.h - L.lg.y], exp: [L.ex.y, L.ex.h], probs: [L.pr.y, L.pr.h], samples: [L.st.y, L.hi.y + L.hi.h - L.st.y] }[name];
+}
+function drawFocus() {
+  const L = LAY, a = 0.55 + 0.3 * Math.sin(S.clock * 3);
+  for (const f of S.focus) {
+    const [y, h] = rowRect(f), x = L.x0 - 6, w = L.w + 12, yy = y - 5, hh = h + 10;
+    glow([[x + 10, yy], [x + w - 10, yy], [x + w, yy + 10], [x + w, yy + hh - 10], [x + w - 10, yy + hh], [x + 10, yy + hh], [x, yy + hh - 10], [x, yy + 10], [x + 10, yy]], C.acc, 1.4, a);
   }
-
-  // ---- probabilities row ----
-  var pBase=g.pTop+g.pH;
-  x.textAlign='left';x.font='11px ui-monospace,monospace';x.fillStyle='rgba(120,235,255,.8)';
-  x.fillText('PROBABILITIES  p = exp(z/T) / Σ exp(z/T)',g.lx-8,g.pTop-16);
-  x.textAlign='center';
-  x.strokeStyle='rgba(120,235,255,.22)';x.beginPath();x.moveTo(g.lx-10,pBase);x.lineTo(g.lx+g.bw+10,pBase);x.stroke();
-  var pmax=0;for(var q=0;q<N;q++)if(P[q]>pmax)pmax=P[q];
-  for(var i3=0;i3<N;i3++){
-    var b3=barX(g,i3),on3=MASK[i3];
-    var h3=Math.max(1,P[i3]*g.pH/Math.max(0.12,1));
-    h3=Math.max(1,P[i3]*g.pH);
-    var col3=on3?'93,240,255':'70,70,95';
-    rr(b3.x,pBase-h3,b3.w,h3,4);
-    var gr=x.createLinearGradient(0,pBase-h3,0,pBase);
-    if(on3){gr.addColorStop(0,'rgba(93,240,255,.85)');gr.addColorStop(1,'rgba(93,240,255,.18)');}
-    else{gr.addColorStop(0,'rgba(80,80,110,.4)');gr.addColorStop(1,'rgba(80,80,110,.1)');}
-    x.fillStyle=gr;x.shadowColor='rgba('+col3+',.8)';x.shadowBlur=on3?16:0;x.fill();x.shadowBlur=0;
-    x.strokeStyle='rgba('+col3+',.85)';x.lineWidth=1;x.stroke();
-    // empirical marker
-    if(total>0){
-      var f=counts[i3]/total,fy=pBase-f*g.pH;
-      x.beginPath();x.moveTo(b3.x-2,fy);x.lineTo(b3.x+b3.w+2,fy);
-      x.strokeStyle='#ffb45d';x.lineWidth=2;x.shadowColor='#ffb45d';x.shadowBlur=8;x.stroke();x.shadowBlur=0;
+}
+function cutReason() {
+  const k = D.kN < N, p = D.pN < N;
+  if (k && p && D.kN === D.pN) return 'top-k & top-p';
+  return D.pN < D.kN ? 'top-p' : 'top-k';
+}
+function drawCutShade() {
+  const L = LAY; if (D.keepN >= N) return;
+  const x = L.cx0 + D.keepN * L.cw, y = L.tb.y, h = L.pr.y + L.pr.h - y;
+  ctx.fillStyle = 'rgba(8,9,20,.45)'; ctx.fillRect(x, y, L.cx1 - x, h);
+  ctx.save(); ctx.beginPath(); ctx.rect(x, y, L.cx1 - x, h); ctx.clip(); ctx.strokeStyle = 'rgba(160,170,210,.07)'; ctx.lineWidth = 1;
+  ctx.beginPath(); for (let d = -h; d < L.cx1 - x; d += 9) { ctx.moveTo(x + d, y + h); ctx.lineTo(x + d + h, y); } ctx.stroke(); ctx.restore();
+}
+function drawHeader(act) {
+  const L = LAY, y = L.head.y + (L.ph ? 14 : 19), f = L.ph ? `600 16px ${SANS}` : `600 22px ${SANS}`;
+  ctx.font = f; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  const pre = 'The cat sat on the', pw = ctx.measureText(pre).width;
+  ctx.fillStyle = C.ink; ctx.fillText(pre, L.x0, y);
+  const word = S.last >= 0 ? TOK[S.last] : '?', ww = Math.max(ctx.measureText(word).width + 22, L.ph ? 54 : 70), bh = L.ph ? 24 : 32, bx = L.x0 + pw + 8;
+  S.boxC = [bx + ww / 2, y];
+  const r = 7, yy = y - bh / 2;
+  glow([[bx + r, yy], [bx + ww - r, yy], [bx + ww, yy + r], [bx + ww, yy + bh - r], [bx + ww - r, yy + bh], [bx + r, yy + bh], [bx, yy + bh - r], [bx, yy + r], [bx + r, yy]], C.hl, 1.5, 0.55 + 0.45 * S.pop);
+  const sc = 1 + 0.18 * S.pop; ctx.save(); ctx.translate(bx + ww / 2, y); ctx.scale(sc, sc);
+  ctx.textAlign = 'center'; ctx.fillStyle = S.last >= 0 ? C.hl : C.faint; ctx.fillText(word, 0, 1); ctx.restore();
+  ctx.textAlign = 'left'; ctx.fillStyle = C.ink; ctx.fillText('.', bx + ww + 4, y);
+  if (!L.ph) { // settings summary, top-right, only when it fits
+    const sum = `T ${S.T.toFixed(2)} · top-k ${S.k < N ? S.k : 'off'} · top-p ${S.p < 1 ? S.p.toFixed(2) : 'off'} · ${S.greedy ? 'greedy' : 'sampling'}`;
+    ctx.font = `12px ${MONO}`; if (bx + ww + 40 + ctx.measureText(sum).width < L.x0 + L.w) { ctx.textAlign = 'right'; ctx.fillStyle = C.dim; ctx.fillText(sum, L.x0 + L.w, y); }
+  }
+  const y2 = L.head.y + L.head.h - (L.ph ? 3 : 4), f2 = `${L.ph ? 10.5 : 12}px ${MONO}`;
+  if (act >= 0) { // the linked chain for one token
+    const z = S.z[act], e = Math.exp(z / S.T), sum = S.z.reduce((s, v) => s + Math.exp(v / S.T), 0), zc = z >= 0 ? C.a : C.b;
+    const tail = D.keep[act] ? (L.ph ? [`→q ${pct(D.q[act])}`, C.hl] : [`  →  kept, renormalised q = ${pct(D.q[act])}`, C.hl]) : [L.ph ? '→cut' : `  →  cut by ${cutReason()} (q = 0)`, C.faint];
+    rich(L.ph ? [[TOK[act] + ' ', C.ink], [`z${z.toFixed(1)}`, zc], ['→e ', C.dim], [fmtE(e), C.data], ['→÷Σ→', C.dim], [pct(D.p[act]), C.acc], tail]
+      : [[TOK[act] + ':  ', C.ink], [`z = ${z.toFixed(2)}`, zc], ['  →  e^(z/T) = ', C.dim], [fmtE(e), C.data], [`  →  ÷ Σ ${fmtE(sum)}  →  `, C.dim], [`p = ${pct(D.p[act])}`, C.acc], tail], L.x0, y2, f2);
+  } else if (S.recent.length) {
+    const parts = [[L.ph ? 'recent: ' : 'recent endings:  ', C.faint]];
+    S.recent.slice(1, L.ph ? 6 : 9).forEach((r, j) => { parts.push([(j ? ' · ' : '') + TOK[r.i], r.top ? C.hl : r.q < 0.05 ? C.grad : C.data]); });
+    if (S.recent.length > 1) rich(parts, L.x0, y2, f2);
+    const pq = S.recent[0].q; if (!L.ph) text(`p = ${pct(pq)}${pq < 0.05 ? ' · rare pick!' : ''}`, bx + ww + 22, y, pq < 0.05 ? C.grad : C.dim, `12px ${MONO}`, 'left', 'middle', false);
+  } else rich([[L.ph ? 'tap the stage to roll the dice' : 'click anywhere on the stage to roll the dice once', C.faint]], L.x0, y2, f2);
+}
+function drawLogits(bw, act) {
+  const L = LAY, z0 = L.zero;
+  for (const v of [-2, 2, 4]) { const y = z0 - v * L.zs; ctx.fillStyle = 'rgba(190,200,255,.05)'; ctx.fillRect(L.cx0, y, L.cx1 - L.cx0, 1); if (!L.ph) text((v > 0 ? '+' : '') + v, L.cx0 - 6, y + 3, C.faint, `10px ${MONO}`, 'right', 'alphabetic', false); }
+  ctx.fillStyle = 'rgba(190,200,255,.28)'; ctx.fillRect(L.cx0, z0, L.cx1 - L.cx0, 1);
+  if (!L.ph) text('0', L.cx0 - 6, z0 + 3, C.dim, `10px ${MONO}`, 'right', 'alphabetic', false);
+  const fz = `${L.ph ? 10.5 : 11}px ${MONO}`;
+  for (let i = 0; i < N; i++) {
+    const x = colX(i), y1 = z0 - S.z[i] * L.zs, col = S.z[i] >= 0 ? C.a : C.b, on = D.keep[i], a = on ? 1 : 0.4;
+    ctx.globalAlpha = a * 0.3; box(x - bw / 2, Math.min(z0, y1), bw, Math.abs(y1 - z0), 4, col);
+    ctx.globalAlpha = a; ctx.fillStyle = col; ctx.fillRect(x - bw / 2, y1 - 1, bw, 2); ctx.globalAlpha = 1;
+    const hot = i === act; ctx.beginPath(); ctx.arc(x, y1, hot ? 6 : 4.5, 0, 6.2832); ctx.fillStyle = hot ? C.hl : C.ink; ctx.fill();
+    let ty = S.z[i] >= 0 ? y1 - 10 : y1 + 17; if (ty < L.lg.y + 2) ty = y1 + 18; if (ty > L.lg.y + L.lg.h + 2) ty = y1 - 10;
+    text(S.z[i].toFixed(1), x, ty, hot ? C.hl : col, fz);
+    text(TOK[i], x, L.tb.y + L.tb.h / 2 + 1, hot ? C.hl : on ? C.ink : C.faint, `${hot ? 600 : 400} ${L.ph ? 11 : 12}px ${MONO}`, 'center', 'middle', false);
+  }
+}
+function drawExp(bw) {
+  const L = LAY, base = L.ex.y + L.ex.h, m = Math.max(...S.z);
+  ctx.fillStyle = 'rgba(190,200,255,.18)'; ctx.fillRect(L.cx0, base, L.cx1 - L.cx0, 1);
+  for (let i = 0; i < N; i++) {
+    const x = colX(i), rel = Math.exp((S.z[i] - m) / S.T), h = Math.max(1, rel * L.ex.h);
+    ctx.globalAlpha = D.keep[i] ? 0.62 : 0.25; box(x - bw / 2, base - h, bw, h, 3, C.data); ctx.globalAlpha = 1;
+    if (!L.ph && L.cw > 52) { const e = Math.exp(S.z[i] / S.T), inside = h > L.ex.h - 13; text(fmtE(e), x, inside ? base - h + 11 : base - h - 4, inside ? '#1a1d33' : C.dim, `10px ${MONO}`, 'center', 'alphabetic', !inside); }
+  }
+}
+function drawProbs(bw) {
+  const L = LAY, base = L.pr.y + L.pr.h, ph = L.pr.h, Y = v => base - v * ph;
+  for (const v of [0.5, 1]) { ctx.fillStyle = 'rgba(190,200,255,.06)'; ctx.fillRect(L.cx0, Y(v), L.cx1 - L.cx0, 1); if (!L.ph) text(v === 1 ? '100%' : '50%', L.cx1 + 6, Y(v) + 3, C.faint, `10px ${MONO}`, 'left', 'alphabetic', false); }
+  ctx.fillStyle = 'rgba(190,200,255,.3)'; ctx.fillRect(L.cx0, base, L.cx1 - L.cx0, 1);
+  const fp = `${L.ph ? 10.5 : 11}px ${MONO}`, lab = v => L.ph && v > 0 && v < 0.001 ? '~0' : pct(v); // phone columns are ~36px wide
+  for (let i = 0; i < N; i++) {
+    const x = colX(i), on = D.keep[i];
+    if (on) {
+      const qh = D.q[i] * ph; box(x - bw / 2, base - qh, bw, qh, 3, S.greedy && i !== D.order[0] ? 'rgba(143,184,255,.35)' : C.acc);
+      if (D.q[i] - D.p[i] > 0.004) { ctx.fillStyle = 'rgba(12,14,26,.75)'; ctx.fillRect(x - bw / 2, Y(D.p[i]) - 1, bw, 2); } // pre-cut level
+      if (base - qh - 5 < L.pr.y + 8) text(lab(D.q[i]), x, base - qh + (L.ph ? 12 : 14), '#10142a', fp, 'center', 'alphabetic', false);
+      else text(lab(D.q[i]), x, base - qh - 5, C.ink, fp);
+    } else {
+      box(x - bw / 2, base - D.p[i] * ph, bw, Math.max(1, D.p[i] * ph), 3, C.off);
+      if (!L.ph) text(pct(D.p[i]), x, base - D.p[i] * ph - 5, C.faint, fp);
     }
-    x.font='12px ui-monospace,monospace';
-    x.fillStyle=on3?'#d9f7ff':'rgba(150,150,180,.5)';
-    x.fillText(NAMES[i3],b3.x+b3.w/2,pBase+18);
-    x.font='10px ui-monospace,monospace';
-    x.fillStyle=on3?'rgba(93,240,255,.9)':'rgba(140,140,170,.5)';
-    x.fillText((P[i3]*100).toFixed(1)+'%',b3.x+b3.w/2,pBase-h3-9);
   }
-  x.textAlign='left';x.font='10px ui-monospace,monospace';x.fillStyle='#ffb45d';
-  x.fillText('— orange line = observed sample frequency',g.lx-8,pBase+42);
-
-  // ---- sampler panel ----
-  var rx=g.rx,rw=g.rw;
-  x.textAlign='left';x.font='11px ui-monospace,monospace';x.fillStyle='rgba(199,139,255,.85)';
-  x.fillText('SAMPLER  n='+total,rx,g.zTop-16);
-  x.strokeStyle='rgba(199,139,255,.18)';x.lineWidth=1;
-  x.strokeRect(rx,g.zTop-6,rw,H-g.zTop-40);
-
-  // falling chips
-  for(var ci=chips.length-1;ci>=0;ci--){
-    var ch=chips[ci];
-    ch.vy+=dt*260;ch.y+=ch.vy*dt;ch.life-=dt*0.55;
-    if(ch.life<=0||ch.y>H-70){chips.splice(ci,1);continue;}
-    var a=Math.min(1,ch.life);
-    x.font='13px ui-monospace,monospace';x.textAlign='center';
-    var tw=x.measureText(ch.t).width+16;
-    rr(rx+rw/2-tw/2,ch.y-11,tw,22,6);
-    x.fillStyle='rgba(199,139,255,'+(a*0.2).toFixed(3)+')';x.fill();
-    x.strokeStyle='rgba(199,139,255,'+a.toFixed(3)+')';x.lineWidth=1;
-    x.shadowColor='#c78bff';x.shadowBlur=12*a;x.stroke();x.shadowBlur=0;
-    x.fillStyle='rgba(240,224,255,'+a.toFixed(3)+')';x.fillText(ch.t,rx+rw/2,ch.y+1);
+  // cumulative mass staircase (sorted order) — what top-p walks along
+  const pts = [[L.cx0, base]];
+  D.cum.forEach((c, s) => { pts.push([L.cx0 + s * L.cw, Y(c)], [L.cx0 + (s + 1) * L.cw, Y(c)]); });
+  glow(pts, C.ink, 1.3, S.p < 1 ? 0.85 : 0.3);
+  if (S.p < 1) {
+    dashed(L.cx0, Y(S.p), L.cx1, Y(S.p), C.hl, 0.8);
+    const mx = L.cx0 + (D.pN - 1) * L.cw, my = Y(S.p);
+    ctx.beginPath(); ctx.arc(mx, my, 6, 0, 6.2832); ctx.strokeStyle = C.hl; ctx.lineWidth = 2; ctx.stroke();
+    if (!L.ph) text(S.p.toFixed(2), L.cx1 + 6, my + 3, C.hl, `10px ${MONO}`, 'left', 'alphabetic', false);
   }
-
-  // rolling histogram
-  var hTop=H*0.52,hH=H*0.30,rowH=Math.min(22,hH/N);
-  x.textAlign='left';x.font='10px ui-monospace,monospace';x.fillStyle='rgba(160,140,210,.7)';
-  x.fillText('frequency → converges to p',rx,hTop-8);
-  var cmax=1;for(var q2=0;q2<N;q2++)if(counts[q2]>cmax)cmax=counts[q2];
-  var err=0;
-  for(var i4=0;i4<N;i4++){
-    var y4=hTop+i4*rowH,f4=total?counts[i4]/total:0;
-    err+=Math.abs(f4-P[i4]);
-    var bw4=(rw-58)*(counts[i4]/cmax);
-    x.fillStyle='rgba(255,255,255,.05)';x.fillRect(rx+40,y4,rw-58,rowH-4);
-    var gr4=x.createLinearGradient(rx+40,0,rx+40+Math.max(1,bw4),0);
-    gr4.addColorStop(0,'rgba(199,139,255,.85)');gr4.addColorStop(1,'rgba(93,240,255,.85)');
-    x.fillStyle=gr4;x.shadowColor='#c78bff';x.shadowBlur=8;
-    x.fillRect(rx+40,y4,Math.max(1,bw4),rowH-4);x.shadowBlur=0;
-    // true p tick
-    var tx4=rx+40+(rw-58)*(P[i4]*total/cmax);
-    if(total>0&&tx4<rx+rw-16){x.fillStyle='#7dffa8';x.fillRect(tx4-1,y4-1,2,rowH-2);}
-    x.fillStyle=MASK[i4]?'rgba(220,205,250,.9)':'rgba(120,115,145,.5)';
-    x.font='11px ui-monospace,monospace';x.textAlign='right';
-    x.fillText(NAMES[i4],rx+34,y4+rowH/2);
-    x.textAlign='left';
+  if (S.k < N && D.kN !== D.keepN) dashed(L.cx0 + D.kN * L.cw, L.pr.y, L.cx0 + D.kN * L.cw, base, C.hl, 0.35);
+  if (D.keepN < N) {
+    const x = L.cx0 + D.keepN * L.cw; dashed(x, L.tb.y, x, base + 2, C.hl, 0.9);
+    const why = cutReason(), lines = [L.ph ? `cut · ${why === 'top-p' ? 'top-p ' + S.p.toFixed(2) : why === 'top-k' ? 'top-k ' + S.k : why}` : 'cut by ' + why];
+    if (!L.ph && why.includes('top-p')) lines.push(`mass ≥ ${S.p.toFixed(2)} after ${D.pN}`);
+    ctx.font = `600 ${L.ph ? 10.5 : 11}px ${MONO}`; const tw = Math.max(...lines.map(t => ctx.measureText(t).width)), right = x + 6 + tw > L.cx1 - (L.ph ? 4 : 0);
+    lines.forEach((t, j) => text(t, right ? x - 6 : x + 6, L.pr.y + (L.ph ? 22 : 32) + j * 15, C.hl, `${j ? 400 : 600} ${L.ph ? 10.5 : 11}px ${MONO}`, right ? 'right' : 'left'));
   }
-  x.fillStyle='rgba(125,255,168,.75)';x.font='10px ui-monospace,monospace';
-  x.fillText('| green tick = exact probability',rx,hTop+N*rowH+12);
-
-  // stats
-  var am=0;for(var q3=1;q3<N;q3++)if(P[q3]>P[am])am=q3;
-  var ent=0;for(var q4=0;q4<N;q4++)if(P[q4]>1e-9)ent-=P[q4]*Math.log2(P[q4]);
-  document.getElementById('ns').textContent=total;
-  document.getElementById('am').textContent=NAMES[am];
-  document.getElementById('pm').textContent=(P[am]*100).toFixed(1)+'%';
-  document.getElementById('en').textContent=ent.toFixed(2)+' bits';
-  document.getElementById('er').textContent=total?err.toFixed(3):'—';
-  requestAnimationFrame(frame);
 }
-document.getElementById('temp').addEventListener('input',function(){
-  document.getElementById('tv').textContent=parseFloat(this.value).toFixed(2);
-  counts=counts.map(function(){return 0});total=0;chips=[];});
-document.getElementById('rate').addEventListener('input',function(){
-  document.getElementById('rv').textContent=this.value+'/s';});
-resize();
-requestAnimationFrame(frame);
-})();
+function drawStrip() {
+  const L = LAY, y = L.st.y, h = L.st.h, w = L.cx1 - L.cx0;
+  if (S.greedy) { box(L.cx0, y, w, h, 4, 'rgba(255,200,87,.18)'); text('greedy: no dice — always take ' + TOK[D.order[0]], L.cx0 + w / 2, y + h / 2 + 1, C.hl, `${L.ph ? 10.5 : 11}px ${MONO}`, 'center', 'middle', false); return; }
+  let x = L.cx0; ctx.font = `${L.ph ? 10 : 10.5}px ${MONO}`;
+  D.order.forEach((i, s) => {
+    const sw = D.q[i] * w; if (sw <= 0) return;
+    ctx.fillStyle = s % 2 ? 'rgba(143,184,255,.5)' : 'rgba(143,184,255,.82)'; ctx.fillRect(x, y, sw, h);
+    ctx.fillStyle = 'rgba(12,14,26,.9)'; ctx.fillRect(x + sw - 1, y, 1, h);
+    if (sw > ctx.measureText(TOK[i]).width + 8) { ctx.fillStyle = '#10142a'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(TOK[i], x + sw / 2, y + h / 2 + 1); }
+    x += sw;
+  });
+  if (S.uFade > 0) {
+    const ux = L.cx0 + S.lastU * w; ctx.globalAlpha = S.uFade;
+    glow([[ux, y - 6], [ux, y + h + 6]], C.hl, 2);
+    ctx.beginPath(); ctx.moveTo(ux - 5, y - 10); ctx.lineTo(ux + 5, y - 10); ctx.lineTo(ux, y - 3); ctx.fillStyle = C.hl; ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+function drawHist(bw) {
+  const L = LAY, base = L.hi.y + L.hi.h, m = Math.max(0.05, ...eff, ...S.counts.map(c => S.n ? c / S.n : 0));
+  ctx.fillStyle = 'rgba(190,200,255,.25)'; ctx.fillRect(L.cx0, base, L.cx1 - L.cx0, 1);
+  for (let i = 0; i < N; i++) {
+    const x = colX(i), f = S.n ? S.counts[i] / S.n : 0, h = f / m * L.hi.h, th = base - eff[i] / m * L.hi.h;
+    ctx.globalAlpha = 0.85; box(x - bw / 2, base - h, bw, h, 3, i === S.last ? '#ffe2a0' : C.hl); ctx.globalAlpha = 1;
+    if (eff[i] > 0) { ctx.fillStyle = C.acc; ctx.fillRect(x - bw / 2 - 3, th - 1, bw + 6, 2); }
+  }
+}
+function tv() { let d = 0; for (let i = 0; i < N; i++) d += Math.abs((S.n ? S.counts[i] / S.n : 0) - eff[i]); return d / 2; }
+function drawRowLabels() {
+  const L = LAY, sum = S.z.reduce((s, v) => s + Math.exp(v / S.T), 0), kept = S.greedy ? 1 : D.keepN;
+  const gap = S.n ? tv().toFixed(3) : '—', nTxt = S.leaky ? `≈${Math.round(S.n)} fading` : String(S.n);
+  if (L.ph) {
+    const f = `11px ${MONO}`;
+    text('① logits z · drag', L.cx1, L.lg.y + 9, C.dim, f, 'right');
+    text(`② e^(z/T) · Σ ${fmtE(sum)}`, L.cx1, L.ex.y + 9, C.dim, f, 'right');
+    text(`③ p · kept ${kept}/${N}`, L.cx1, L.pr.y + L.pr.h * 0.55, C.dim, f, 'right');
+    text(`④ samples N${S.leaky ? '' : '='}${nTxt} · gap ${gap}`, L.cx1, L.hi.y + 8, C.dim, f, 'right');
+    return;
+  }
+  const lab = (r, t, a, b, c) => {
+    text(t, L.x0, r.y + 13, C.ink, `650 13px ${SANS}`, 'left', 'alphabetic', false);
+    if (a) text(a, L.x0, r.y + 29, C.dim, `11px ${MONO}`, 'left', 'alphabetic', false);
+    if (b && r.h > 40) text(b, L.x0, r.y + 44, C.dim, `11px ${MONO}`, 'left', 'alphabetic', false);
+    if (c && r.h > 56) text(c, L.x0, r.y + 59, C.faint, `11px ${MONO}`, 'left', 'alphabetic', false);
+  };
+  lab(L.lg, '① Logits  z', 'raw scores', 'drag ↕ a bar', 'any real number');
+  lab(L.ex, '② exp(z/T)', 'all positive', `Σ = ${fmtE(sum)}`);
+  lab(L.pr, '③ Probability', '÷ Σ, then cut', `kept ${kept} of ${N}`);
+  if (L.pr.h > 72) { const y = L.pr.y + 70; glow([[L.x0, y], [L.x0 + 16, y]], C.ink, 1.3, 0.85); text('cumulative', L.x0 + 22, y + 4, C.dim, `11px ${MONO}`, 'left', 'alphabetic', false); }
+  text('dice  u → token', L.x0, L.st.y + L.st.h / 2 + 4, C.dim, `11px ${MONO}`, 'left', 'alphabetic', false);
+  lab(L.hi, '④ Samples', S.leaky ? `N ${nTxt}` : `N = ${nTxt}`, `gap ${gap}`, 'bar → tick');
+}
+function drawChips() {
+  const L = LAY; if (!S.boxC) return;
+  for (const c of S.chips) {
+    const e = c.t / 0.4, k = 1 - Math.pow(1 - clamp(e, 0, 1), 3);
+    const x0 = L.cx0 + c.u * (L.cx1 - L.cx0), y0 = L.st.y, x = lerp(x0, S.boxC[0], k), y = lerp(y0, S.boxC[1], k);
+    ctx.globalAlpha = 0.9 * (1 - clamp((e - 0.7) / 0.3, 0, 1));
+    ctx.font = `600 ${L.ph ? 10 : 12}px ${MONO}`; const w = ctx.measureText(TOK[c.i]).width + 12;
+    box(x - w / 2, y - 9, w, 18, 6, 'rgba(255,200,87,.92)'); ctx.fillStyle = '#1b1606'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(TOK[c.i], x, y + 1);
+    ctx.globalAlpha = 1;
+  }
+}
+
+/* ---------- readouts (stats + live math) ---------- */
+function readouts() {
+  const H2 = entropyBits(eff), t = S.drag >= 0 ? S.drag : S.hover >= 0 ? S.hover : S.pin >= 0 ? S.pin : D.order[0];
+  setText('sEnt', H2.toFixed(2) + ' bits'); setText('sEff', (2 ** H2).toFixed(1)); setText('sKept', `${S.greedy ? 1 : D.keepN} / ${N}`);
+  const sum = S.z.reduce((s, v) => s + Math.exp(v / S.T), 0);
+  setText('mTok', TOK[t]); setText('mZ', S.z[t].toFixed(2)); setText('mT', S.T.toFixed(2)); setText('mE', fmtE(Math.exp(S.z[t] / S.T)));
+  setText('mS', fmtE(sum)); setText('mP', D.p[t].toFixed(3));
+  setText('mK', S.k < N ? String(S.k) : 'off'); setText('mPP', S.p < 1 ? S.p.toFixed(2) : 'off'); setText('mPN', String(D.pN)); setText('mMass', D.cum[D.pN - 1].toFixed(3));
+  setText('mKeep', String(S.greedy ? 1 : D.keepN)); setText('mQ', eff[t].toFixed(3)); setText('mH', H2.toFixed(2)); setText('mEff', (2 ** H2).toFixed(1));
+}
+
+/* ---------- frame ---------- */
+function frame(dt, rdt) {
+  S.clock += rdt;
+  if (S.anim && dt > 0) { S.animT += dt; S.anim(S.animT); }
+  D = decode(S.z, S.T, S.k, S.p);
+  eff = S.greedy ? D.q.map((_, i) => i === D.order[0] ? 1 : 0) : D.q;
+  const moved = eff.some((v, i) => Math.abs(v - prevQ[i]) > 1e-6), moving = !!S.anim || S.drag >= 0;
+  if (moved) { if (moving && dt > 0) S.leaky = true; else clearCounts(); } // new distribution → new experiment
+  if (S.leaky) { // moving target: a fading memory (τ ≈ 0.75 s) fed by extra silent samples, cleared once it settles
+    if (!moving) clearCounts();
+    else if (dt > 0) {
+      const f = Math.exp(-dt / 0.75); for (let i = 0; i < N; i++) S.counts[i] *= f; S.n *= f;
+      S.acc2 = Math.min(S.acc2 + dt * 40, 8);
+      while (S.acc2 >= 1) { S.acc2 -= 1; const i = S.greedy ? D.order[0] : sampleFrom(D.q, D.order, S.rng()); S.counts[i]++; S.n++; }
+    }
+  }
+  prevQ = eff;
+  if (S.prefill) { rollMany(S.prefill); S.prefill = 0; }
+  S.acc += dt * S.rate; let guard = 0;
+  while (S.acc >= 1 && guard++ < 30) { S.acc -= 1; sampleOne(true); }
+  S.acc = Math.min(S.acc, 1);
+  const k = REDUCED ? 1 : Math.min(1, rdt * 12);
+  D.order.forEach((i, s) => { S.pos[i] += (s - S.pos[i]) * k; });
+  S.pop = Math.max(0, S.pop - rdt * 3); S.uFade = Math.max(0, S.uFade - rdt * 1.4);
+  S.chips.forEach(c => { c.t += rdt; }); S.chips = S.chips.filter(c => c.t < 0.4);
+  draw(); readouts();
+}
+
+/* ---------- pointer: drag logits, click to roll ---------- */
+function pt(e) { const r = cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+function colAt(x) { const L = LAY; if (x < L.cx0 || x > L.cx1) return -1; return D.order[clamp(Math.floor((x - L.cx0) / L.cw), 0, N - 1)]; }
+const onLogits = p => p.y >= LAY.lg.y - 14 && p.y <= LAY.tb.y + LAY.tb.h;
+function setZ(i, y) { S.z[i] = Math.round(clamp((LAY.zero - y) / LAY.zs, ZMIN, ZMAX) * 100) / 100; }
+cv.addEventListener('pointerdown', e => {
+  const p = pt(e), i = colAt(p.x);
+  if (i >= 0 && onLogits(p)) { S.drag = i; cv.setPointerCapture(e.pointerId); stopAnim(); S.pin = -1; setZ(i, p.y); }
+  else sampleOne(true);
+});
+cv.addEventListener('pointermove', e => {
+  const p = pt(e);
+  if (S.drag >= 0) { setZ(S.drag, p.y); return; }
+  const inRows = p.y >= LAY.lg.y - 14 && p.y <= LAY.hi.y + LAY.hi.h;
+  S.hover = inRows ? colAt(p.x) : -1;
+  cv.style.cursor = S.hover >= 0 && onLogits(p) ? 'ns-resize' : 'pointer';
+});
+const endDrag = () => { S.drag = -1; };
+cv.addEventListener('pointerup', endDrag); cv.addEventListener('pointercancel', endDrag);
+cv.addEventListener('pointerleave', () => { S.hover = -1; });
+
+/* ---------- lesson panel ---------- */
+stat('sEnt', 'Entropy'); stat('sEff', 'Effective choices'); stat('sKept', 'Tokens kept');
+const ui = {}, pp = $('#p-play');
+pp.insertAdjacentHTML('beforeend', '<h3>Decoding knobs</h3>');
+ui.T = slider(pp, 'sT', 'Temperature T — divide the logits before exp (low = bold, high = wild)', 0.05, 3, 0.01, 1, v => v.toFixed(2), v => { S.T = v; });
+ui.k = slider(pp, 'sK', 'top-k — keep only the k most likely tokens', 1, N, 1, N, v => v >= N ? 'off' : String(v), v => { S.k = v; });
+ui.p = slider(pp, 'sP', 'top-p (nucleus) — keep the smallest set holding this much probability', 0.05, 1, 0.01, 1, v => v >= 1 ? 'off' : v.toFixed(2), v => { S.p = v; });
+['sT', 'sK', 'sP'].forEach(id => $('#' + id).addEventListener('input', stopAnim));
+pp.insertAdjacentHTML('beforeend', '<h3>How to pick the word</h3>');
+ui.dec = seg(pp, [['sample', 'Sample (roll the dice)'], ['greedy', 'Greedy (always the top)']], 'sample', v => { S.greedy = v === 'greedy'; });
+pp.insertAdjacentHTML('beforeend', '<h3>How sure is the model?</h3>');
+ui.scen = seg(pp, [['sure', 'Confident'], ['bal', 'Typical'], ['unsure', 'Unsure']], 'bal', v => { stopAnim(); S.z = SCEN[v].slice(); });
+pp.insertAdjacentHTML('beforeend', '<h3>Dice</h3>');
+ui.rate = slider(pp, 'sR', 'Samples per second while playing', 1, 30, 1, 8, v => v + '/s', v => { S.rate = v; });
+pp.insertAdjacentHTML('beforeend', '<div class="row" style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn primary" id="bRoll">Roll ×100</button><button class="btn" id="bClear">Clear histogram</button></div><p style="margin-top:12px">Drag a logit bar on the stage to edit the model’s scores. Click anywhere else on the stage to roll once.</p>');
+$('#bRoll').onclick = () => rollMany(100);
+$('#bClear').onclick = clearCounts;
+
+/* ---------- tour ---------- */
+function setup(o) {
+  stopAnim(); S.animT = 0;
+  ui.scen.set(o.scen || 'bal'); ui.T.set(o.T ?? 1); ui.k.set(o.k ?? N); ui.p.set(o.p ?? 1); ui.dec.set(o.greedy ? 'greedy' : 'sample');
+  S.pin = o.pin ?? -1; S.focus = o.focus || []; S.rng = mulberry32(o.seed || 7);
+  clearCounts(); S.recent = []; S.last = -1; S.chips = []; S.acc = 0.6;
+  if (REDUCED) S.prefill = 60;
+  S.anim = o.anim || null;
+}
+const STEPS = [
+  { t: 'The model rolls dice', d: 'A language model has read <i>“The cat sat on the”</i>. It scores all ten candidate words, turns the scores into probabilities and <b>samples</b> one. Each ending lands in the blank; the amber histogram (④) creeps toward the blue ticks.',
+    cap: 'Every ending is a <b>weighted dice roll</b>. Watch the histogram ④ settle onto the probabilities ③.', go() { setup({ focus: ['head', 'samples'] }); } },
+  { t: 'Logits are just scores', d: 'Row ① is the network’s raw output: one real number per token, a <b>logit</b>. Negative is fine, and there is no upper limit. <b>Drag a bar</b> and every row below reacts; the columns re-sort by score.',
+    cap: '<b>Drag a logit bar</b> ↕. Here “floor” is nudged up: watch it overtake “mat”, and every row follow.', go() { setup({ focus: ['logits'], pin: 1, anim: t => { S.z[1] = 2.5 + 1.3 * (0.5 - 0.5 * Math.cos(t * 1.3)); } }); } },
+  { t: 'Softmax = exp, then divide', d: 'Row ② applies <b>e<sup>z</sup></b>, which makes every score positive and turns differences into ratios: +1 logit means ×2.72. Row ③ divides by the total Σ, so the bars sum to exactly 1. The dice strip shows the same bars laid end to end: 100% wide.',
+    cap: '<b>exp</b> makes scores positive, <b>÷ Σ</b> makes them sum to 1. Hover a column to trace one word.', go() { setup({ focus: ['exp', 'probs'], pin: 0 }); } },
+  { t: 'Temperature: sharpen or flatten', d: 'Divide the logits by <b>T</b> before exp. <b>T &lt; 1</b> stretches the gaps, so the distribution gets peaked and confident. <b>T &gt; 1</b> squashes them, so it gets flatter and more random. The ranking never changes.',
+    cap: '<b>T</b> sweeps 0.25 ↔ 2.5: same ranking, different peakiness. Watch entropy and effective choices.', go() { setup({ focus: ['probs'], anim: t => ui.T.set(Math.exp(lerp(Math.log(0.25), Math.log(2.5), 0.5 - 0.5 * Math.cos(t * 0.9)))) }); } },
+  { t: 'Top-k: cut the tail by count', d: 'Keep only the <b>k</b> most likely tokens, zero the rest, and renormalise. The survivors’ bars grow (the dark notch marks their old height). It is crude: k is fixed whether the model is sure or confused.',
+    cap: '<b>top-k = 4</b>: the grey words can never be picked, and the four survivors are rescaled to fill 100%.', go() { setup({ focus: ['probs'], T: 1.2, k: 4 }); } },
+  { t: 'Top-p: cut the tail by mass', d: 'Walk down the sorted list adding probability (the white staircase) and stop once the total reaches <b>p</b>. When the model is sure that is 1 word; when it is unsure it is 8. The <b>nucleus</b> adapts to the model’s confidence.',
+    cap: '<b>top-p = 0.9</b> as confidence morphs: the nucleus is <b>1</b> word when sure, <b>8</b> when unsure.', go() { setup({ focus: ['probs'], p: 0.9, anim: t => { const s = 0.5 - 0.5 * Math.cos(t * 0.8); S.z = SCEN.sure.map((v, i) => Math.round(lerp(v, SCEN.unsure[i], s) * 100) / 100); } }); } },
+  { t: 'Why T≈0.7 and top-p≈0.9', d: 'Many chat models ship with T around 0.7 and top-p around 0.9: a little sharper than the raw model, with the absurd tail (moon, piano) removed, but still varied. <b>Limits:</b> these knobs only reshape the model’s own scores and cannot add knowledge. Greedy decoding (T→0) gives the same ending every time and tends to loop in long text.',
+    cap: '<b>T 0.7 + top-p 0.9</b>: sensible, varied endings. <b>Greedy</b> (Controls) repeats one word forever.', go() { setup({ focus: ['head', 'probs'], T: 0.7, p: 0.9 }); } }
+];
+const TRIES = [
+  { q: 'Predict: if you add <b>+2 to every logit</b>, do the probabilities go up?', run() { setup({ focus: ['logits', 'probs'], anim: t => { S.z = SCEN.bal.map(v => v + 2 * smooth(t / 1.5)); if (t > 1.6) stopAnim(); } }); goCap('Every logit is rising by +2. Watch row ③.'); },
+    why: 'Nothing in row ③ moves, and the histogram keeps counting. Softmax only sees <b>differences</b>: a shared +2 multiplies every e<sup>z</sup> by e² ≈ 7.4, and that cancels in the division. So a logit of 12 means nothing on its own, and implementations subtract the max logit for free numerical safety.' },
+  { q: 'Predict: at <b>T = 0.1</b>, how many different words show up in 200 samples?', run() { setup({ focus: ['samples'], T: 0.1 }); S.prefill = 200; goCap('T = 0.1, 200 samples already rolled. Count the distinct words in ④.'); },
+    why: 'Almost always just one: <b>mat</b>. Dividing by 0.1 turns the 0.7 gap between mat and floor into a gap of 7, and e⁷ ≈ 1100× the odds. As T → 0 softmax becomes <b>argmax</b>, which is greedy decoding: predictable, but repetitive.' },
+  { q: 'Top-p = 0.9 keeps 4 words at T = 0.7. Predict: heat to <b>T = 2.5</b>. Does top-p still keep about 4?', run() { setup({ focus: ['probs'], T: 0.7, p: 0.9, anim: t => { ui.T.set(lerp(0.7, 2.5, smooth(t / 3))); if (t > 3.1) stopAnim(); } }); goCap('Top-p fixed at 0.9 while T heats from 0.7 to 2.5. Watch the cut line.'); },
+    why: 'No. The nucleus grows from 4 words to 8, and roof and box get in. Temperature is applied <b>before</b> the cut, so a flatter distribution needs more words to reach 90%. Top-p only guards the tail when T is moderate, which is why T ≈ 0.7 and top-p ≈ 0.9 are usually tuned together.' }
+];
+function goCap(html) { $('#caption').innerHTML = html; }
+
+/* ---------- wiring ---------- */
+$('#bStep').textContent = 'Roll 1'; $('#bStep').setAttribute('aria-label', 'Sample one token');
+$('#bStep').onclick = () => sampleOne(true);
+$('#bReset').onclick = () => goStep(tour);
+ready = true; layout();
+renderSteps(); renderTries(); goStep(0); requestAnimationFrame(loop);
+window.__demo = { goStep, setPlaying, state: () => ({ T: S.T, k: S.k, p: S.p, greedy: S.greedy, n: S.n, keepN: D.keepN, pN: D.pN, H: entropyBits(eff), z: S.z.slice(), q: D.q.slice(), tries: TRIES }) };
 </script>
+</body>
+</html>

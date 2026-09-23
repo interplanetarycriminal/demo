@@ -3,183 +3,729 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>KNN — decision map</title>
+<title>K-Nearest Neighbors — ML Field Notes</title>
 <style>
-html,body{margin:0;height:100%;overflow:hidden;background:#04060b}
-#c{position:fixed;inset:0;display:block;cursor:crosshair;touch-action:none}
-#ui{position:fixed;top:12px;left:12px;z-index:10;font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#bfe9ff;background:rgba(6,10,18,.74);border:1px solid rgba(255,45,149,.3);border-radius:10px;padding:10px 13px;max-width:370px;pointer-events:none;text-shadow:0 0 6px rgba(0,0,0,.8);max-height:52vh;overflow:auto}
-#ui a{color:#ff2d95;pointer-events:auto;text-decoration:none}
-#ui a:hover{text-shadow:0 0 8px #ff2d95}
-#ui h1{margin:0 0 3px;font-size:14px;letter-spacing:2px;color:#ff2d95;text-shadow:0 0 10px rgba(255,45,149,.7)}
-.ex{color:#8fb4cc;font-size:11px}
-.hint{color:#f5c04c;font-size:11px;margin-top:5px}
-#stats{margin-top:6px;color:#e6f6ff;white-space:pre}
-@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
+/* ===== ML Field Notes design system (shared by every ML/AI demo) =====
+   Colour means the same thing in every demo:
+   --a coral = class A / "positive"     --b teal = class B / "negative"
+   --hl amber = the model's current parameters / guess / selection
+   --grad violet = gradients, updates, errors flowing back
+   --accent = this demo's signature colour (set per demo) */
+:root{
+  --bg:#0c0e1a; --bg2:#10132a; --panel:#13162c; --panel2:#181c38; --line:rgba(190,200,255,.10); --line2:rgba(190,200,255,.18);
+  --ink:#e9ecfa; --dim:#a2a9c8; --faint:#6b7396;
+  --a:#ff7a6b; --b:#3fd0c0; --hl:#ffc857; --grad:#a78bfa; --good:#7ee787; --bad:#ff6b8a;
+  --accent:#7cc6ff;
+  --r:12px; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.5 var(--sans)}
+body{overflow:hidden}
+a{color:var(--accent)}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app{display:grid;grid-template-columns:minmax(0,1fr) 380px;grid-template-rows:48px minmax(0,1fr);height:100vh;height:100dvh}
+.top{grid-column:1/-1;display:flex;align-items:center;gap:12px;padding:0 14px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#11142a,#0d1020)}
+.top a.back{color:var(--dim);text-decoration:none;font-size:13px;white-space:nowrap}
+.top a.back:hover{color:var(--ink)}
+.top .chip{font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 45%,transparent);border-radius:99px;padding:5px 8px}
+.top h1{margin:0;font-size:15px;font-weight:650;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top .sp{flex:1}
+.top .keys{font:11px var(--mono);color:var(--faint);white-space:nowrap}
+.stage{position:relative;min-width:0;min-height:0;background:radial-gradient(ellipse at 50% 40%,#151a3a 0%,var(--bg) 70%)}
+.stage::before{content:"";position:absolute;inset:0;background-image:radial-gradient(rgba(190,200,255,.07) 1px,transparent 1.3px);background-size:24px 24px;pointer-events:none}
+.stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.caption{position:absolute;left:16px;right:16px;top:14px;max-width:640px;padding:10px 14px;border-radius:10px;background:rgba(12,14,30,.78);border:1px solid var(--line2);backdrop-filter:blur(6px);font-size:14px;line-height:1.45;pointer-events:none;transition:opacity .3s}
+.caption b{color:var(--accent)}
+.caption:empty{opacity:0}
+.dock{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;gap:6px;padding:6px;border-radius:99px;background:rgba(12,14,30,.82);border:1px solid var(--line2);backdrop-filter:blur(6px)}
+.dock button{border:0;background:transparent;border-radius:99px;min-width:36px;height:34px;padding:0 12px;cursor:pointer;color:var(--ink);white-space:nowrap}
+.dock button:hover{background:rgba(255,255,255,.08)}
+.dock button.on{background:color-mix(in srgb,var(--accent) 22%,transparent);color:var(--accent)}
+.lesson{border-left:1px solid var(--line);background:var(--panel);overflow:auto;min-height:0;display:flex;flex-direction:column}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border-bottom:1px solid var(--line)}
+.stat{background:var(--panel);padding:10px 12px}
+.stat .k{font:600 10px/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.stat .v{font:600 18px/1.3 var(--mono);font-variant-numeric:tabular-nums;margin-top:3px}
+.tabs{display:flex;gap:2px;padding:10px 12px 0;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);z-index:2}
+.tabs button{border:0;background:none;padding:9px 12px;color:var(--dim);cursor:pointer;border-bottom:2px solid transparent;font-weight:600}
+.tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent)}
+.pane{padding:14px 16px 22px;display:none}
+.pane.on{display:block}
+.pane h3{margin:14px 0 6px;font-size:13px;letter-spacing:.02em}
+.pane p{margin:0 0 10px;color:var(--dim)}
+.pane p b,.pane li b{color:var(--ink)}
+.lede{font-size:15px;color:var(--ink)!important}
+.steps{list-style:none;margin:10px 0 0;padding:0;counter-reset:s}
+.steps li{counter-increment:s;border:1px solid var(--line);border-radius:10px;margin:0 0 8px;padding:10px 12px 10px 40px;position:relative;cursor:pointer;color:var(--dim);background:var(--panel2)}
+.steps li::before{content:counter(s);position:absolute;left:12px;top:10px;width:18px;height:18px;border-radius:99px;display:grid;place-items:center;font:600 11px var(--mono);background:rgba(255,255,255,.07);color:var(--dim)}
+.steps li.on{border-color:color-mix(in srgb,var(--accent) 60%,transparent);color:var(--ink)}
+.steps li.on::before{background:var(--accent);color:#141414}
+.steps li.done::before{content:"✓";background:rgba(126,231,135,.2);color:var(--good)}
+.steps li .t{font-weight:650;color:var(--ink);display:block}
+.steps li .d{display:none;margin-top:4px}
+.steps li.on .d{display:block}
+.tournav{display:flex;gap:8px;margin-top:6px}
+.btn{border:1px solid var(--line2);background:var(--panel2);border-radius:9px;padding:7px 12px;cursor:pointer;color:var(--ink)}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:#15131a;border-color:transparent;font-weight:650}
+.card{border:1px solid var(--line);border-radius:12px;padding:12px;margin:0 0 10px;background:var(--panel2)}
+.card .q{color:var(--ink);font-weight:600;margin-bottom:8px}
+.card .why{display:none;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line2);color:var(--dim)}
+.card.revealed .why{display:block}
+.card .row{display:flex;gap:8px;flex-wrap:wrap}
+.eq{font:14px/1.7 var(--mono);background:#0e1124;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:6px 0 12px;overflow-x:auto;white-space:nowrap}
+.eq .c-a{color:var(--a)} .eq .c-b{color:var(--b)} .eq .c-hl{color:var(--hl)} .eq .c-g{color:var(--grad)} .eq .c-acc{color:var(--accent)}
+.live{font-variant-numeric:tabular-nums;color:var(--hl)}
+.ctrl{display:grid;grid-template-columns:1fr auto;gap:4px 10px;align-items:center;margin:10px 0}
+.ctrl label{color:var(--dim);font-size:13px}
+.ctrl output{font:12px var(--mono);color:var(--ink);font-variant-numeric:tabular-nums}
+.ctrl input[type=range]{grid-column:1/-1;width:100%;accent-color:var(--accent)}
+.seg{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 10px}
+.seg button{border:1px solid var(--line2);background:transparent;border-radius:99px;padding:5px 11px;cursor:pointer;color:var(--dim);font-size:13px}
+.seg button[aria-pressed=true]{background:color-mix(in srgb,var(--accent) 20%,transparent);color:var(--ink);border-color:color-mix(in srgb,var(--accent) 55%,transparent)}
+.note{border-left:3px solid var(--grad);padding:6px 10px;margin:8px 0 12px;color:var(--dim);background:rgba(167,139,250,.06);border-radius:0 8px 8px 0}
+.wild li{margin-bottom:6px;color:var(--dim)}
+@media (max-width:880px){
+  body{overflow:auto}
+  .app{grid-template-columns:1fr;grid-template-rows:48px 58vh auto;height:auto}
+  .stage{height:58vh}
+  .lesson{border-left:0;border-top:1px solid var(--line)}
+  .top .keys{display:none}
+  .caption{font-size:13px;top:10px;left:10px;right:10px}
+  .stats{grid-template-columns:repeat(3,1fr)}
+  .stat .v{font-size:15px}
+}
+@media (prefers-reduced-motion:reduce){.caption{transition:none}}
 </style>
 </head>
 <body>
-<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
-<div id="ui">
-<h1>K-NEAREST NEIGHBORS</h1>
-<div class="ex">A point is classified by majority vote of its K nearest labeled neighbors &mdash; grow K and the jagged, overfit boundary melts into a smooth one.</div>
-<div class="hint">1&#8211;9 / &#8593;&#8595; set K (1&#8211;15) &#183; move mouse = query &#183; click drops point &#183; X class &#183; R new data</div>
-<div id="stats"></div>
-<div><a href="index.html">&#8592; gallery</a></div>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace;max-width:100vw;white-space:pre-wrap';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div class="app">
+  <header class="top">
+    <a class="back" href="index.html">← Gallery</a>
+    <span class="chip">ML / AI</span>
+    <h1>K-Nearest Neighbors</h1>
+    <span class="sp"></span>
+    <span class="keys">Space play · ←/→ tour · R reset</span>
+  </header>
+  <section class="stage" id="stage">
+    <canvas id="c" role="img" aria-label="Coral and teal training points over a decision-region map. An amber query point draws lines to its k nearest neighbours inside a dashed distance ball and shows their vote; a side chart plots train and held-out accuracy against k."></canvas>
+    <div class="caption" id="caption" aria-live="polite"></div>
+    <div class="dock" role="group" aria-label="Simulation controls">
+      <button id="bPlay" class="on" aria-label="Pause">❚❚</button>
+      <button id="bStep" aria-label="Step once">Step</button>
+      <button id="bReset" aria-label="Reset">Reset</button>
+      <button id="bSpeed" aria-label="Speed">1×</button>
+    </div>
+  </section>
+  <aside class="lesson">
+    <div class="stats" id="stats"><!-- 3 stat tiles: .stat > .k + .v#id --></div>
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-tab="learn">Learn</button>
+      <button role="tab" aria-selected="false" data-tab="try">Try this</button>
+      <button role="tab" aria-selected="false" data-tab="math">The math</button>
+      <button role="tab" aria-selected="false" data-tab="play">Controls</button>
+    </div>
+    <div class="pane on" id="p-learn">
+      <p class="lede">kNN learns no formula: it keeps every labelled example, and for a new point it lets the <b>k closest</b> ones vote.</p>
+      <ol class="steps" id="steps"></ol>
+      <div class="tournav"><button class="btn" id="tPrev">← Back</button><button class="btn primary" id="tNext">Next step →</button></div>
+      <h3>In the wild</h3>
+      <ul class="wild">
+        <li><b>Retrieval for LLMs (RAG).</b> A question is embedded and the k nearest document chunks, by cosine distance, are pasted into the prompt. Vector databases are kNN engines.</li>
+        <li><b>Recommenders and search.</b> “People like you also liked…” and reverse image search are nearest-neighbour lookups in a learned embedding space.</li>
+        <li><b>Anomaly detection.</b> The distance to your k-th nearest neighbour is a classic outlier score for fraud and faulty sensors.</li>
+      </ul>
+    </div>
+    <div class="pane" id="p-try"><!-- .card experiments: predict → run → why --></div>
+    <div class="pane" id="p-math">
+      <h3>1 · Measure “near”</h3>
+      <div class="eq">d(<span class="c-hl">q</span>, x<sub>i</sub>) = ( |s·Δx|<sup>p</sup> + |Δy|<sup>p</sup> )<sup>1/p</sup></div>
+      <p>p = 1 is <b>L1</b> (city-block), p = 2 is <b>L2</b> (straight line), p → ∞ gives <b>L∞</b> = max(|s·Δx|, |Δy|). s = <span class="live" id="mS"></span> is the feature scale of x.</p>
+      <p>Distance from the query to its nearest point (picked by the active ruler), measured with each ruler:</p>
+      <div class="eq">L1 <span class="live" id="mL1"></span> · L2 <span class="live" id="mL2"></span> · L∞ <span class="live" id="mLi"></span></div>
+      <h3>2 · Let the k nearest vote</h3>
+      <div class="eq">ŷ(<span class="c-hl">q</span>) = argmax<sub>c</sub> Σ<sub>i ∈ N<sub>k</sub>(q)</sub> w<sub>i</sub> · [ y<sub>i</sub> = c ]</div>
+      <div class="eq">w<sub>i</sub> = 1 &nbsp;(majority)<br>w<sub>i</sub> = 1 / (d<sub>i</sub> + 0.01) &nbsp;(closer = louder)</div>
+      <div class="eq">k = <span class="live" id="mK"></span>: <span id="mVotes"></span></div>
+      <p>Ties go to the class of the nearest tied neighbour. N<sub>k</sub>(q) is everything inside the amber ball.</p>
+      <h3>3 · Score it</h3>
+      <div class="eq">acc = (1/N) Σ<sub>i</sub> [ ŷ(x<sub>i</sub>) = y<sub>i</sub> ]</div>
+      <div class="eq">train <span class="live" id="mTr"></span> · <span class="c-acc">held-out <span id="mTe"></span></span></div>
+      <p>Train accuracy asks each of the N = <span class="live" id="mN"></span> training points to predict its own label, and it sits inside its own neighbourhood. Held-out accuracy uses 320 fresh points labelled by the true shapes.</p>
+      <div class="note"><b>Misconception:</b> “k = 1 scores 100% on the training data, so it is the best k.” Every point is its own nearest neighbour, so k = 1 always scores 100% there. That measures memory, not skill: pick k on held-out data.</div>
+      <h3>4 · The curse of dimensionality</h3>
+      <div class="eq">d<sub>min</sub> / d<sub>max</sub> → 1 as the dimension D grows</div>
+      <div class="eq">300 random points: D = 2 → <span class="live" id="mC2"></span> · D = 512 → <span class="live" id="mC512"></span></div>
+      <div class="note"><b>No training step.</b> “Fitting” kNN just stores the data; every prediction measures the distance to all N points. Production systems use approximate indexes (HNSW, IVF) to skip most of them.</div>
+    </div>
+    <div class="pane" id="p-play"><!-- .ctrl sliders, .seg segmented choices --></div>
+  </aside>
 </div>
-<canvas id="c"></canvas>
 <script>
-(function(){
 'use strict';
-var cv=document.getElementById('c'),ctx=cv.getContext('2d'),statsEl=document.getElementById('stats');
-var TAU=Math.PI*2,W=innerWidth,H=innerHeight,DPR=1,T=0,pw=0,ph=0;
-var CLS=[
- {name:'CYAN',col:'#00f5d4',rgb:[0,245,212]},
- {name:'MAGENTA',col:'#ff2d95',rgb:[255,45,149]},
- {name:'GOLD',col:'#ffd23f',rgb:[255,210,63]}
+/* ===== shell helpers (keep) ===== */
+const $ = s => document.querySelector(s);
+const cv = $('#c'), ctx = cv.getContext('2d'), stage = $('#stage');
+let W = 0, H = 0, DPR = 1;
+function resize() {
+  const r = stage.getBoundingClientRect(); DPR = Math.min(2, devicePixelRatio || 1);
+  W = Math.max(1, r.width); H = Math.max(1, r.height);
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR); ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  if (typeof onResize === 'function') onResize();
+}
+new ResizeObserver(resize).observe(stage); resize();
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+// tabs
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', x === b));
+  document.querySelectorAll('.pane').forEach(p => p.classList.toggle('on', p.id === 'p-' + b.dataset.tab));
+});
+// playback
+let playing = !REDUCED, speed = 1;
+const SPEEDS = [0.25, 0.5, 1, 2, 4];
+function setPlaying(v) { playing = v; $('#bPlay').textContent = v ? '❚❚' : '▶'; $('#bPlay').classList.toggle('on', v); $('#bPlay').setAttribute('aria-label', v ? 'Pause' : 'Play'); }
+$('#bPlay').onclick = () => setPlaying(!playing);
+$('#bSpeed').onclick = () => { speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]; $('#bSpeed').textContent = speed + '×'; };
+// tour: STEPS = [{t:'title', d:'html', cap:'stage caption html', go(){ /* set demo state */ }}]
+let tour = 0;
+function renderSteps() {
+  const ol = $('#steps'); ol.innerHTML = '';
+  STEPS.forEach((s, i) => { const li = document.createElement('li'); li.className = (i === tour ? 'on' : '') + (i < tour ? ' done' : ''); li.innerHTML = `<span class="t">${s.t}</span><span class="d">${s.d}</span>`; li.onclick = () => goStep(i); ol.appendChild(li); });
+  $('#tPrev').disabled = tour === 0; $('#tNext').textContent = tour === STEPS.length - 1 ? 'Start over ↺' : 'Next step →';
+}
+function goStep(i) { tour = (i + STEPS.length) % STEPS.length; const s = STEPS[tour]; if (s.go) s.go(); $('#caption').innerHTML = s.cap || ''; renderSteps(); }
+$('#tPrev').onclick = () => goStep(Math.max(0, tour - 1));
+$('#tNext').onclick = () => goStep(tour + 1);
+// experiments: TRIES = [{q:'Predict…', run(){…}, why:'html'}]
+function renderTries() {
+  const p = $('#p-try'); p.innerHTML = '<p>Make a prediction first, then run it. Each experiment sets the demo up for you.</p>';
+  TRIES.forEach(x => { const c = document.createElement('div'); c.className = 'card'; c.innerHTML = `<div class="q">${x.q}</div><div class="row"><button class="btn primary">Run it</button><button class="btn">Show why</button></div><div class="why">${x.why}</div>`; const [run, why] = c.querySelectorAll('button'); run.onclick = () => { x.run(); setPlaying(true); }; why.onclick = () => c.classList.toggle('revealed'); p.appendChild(c); });
+}
+// controls helpers
+function slider(parent, id, label, min, max, step, value, fmt, onInput) {
+  const d = document.createElement('div'); d.className = 'ctrl';
+  d.innerHTML = `<label for="${id}">${label}</label><output id="${id}o"></output><input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${value}">`;
+  parent.appendChild(d); const inp = d.querySelector('input'), out = d.querySelector('output');
+  const upd = () => { out.textContent = fmt(+inp.value); onInput(+inp.value); }; inp.oninput = upd; upd();
+  return { set(v) { inp.value = v; upd(); }, get: () => +inp.value };
+}
+function seg(parent, options, value, onPick) {
+  const d = document.createElement('div'); d.className = 'seg'; parent.appendChild(d);
+  const bs = options.map(([v, label]) => { const b = document.createElement('button'); b.textContent = label; b.setAttribute('aria-pressed', v === value); b.onclick = () => set(v); d.appendChild(b); return [v, b]; });
+  function set(v) { bs.forEach(([k, b]) => b.setAttribute('aria-pressed', k === v)); onPick(v); }
+  return { set };
+}
+function stat(id, label) { const d = document.createElement('div'); d.className = 'stat'; d.innerHTML = `<div class="k">${label}</div><div class="v" id="${id}">–</div>`; $('#stats').appendChild(d); }
+const setText = (id, v) => { const e = document.getElementById(id); if (e && e.textContent !== v) e.textContent = v; };
+// keyboard
+addEventListener('keydown', e => {
+  if (e.target.matches('input,select,textarea')) return;
+  if (e.code === 'Space') { setPlaying(!playing); e.preventDefault(); }
+  else if (e.key === 'ArrowRight') goStep(tour + 1);
+  else if (e.key === 'ArrowLeft') goStep(Math.max(0, tour - 1));
+  else if (e.key === 'r' || e.key === 'R') $('#bReset').click();
+});
+// wall-clock-locked loop (dt clamped to [0, 0.1] — rAF timestamps can precede performance.now())
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.1, Math.max(0, (now - last) / 1000)); last = now;
+  try { frame(playing ? dt * speed : 0, dt); } catch (err) { window.onerror(err.message, '', 0); return; }
+  requestAnimationFrame(loop);
+}
+
+// ===== DEMO CODE: K-Nearest Neighbors =====
+/*CORE-START*/
+const DX = 1.3, DY = 1, EPS = 0.01, KMAX = 25;           // data space is [0,DX]×[0,DY]; ε for 1/(d+ε) weights
+const METRICS = { 1: 'L1', 2: 'L2', 9: 'L∞' };
+function rng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+function gauss(r) { let u = 0; while (!u) u = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * r()); }
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+// n points of a named dataset; c0 is the TRUE class (labels may later be flipped by noise)
+function sample(name, n, r) {
+  const P = [], add = (x, y, c) => P.push({ x: clamp(x, .02, DX - .02), y: clamp(y, .02, DY - .02), c0: c });
+  if (name === 'moons') for (let i = 0; i < n; i++) { const c = i % 2, t = Math.PI * r(), sx = c ? 1 - Math.cos(t) : Math.cos(t), sy = c ? .5 - Math.sin(t) : Math.sin(t); add(.65 + (sx - .5) * .37 + gauss(r) * .045, .5 - (sy - .25) * .37 + gauss(r) * .045, c); }
+  else if (name === 'blobs') for (let i = 0; i < n; i++) { const c = i % 2; add((c ? .84 : .46) + gauss(r) * .13, (c ? .6 : .42) + gauss(r) * .12, c); }
+  else if (name === 'three') for (let i = 0; i < n; i++) { const c = i % 3, a = -Math.PI / 2 + c * 2 * Math.PI / 3; add(.65 + Math.cos(a) * .22 + gauss(r) * .085, .52 + Math.sin(a) * .22 + gauss(r) * .085, c); }
+  else { // island: a small coral island in a teal sea, plus a coral mainland on the left
+    const nI = Math.round(n * .08), nM = Math.round(n * .25);
+    for (let i = 0; i < nI; i++) add(.86 + gauss(r) * .04, .5 + gauss(r) * .04, 0);
+    for (let i = 0; i < nM; i++) add(.05 + r() * .24, .05 + r() * .9, 0);
+    while (P.length < n) { const x = .38 + r() * .88, y = .04 + r() * .92; if (Math.hypot(x - .86, y - .5) > .15) add(x, y, 1); }
+  }
+  return P;
+}
+function makeData(name, seed) {
+  const r = rng(seed), nClass = name === 'three' ? 3 : 2;
+  const train = sample(name, 150, r).map(p => Object.assign(p, { c: p.c0, u: r(), alt: r() < .5 ? 1 : 2 }));
+  return { nClass, train, test: sample(name, 320, r) };
+}
+// label noise: a point is flipped when its fixed random u < noise (u = -1 forces a flip, u = 2 never flips)
+function applyNoise(D, noise) { for (const p of D.train) p.c = p.u < noise ? (D.nClass === 3 ? (p.c0 + p.alt) % 3 : 1 - p.c0) : p.c0; }
+// Minkowski distance with the x-gap multiplied by the feature scale xw; m = 1, 2 or 9 (∞)
+function dist(dx, dy, m, xw) { dx = Math.abs(dx * xw); dy = Math.abs(dy); return m === 1 ? dx + dy : m === 2 ? Math.sqrt(dx * dx + dy * dy) : Math.max(dx, dy); }
+// the k nearest points, sorted by distance, written into id/d; returns how many were found
+function knnInto(pts, qx, qy, k, m, xw, id, d) {
+  k = Math.min(k, pts.length); let n = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const di = dist(pts[i].x - qx, pts[i].y - qy, m, xw);
+    if (n < k || di < d[k - 1]) { let j = n < k ? n++ : k - 1; while (j > 0 && d[j - 1] > di) { d[j] = d[j - 1]; id[j] = id[j - 1]; j--; } d[j] = di; id[j] = i; }
+  }
+  return n;
+}
+// weighted vote; ties go to the class of the nearest tied neighbour
+function vote(pts, id, d, n, weighted, v) {
+  v[0] = v[1] = v[2] = 0;
+  for (let j = 0; j < n; j++) v[pts[id[j]].c] += weighted ? 1 / (d[j] + EPS) : 1;
+  const mx = Math.max(v[0], v[1], v[2]);
+  for (let j = 0; j < n; j++) { const c = pts[id[j]].c; if (v[c] === mx) return c; }
+  return -1;
+}
+function knn(pts, qx, qy, k, m, xw, weighted) {
+  const id = new Int32Array(KMAX), d = new Float64Array(KMAX), votes = [0, 0, 0];
+  const n = knnInto(pts, qx, qy, k, m, xw, id, d);
+  return { id, d, n, votes, pred: vote(pts, id, d, n, weighted, votes) };
+}
+// predicted class + winning vote share at every cell centre of a gx×gy grid over the data space.
+// Same result as knn() per cell, but with the metric inlined and squared L2 (hot loop: cells × points).
+function predictGrid(pts, gx, gy, k, m, xw, weighted, cls, share, j0 = 0, j1 = gy) {
+  const N = pts.length, px = new Float64Array(N), py = new Float64Array(N), id = new Int32Array(KMAX), d = new Float64Array(KMAX), v = [0, 0, 0];
+  for (let t = 0; t < N; t++) { px[t] = pts[t].x * xw; py[t] = pts[t].y; }
+  k = Math.min(k, N);
+  for (let j = j0; j < j1; j++) for (let i = 0; i < gx; i++) {
+    const qx = (i + .5) / gx * DX * xw, qy = (j + .5) / gy * DY; let n = 0;
+    for (let t = 0; t < N; t++) {
+      const ax = Math.abs(px[t] - qx), ay = Math.abs(py[t] - qy), di = m === 2 ? ax * ax + ay * ay : m === 1 ? ax + ay : ax > ay ? ax : ay;
+      if (n < k || di < d[k - 1]) { let q = n < k ? n++ : k - 1; while (q > 0 && d[q - 1] > di) { d[q] = d[q - 1]; id[q] = id[q - 1]; q--; } d[q] = di; id[q] = t; }
+    }
+    if (m === 2) for (let q = 0; q < n; q++) d[q] = Math.sqrt(d[q]);
+    const c = vote(pts, id, d, n, weighted, v), o = j * gx + i;
+    cls[o] = c; share[o] = n ? v[c] / (v[0] + v[1] + v[2]) : 0;
+  }
+}
+// train accuracy (each training point votes on itself, labels as given) and held-out accuracy
+// (fresh points, true labels) for every odd k = 1..KMAX, from one sorted neighbour list per query
+function sweep(D, m, xw, weighted) {
+  const pts = D.train, N = pts.length, ks = [], tr = [], te = [];
+  for (let k = 1; k <= KMAX; k += 2) { ks.push(k); tr.push(0); te.push(0); }
+  const dd = new Float64Array(N), idx = Array.from({ length: N }, (_, i) => i), v = [0, 0, 0];
+  const score = (qx, qy, truth, acc) => {
+    for (let i = 0; i < N; i++) { dd[i] = dist(pts[i].x - qx, pts[i].y - qy, m, xw); idx[i] = i; }
+    idx.sort((a, b) => dd[a] - dd[b]);
+    v[0] = v[1] = v[2] = 0; let ki = 0;
+    for (let j = 0; j < N && ki < ks.length; j++) {
+      v[pts[idx[j]].c] += weighted ? 1 / (dd[idx[j]] + EPS) : 1;
+      while (ki < ks.length && (j + 1 === ks[ki] || j === N - 1)) {
+        const mx = Math.max(v[0], v[1], v[2]); let c = -1;
+        for (let t = 0; t <= j; t++) if (v[pts[idx[t]].c] === mx) { c = pts[idx[t]].c; break; }
+        if (c === truth) acc[ki]++; ki++;
+      }
+    }
+  };
+  for (const p of pts) score(p.x, p.y, p.c, tr);
+  for (const p of D.test) score(p.x, p.y, p.c0, te);
+  return { ks, train: tr.map(a => a / N), test: te.map(a => a / D.test.length) };
+}
+// curse of dimensionality: distances from one random query to n uniform points in [0,1]^d
+function curse(dims, n, seed) {
+  const r = rng(seed);
+  return dims.map(d => {
+    const q = Array.from({ length: d }, r), ds = [];
+    for (let i = 0; i < n; i++) { let s = 0; for (let j = 0; j < d; j++) { const t = r() - q[j]; s += t * t; } ds.push(Math.sqrt(s)); }
+    ds.sort((a, b) => a - b);
+    return { d, ds, min: ds[0], max: ds[n - 1], ratio: ds[0] / ds[n - 1] };
+  });
+}
+/*CORE-END*/
+
+/* ===== look & state ===== */
+const COL = ['#ff7a6b', '#3fd0c0', '#b8e06a'], RGB = [[255, 122, 107], [63, 208, 192], [184, 224, 106]], NAMES = ['coral', 'teal', 'lime'];
+const HL = '#ffc857', GRAD = '#a78bfa', ACC = '#7cc6ff', NEU = '#c7cbe0', INK = '#e9ecfa', DIM = '#a2a9c8', FAINT = '#6b7396', DARK = '#0a0c1c', TAU = Math.PI * 2;
+const MONO = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace', SANS = 'ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif';
+const GX = 156, GY = 120;                                   // decision-map resolution, upscaled with smoothing
+const AUTO = { moons: [.66, .5, .42, .2], blobs: [.66, .5, .34, .22], island: [.8, .5, .17, .14], three: [.65, .52, .28, .2] }; // query wander cx,cy,ax,ay
+const S = {
+  set: 'moons', seed: 7, k: 5, metric: 2, weighted: false, noise: 0, xw: 1, paint: 0, D: null, sw: null, Q: null, np: 2,
+  q: { x: .66, y: .68 }, auto: AUTO.moons, t: 0, userAt: -1e9, anim: null, animT: 0, hl: [], probe: -1, curse: false, flip: -1,
+  dirtyG: true, dirtyS: true, swAt: 0, cd: curse([2, 8, 32, 128, 512], 300, 11)
+};
+var READY = false;              // var: onResize can run (hoisted) before this block
+let prog = false, drag = null;  // prog = code, not the learner, is moving a control
+const L = { px: 0, py: 0, s: 1, pw: 0, ph: 0, side: true, chart: null, ruler: null, legend: null, cl: 0, cr: 1, cells: [] };
+const gridC = document.createElement('canvas'); gridC.width = GX; gridC.height = GY;
+const gctx = gridC.getContext('2d'), gimg = gctx.createImageData(GX, GY), gCls = new Int8Array(GX * GY), gShare = new Float32Array(GX * GY);
+const X = x => L.px + x * L.s, Y = y => L.py + y * L.s;
+function dirty() { S.dirtyG = S.dirtyS = true; }
+function loadData() { S.D = makeData(S.set, S.seed); applyNoise(S.D, S.noise); S.probe = -1; dirty(); G.sync = true; G.row = GY; G.again = false; }
+
+/* ===== model → pixels ===== */
+// the map is recomputed in row bands under a per-frame time budget (the old map stays up until a pass ends)
+const G = { row: GY, again: false, sync: true };
+function gridWork() {
+  if (S.dirtyG) { if (G.row >= GY) G.row = 0; else G.again = true; S.dirtyG = false; }
+  if (G.row >= GY) return;
+  const t0 = performance.now(), pts = S.D.train;
+  while (G.row < GY && (G.sync || performance.now() - t0 < 6)) { const j1 = Math.min(GY, G.row + 5); predictGrid(pts, GX, GY, S.k, S.metric, S.xw, S.weighted, gCls, gShare, G.row, j1); G.row = j1; }
+  if (G.row < GY) return;
+  paintGrid(); G.sync = false; if (G.again) { G.again = false; G.row = 0; }
+}
+function paintGrid() {
+  const pts = S.D.train, px = gimg.data;
+  S.np = new Set(pts.map(p => p.c)).size;
+  for (let j = 0; j < GY; j++) for (let i = 0; i < GX; i++) {
+    const o = j * GX + i, c = gCls[o], q = o * 4;
+    if (c < 0) { px[q + 3] = 0; continue; }
+    const conf = S.np > 1 ? clamp((gShare[o] - 1 / S.np) / (1 - 1 / S.np), 0, 1) : 1;
+    const edge = (i < GX - 1 && gCls[o + 1] !== c) || (j < GY - 1 && gCls[o + GX] !== c), w = edge ? .5 : 0, rgb = RGB[c];
+    px[q] = rgb[0] + (255 - rgb[0]) * w; px[q + 1] = rgb[1] + (255 - rgb[1]) * w; px[q + 2] = rgb[2] + (255 - rgb[2]) * w;
+    px[q + 3] = 255 * (edge ? .5 : .06 + .27 * Math.sqrt(conf));
+  }
+  gctx.putImageData(gimg, 0, 0); mapKey = '';
+}
+// the grid upscaled once to screen resolution with a slight blur, so cell edges don't read as pixels
+const mapC = document.createElement('canvas'), mctx = mapC.getContext('2d'); let mapKey = '';
+function mapImage() {
+  const w = Math.max(1, Math.round(L.pw * DPR)), h = Math.max(1, Math.round(L.ph * DPR)), key = w + 'x' + h;
+  if (key !== mapKey) { mapC.width = w; mapC.height = h; mctx.filter = `blur(${1.4 * DPR}px)`; mctx.imageSmoothingEnabled = true; mctx.drawImage(gridC, 0, 0, w, h); mapKey = key; }
+  return mapC;
+}
+function pickFlip() { // the flipped point most surrounded by its true class = the clearest "noise island"
+  const T = S.D.train; let best = -1, bs = -1e9;
+  T.forEach((p, i) => {
+    if (p.c === p.c0 || p.x < .15 || p.x > DX - .15 || p.y < .15 || p.y > DY - .15) return;
+    const R = knn(T, p.x, p.y, 7, 2, 1, false); let sc = 0;
+    for (let j = 1; j < R.n; j++) if (T[R.id[j]].c === p.c0) sc++;
+    sc -= Math.hypot(p.x - .65, p.y - .5); if (sc > bs) { bs = sc; best = i; }
+  });
+  S.flip = best;
+}
+
+/* ===== layout: one big field + a side column (desktop) or bottom strip (phone) ===== */
+function layout() {
+  const cap = $('#caption'), capB = cap.textContent ? cap.offsetTop + cap.offsetHeight + 10 : 0;
+  const top = Math.max(84, capB), bot = H - 72, left = 16, right = W - 16;
+  L.side = W >= 640;
+  const aw = right - left - (L.side ? 236 : 0), ah = bot - top - (L.side ? 0 : 92);
+  L.s = Math.max(40, Math.min(aw / DX, ah / DY)); L.pw = L.s * DX; L.ph = L.s * DY;
+  L.px = left + (aw - L.pw) / 2; L.py = L.side ? top + (ah - L.ph) / 2 : top;
+  if (L.side) {
+    const cx = L.px + L.pw + 20, cw = right - cx;
+    L.chart = { x: cx, y: L.py, w: cw, h: clamp(L.ph * .45, 150, 220) };
+    L.ruler = { x: cx, y: L.chart.y + L.chart.h + 12, w: cw, h: 92 };
+    L.legend = { x: cx, y: L.ruler.y + 104, w: cw, h: 84 };
+    if (L.legend.y + L.legend.h > L.py + L.ph + 2) L.legend = null;
+  } else { L.chart = { x: left, y: L.py + L.ph + 10, w: right - left, h: Math.min(82, bot - L.py - L.ph - 10) }; L.ruler = L.legend = null; }
+}
+function onResize() { if (READY) layout(); }
+function panel(R, hot) {
+  ctx.beginPath(); ctx.roundRect(R.x, R.y, R.w, R.h, 10); ctx.fillStyle = 'rgba(19,22,44,.85)'; ctx.fill();
+  ctx.strokeStyle = 'rgba(190,200,255,.16)'; ctx.lineWidth = 1; ctx.stroke();
+  if (hot) { ctx.strokeStyle = HL; ctx.globalAlpha = .55 + .35 * Math.sin(performance.now() / 260); ctx.lineWidth = 2; ctx.stroke(); ctx.globalAlpha = 1; }
+}
+function ballPath(m, x, y, rx, ry) {
+  ctx.beginPath();
+  if (m === 2) ctx.ellipse(x, y, rx, ry, 0, 0, TAU);
+  else if (m === 1) { ctx.moveTo(x + rx, y); ctx.lineTo(x, y + ry); ctx.lineTo(x - rx, y); ctx.lineTo(x, y - ry); ctx.closePath(); }
+  else ctx.rect(x - rx, y - ry, 2 * rx, 2 * ry);
+}
+function text(t, x, y, font, col, align) { ctx.font = font; ctx.fillStyle = col; ctx.textAlign = align || 'left'; ctx.fillText(t, x, y); }
+
+/* ===== the field: decision map, neighbours, k-ball, query ===== */
+function drawField() {
+  const { px, py, pw, ph, s } = L, T = S.D.train, Q = S.Q, qx = X(S.q.x), qy = Y(S.q.y);
+  ctx.beginPath(); ctx.roundRect(px - 1, py - 1, pw + 2, ph + 2, 12); ctx.fillStyle = DARK; ctx.fill(); ctx.strokeStyle = 'rgba(190,200,255,.16)'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.save(); ctx.beginPath(); ctx.roundRect(px, py, pw, ph, 11); ctx.clip();
+  ctx.drawImage(mapImage(), px, py, pw, ph);
+  if (Q.n) { // the k-ball: every point inside is at least as close as the k-th neighbour, in the current ruler
+    const r = Q.d[Q.n - 1] * s; ballPath(S.metric, qx, qy, r / S.xw, r);
+    ctx.fillStyle = 'rgba(255,200,87,.07)'; ctx.fill(); ctx.strokeStyle = 'rgba(255,200,87,.16)'; ctx.lineWidth = 6; ctx.stroke();
+    ctx.setLineDash([6, 5]); ctx.strokeStyle = HL; ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]);
+  }
+  for (let j = Q.n - 1; j >= 0; j--) {
+    const p = T[Q.id[j]]; ctx.strokeStyle = COL[p.c];
+    for (const [a, lw] of [[.18, 5], [.95, 1.6]]) { ctx.globalAlpha = a; ctx.lineWidth = lw; ctx.beginPath(); ctx.moveTo(qx, qy); ctx.lineTo(X(p.x), Y(p.y)); ctx.stroke(); }
+  }
+  ctx.globalAlpha = 1;
+  const pr = clamp(s * .0085, 2.8, 4.4);
+  const ring = (test, r, col, lw) => { ctx.beginPath(); for (const p of T) if (test(p)) { ctx.moveTo(X(p.x) + r, Y(p.y)); ctx.arc(X(p.x), Y(p.y), r, 0, TAU); } ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.stroke(); };
+  for (let c = 0; c < 3; c++) {
+    ctx.beginPath(); for (const p of T) if (p.c === c) { ctx.moveTo(X(p.x) + pr, Y(p.y)); ctx.arc(X(p.x), Y(p.y), pr, 0, TAU); }
+    ctx.fillStyle = COL[c]; ctx.fill(); ctx.strokeStyle = DARK; ctx.lineWidth = 1.4; ctx.stroke();
+  }
+  ring(p => p.c !== p.c0, pr + 3.2, GRAD, 1.8);
+  const nb = new Set(Array.from(Q.id.subarray(0, Q.n)));
+  ctx.beginPath(); nb.forEach(i => { const p = T[i]; ctx.moveTo(X(p.x) + pr + 2.2, Y(p.y)); ctx.arc(X(p.x), Y(p.y), pr + 2.2, 0, TAU); }); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.beginPath(); ctx.arc(qx, qy, 11.5, 0, TAU); ctx.strokeStyle = Q.pred >= 0 ? COL[Q.pred] : NEU; ctx.lineWidth = 3; ctx.stroke();
+  ctx.beginPath(); ctx.arc(qx, qy, 6.5, 0, TAU); ctx.fillStyle = HL; ctx.fill(); ctx.strokeStyle = DARK; ctx.lineWidth = 2; ctx.stroke();
+  if (S.probe >= 0) { ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.arc(qx, qy, 17, 0, TAU); ctx.strokeStyle = COL[S.D.test[S.probe].c0]; ctx.lineWidth = 2; ctx.stroke(); ctx.setLineDash([]); }
+  ctx.restore();
+}
+// the vote tally travels with the query: one bar segment per neighbour, width ∝ its vote weight
+function drawTally() {
+  const Q = S.Q; L.tally = null; if (!Q.n) return;
+  const qx = X(S.q.x), qy = Y(S.q.y), r = Math.max(Q.d[Q.n - 1] * L.s, 16), probe = S.probe >= 0, w = (L.side ? 178 : 150) + (probe ? 22 : 0), h = 46;
+  const x = clamp(qx - w / 2, L.px + 6, L.px + L.pw - w - 6);
+  let y = qy + r + 12; if (y + h > L.py + L.ph - 6) y = qy - r - 12 - h; y = clamp(y, L.py + 6, L.py + L.ph - h - 6);
+  L.tally = { x, y, w, h };
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, 9); ctx.fillStyle = 'rgba(10,12,28,.9)'; ctx.fill(); ctx.strokeStyle = 'rgba(255,200,87,.45)'; ctx.lineWidth = 1; ctx.stroke();
+  text(probe ? `held-out #${S.probe + 1}` : `${Q.n} nearest${S.weighted ? ' · 1/d' : ''}`, x + 10, y + 16, `600 11px ${MONO}`, DIM);
+  let res = '→ ' + NAMES[Q.pred]; if (probe) res += Q.pred === S.D.test[S.probe].c0 ? ' ✓' : ' ✗';
+  text(res, x + w - 10, y + 16, `700 12px ${SANS}`, COL[Q.pred], 'right');
+  const bx = x + 10, bw = w - 20, by = y + 24, bh = 14, tot = Q.votes[0] + Q.votes[1] + Q.votes[2]; let cx = bx;
+  for (let c = 0; c < 3; c++) {
+    if (!Q.votes[c]) continue; const gw = Q.votes[c] / tot * bw;
+    for (let j = 0; j < Q.n; j++) { if (S.D.train[Q.id[j]].c !== c) continue; const sw = (S.weighted ? 1 / (Q.d[j] + EPS) : 1) / tot * bw; ctx.fillStyle = COL[c]; ctx.fillRect(cx + .5, by, Math.max(1, sw - 1), bh); cx += sw; }
+    if (gw > 24) text(S.weighted ? Math.round(Q.votes[c] / tot * 100) + '%' : String(Q.votes[c]), cx - gw / 2, by + 11, `700 11px ${MONO}`, DARK, 'center');
+  }
+  if (S.np === 2) { ctx.fillStyle = INK; ctx.fillRect(bx + bw / 2 - .75, by - 4, 1.5, 3); ctx.fillRect(bx + bw / 2 - .75, by + bh + 1, 1.5, 3); } // majority line
+}
+// an on-canvas annotation: pulsing ring on the target, leader line, label pill
+function note(x, y, t, ang) {
+  const r0 = 12 + 1.5 * Math.sin(performance.now() / 250);
+  ctx.beginPath(); ctx.arc(x, y, r0, 0, TAU); ctx.strokeStyle = HL; ctx.lineWidth = 2; ctx.stroke();
+  ctx.font = `600 12px ${SANS}`; const tw = ctx.measureText(t).width + 18, th = 24, ex = x + Math.cos(ang) * 60, ey = y + Math.sin(ang) * 60;
+  const fits = tw < L.pw - 8, bx = clamp(Math.cos(ang) >= 0 ? ex : ex - tw, fits ? L.px + 4 : 8, fits ? L.px + L.pw - tw - 4 : W - tw - 8), T = L.tally;
+  let by = clamp(ey - th / 2, L.py + 4, L.py + L.ph - th - 4);
+  if (T && bx < T.x + T.w && bx + tw > T.x && by < T.y + T.h + 4 && by + th > T.y - 4) { const up = T.y - th - 6, dn = T.y + T.h + 6; by = (by + th / 2 < T.y + T.h / 2 && up >= L.py + 4) || dn + th > L.py + L.ph - 4 ? up : dn; } // dodge the vote tally
+  ctx.beginPath(); ctx.moveTo(x + Math.cos(ang) * r0, y + Math.sin(ang) * r0); ctx.lineTo(clamp(x, bx, bx + tw), clamp(y, by, by + th)); ctx.strokeStyle = 'rgba(255,200,87,.8)'; ctx.lineWidth = 1.2; ctx.stroke();
+  ctx.beginPath(); ctx.roundRect(bx, by, tw, th, 7); ctx.fillStyle = 'rgba(12,14,30,.94)'; ctx.fill(); ctx.strokeStyle = HL; ctx.stroke();
+  text(t, bx + 9, by + 16, `600 12px ${SANS}`, INK);
+}
+function drawNotes() {
+  const Q = S.Q, qx = X(S.q.x), qy = Y(S.q.y), mid = [L.px + L.pw / 2, L.py + L.ph / 2];
+  const toward = (x, y) => { const a = Math.atan2(mid[1] - y, mid[0] - x); return Math.sin(a) > .2 ? -a : a; };
+  if (S.hl.includes('nn1') && Q.n && S.k === 1) {
+    const p = S.D.train[Q.id[0]], x = X(p.x), y = Y(p.y); let a = Math.hypot(x - qx, y - qy) < 20 ? -2.2 : Math.atan2(y - qy, x - qx);
+    if (Math.sin(a) > .2) a = -a; note(x, y, 'closest point → its label is copied', a);
+  }
+  if (S.hl.includes('flip') && S.flip >= 0 && S.k === 1) { const p = S.D.train[S.flip]; note(X(p.x), Y(p.y), 'one wrong label → its own island', toward(X(p.x), Y(p.y))); }
+  if (S.hl.includes('island') && S.set === 'island') note(X(.86), Y(.5), 'only 12 coral points here', -2.5);
+  if (S.hl.includes('ball') && Q.n) {
+    const r = Q.d[Q.n - 1] * L.s, x = clamp(qx + r / S.xw, L.px + 20, L.px + L.pw - 20), y = clamp(qy, L.py + 20, L.py + L.ph - 20);
+    const t = S.xw < 1 ? 'x-gaps count less → ball stretches sideways' : S.xw > 1 ? 'x-gaps count more → ball squeezes' : { 1: 'L1 ball = a diamond', 2: 'L2 ball = a circle', 9: 'L∞ ball = a square' }[S.metric];
+    note(x, y, t, x > mid[0] ? -2.4 : -.7);
+  }
+}
+// train vs held-out accuracy for every odd k: the bias–variance picture. Click/drag it to set k.
+function drawChart(R) {
+  if (!R || R.h < 44) return;
+  const sw = S.sw, ph = !L.side; panel(R, S.hl.includes('chart'));
+  const l = R.x + (ph ? 34 : 38), r = R.x + R.w - 12, t = R.y + (ph ? 26 : 54), b = R.y + R.h - (ph ? 16 : 24);
+  L.cl = l; L.cr = r;
+  const XK = k => l + (k - 1) / (KMAX - 1) * (r - l), YA = a => b - clamp((a - .5) / .5, 0, 1) * (b - t);
+  text('ACCURACY vs k', R.x + 10, R.y + 17, `600 11px ${MONO}`, DIM);
+  const bi = sw.test.indexOf(Math.max(...sw.test)), lx = ph ? R.x + R.w - 150 : R.x + 8, ly = ph ? R.y + 17 : R.y + 35;
+  const bestT = 'best k=' + sw.ks[bi]; ctx.font = `600 11px ${SANS}`;
+  const used = ['train', 'held-out'].concat(ph ? [] : [bestT]).reduce((a, t) => a + 15 + ctx.measureText(t).width, 0), gap = clamp((R.x + R.w - 6 - lx - used) / (ph ? 1 : 2), 2, 8);
+  let lc = lx; const item = (mark, t, col) => { mark(lc, ly - 4); text(t, lc + 15, ly, `600 11px ${SANS}`, col); lc += 15 + gap + ctx.measureText(t).width; };
+  item((x, y) => { ctx.setLineDash([3, 3]); ctx.strokeStyle = NEU; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 12, y); ctx.stroke(); ctx.setLineDash([]); }, 'train', NEU);
+  item((x, y) => { ctx.strokeStyle = ACC; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 12, y); ctx.stroke(); }, 'held-out', ACC);
+  if (!ph) item((x, y) => { ctx.beginPath(); ctx.arc(x + 6, y, 4.5, 0, TAU); ctx.strokeStyle = ACC; ctx.lineWidth = 1.5; ctx.stroke(); }, bestT, ACC);
+  ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(190,200,255,.09)';
+  for (const a of [.5, .75, 1]) { ctx.beginPath(); ctx.moveTo(l, YA(a)); ctx.lineTo(r, YA(a)); ctx.stroke(); text(a * 100 + '%', l - 5, YA(a) + 4, `11px ${MONO}`, FAINT, 'right'); }
+  for (const k of ph ? [1, 9, 17, 25] : [1, 5, 9, 13, 17, 21, 25]) text(String(k), XK(k), b + 14, `11px ${MONO}`, FAINT, 'center');
+  if (!ph) { text('← overfit', l + 4, b - 6, `11px ${SANS}`, FAINT); text('underfit →', r - 4, b - 6, `11px ${SANS}`, FAINT, 'right'); }
+  const curve = (arr, col, lw, dash) => { ctx.setLineDash(dash); ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.beginPath(); arr.forEach((a, i) => ctx[i ? 'lineTo' : 'moveTo'](XK(sw.ks[i]), YA(a))); ctx.stroke(); ctx.setLineDash([]); };
+  curve(sw.train, NEU, 1.6, [4, 4]); curve(sw.test, 'rgba(124,198,255,.25)', 6, []); curve(sw.test, ACC, 2, []);
+  ctx.beginPath(); ctx.arc(XK(sw.ks[bi]), YA(sw.test[bi]), 5.5, 0, TAU); ctx.strokeStyle = ACC; ctx.lineWidth = 1.6; ctx.stroke();
+  const cx = XK(S.k), ki = (S.k - 1) / 2;
+  ctx.strokeStyle = 'rgba(255,200,87,.6)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(cx, t - 4); ctx.lineTo(cx, b); ctx.stroke();
+  for (const a of [sw.train[ki], sw.test[ki]]) { ctx.beginPath(); ctx.arc(cx, YA(a), 3.8, 0, TAU); ctx.fillStyle = HL; ctx.fill(); ctx.strokeStyle = DARK; ctx.lineWidth = 1.5; ctx.stroke(); }
+  if (!ph) text('k = ' + S.k, clamp(cx, l + 18, r - 18), t - 8, `700 11px ${MONO}`, HL, 'center');
+}
+function drawRuler(R) {
+  panel(R, S.hl.includes('ball')); text('DISTANCE RULER · click one', R.x + 10, R.y + 17, `600 11px ${MONO}`, DIM);
+  const cw = R.w / 3; L.cells = [];
+  [1, 2, 9].forEach((m, i) => {
+    const cx = R.x + cw * (i + .5), cy = R.y + 47, on = m === S.metric;
+    ballPath(m, cx, cy, Math.min(16 / S.xw, cw / 2 - 8), 16); ctx.fillStyle = on ? 'rgba(255,200,87,.16)' : 'transparent'; ctx.fill();
+    ctx.strokeStyle = on ? HL : 'rgba(199,203,224,.45)'; ctx.lineWidth = on ? 2 : 1.2; ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx, cy, 2.5, 0, TAU); ctx.fillStyle = on ? HL : NEU; ctx.fill();
+    text(METRICS[m], cx, R.y + 82, `700 12px ${MONO}`, on ? HL : DIM, 'center');
+    L.cells.push({ m, x: R.x + cw * i, y: R.y, w: cw, h: R.h });
+  });
+}
+function drawLegend(R) {
+  panel(R); const x = R.x + 14, f = `12px ${SANS}`;
+  for (let c = 0; c < S.D.nClass; c++) { ctx.beginPath(); ctx.arc(x + 4 + c * 11, R.y + 20, 4, 0, TAU); ctx.fillStyle = COL[c]; ctx.fill(); }
+  text('training labels', x + 40, R.y + 24, f, DIM);
+  ctx.beginPath(); ctx.arc(x + 4, R.y + 44, 3.5, 0, TAU); ctx.fillStyle = NEU; ctx.fill(); ctx.beginPath(); ctx.arc(x + 4, R.y + 44, 7, 0, TAU); ctx.strokeStyle = GRAD; ctx.lineWidth = 1.8; ctx.stroke();
+  text('wrong (flipped) label', x + 40, R.y + 48, f, DIM);
+  ctx.beginPath(); ctx.arc(x + 4, R.y + 68, 5, 0, TAU); ctx.fillStyle = HL; ctx.fill(); ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.arc(x + 4, R.y + 68, 11, -1, 1); ctx.strokeStyle = HL; ctx.lineWidth = 1.2; ctx.stroke(); ctx.setLineDash([]);
+  text('query and its k-ball', x + 40, R.y + 72, f, DIM);
+}
+// curse of dimensionality: each row = distances to 300 random points in D dims, ÷ the farthest one
+function drawCurse() {
+  const { px, py, pw, ph } = L, small = !L.side;
+  ctx.beginPath(); ctx.roundRect(px, py, pw, ph, 11); ctx.fillStyle = 'rgba(10,12,28,.93)'; ctx.fill();
+  text(small ? 'Distances to 300 random points' : 'Distance from one query to 300 random points', px + 16, py + 26, `600 ${small ? 13 : 15}px ${SANS}`, INK);
+  text(small ? 'row ÷ its farthest · amber = nearest' : 'each row ÷ its farthest distance · amber = the nearest', px + 16, py + 45, `12px ${SANS}`, DIM);
+  const rows = S.cd, top = py + 56, rh = (ph - 56 - 10) / rows.length, x0 = px + 16 + (small ? 60 : 78), x1 = px + pw - 18, shown = playing ? S.animT / .7 : 99;
+  rows.forEach((r, i) => {
+    const v = clamp(shown - i, 0, 1); if (!v) return; const e = 1 - (1 - v) ** 3, yc = top + rh * (i + .64);
+    text('D = ' + r.d, px + 16, yc + 4, `600 12px ${MONO}`, INK);
+    ctx.strokeStyle = 'rgba(190,200,255,.18)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x0, yc); ctx.lineTo(x1, yc); ctx.stroke();
+    ctx.beginPath(); r.ds.forEach((d, j) => { const x = x0 + d / r.max * (x1 - x0) * e, y = yc + ((j * 37) % 11 - 5) * .8; ctx.moveTo(x + 2, y); ctx.arc(x, y, 2, 0, TAU); });
+    ctx.fillStyle = 'rgba(199,203,224,.42)'; ctx.fill();
+    ctx.beginPath(); ctx.arc(x0 + r.ratio * (x1 - x0) * e, yc, 4.5, 0, TAU); ctx.fillStyle = HL; ctx.fill(); ctx.strokeStyle = DARK; ctx.lineWidth = 1.5; ctx.stroke();
+    text((small ? 'near/far ' : 'nearest ÷ farthest = ') + r.ratio.toFixed(2), x1, yc - 10, `11px ${MONO}`, HL, 'right');
+  });
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  drawField();
+  if (S.curse) drawCurse(); else { drawTally(); drawNotes(); }
+  drawChart(L.chart); if (L.ruler) drawRuler(L.ruler); if (L.legend) drawLegend(L.legend);
+  const hy = L.py + L.ph + 22;
+  if (L.side && !S.curse && hy < H - 76) text('hover = move the query · click = add a point · drag a point = move it · click a point = flip its label', L.px + 4, hy, `12px ${SANS}`, FAINT);
+}
+const pct = a => Math.round(a * 100) + '%';
+let votesHTML = '';
+function updateText() {
+  const ki = (S.k - 1) / 2, tr = pct(S.sw.train[ki]), te = pct(S.sw.test[ki]), Q = S.Q;
+  setText('sK', S.k + ' · ' + METRICS[S.metric]); setText('sTr', tr); setText('sTe', te);
+  setText('mTr', tr); setText('mTe', te); setText('mK', String(S.k)); setText('mN', String(S.D.train.length)); setText('mS', S.xw.toFixed(2));
+  if (Q.n) { const p = S.D.train[Q.id[0]], dx = p.x - S.q.x, dy = p.y - S.q.y; setText('mL1', dist(dx, dy, 1, S.xw).toFixed(3)); setText('mL2', dist(dx, dy, 2, S.xw).toFixed(3)); setText('mLi', dist(dx, dy, 9, S.xw).toFixed(3)); }
+  const f = v => S.weighted ? v.toFixed(1) : String(v);
+  const h = [0, 1, 2].filter(c => c < S.D.nClass || Q.votes[c]).map(c => `<span style="color:${COL[c]}">${NAMES[c]} ${f(Q.votes[c])}</span>`).join(' · ') + `<br>→ <span style="color:${COL[Q.pred]}">${NAMES[Q.pred]}</span>`;
+  if (h !== votesHTML) { $('#mVotes').innerHTML = h; votesHTML = h; }
+}
+
+/* ===== direct manipulation ===== */
+function at(e) { const r = cv.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top; return { px, py, x: (px - L.px) / L.s, y: (py - L.py) / L.s }; }
+const inField = p => p.x >= 0 && p.x <= DX && p.y >= 0 && p.y <= DY;
+const inRect = (p, R) => !!R && p.px >= R.x && p.px <= R.x + R.w && p.py >= R.y && p.py <= R.y + R.h;
+function hitPoint(p, rad) { let best = -1, bd = rad; S.D.train.forEach((t, i) => { const d = Math.hypot(t.x - p.x, t.y - p.y) * L.s; if (d < bd) { bd = d; best = i; } }); return best; }
+function setQuery(p) { S.q = { x: clamp(p.x, 0, DX), y: clamp(p.y, 0, DY) }; S.userAt = performance.now(); S.probe = -1; }
+function setKFromChart(p) { S.anim = null; ui.k.set(clamp(1 + 2 * Math.round((p.px - L.cl) / (L.cr - L.cl) * 12), 1, KMAX)); }
+cv.addEventListener('pointerdown', e => {
+  const p = at(e);
+  if (inRect(p, L.chart)) { drag = { mode: 'k' }; setKFromChart(p); }
+  else if (inRect(p, L.ruler)) { const c = L.cells.find(c => inRect(p, c)); if (c) ui.metric.set(c.m); return; }
+  else if (inField(p) && !S.curse) { // touch has no hover, so a tap moves the query and only a tap ON the query adds / flips
+    const touch = e.pointerType !== 'mouse', i = hitPoint(p, touch ? 16 : 9);
+    drag = { mode: i >= 0 ? 'pt' : 'q', id: i, x0: p.px, y0: p.py, moved: false, edit: !touch || Math.hypot(p.px - X(S.q.x), p.py - Y(S.q.y)) < 20 };
+    if (i < 0) setQuery(p);
+  }
+  else return;
+  try { cv.setPointerCapture(e.pointerId); } catch (_) { /* synthetic pointer */ } e.preventDefault();
+});
+cv.addEventListener('pointermove', e => {
+  const p = at(e);
+  if (!drag) {
+    cv.style.cursor = inRect(p, L.chart) ? 'ew-resize' : inRect(p, L.ruler) ? 'pointer' : inField(p) && !S.curse ? (hitPoint(p, 9) >= 0 ? 'grab' : 'crosshair') : 'default';
+    if (e.pointerType === 'mouse' && inField(p) && !S.curse) setQuery(p);
+    return;
+  }
+  if (Math.hypot(p.px - (drag.x0 || 0), p.py - (drag.y0 || 0)) > 4) drag.moved = true;
+  if (drag.mode === 'k') setKFromChart(p);
+  else if (drag.mode === 'q') setQuery(p);
+  else if (drag.moved) { const t = S.D.train[drag.id]; t.x = clamp(p.x, .01, DX - .01); t.y = clamp(p.y, .01, DY - .01); cv.style.cursor = 'grabbing'; dirty(); }
+});
+cv.addEventListener('pointerup', e => {
+  if (drag && !drag.moved) {
+    const p = at(e);
+    if (!drag.edit) { if (inField(p)) setQuery(p); }
+    else if (drag.mode === 'pt') { const t = S.D.train[drag.id]; t.u = t.c !== t.c0 ? 2 : -1; applyNoise(S.D, S.noise); dirty(); }
+    else if (drag.mode === 'q' && inField(p)) { const c = S.paint < S.D.nClass ? S.paint : 0; S.D.train.push({ x: p.x, y: p.y, c0: c, c, u: 2, alt: 1 }); dirty(); }
+  }
+  drag = null;
+});
+cv.addEventListener('pointercancel', () => { drag = null; });
+
+/* ===== controls ===== */
+const P = $('#p-play'), ui = {};
+const add = (tag, html) => { const e = document.createElement(tag); e.innerHTML = html; P.appendChild(e); return e; };
+add('h3', 'Data');
+ui.set = seg(P, [['moons', 'Two moons'], ['blobs', 'Overlapping blobs'], ['island', 'Island'], ['three', 'Three classes']], 'moons', v => {
+  if (!prog) S.anim = null; if (v !== S.set) { S.set = v; S.auto = AUTO[v]; loadData(); syncPaint(); }
+});
+ui.noise = slider(P, 'nz', 'Label noise — share of training labels flipped', 0, .4, .05, 0, v => pct(v), v => { S.noise = v; if (S.D) { applyNoise(S.D, v); dirty(); } });
+add('h3', 'Model');
+ui.k = slider(P, 'kS', 'k — how many neighbours get a vote', 1, KMAX, 2, 5, v => String(v), v => { S.k = v; S.dirtyG = true; });
+$('#kS').addEventListener('input', () => { S.anim = null; });
+add('p', 'Distance ruler — what “near” means');
+ui.metric = seg(P, [[1, 'L1 · city-block'], [2, 'L2 · straight line'], [9, 'L∞ · biggest gap']], 2, v => { if (!prog) S.anim = null; S.metric = v; dirty(); });
+add('p', 'Vote');
+ui.w = seg(P, [[false, 'Majority (1 each)'], [true, 'Closer = louder (1/d)']], false, v => { S.weighted = v; dirty(); });
+ui.xw = slider(P, 'xs', 'Feature scale s of x — how much x-gaps count', -3, 3, .25, 0, v => '×' + (2 ** v).toFixed(2), v => { S.xw = 2 ** v; dirty(); });
+add('h3', 'Edit the data');
+add('p', '<b>Click</b> empty space to add a point · <b>drag</b> a point to move it · <b>click</b> a point to flip its label · <b>drag the chart</b> to set k · <b>Test ▸</b> steps the query through held-out points. On touch: <b>tap</b> to move the query, tap it <b>again</b> to add a point or flip the one under it.');
+ui.paint = seg(P, [[0, 'Add coral'], [1, 'Add teal'], [2, 'Add lime']], 0, v => { S.paint = v; });
+const paintEl = P.lastChild;
+add('div', '<button class="btn" id="bNew">New random sample</button>');
+$('#bNew').onclick = () => { S.seed++; loadData(); syncPaint(); };
+function syncPaint() { paintEl.children[2].style.display = S.D.nClass === 3 ? '' : 'none'; if (S.paint === 2 && S.D.nClass < 3) ui.paint.set(0); }
+// put the demo into an exact state (used by the tour and the experiments)
+function apply(o) {
+  const d = Object.assign({ set: 'moons', k: 5, metric: 2, weighted: false, noise: 0, xs: 0, hl: [], anim: null, curse: false, cap: '' }, o);
+  if (d.cap) $('#caption').innerHTML = d.cap;
+  if (REDUCED && d.anim && d.anim.type === 'k') d.k = d.anim.to;
+  prog = true;
+  S.set = d.set; S.auto = AUTO[d.set]; S.noise = d.noise; S.seed = 7; loadData();
+  ui.set.set(d.set); ui.noise.set(d.noise); ui.k.set(d.k); ui.metric.set(d.metric); ui.w.set(d.weighted); ui.xw.set(d.xs);
+  prog = false; syncPaint();
+  Object.assign(S, { hl: d.hl, anim: d.anim, animT: 0, curse: d.curse, probe: -1, userAt: -1e9 });
+}
+function runAnim() {
+  const a = S.anim;
+  if (a.type === 'k') { const per = ((a.to - a.from) / 2 + 1) * a.every + 2.5, k = Math.min(a.to, a.from + 2 * Math.floor((S.animT % per) / a.every)); if (k !== S.k) { prog = true; ui.k.set(k); prog = false; } }
+  else { const m = [1, 2, 9][Math.floor(S.animT / a.every) % 3]; if (m !== S.metric) { prog = true; ui.metric.set(m); prog = false; } }
+}
+
+/* ===== tour & experiments ===== */
+const STEPS = [
+  { t: 'Ask the neighbours', d: 'kNN learns no formula. To label a new point it finds the <b>k</b> closest labelled examples and lets them vote. Colour every spot by that vote and you get the decision map.',
+    cap: 'The <b>amber query</b> finds its <b>5 nearest</b> points and takes a vote. Doing that everywhere paints the map. <b>Move or drag</b> to be the query.', go() { apply({ k: 5 }); } },
+  { t: 'k = 1 copies the closest point', d: 'With one neighbour there is no vote: the query takes the label of the single closest point. The map becomes a patchwork where every point owns the ground nearest to it (a Voronoi diagram).',
+    cap: 'At <b>k = 1</b> the query just copies its closest point. Every training point owns the patch of ground nearest to it.', go() { apply({ k: 1, hl: ['nn1'] }); } },
+  { t: 'k = 1 memorises noise', d: '15% of training labels are now flipped (violet rings). At k = 1 each wrong label carves out its own island. Train accuracy stays 100% because every point is its own nearest neighbour; held-out accuracy drops.',
+    cap: '<b>15% of labels are now wrong</b> (violet rings). At k = 1 each one grows an island. Train: 100%. Held-out: lower (see the chart).', go() { apply({ k: 1, noise: .15, hl: ['flip', 'chart'] }); } },
+  { t: 'Bigger k votes the noise away', d: 'As k grows a lone wrong label is outvoted by its correct neighbours. The islands melt, train accuracy falls (the model can no longer memorise) and held-out accuracy rises.',
+    cap: 'Watch <b>k grow</b>. A lone wrong label gets outvoted, islands melt, and <b>held-out accuracy climbs</b> while train accuracy falls.', go() { apply({ k: 1, noise: .15, hl: ['chart'], anim: { type: 'k', from: 1, to: 15, every: .55 } }); } },
+  { t: 'Too-big k forgets the shape', d: 'This coral island has only 12 points. Once k passes about 2 × 12, coral cannot win any vote there and the island is erased. Too much smoothing is <b>underfitting</b> (high bias): held-out accuracy falls again.',
+    cap: 'This <b>coral island</b> has just 12 points. As k grows the teal crowd outvotes it and the island vanishes: <b>underfitting</b>.', go() { apply({ set: 'island', k: 1, hl: ['island', 'chart'], anim: { type: 'k', from: 1, to: 25, every: .45 } }); } },
+  { t: '“Near” depends on the ruler', d: 'Distance is a modelling choice. L1 adds the coordinate gaps (city blocks), L2 is the straight line, L∞ takes the biggest single gap. Their balls are a diamond, a circle and a square, so each ruler picks different neighbours.',
+    cap: 'Nearest by which ruler? <b>L1</b> balls are diamonds, <b>L2</b> circles, <b>L∞</b> squares. A new ruler picks new neighbours and bends the map.', go() { apply({ k: 9, metric: 1, hl: ['ball'], anim: { type: 'metric', every: 2.4 } }); } },
+  { t: 'Where kNN breaks: many dimensions', d: 'In 2-D the nearest point is far closer than the farthest. In hundreds of dimensions all distances look alike, so “nearest” carries little information. That is why kNN runs on compact learned embeddings, not raw pixels.',
+    cap: 'In <b>512-D</b> the nearest of 300 random points is almost as far away as the farthest. “Nearest” stops meaning much: the <b>curse of dimensionality</b>.', go() { apply({ k: 9, curse: true }); } },
 ];
-var pts=[],K=5,cur=0,lastPred=-1;
-var CELL=10,hc=document.createElement('canvas'),hctx=hc.getContext('2d'),hw=1,hh=1,img=null,hmRow=1e9;
-var mx=innerWidth/2,my=innerHeight/2,lastMove=-10,qx=innerWidth/2,qy=innerHeight/2;
-var snd=new Float64Array(16),sni=new Int32Array(16);
-function resize(){
- DPR=Math.min(devicePixelRatio||1,2);var nw=innerWidth,nh=innerHeight;
- if(pw&&pts.length){var rx=nw/pw,ry=nh/ph;
-  for(var i=0;i<pts.length;i++){pts[i].x*=rx;pts[i].y*=ry;}
- }
- W=pw=nw;H=ph=nh;
- cv.width=W*DPR|0;cv.height=H*DPR|0;cv.style.width=W+'px';cv.style.height=H+'px';
- ctx.setTransform(DPR,0,0,DPR,0,0);
- hw=Math.max(1,Math.ceil(W/CELL));hh=Math.max(1,Math.ceil(H/CELL));
- hc.width=hw;hc.height=hh;
- img=hctx.createImageData(hw,hh);
- hmRow=0;
-}
-addEventListener('resize',resize);
-function gauss(){var u=0,v=0;while(!u)u=Math.random();while(!v)v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(TAU*v);}
-function clamp(v,a,b){return v<a?a:v>b?b:v;}
-function newData(){
- pts=[];
- var cx=W/2,cy=H/2,R=Math.min(W,H)*0.26;
- for(var c=0;c<3;c++){
-  var a=-Math.PI/2+c*TAU/3,bx=cx+Math.cos(a)*R*0.78,by=cy+Math.sin(a)*R*0.78,sd=Math.min(W,H)*0.125;
-  for(var i=0;i<40;i++)pts.push({x:clamp(bx+gauss()*sd,6,W-6),y:clamp(by+gauss()*sd,6,H-6),c:c});
- }
- hmRow=0;
-}
-function kSelect(px,py,kk){
- var m=0,i,j,d;
- for(i=0;i<pts.length;i++){
-  var dx=pts[i].x-px,dy=pts[i].y-py;d=dx*dx+dy*dy;
-  if(m<kk){j=m++;
-   while(j>0&&snd[j-1]>d){snd[j]=snd[j-1];sni[j]=sni[j-1];j--;}
-   snd[j]=d;sni[j]=i;
-  }else if(d<snd[kk-1]){j=kk-1;
-   while(j>0&&snd[j-1]>d){snd[j]=snd[j-1];sni[j]=sni[j-1];j--;}
-   snd[j]=d;sni[j]=i;
+const TRIES = [
+  { q: 'With <b>20% of labels flipped</b> and <b>k = 1</b>, training accuracy reads a perfect 100%. <b>Predict:</b> is k = 1 the best choice here?',
+    run() { apply({ k: 1, noise: .2, hl: ['flip', 'chart'], cap: '<b>Experiment:</b> 20% wrong labels at k = 1. Compare the two curves at k = 1, then <b>drag along the chart</b> to find the best k.' }); },
+    why: 'No. Each training point is its own nearest neighbour, so at k = 1 it always “predicts” its own label: 100% measures memory, not skill. The <b>held-out</b> curve (fresh points, true labels) is lowest at k = 1 and peaks at a larger k (the ringed “best k”). Choose k on data the model has not seen; the gap between the two curves is overfitting.' },
+  { q: 'Measure x in <b>units 8× larger</b> (think km instead of 125 m): every x-gap shrinks to an eighth, y-gaps stay. The points do not move. <b>Predict:</b> does the map change?',
+    run() { apply({ k: 9, xs: -3, hl: ['ball'], cap: '<b>Experiment:</b> x-gaps now count only ×0.125. Watch the ball flatten and the map break into horizontal bands.' }); },
+    why: 'Completely. kNN only sees distances, so a feature measured in small numbers barely counts: “near” now means “similar y”, the ball is a wide flat oval and the map breaks into horizontal bands. Held-out accuracy drops by several points. This is why features are standardised (for example to z-scores) before running kNN.' },
+  { q: 'At <b>k = 25</b> the coral island is gone. <b>Predict:</b> if closer neighbours get a louder vote (weight 1/d), does it come back?',
+    run() { apply({ set: 'island', k: 25, weighted: true, hl: ['island'], cap: '<b>Experiment:</b> k = 25, but each neighbour votes with weight 1/d. Is the coral island back?' }); },
+    why: 'It does. With weights 1/(d + ε) the few coral points right next to the query outweigh the many teal ones further out, so a large k no longer drowns small structures. Weighting makes kNN less sensitive to k, but it also gives a single mislabelled point a loud voice again.' },
+];
+
+/* ===== loop & wiring ===== */
+function frame(dt, rdt) {
+  layout(); S.t += dt; S.animT += dt;
+  if (S.anim && dt > 0) runAnim();
+  if (S.dirtyS && !(drag && drag.moved && performance.now() - S.swAt < 150)) { S.sw = sweep(S.D, S.metric, S.xw, S.weighted); pickFlip(); S.dirtyS = false; S.swAt = performance.now(); }
+  gridWork();
+  if (playing && S.probe < 0 && !drag && performance.now() - S.userAt > 4000) { // the query wanders on its own
+    const [cx, cy, ax, ay] = S.auto, f = 1 - Math.exp(-4 * rdt);
+    S.q.x += (cx + ax * Math.sin(S.t * .45) - S.q.x) * f; S.q.y += (cy + ay * Math.sin(S.t * .71 + 1.1) - S.q.y) * f;
   }
- }
- return m;
+  S.Q = knn(S.D.train, S.q.x, S.q.y, S.k, S.metric, S.xw, S.weighted);
+  draw(); updateText();
 }
-function computeRows(){
- if(hmRow>=hh||!pts.length||!img)return;
- var kk=Math.min(K,pts.length),rows=7,d8=img.data;
- for(var r=0;r<rows&&hmRow<hh;r++,hmRow++){
-  var y=(hmRow+0.5)*CELL;
-  for(var x=0;x<hw;x++){
-   var m=kSelect((x+0.5)*CELL,y,kk),v0=0,v1=0,v2=0,j,cc;
-   for(j=0;j<m;j++){cc=pts[sni[j]].c;if(cc===0)v0++;else if(cc===1)v1++;else v2++;}
-   var inv=1/m,R2=(v0*CLS[0].rgb[0]+v1*CLS[1].rgb[0]+v2*CLS[2].rgb[0])*inv,
-       G2=(v0*CLS[0].rgb[1]+v1*CLS[1].rgb[1]+v2*CLS[2].rgb[1])*inv,
-       B2=(v0*CLS[0].rgb[2]+v1*CLS[1].rgb[2]+v2*CLS[2].rgb[2])*inv,
-       o=(hmRow*hw+x)*4;
-   d8[o]=R2|0;d8[o+1]=G2|0;d8[o+2]=B2|0;d8[o+3]=86;
-  }
- }
- hctx.putImageData(img,0,0);
-}
-function draw(dt){
- T+=dt;
- computeRows();
- ctx.fillStyle='#04060b';ctx.fillRect(0,0,W,H);
- ctx.imageSmoothingEnabled=true;
- ctx.drawImage(hc,0,0,W,H);
- if(hmRow<hh){
-  var sy=hmRow*CELL;
-  ctx.strokeStyle='rgba(255,255,255,.5)';ctx.lineWidth=1;
-  ctx.beginPath();ctx.moveTo(0,sy);ctx.lineTo(W,sy);ctx.stroke();
- }
- var i;
- if(T-lastMove<3){qx+=(mx-qx)*Math.min(1,dt*12);qy+=(my-qy)*Math.min(1,dt*12);}
- else{
-  qx+=(W*0.5+Math.sin(T*0.43)*W*0.34-qx)*Math.min(1,dt*2);
-  qy+=(H*0.5+Math.sin(T*0.31+1.7)*H*0.32-qy)*Math.min(1,dt*2);
- }
- var kk=Math.min(K,pts.length),m=0,votes=[0,0,0],hl={};
- if(pts.length){
-  m=kSelect(qx,qy,kk);
-  for(i=0;i<m;i++){votes[pts[sni[i]].c]++;hl[sni[i]]=true;}
-  var maxv=Math.max(votes[0],votes[1],votes[2]);
-  lastPred=-1;
-  for(i=0;i<m;i++){var cc=pts[sni[i]].c;if(votes[cc]===maxv){lastPred=cc;break;}}
-  ctx.lineWidth=1;
-  for(i=0;i<m;i++){var nb=pts[sni[i]];
-   ctx.strokeStyle=CLS[nb.c].col;ctx.globalAlpha=0.55;
-   ctx.beginPath();ctx.moveTo(qx,qy);ctx.lineTo(nb.x,nb.y);ctx.stroke();
-  }
-  ctx.globalAlpha=0.5;ctx.strokeStyle='#fff';ctx.setLineDash([4,5]);
-  ctx.beginPath();ctx.arc(qx,qy,Math.sqrt(snd[m-1])+2,0,TAU);ctx.stroke();
-  ctx.setLineDash([]);ctx.globalAlpha=1;
- }
- for(i=0;i<pts.length;i++){var p=pts[i],col=CLS[p.c].col;
-  ctx.fillStyle=col;
-  ctx.globalAlpha=0.18;ctx.beginPath();ctx.arc(p.x,p.y,5.5,0,TAU);ctx.fill();
-  ctx.globalAlpha=1;ctx.beginPath();ctx.arc(p.x,p.y,2.6,0,TAU);ctx.fill();
-  if(hl[i]){ctx.strokeStyle='#fff';ctx.lineWidth=1.3;
-   ctx.beginPath();ctx.arc(p.x,p.y,6+Math.sin(T*6)*1.2,0,TAU);ctx.stroke();}
- }
- if(lastPred>=0){
-  var pc=CLS[lastPred].col;
-  ctx.save();ctx.shadowColor=pc;ctx.shadowBlur=16;
-  ctx.fillStyle=pc;ctx.beginPath();ctx.arc(qx,qy,5,0,TAU);ctx.fill();ctx.restore();
-  ctx.strokeStyle='#fff';ctx.lineWidth=1.4;
-  ctx.beginPath();ctx.arc(qx,qy,8+Math.sin(T*5)*1.5,0,TAU);ctx.stroke();
-  var tx=clamp(qx+18,8,W-186),ty=clamp(qy-64,8,H-70);
-  ctx.globalAlpha=0.82;ctx.fillStyle='#050a12';ctx.fillRect(tx,ty,178,56);
-  ctx.globalAlpha=1;ctx.strokeStyle=pc;ctx.lineWidth=1;ctx.strokeRect(tx,ty,178,56);
-  ctx.font='11px ui-monospace,Menlo,monospace';
-  ctx.fillStyle='#bfe9ff';ctx.fillText('vote of K='+m+' nearest:',tx+8,ty+15);
-  for(i=0;i<3;i++){ctx.fillStyle=CLS[i].col;ctx.fillText('■'+votes[i],tx+8+i*44,ty+31);}
-  ctx.fillStyle=pc;ctx.font='700 12px ui-monospace,monospace';
-  ctx.fillText('→ '+CLS[lastPred].name,tx+8,ty+48);
- }
- statsEl.textContent=
-  'K        '+K+
-  '\npoints   '+pts.length+
-  '\nplacing  '+CLS[cur].name+' (X to cycle)'+
-  '\npredict  '+(lastPred>=0?CLS[lastPred].name:'—')+
-  '\nboundary '+(hmRow<hh?'computing '+Math.round(100*hmRow/hh)+'%':'ready');
-}
-addEventListener('keydown',function(e){
- if(e.key>='1'&&e.key<='9'){K=+e.key;hmRow=0;}
- else if(e.key==='ArrowUp'||e.key==='+'||e.key==='='){K=Math.min(15,K+1);hmRow=0;e.preventDefault();}
- else if(e.key==='ArrowDown'||e.key==='-'){K=Math.max(1,K-1);hmRow=0;e.preventDefault();}
- else if(e.key==='x'||e.key==='X')cur=(cur+1)%3;
- else if(e.key==='r'||e.key==='R')newData();
-});
-cv.addEventListener('pointermove',function(e){mx=e.clientX;my=e.clientY;lastMove=T;});
-cv.addEventListener('pointerdown',function(e){
- pts.push({x:e.clientX,y:e.clientY,c:cur});hmRow=0;mx=e.clientX;my=e.clientY;lastMove=T;
-});
-var last=0;
-function frame(ts){
- var dt=Math.min(0.05,(ts-last)/1000||0.016);last=ts;
- draw(dt);
- requestAnimationFrame(frame);
-}
-resize();
-newData();
-requestAnimationFrame(frame);
-})();
+$('#bStep').textContent = 'Test ▸'; $('#bStep').setAttribute('aria-label', 'Move the query to the next held-out point');
+$('#bStep').onclick = () => { setPlaying(false); S.probe = (S.probe + 1) % S.D.test.length; const t = S.D.test[S.probe]; S.q = { x: t.x, y: t.y }; };
+$('#bReset').onclick = () => { loadData(); syncPaint(); };
+stat('sK', 'k · ruler'); stat('sTr', 'train acc'); stat('sTe', 'held-out acc');
+setText('mC2', S.cd[0].ratio.toFixed(2)); setText('mC512', S.cd[4].ratio.toFixed(2));
+READY = true; setPlaying(playing); // sync the ▶/❚❚ button with the real state (starts paused under reduced motion)
+window.__demo = { goStep, setPlaying, state: () => ({ set: S.set, k: S.k, metric: METRICS[S.metric], weighted: S.weighted, noise: S.noise, n: S.D.train.length, train: S.sw && S.sw.train[(S.k - 1) / 2], test: S.sw && S.sw.test[(S.k - 1) / 2], pred: S.Q && S.Q.pred }) };
+renderSteps(); renderTries(); goStep(0); requestAnimationFrame(loop);
 </script>
 </body>
 </html>

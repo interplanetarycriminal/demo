@@ -1,305 +1,848 @@
-<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
-<title>Perceptron Learning Rule</title>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Perceptron Learning — ML Field Notes</title>
 <style>
-  html,body{margin:0;padding:0;background:#04050a;overflow:hidden;height:100%}
-  canvas{touch-action:none;display:block;position:fixed;inset:0}
-  #ui{position:fixed;top:0;left:0;margin:12px;padding:10px 12px;background:rgba(8,10,18,.62);
-      border:1px solid rgba(120,255,220,.22);border-radius:8px;color:#c6ffe9;
-      font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;max-width:330px;
-      backdrop-filter:blur(6px);z-index:10;max-height:52vh;overflow:auto}
-  #ui h1{margin:0 0 4px;font-size:14px;letter-spacing:.08em;color:#5cffc8;text-transform:uppercase}
-  #ui .exp{color:#8ba8a0;margin-bottom:7px}
-  #ui .hint{color:#6f8a83;margin-top:6px}
-  #ui a{color:#ffd166;text-decoration:none}
-  #ui a:hover{text-decoration:underline}
-  .row{display:flex;justify-content:space-between;gap:10px}
-  .k{color:#6f8a83}.v{color:#eafff8}
-  input[type=range]{width:100%;accent-color:#5cffc8;margin:4px 0 2px}
-  .ok{color:#ffd166}.bad{color:#ff6b8a}
-@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
+/* ===== ML Field Notes design system (shared by every ML/AI demo) =====
+   Colour means the same thing in every demo:
+   --a coral = class A / "positive"     --b teal = class B / "negative"
+   --hl amber = the model's current parameters / guess / selection
+   --grad violet = gradients, updates, errors flowing back
+   --accent = this demo's signature colour (set per demo) */
+:root{
+  --bg:#0c0e1a; --bg2:#10132a; --panel:#13162c; --panel2:#181c38; --line:rgba(190,200,255,.10); --line2:rgba(190,200,255,.18);
+  --ink:#e9ecfa; --dim:#a2a9c8; --faint:#6b7396;
+  --a:#ff7a6b; --b:#3fd0c0; --hl:#ffc857; --grad:#a78bfa; --good:#7ee787; --bad:#ff6b8a;
+  --accent:#6cb8ff;
+  --r:12px; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.5 var(--sans)}
+body{overflow:hidden}
+a{color:var(--accent)}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app{display:grid;grid-template-columns:minmax(0,1fr) 380px;grid-template-rows:48px minmax(0,1fr);height:100vh;height:100dvh}
+.top{grid-column:1/-1;display:flex;align-items:center;gap:12px;padding:0 14px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#11142a,#0d1020)}
+.top a.back{color:var(--dim);text-decoration:none;font-size:13px;white-space:nowrap}
+.top a.back:hover{color:var(--ink)}
+.top .chip{font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 45%,transparent);border-radius:99px;padding:5px 8px}
+.top h1{margin:0;font-size:15px;font-weight:650;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top .sp{flex:1}
+.top .keys{font:11px var(--mono);color:var(--faint);white-space:nowrap}
+.stage{position:relative;min-width:0;min-height:0;background:radial-gradient(ellipse at 50% 40%,#151a3a 0%,var(--bg) 70%)}
+.stage::before{content:"";position:absolute;inset:0;background-image:radial-gradient(rgba(190,200,255,.07) 1px,transparent 1.3px);background-size:24px 24px;pointer-events:none}
+.stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.caption{position:absolute;left:16px;right:16px;top:14px;max-width:640px;padding:10px 14px;border-radius:10px;background:rgba(12,14,30,.78);border:1px solid var(--line2);backdrop-filter:blur(6px);font-size:14px;line-height:1.45;pointer-events:none;transition:opacity .3s}
+.caption b{color:var(--accent)}
+.caption:empty{opacity:0}
+.dock{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;gap:6px;padding:6px;border-radius:99px;background:rgba(12,14,30,.82);border:1px solid var(--line2);backdrop-filter:blur(6px)}
+.dock button{border:0;background:transparent;border-radius:99px;min-width:36px;height:34px;padding:0 12px;cursor:pointer;color:var(--ink);white-space:nowrap}
+.dock button:hover{background:rgba(255,255,255,.08)}
+.dock button.on{background:color-mix(in srgb,var(--accent) 22%,transparent);color:var(--accent)}
+.lesson{border-left:1px solid var(--line);background:var(--panel);overflow:auto;min-height:0;display:flex;flex-direction:column}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border-bottom:1px solid var(--line)}
+.stat{background:var(--panel);padding:10px 12px}
+.stat .k{font:600 10px/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.stat .v{font:600 18px/1.3 var(--mono);font-variant-numeric:tabular-nums;margin-top:3px}
+.tabs{display:flex;gap:2px;padding:10px 12px 0;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);z-index:2}
+.tabs button{border:0;background:none;padding:9px 12px;color:var(--dim);cursor:pointer;border-bottom:2px solid transparent;font-weight:600}
+.tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent)}
+.pane{padding:14px 16px 22px;display:none}
+.pane.on{display:block}
+.pane h3{margin:14px 0 6px;font-size:13px;letter-spacing:.02em}
+.pane p{margin:0 0 10px;color:var(--dim)}
+.pane p b,.pane li b{color:var(--ink)}
+.lede{font-size:15px;color:var(--ink)!important}
+.steps{list-style:none;margin:10px 0 0;padding:0;counter-reset:s}
+.steps li{counter-increment:s;border:1px solid var(--line);border-radius:10px;margin:0 0 8px;padding:10px 12px 10px 40px;position:relative;cursor:pointer;color:var(--dim);background:var(--panel2)}
+.steps li::before{content:counter(s);position:absolute;left:12px;top:10px;width:18px;height:18px;border-radius:99px;display:grid;place-items:center;font:600 11px var(--mono);background:rgba(255,255,255,.07);color:var(--dim)}
+.steps li.on{border-color:color-mix(in srgb,var(--accent) 60%,transparent);color:var(--ink)}
+.steps li.on::before{background:var(--accent);color:#141414}
+.steps li.done::before{content:"✓";background:rgba(126,231,135,.2);color:var(--good)}
+.steps li .t{font-weight:650;color:var(--ink);display:block}
+.steps li .d{display:none;margin-top:4px}
+.steps li.on .d{display:block}
+.tournav{display:flex;gap:8px;margin-top:6px}
+.btn{border:1px solid var(--line2);background:var(--panel2);border-radius:9px;padding:7px 12px;cursor:pointer;color:var(--ink)}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:#15131a;border-color:transparent;font-weight:650}
+.card{border:1px solid var(--line);border-radius:12px;padding:12px;margin:0 0 10px;background:var(--panel2)}
+.card .q{color:var(--ink);font-weight:600;margin-bottom:8px}
+.card .why{display:none;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line2);color:var(--dim)}
+.card.revealed .why{display:block}
+.card .row{display:flex;gap:8px;flex-wrap:wrap}
+.eq{font:14px/1.7 var(--mono);background:#0e1124;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:6px 0 12px;overflow-x:auto;white-space:nowrap}
+.eq .c-a{color:var(--a)} .eq .c-b{color:var(--b)} .eq .c-hl{color:var(--hl)} .eq .c-g{color:var(--grad)} .eq .c-acc{color:var(--accent)}
+.live{font-variant-numeric:tabular-nums;color:var(--hl)}
+.ctrl{display:grid;grid-template-columns:1fr auto;gap:4px 10px;align-items:center;margin:10px 0}
+.ctrl label{color:var(--dim);font-size:13px}
+.ctrl output{font:12px var(--mono);color:var(--ink);font-variant-numeric:tabular-nums}
+.ctrl input[type=range]{grid-column:1/-1;width:100%;accent-color:var(--accent)}
+.seg{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 10px}
+.seg button{border:1px solid var(--line2);background:transparent;border-radius:99px;padding:5px 11px;cursor:pointer;color:var(--dim);font-size:13px}
+.seg button[aria-pressed=true]{background:color-mix(in srgb,var(--accent) 20%,transparent);color:var(--ink);border-color:color-mix(in srgb,var(--accent) 55%,transparent)}
+.note{border-left:3px solid var(--grad);padding:6px 10px;margin:8px 0 12px;color:var(--dim);background:rgba(167,139,250,.06);border-radius:0 8px 8px 0}
+.wild li{margin-bottom:6px;color:var(--dim)}
+.caption .c-a,.pane .c-a{color:var(--a)} .caption .c-b,.pane .c-b{color:var(--b)} .caption .c-hl,.pane .c-hl{color:var(--hl)} .caption .c-g,.pane .c-g{color:var(--grad)}
+.pane .hint{font-size:12.5px;color:var(--faint)}
+@media (max-width:880px){
+  body{overflow:auto}
+  .app{grid-template-columns:1fr;grid-template-rows:48px 58vh auto;height:auto}
+  .stage{height:58vh}
+  .lesson{border-left:0;border-top:1px solid var(--line)}
+  .top .keys{display:none}
+  .caption{font-size:13px;top:10px;left:10px;right:10px}
+  .stats{grid-template-columns:repeat(3,1fr)}
+  .stat .v{font-size:15px}
+}
+@media (prefers-reduced-motion:reduce){.caption{transition:none}}
 </style>
-
-<canvas id="c"></canvas>
-<div id="ui">
-  <h1>Perceptron</h1>
-  <div class="exp">One neuron nudges its weight vector toward every point it misclassifies, rotating the decision line until the data is split.</div>
-  <div class="row"><span class="k">dataset</span><span class="v" id="s-set">separable</span></div>
-  <div class="row"><span class="k">weights (w1,w2,b)</span><span class="v" id="s-w">-</span></div>
-  <div class="row"><span class="k">last sample</span><span class="v" id="s-sample">-</span></div>
-  <div class="row"><span class="k">pred / label</span><span class="v" id="s-pl">-</span></div>
-  <div class="row"><span class="k">updates</span><span class="v" id="s-upd">0</span></div>
-  <div class="row"><span class="k">errors this pass</span><span class="v" id="s-err">-</span></div>
-  <div class="row"><span class="k">status</span><span class="v" id="s-status">learning…</span></div>
-  <label class="k">speed <span class="v" id="s-spd">1.5x</span></label>
-  <input type="range" id="spd" min="15" max="400" value="150">
-  <div class="hint">[r] reseed · [space] pause · [n] toggle separable/not · <a href="index.html">← gallery</a></div>
+</head>
+<body>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace;max-width:100vw;white-space:pre-wrap';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div class="app">
+  <header class="top">
+    <a class="back" href="index.html">← Gallery</a>
+    <span class="chip">ML / AI</span>
+    <h1>Perceptron Learning</h1>
+    <span class="sp"></span>
+    <span class="keys">Space play · ←/→ tour · R reset</span>
+  </header>
+  <section class="stage" id="stage">
+    <canvas id="c" role="img" aria-label="Two classes of points on a plane, the perceptron decision line with its weight vector, the neuron computing its weighted vote, and a chart of mistakes per epoch"></canvas>
+    <div class="caption" id="caption" aria-live="polite"></div>
+    <div class="dock" role="group" aria-label="Simulation controls">
+      <button id="bPlay" class="on" aria-label="Pause">❚❚</button>
+      <button id="bStep" aria-label="Step to the next correction">Step</button>
+      <button id="bEpoch" aria-label="Run the rest of this epoch">Epoch</button>
+      <button id="bReset" aria-label="Reset">Reset</button>
+      <button id="bSpeed" aria-label="Speed">1×</button>
+    </div>
+  </section>
+  <aside class="lesson">
+    <div class="stats" id="stats"></div>
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-tab="learn">Learn</button>
+      <button role="tab" aria-selected="false" data-tab="try">Try this</button>
+      <button role="tab" aria-selected="false" data-tab="math">The math</button>
+      <button role="tab" aria-selected="false" data-tab="play">Controls</button>
+    </div>
+    <div class="pane on" id="p-learn">
+      <p class="lede">A perceptron is one neuron: it takes a weighted vote of its inputs, and every time it is wrong it tilts its weights toward the right answer.</p>
+      <ol class="steps" id="steps"></ol>
+      <div class="tournav"><button class="btn" id="tPrev">← Back</button><button class="btn primary" id="tNext">Next step →</button></div>
+      <h3>In the wild</h3>
+      <ul class="wild">
+        <li><b>Inside every neural net.</b> Each unit of a transformer's linear layers computes exactly this w·x + b vote; the hard threshold was swapped for smooth activations so gradients can flow.</li>
+        <li><b>Fast linear classifiers.</b> Spam filters and click prediction on millions of sparse features, and the averaged / structured perceptron that powered NLP taggers and parsers through the 2000s.</li>
+        <li><b>Linear probes.</b> Interpretability researchers fit a single linear classifier on a model's activations to ask: is this concept linearly separable in here?</li>
+      </ul>
+    </div>
+    <div class="pane" id="p-try"></div>
+    <div class="pane" id="p-math">
+      <h3>1 · The weighted vote</h3>
+      <div class="eq">ŷ = sign( <span class="c-hl">w₁</span>·x₁ + <span class="c-hl">w₂</span>·x₂ + <span class="c-hl">b</span> )</div>
+      <div class="eq">now: ŷ = sign( <span class="live" id="mW1">–</span>·x₁ <span class="live" id="mW2">–</span>·x₂ <span class="live" id="mB">–</span> )</div>
+      <h3>2 · The boundary</h3>
+      <p>The line is every x where the vote is exactly zero. <span class="c-hl">w</span> is its normal vector, pointing into the <span class="c-a">+1</span> side; b sets how far the line sits from the origin.</p>
+      <div class="eq"><span class="c-hl">w</span>·x + <span class="c-hl">b</span> = 0 · distance to origin = |b|/‖w‖ = <span class="live" id="mDist">–</span></div>
+      <h3>3 · The learning rule (only on a mistake)</h3>
+      <div class="eq">if y·(<span class="c-hl">w</span>·x + <span class="c-hl">b</span>) ≤ 0 :<br>&nbsp;&nbsp;<span class="c-hl">w</span> ← <span class="c-hl">w</span> + <span class="c-g">η·y·x</span><br>&nbsp;&nbsp;<span class="c-hl">b</span> ← <span class="c-hl">b</span> + <span class="c-g">η·y</span></div>
+      <div class="eq">last: y = <span class="live" id="mY">–</span>, x = <span class="live" id="mX">–</span>, η = <span class="live" id="mEta">–</span><br>Δw = <span class="c-g" id="mDw">–</span> &nbsp; Δb = <span class="c-g" id="mDb">–</span></div>
+      <p>Why it helps: after the update, the point's vote changes by η·(‖x‖² + 1) in the direction of y (η·‖x‖² with bias off), so that point is always pushed toward the right side.</p>
+      <h3>4 · Convergence theorem (Novikoff, 1962)</h3>
+      <p>If some line separates the data with margin γ and every point lies within radius R, then from w = 0 the perceptron makes at most (R/γ)² mistakes, in any order.</p>
+      <div class="eq">mistakes ≤ (<span class="c-acc">R</span>/<span class="c-acc">γ</span>)² = (<span class="live" id="mR">–</span> / <span class="live" id="mG">–</span>)² = <span class="live" id="mBound">–</span><br>made so far: <span class="live" id="mK">–</span></div>
+      <div class="note"><b>η changes nothing here.</b> From w = 0, w is always η × Σ y·x over past mistakes, and sign() ignores scale, so every decision (and the mistake count) is the same for any η &gt; 0.</div>
+      <div class="note"><b>Converged ≠ best.</b> It stops at the first line with zero mistakes, often skimming one class. Maximising the margin is what an SVM adds; on non-separable data it never stops (pocket / averaged perceptrons fix that).</div>
+      <p class="hint">With bias on, R and γ use the augmented input (x₁, x₂, 1). γ comes from the best 2-D line found by sweeping angles. Arrows on the stage share one scale (currently ×<span id="mScale">1</span>) so w and η·y·x can be compared.</p>
+    </div>
+    <div class="pane" id="p-play"></div>
+  </aside>
 </div>
 <script>
-(function(){
-"use strict";
-var cv=document.getElementById('c'),ctx=cv.getContext('2d'),W=0,H=0,DPR=1;
-var cxp=0,cyp=0,SC=1;
-function resize(){
-  DPR=Math.min(2,window.devicePixelRatio||1);
-  W=window.innerWidth;H=window.innerHeight;
-  cv.width=Math.round(W*DPR);cv.height=Math.round(H*DPR);
-  cv.style.width=W+'px';cv.style.height=H+'px';
-  ctx.setTransform(DPR,0,0,DPR,0,0);
-  cxp=W*0.5+Math.min(W*0.12,170); cyp=H*0.5; SC=Math.min(W*0.155,H*0.185);
+'use strict';
+/* ===== shell helpers (keep) ===== */
+const $ = s => document.querySelector(s);
+const cv = $('#c'), ctx = cv.getContext('2d'), stage = $('#stage');
+let W = 0, H = 0, DPR = 1;
+function resize() {
+  const r = stage.getBoundingClientRect(); DPR = Math.min(2, devicePixelRatio || 1);
+  W = Math.max(1, r.width); H = Math.max(1, r.height);
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR); ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  if (typeof onResize === 'function') onResize();
 }
-window.addEventListener('resize',resize);
-function px(x){return cxp+x*SC;} function py(y){return cyp-y*SC;}
-
-// ---------- data ----------
-var pts=[],separable=true,w=[0,0],bias=0,LR=0.35;
-function makeData(sep){
-  pts=[];
-  if(sep){
-    // random true separator, margin gap
-    var ang=Math.random()*Math.PI*2, tw=[Math.cos(ang),Math.sin(ang)], tb=(Math.random()*2-1)*0.6;
-    var n=0,guard=0;
-    while(n<34&&guard<6000){
-      guard++;
-      var x=(Math.random()*2-1)*2.4, y=(Math.random()*2-1)*2.0;
-      var s=tw[0]*x+tw[1]*y+tb;
-      if(Math.abs(s)<0.42) continue;
-      pts.push({x:x,y:y,l:s>0?1:-1});n++;
-    }
-  }else{
-    // XOR-ish: two interleaved blobs, provably not linearly separable
-    var centers=[[-1.35,1.0,1],[1.35,-1.0,1],[-1.35,-1.0,-1],[1.35,1.0,-1]];
-    for(var c=0;c<centers.length;c++)for(var i=0;i<8;i++){
-      pts.push({x:centers[c][0]+(Math.random()*2-1)*0.62,
-                y:centers[c][1]+(Math.random()*2-1)*0.62,
-                l:centers[c][2]});
-    }
-  }
-  w=[(Math.random()*2-1)*0.6,(Math.random()*2-1)*0.6];bias=(Math.random()*2-1)*0.3;
-  idx=0;updates=0;errThisPass=0;lastErrs=-1;converged=false;goldFlash=0;
-  order=[];for(var q=0;q<pts.length;q++)order.push(q);
-  shuffle(order);
-  cur=null;phase='pick';phaseT=0;prevW=[w[0],w[1],bias];oscHist=[];passCount=0;
-}
-function shuffle(A){for(var i=A.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=A[i];A[i]=A[j];A[j]=t;}}
-function predict(p){return (w[0]*p.x+w[1]*p.y+bias)>=0?1:-1;}
-
-// ---------- state ----------
-var idx=0,updates=0,errThisPass=0,lastErrs=-1,converged=false,goldFlash=0,cur=null,order=[];
-var phase='pick',phaseT=0,prevW=[0,0,0],speed=1.5,paused=false,oscHist=[],passCount=0,wasWrong=false,tPrev=0;
-resize();makeData(true);
-
-var spd=document.getElementById('spd');
-spd.addEventListener('input',function(){speed=parseInt(spd.value,10)/100;document.getElementById('s-spd').textContent=speed.toFixed(1)+'x';});
-window.addEventListener('keydown',function(e){
-  if(e.code==='Space'){paused=!paused;e.preventDefault();}
-  if(e.key==='r'||e.key==='R'){makeData(separable);}
-  if(e.key==='n'||e.key==='N'){separable=!separable;makeData(separable);}
+new ResizeObserver(resize).observe(stage); resize();
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+// tabs
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', x === b));
+  document.querySelectorAll('.pane').forEach(p => p.classList.toggle('on', p.id === 'p-' + b.dataset.tab));
 });
+// playback
+let playing = !REDUCED, speed = 1;
+const SPEEDS = [0.25, 0.5, 1, 2, 4];
+function setPlaying(v) { playing = v; $('#bPlay').textContent = v ? '❚❚' : '▶'; $('#bPlay').classList.toggle('on', v); $('#bPlay').setAttribute('aria-label', v ? 'Pause' : 'Play'); }
+$('#bPlay').onclick = () => setPlaying(!playing);
+$('#bSpeed').onclick = () => { speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]; $('#bSpeed').textContent = speed + '×'; };
+// tour: STEPS = [{t:'title', d:'html', cap:'stage caption html', go(){ /* set demo state */ }}]
+let tour = 0;
+function renderSteps() {
+  const ol = $('#steps'); ol.innerHTML = '';
+  STEPS.forEach((s, i) => { const li = document.createElement('li'); li.className = (i === tour ? 'on' : '') + (i < tour ? ' done' : ''); li.innerHTML = `<span class="t">${s.t}</span><span class="d">${s.d}</span>`; li.onclick = () => goStep(i); ol.appendChild(li); });
+  $('#tPrev').disabled = tour === 0; $('#tNext').textContent = tour === STEPS.length - 1 ? 'Start over ↺' : 'Next step →';
+}
+function goStep(i) { tour = (i + STEPS.length) % STEPS.length; const s = STEPS[tour]; if (s.go) s.go(); $('#caption').innerHTML = s.cap || ''; renderSteps(); }
+$('#tPrev').onclick = () => goStep(Math.max(0, tour - 1));
+$('#tNext').onclick = () => goStep(tour + 1);
+// experiments: TRIES = [{q:'Predict…', run(){…}, why:'html'}]
+function renderTries() {
+  const p = $('#p-try'); p.innerHTML = '<p>Make a prediction first, then run it. Each experiment sets the demo up for you.</p>';
+  TRIES.forEach(x => { const c = document.createElement('div'); c.className = 'card'; c.innerHTML = `<div class="q">${x.q}</div><div class="row"><button class="btn primary">Run it</button><button class="btn">Show why</button></div><div class="why">${x.why}</div>`; const [run, why] = c.querySelectorAll('button'); run.onclick = () => { x.run(); setPlaying(true); }; why.onclick = () => c.classList.toggle('revealed'); p.appendChild(c); });
+}
+// controls helpers
+function slider(parent, id, label, min, max, step, value, fmt, onInput) {
+  const d = document.createElement('div'); d.className = 'ctrl';
+  d.innerHTML = `<label for="${id}">${label}</label><output id="${id}o"></output><input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${value}">`;
+  parent.appendChild(d); const inp = d.querySelector('input'), out = d.querySelector('output');
+  const upd = () => { out.textContent = fmt(+inp.value); onInput(+inp.value); }; inp.oninput = upd; upd();
+  return { set(v) { inp.value = v; upd(); }, get: () => +inp.value };
+}
+function seg(parent, options, value, onPick) {
+  const d = document.createElement('div'); d.className = 'seg'; parent.appendChild(d);
+  const bs = options.map(([v, label]) => { const b = document.createElement('button'); b.textContent = label; b.setAttribute('aria-pressed', v === value); b.onclick = () => set(v); d.appendChild(b); return [v, b]; });
+  function set(v) { bs.forEach(([k, b]) => b.setAttribute('aria-pressed', k === v)); onPick(v); }
+  return { set };
+}
+function stat(id, label) { const d = document.createElement('div'); d.className = 'stat'; d.innerHTML = `<div class="k">${label}</div><div class="v" id="${id}">–</div>`; $('#stats').appendChild(d); }
+const setText = (id, v) => { const e = document.getElementById(id); if (e && e.textContent !== v) e.textContent = v; };
+// keyboard
+addEventListener('keydown', e => {
+  if (e.target.matches('input,select,textarea')) return;
+  if (e.code === 'Space') { setPlaying(!playing); e.preventDefault(); }
+  else if (e.key === 'ArrowRight') goStep(tour + 1);
+  else if (e.key === 'ArrowLeft') goStep(Math.max(0, tour - 1));
+  else if (e.key === 'r' || e.key === 'R') $('#bReset').click();
+});
+// wall-clock-locked loop (dt clamped to [0, 0.1] — rAF timestamps can precede performance.now())
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.1, Math.max(0, (now - last) / 1000)); last = now;
+  try { frame(playing ? dt * speed : 0, dt); } catch (err) { window.onerror(err.message, '', 0); return; }
+  requestAnimationFrame(loop);
+}
 
-// ---------- logic ----------
-function stepLogic(){
-  if(phase==='pick'){
-    if(idx>=order.length){
-      passCount++;
-      lastErrs=errThisPass;
-      oscHist.push(errThisPass); if(oscHist.length>140) oscHist.shift();
-      if(errThisPass===0&&separable){converged=true;goldFlash=1;}
-      errThisPass=0;idx=0;shuffle(order);
-      // sit on the solution a while, then reseed with the non-separable set
-      if(converged&&passCount>2){separable=false;makeData(false);return;}
-      // after showing the endless oscillation, cycle back to a separable set
-      if(!separable&&passCount>8){separable=true;makeData(true);return;}
+// ===== DEMO CODE: Perceptron Learning =====
+/*CORE-START*/
+// Pure model code — no DOM. Points are {x, y, c} with class c = +1 (A, coral) or −1 (B, teal).
+function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function makeData(kind, seed) {
+  const r = mulberry32(seed * 9973 + 17), U = (a, b) => a + (b - a) * r(), pts = [];
+  if (kind === 'sep' || kind === 'tight') {
+    const th = U(0, 2 * Math.PI), n = [Math.cos(th), Math.sin(th)], b = U(-0.25, 0.25);
+    const gap = kind === 'sep' ? 0.2 : 0.03;
+    let guard = 0;
+    while (pts.length < 36 && guard++ < 20000) {
+      const x = U(-0.95, 0.95), y = U(-0.95, 0.95), d = n[0] * x + n[1] * y + b;
+      if (Math.abs(d) < gap) continue;
+      if (kind === 'tight' && Math.abs(d) > 0.22 && r() < 0.6) continue; // crowd the boundary
+      pts.push({ x, y, c: d > 0 ? 1 : -1 });
     }
-    cur=pts[order[idx]];
-    var pr=predict(cur);
-    wasWrong=(pr!==cur.l);
-    cur._pred=pr;
-    phase='judge';phaseT=0;
-  }else if(phase==='judge'){
-    if(wasWrong){
-      prevW=[w[0],w[1],bias];
-      w[0]+=LR*cur.l*cur.x; w[1]+=LR*cur.l*cur.y; bias+=LR*cur.l;
-      updates++;errThisPass++;converged=false;
-      phase='update';phaseT=0;
-    }else{
-      idx++;phase='pick';phaseT=0;
+    if (kind === 'tight') for (const s of [1, -1]) { // pin one point per class onto the thin margin
+      const t = U(-0.45, 0.45), q = s * gap * 1.02 - b;
+      pts.splice(Math.floor(r() * pts.length), 0, { x: q * n[0] - t * n[1], y: q * n[1] + t * n[0], c: s });
     }
-  }else if(phase==='update'){
-    idx++;phase='pick';phaseT=0;
+    const na = pts.filter(p => p.c > 0).length;
+    if (na < 9 || pts.length - na < 9) return makeData(kind, seed + 101);
+  } else if (kind === 'xor') {
+    for (let i = 0; i < 32; i++) {
+      const qx = i % 2 ? 1 : -1, qy = (i >> 1) % 2 ? 1 : -1;
+      pts.push({ x: qx * 0.55 + U(-0.28, 0.28), y: qy * 0.55 + U(-0.28, 0.28), c: qx * qy < 0 ? 1 : -1 });
+    }
+  } else if (kind === 'offset') { // separable, but only by a line that misses the origin
+    for (let i = 0; i < 30; i++) {
+      const a = i % 2 === 0;
+      pts.push(a ? { x: U(0.5, 0.95), y: U(-0.9, 0.9), c: 1 } : { x: U(-0.4, 0.3), y: U(-0.9, 0.9), c: -1 });
+    }
+  }
+  return pts;
+}
+const score = (m, p) => m.w[0] * p.x + m.w[1] * p.y + m.b;           // the weighted vote w·x + b
+const isMistake = (m, p) => p.c * score(m, p) <= 0;                  // a zero vote counts as wrong
+const updateDelta = (p, eta, bias) => ({ dw: [eta * p.c * p.x, eta * p.c * p.y], db: bias ? eta * p.c : 0 });
+function applyDelta(m, d) { m.w[0] += d.dw[0]; m.w[1] += d.dw[1]; m.b += d.db; }
+function countMistakes(m, pts) { let k = 0; for (const p of pts) if (isMistake(m, p)) k++; return k; }
+// Classic perceptron: sweep the points in order, correct every mistake, stop after a clean epoch.
+function train(pts, { eta = 1, bias = true, w0 = [0, 0], b0 = 0, maxEpochs = 500 } = {}) {
+  const m = { w: [...w0], b: b0 }, hist = []; let updates = 0;
+  for (let e = 0; e < maxEpochs; e++) {
+    let k = 0;
+    for (const p of pts) if (isMistake(m, p)) { applyDelta(m, updateDelta(p, eta, bias)); k++; updates++; }
+    hist.push(k);
+    if (!k) return { m, updates, epochs: e + 1, converged: true, hist };
+  }
+  return { m, updates, epochs: maxEpochs, converged: false, hist };
+}
+// Best 2-D separator by sweeping the normal angle. With bias the best offset for a direction is the
+// midpoint between the classes' projections, so γ(θ) = (min₊ n·x − max₋ n·x)/2. γ ≤ 0 ⇒ not separable.
+function bestMargin(pts, bias) {
+  if (!pts.some(p => p.c > 0) || !pts.some(p => p.c < 0)) return null;
+  const at = th => {
+    const n0 = Math.cos(th), n1 = Math.sin(th);
+    if (bias) {
+      let mp = Infinity, mn = -Infinity;
+      for (const p of pts) { const v = n0 * p.x + n1 * p.y; if (p.c > 0) mp = Math.min(mp, v); else mn = Math.max(mn, v); }
+      return { g: (mp - mn) / 2, n: [n0, n1], b: -(mp + mn) / 2, th };
+    }
+    let g = Infinity; for (const p of pts) g = Math.min(g, p.c * (n0 * p.x + n1 * p.y));
+    return { g, n: [n0, n1], b: 0, th };
+  };
+  let best = at(0);
+  for (let i = 1; i < 720; i++) { const q = at(i * Math.PI / 360); if (q.g > best.g) best = q; }
+  const t0 = best.th;
+  for (let i = -60; i <= 60; i++) { const q = at(t0 + i * Math.PI / 21600); if (q.g > best.g) best = q; }
+  return best;
+}
+// Novikoff: from w = 0, mistakes ≤ (R/γ)² in the augmented space x̃ = (x₁, x₂, 1).
+function novikoff(pts, bias, bm) {
+  if (!bm || bm.g <= 0) return null;
+  let R = 0; for (const p of pts) R = Math.max(R, Math.hypot(p.x, p.y, bias ? 1 : 0));
+  const gam = bm.g / Math.hypot(1, bm.b);
+  return { R, gam, bound: (R / gam) ** 2 };
+}
+/*CORE-END*/
+
+/* ---------- state ---------- */
+const COL = { a: '#ff7a6b', b: '#3fd0c0', hl: '#ffc857', g: '#a78bfa', n: '#c7cbe0', good: '#7ee787', ink: '#e9ecfa', dim: '#a2a9c8', faint: '#6b7396', acc: '#6cb8ff', bad: '#ff6b8a' };
+const MONO = 'ui-monospace,SFMono-Regular,Menlo,monospace', SANS = 'ui-sans-serif,system-ui,-apple-system,Segoe UI,sans-serif';
+const DUR = { scan: 0.07, flag: 0.4, vec: 0.45, turn: 0.45 };
+const S = {
+  kind: 'sep', seed: 1, pts: [], m: { w: [0, 0], b: 0 }, eta: 1, bias: true, init: 'zero', tempo: 'detail', brush: 1,
+  epoch: 1, idx: 0, errs: 0, hist: [], updates: 0, converged: false, phase: 'scan', t: 0, anim: null, last: null, cur: null,
+  ghosts: [], trail: [], bm: null, nov: null, ws: 1, hl: null, overlay: null, showMargin: false, feature: null, hover: null,
+  toast: null, stepping: false, clock: 0, ui: { brush: [] }, zero: true
+};
+var L; // layout (var: onResize runs before this line during shell start-up)
+let syncing = false, drag = null;
+const rgba = (h, a) => { const n = parseInt(h.slice(1), 16); return `rgba(${n >> 16},${n >> 8 & 255},${n & 255},${a})`; };
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const ease = t => t < 0.5 ? 2 * t * t : 1 - 2 * (1 - t) * (1 - t);
+const fs = v => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(2);
+const dur = ph => DUR[ph] * (S.tempo === 'quick' ? 0.16 : 1);
+
+/* ---------- simulation (a phase machine: scan → flag → vec → turn) ---------- */
+function resetRun() {
+  const r = mulberry32(S.seed + 99);
+  S.zero = S.init !== 'rand';
+  S.m = S.init === 'rand' ? { w: [r() * 2 - 1, r() * 2 - 1], b: S.bias ? r() - 0.5 : 0 } : { w: [0, 0], b: 0 };
+  Object.assign(S, { epoch: 1, idx: 0, errs: 0, hist: [], updates: 0, converged: false, phase: 'scan', t: 0, anim: null, last: null, cur: null, ghosts: [], trail: [], stepping: false });
+}
+function loadData(kind, seed) { S.kind = kind; S.seed = seed; S.pts = makeData(kind, seed); S.feature = null; dataChanged(); resetRun(); }
+function unconverge() { if (S.converged) { S.converged = false; S.epoch++; S.idx = 0; S.errs = 0; } }
+function dataChanged() {
+  S.bm = bestMargin(S.pts, S.bias); S.nov = novikoff(S.pts, S.bias, S.bm);
+  if (S.anim && !S.pts.includes(S.anim.p)) cancelAnim();
+  if (S.idx > S.pts.length) S.idx = S.pts.length;
+  unconverge();
+}
+function cancelAnim() { S.anim = null; S.phase = 'scan'; S.t = 0; }
+function endEpoch() { S.hist.push(S.errs); if (S.errs === 0) { S.converged = true; S.cur = null; } else S.epoch++; S.errs = 0; S.idx = 0; }
+function visitPoint() {
+  if (S.idx >= S.pts.length) { endEpoch(); if (S.converged) return; }
+  const p = S.pts[S.idx]; S.cur = p;
+  if (isMistake(S.m, p)) { S.anim = { p, from: { w: [...S.m.w], b: S.m.b }, d: updateDelta(p, S.eta, S.bias), s: score(S.m, p) }; S.phase = 'flag'; }
+  else if (++S.idx >= S.pts.length) endEpoch();
+}
+function commitAnim() {
+  const a = S.anim; applyDelta(S.m, a.d); S.updates++; S.errs++; S.last = { ...a.d, p: a.p, from: a.from.w, t: S.clock };
+  S.ghosts.push(a.from); if (S.ghosts.length > 14) S.ghosts.shift();
+  S.trail.push([...S.m.w]); if (S.trail.length > 90) S.trail.shift();
+  S.anim = null; S.phase = 'scan';
+  if (++S.idx >= S.pts.length) endEpoch();
+}
+function advance(dt) {
+  if (!S.pts.length || S.converged) { S.stepping = false; return; }
+  S.t += dt;
+  for (let guard = 0; guard < 600; guard++) {
+    const ph = S.phase, d = ph === 'scan' && S.stepping ? 0 : dur(ph);
+    if (S.t < d) break;
+    S.t -= d;
+    if (ph === 'scan') { visitPoint(); if (S.converged) { S.t = 0; S.stepping = false; break; } }
+    else if (ph === 'flag') S.phase = 'vec';
+    else if (ph === 'vec') S.phase = 'turn';
+    else { commitAnim(); if (S.stepping) { S.stepping = false; S.t = 0; break; } }
   }
 }
-function tick(dt){
-  if(paused)return;
-  goldFlash=Math.max(0,goldFlash-dt*0.9);
-  // linger on mistakes, skim past points the neuron already gets right
-  phaseT+=dt*speed*(phase==='judge'?(wasWrong?2.2:6.5):(phase==='update'?2.0:11.0));
-  var guard=0;
-  while(phaseT>=1&&guard<40){phaseT-=1;stepLogic();guard++;}
+function finishEpoch() { // run the rest of this epoch instantly
+  if (S.converged || !S.pts.length) return;
+  if (S.anim) commitAnim();
+  const e = S.epoch;
+  for (let g = 0; g < 2000 && !S.converged && S.epoch === e; g++) {
+    const p = S.pts[S.idx];
+    if (isMistake(S.m, p)) { S.anim = { p, from: { w: [...S.m.w], b: S.m.b }, d: updateDelta(p, S.eta, S.bias) }; commitAnim(); }
+    else if (++S.idx >= S.pts.length) endEpoch();
+  }
+  cancelAnim();
+}
+function dispModel() {
+  const m = S.m, a = S.anim;
+  if (a && S.phase === 'turn') { const e = ease(Math.min(1, S.t / dur('turn'))); return { w: [m.w[0] + e * a.d.dw[0], m.w[1] + e * a.d.dw[1]], b: m.b + e * a.d.db }; }
+  return m;
 }
 
-// ---------- draw ----------
-function drawLine(wv,bv,color,width,dash){
-  // wv0*x + wv1*y + bv = 0
-  var a=wv[0],b2=wv[1];
-  if(Math.abs(a)<1e-9&&Math.abs(b2)<1e-9)return;
-  var xs=[-W/SC,W/SC],P=[];
-  if(Math.abs(b2)>1e-6){
-    P=[[xs[0],(-bv-a*xs[0])/b2],[xs[1],(-bv-a*xs[1])/b2]];
-  }else{
-    var xv=-bv/a;P=[[xv,-H/SC],[xv,H/SC]];
+/* ---------- layout & coordinates ---------- */
+function onResize() {
+  const sf = { x: 16, y: 84, w: W - 32, h: H - 160 };
+  L = { wide: sf.w - sf.h >= 220 };
+  if (L.wide) {
+    const side = Math.max(220, Math.min(280, sf.w - sf.h - 24)), size = Math.min(sf.h, sf.w - side - 24);
+    L.plot = { x: sf.x + (sf.w - side - 24 - size) / 2, y: sf.y + (sf.h - size) / 2, s: size };
+    L.panel = { x: L.plot.x + size + 24, y: sf.y, w: side, h: sf.h };
+  } else {
+    const size = Math.max(120, Math.min(sf.w, sf.h - 76)); // 8px extra clears a 3-line caption
+    L.plot = { x: sf.x + (sf.w - size) / 2, y: sf.y + 8, s: size };
+    L.strip = { x: sf.x, y: sf.y + 8 + size + 10, w: sf.w, h: 58 };
   }
-  ctx.save();ctx.setLineDash(dash||[]);
-  ctx.strokeStyle=color;ctx.lineWidth=width;
-  ctx.beginPath();ctx.moveTo(px(P[0][0]),py(P[0][1]));ctx.lineTo(px(P[1][0]),py(P[1][1]));ctx.stroke();
+  L.k = L.plot.s / 2.3; L.cx = L.plot.x + L.plot.s / 2; L.cy = L.plot.y + L.plot.s / 2;
+}
+const sx = x => L.cx + x * L.k, sy = y => L.cy - y * L.k, wx = X => (X - L.cx) / L.k, wy = Y => (L.cy - Y) / L.k;
+const BOX = 1.15; // world half-size of the plot
+function lineSeg(m, off = 0) { // segment of w·x + b = off clipped to the plot box (world coords)
+  const [a, c] = m.w, n2 = a * a + c * c; if (n2 < 1e-12) return null;
+  const p0 = [(off - m.b) * a / n2, (off - m.b) * c / n2], t = [-c, a];
+  let lo = -Infinity, hi = Infinity;
+  for (const [p, d] of [[p0[0], t[0]], [p0[1], t[1]]]) {
+    if (Math.abs(d) < 1e-12) { if (Math.abs(p) > BOX) return null; continue; }
+    let l1 = (-BOX - p) / d, l2 = (BOX - p) / d; if (l1 > l2) [l1, l2] = [l2, l1];
+    lo = Math.max(lo, l1); hi = Math.min(hi, l2);
+  }
+  return lo < hi ? [[p0[0] + lo * t[0], p0[1] + lo * t[1]], [p0[0] + hi * t[0], p0[1] + hi * t[1]]] : null;
+}
+
+/* ---------- drawing primitives ---------- */
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function card(x, y, w, h) { rr(x, y, w, h, 12); ctx.fillStyle = 'rgba(19,22,44,.78)'; ctx.fill(); ctx.strokeStyle = 'rgba(190,200,255,.12)'; ctx.lineWidth = 1; ctx.stroke(); }
+function hlRing(x, y, w, h) { rr(x - 4, y - 4, w + 8, h + 8, 15); ctx.strokeStyle = rgba(COL.acc, 0.55 + 0.35 * pulse()); ctx.lineWidth = 2; ctx.stroke(); }
+const pulse = () => REDUCED ? 0.6 : 0.5 + 0.5 * Math.sin(S.clock * 5);
+function seg2(sg, col, lw, dash) { ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.setLineDash(dash || []); ctx.beginPath(); ctx.moveTo(sx(sg[0][0]), sy(sg[0][1])); ctx.lineTo(sx(sg[1][0]), sy(sg[1][1])); ctx.stroke(); ctx.setLineDash([]); }
+function arrow(x0, y0, x1, y1, col, lw, hd = 11) {
+  const a = Math.atan2(y1 - y0, x1 - x0), len = Math.hypot(x1 - x0, y1 - y0); if (len < 2) return;
+  const h = Math.min(hd, len * 0.6);
+  ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = lw; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1 - Math.cos(a) * h * 0.8, y1 - Math.sin(a) * h * 0.8); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x1 - h * Math.cos(a - 0.42), y1 - h * Math.sin(a - 0.42)); ctx.lineTo(x1 - h * Math.cos(a + 0.42), y1 - h * Math.sin(a + 0.42)); ctx.closePath(); ctx.fill();
+}
+function tag(txt, x, y, col, o = {}) { // label pill, kept inside bounds o.box (defaults to the plot)
+  const size = o.size || 12, P = L.plot, bx = o.box || [P.x + 4, P.y + 4, P.x + P.s - 4, P.y + P.s - 4];
+  ctx.font = `${o.bold ? '600 ' : ''}${size}px ${o.sans ? SANS : MONO}`;
+  const w = ctx.measureText(txt).width + 14, h = size + 9;
+  const x0 = clamp(o.align === 'left' ? x : x - w / 2, bx[0], bx[2] - w), y0 = clamp(y - h / 2, bx[1], bx[3] - h);
+  rr(x0, y0, w, h, 7); ctx.fillStyle = 'rgba(11,13,28,.9)'; ctx.fill(); ctx.strokeStyle = rgba(col, 0.5); ctx.lineWidth = 1; ctx.stroke();
+  ctx.fillStyle = col; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(txt, x0 + 7, y0 + h / 2 + 0.5);
+  placed.push({ x: x0 + w / 2, y: y0 + h / 2, r: w / 2 });
+}
+let placed = []; // label footprints this frame
+function crowd(X, Y) { // clearance from points and labels already drawn
+  let d = 1e9; for (const p of S.pts) d = Math.min(d, Math.hypot(sx(p.x) - X, sy(p.y) - Y));
+  for (const c of placed) d = Math.min(d, Math.hypot(c.x - X, (c.y - Y) * 2.5) - c.r); return d;
+}
+const keepIn = ([X, Y], hw, hh = 11) => { const P = L.plot; return [clamp(X, P.x + 4 + hw, P.x + P.s - 4 - hw), clamp(Y, P.y + 4 + hh, P.y + P.s - 4 - hh)]; }; // where tag() will really draw
+const spread = (X, Y, hw) => Math.min(crowd(X - hw, Y), crowd(X, Y), crowd(X + hw, Y)); // clearance across a label's width
+function spotOn(sg, fracs, dy = 0) { // the clearest spot along a world segment, in screen px
+  let best = null, bd = -1e9;
+  for (const c of fracs) { const X = sx(sg[0][0] + c * (sg[1][0] - sg[0][0])), Y = sy(sg[0][1] + c * (sg[1][1] - sg[0][1])) + dy, d = crowd(X, Y); if (d > bd + 8) { bd = d; best = [X, Y, d]; } }
+  return best;
+}
+function text(t, x, y, col, font, align = 'left', base = 'middle') { ctx.font = font; ctx.fillStyle = col; ctx.textAlign = align; ctx.textBaseline = base; ctx.fillText(t, x, y); }
+function drawPoint(p, r, alpha) {
+  const X = sx(p.x), Y = sy(p.y); ctx.globalAlpha = alpha; ctx.beginPath();
+  if (p.c > 0) ctx.arc(X, Y, r, 0, 7); else { const q = r * 1.25; ctx.moveTo(X, Y - q); ctx.lineTo(X + q, Y); ctx.lineTo(X, Y + q); ctx.lineTo(X - q, Y); ctx.closePath(); }
+  ctx.fillStyle = p.c > 0 ? COL.a : COL.b; ctx.fill(); ctx.strokeStyle = 'rgba(10,12,26,.9)'; ctx.lineWidth = 1.5; ctx.stroke(); ctx.globalAlpha = 1;
+}
+function ring(X, Y, r, col, lw) { ctx.beginPath(); ctx.arc(X, Y, r, 0, 7); ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.stroke(); }
+
+/* ---------- the plot ---------- */
+function drawTint(m) {
+  const P = L.plot, n = Math.hypot(m.w[0], m.w[1]);
+  if (n < 1e-9) { ctx.fillStyle = 'rgba(199,203,224,.03)'; ctx.fillRect(P.x, P.y, P.s, P.s); return; }
+  const ux = m.w[0] / n, uy = m.w[1] / n, d = -m.b / n, fx = sx(d * ux), fy = sy(d * uy), D = P.s * 0.9;
+  const g = ctx.createLinearGradient(fx - ux * D, fy + uy * D, fx + ux * D, fy - uy * D);
+  g.addColorStop(0, rgba(COL.b, 0.28)); g.addColorStop(0.5, rgba(COL.b, 0.09)); g.addColorStop(0.5, rgba(COL.a, 0.09)); g.addColorStop(1, rgba(COL.a, 0.28));
+  ctx.fillStyle = g; ctx.fillRect(P.x, P.y, P.s, P.s);
+}
+function drawGrid() {
+  ctx.lineWidth = 1;
+  for (const v of [-1, -0.5, 0.5, 1]) { ctx.strokeStyle = 'rgba(190,200,255,.05)'; ctx.beginPath(); ctx.moveTo(sx(v), sy(BOX)); ctx.lineTo(sx(v), sy(-BOX)); ctx.moveTo(sx(-BOX), sy(v)); ctx.lineTo(sx(BOX), sy(v)); ctx.stroke(); }
+  ctx.strokeStyle = 'rgba(190,200,255,.16)'; ctx.beginPath(); ctx.moveTo(sx(-BOX), sy(0)); ctx.lineTo(sx(BOX), sy(0)); ctx.moveTo(sx(0), sy(-BOX)); ctx.lineTo(sx(0), sy(BOX)); ctx.stroke();
+  text('x₁', sx(BOX) - 8, sy(0) - 10, COL.faint, `12px ${MONO}`, 'right'); text('x₂', sx(0) + 8, sy(BOX) + 12, COL.faint, `12px ${MONO}`);
+}
+function drawMargin() {
+  const bm = S.bm, m = { w: bm.n, b: bm.b }, s1 = lineSeg(m, bm.g), s2 = lineSeg(m, -bm.g), s0 = lineSeg(m);
+  if (s1 && s2) { ctx.beginPath(); ctx.moveTo(sx(s1[0][0]), sy(s1[0][1])); ctx.lineTo(sx(s1[1][0]), sy(s1[1][1])); ctx.lineTo(sx(s2[1][0]), sy(s2[1][1])); ctx.lineTo(sx(s2[0][0]), sy(s2[0][1])); ctx.closePath(); ctx.fillStyle = 'rgba(199,203,224,.10)'; ctx.fill(); seg2(s1, 'rgba(199,203,224,.55)', 1, [4, 4]); seg2(s2, 'rgba(199,203,224,.55)', 1, [4, 4]); }
+}
+function drawModel(m) {
+  const n = Math.hypot(m.w[0], m.w[1]), s = S.ws, a = S.anim;
+  S.ghosts.forEach((g, i) => { const sg = lineSeg(g); if (sg) seg2(sg, rgba(COL.hl, 0.04 + 0.16 * i / S.ghosts.length), 1); });
+  if (a && S.phase === 'turn') { const sg = lineSeg(a.from); if (sg) seg2(sg, 'rgba(233,236,250,.45)', 1.2, [6, 5]); }
+  const sg = lineSeg(m); if (sg) { seg2(sg, rgba(COL.hl, 0.16), 9); seg2(sg, COL.hl, 2.2); }
+  S.trail.forEach((w, i) => { ctx.fillStyle = rgba(COL.hl, 0.1 + 0.4 * i / S.trail.length); ctx.beginPath(); ctx.arc(sx(w[0] * s), sy(w[1] * s), 2, 0, 7); ctx.fill(); });
+  const ox = sx(0), oy = sy(0);
+  if (!S.bias) { ring(ox, oy, 7, rgba(COL.hl, 0.8), 1.5); }
+  if (n > 1e-9) { // w's direction meets the line at a right angle
+    const ux = m.w[0] / n, uy = m.w[1] / n, d = -m.b / n, F = [d * ux, d * uy];
+    if (Math.abs(d) < BOX * 1.3) {
+      if (Math.abs(d) > 0.03) seg2([[0, 0], F], rgba(COL.hl, 0.35), 1, [2, 4]);
+      const q = 8 / L.k, t = [-uy, ux], sgn = d >= 0 ? -1 : 1, A = [F[0] + sgn * ux * q, F[1] + sgn * uy * q];
+      ctx.strokeStyle = rgba(COL.hl, 0.7); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(sx(A[0]), sy(A[1])); ctx.lineTo(sx(A[0] + t[0] * q), sy(A[1] + t[1] * q)); ctx.lineTo(sx(F[0] + t[0] * q), sy(F[1] + t[1] * q)); ctx.stroke();
+    }
+  }
+  if (a && S.phase !== 'flag') { // the correction: x (neutral) and η·y·x (violet) added at w's tip
+    const e = S.phase === 'vec' ? ease(Math.min(1, S.t / dur('vec'))) : 1, fade = S.phase === 'turn' ? 1 - 0.6 * Math.min(1, S.t / dur('turn')) : 1;
+    ctx.setLineDash([3, 4]); ctx.strokeStyle = 'rgba(199,203,224,.6)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(sx(a.p.x), sy(a.p.y)); ctx.stroke(); ctx.setLineDash([]);
+    const T0 = [a.from.w[0] * s, a.from.w[1] * s], T1 = [T0[0] + e * a.d.dw[0] * s, T0[1] + e * a.d.dw[1] * s];
+    ctx.globalAlpha = fade; arrow(sx(T0[0]), sy(T0[1]), sx(T1[0]), sy(T1[1]), rgba(COL.g, 0.25), 8, 14); arrow(sx(T0[0]), sy(T0[1]), sx(T1[0]), sy(T1[1]), COL.g, 2.6, 12); ctx.globalAlpha = 1;
+  }
+  const l = S.last, age = l ? S.clock - l.t : 9;
+  if (!a && age < 1.2 && !REDUCED) { ctx.globalAlpha = 0.7 * (1 - age / 1.2); arrow(sx(l.from[0] * s), sy(l.from[1] * s), sx((l.from[0] + l.dw[0]) * s), sy((l.from[1] + l.dw[1]) * s), COL.g, 2.4, 12); ctx.globalAlpha = 1; } // last correction lingers
+  const tx = sx(m.w[0] * s), ty = sy(m.w[1] * s);
+  arrow(ox, oy, tx, ty, rgba(COL.hl, 0.2), 9, 15); arrow(ox, oy, tx, ty, COL.hl, 3, 13);
+  ring(tx, ty, 6.5, 'rgba(10,12,26,.9)', 3); ctx.beginPath(); ctx.arc(tx, ty, 5.5, 0, 7); ctx.fillStyle = COL.hl; ctx.fill();
+}
+function drawMlp() {
+  const P = L.plot, c = 0.55, E = BOX + 1;
+  ctx.fillStyle = rgba(COL.a, 0.16); ctx.fillRect(P.x, P.y, P.s, P.s);
+  ctx.beginPath(); ctx.moveTo(sx(-E), sy(-E - c)); ctx.lineTo(sx(E), sy(E - c)); ctx.lineTo(sx(E), sy(E + c)); ctx.lineTo(sx(-E), sy(-E + c)); ctx.closePath(); ctx.fillStyle = rgba(COL.b, 0.2); ctx.fill();
+  for (const o of [c, -c]) { const sg = lineSeg({ w: [1, -1], b: -o }); if (sg) { seg2(sg, rgba(COL.hl, 0.16), 8); seg2(sg, COL.hl, 2, [8, 5]); } }
+}
+function drawPoints(m) {
+  const a = S.anim, pl = pulse();
+  for (const p of S.pts) {
+    const X = sx(p.x), Y = sy(p.y), mis = S.overlay ? false : isMistake(m, p), del = drag && drag.p === p && drag.del;
+    if (mis) ring(X, Y, 11, rgba(COL.g, 0.9), 1.6);
+    drawPoint(p, 6, del ? 0.3 : 1);
+    if (a && a.p === p) { ring(X, Y, 15 + 4 * pl, rgba(COL.g, 0.3), 6); ring(X, Y, 15 + 4 * pl, COL.g, 2); }
+    else if (S.cur === p && S.phase === 'scan' && !S.converged && !S.overlay) ring(X, Y, 11, COL.hl, 1.6);
+    if (S.hover === p) ring(X, Y, 13, 'rgba(233,236,250,.85)', 1.4);
+  }
+}
+function featurePoint() { return S.hover || (S.anim && S.anim.p) || (S.phase === 'scan' && S.cur) || S.feature || null; }
+function drawAnnotations(m) {
+  const n = Math.hypot(m.w[0], m.w[1]), s = S.ws, a = S.anim, P = L.plot;
+  placed = [];
+  const place = (p, t, col) => { // above/below the point, sliding sideways to dodge w and other labels
+    const X = sx(p.x), Y = sy(p.y); ctx.font = `12px ${MONO}`; const hw = ctx.measureText(t).width / 2 + 7;
+    const c = [[0, -30], [0, 30], [-hw * 0.6, -30], [hw * 0.6, -30], [-hw * 0.6, 30], [hw * 0.6, 30]].map(([dx, dy]) => keepIn([X + dx, Y + dy], hw)).reduce((q, r) => spread(...r, hw) > spread(...q, hw) + 4 ? r : q);
+    tag(t, c[0], c[1], col, { size: 12 });
+  };
+  if (S.overlay === 'mlp') {
+    tag('h₁ fires here', sx(0.62), sy(-1.06), COL.hl, { size: 11 }); tag('h₂ fires here', sx(-0.62), sy(1.06), COL.hl, { size: 11 });
+    return;
+  }
+  // 1 · w (fixed place, registered first so every label dodges it)
+  if (n < 1e-9) tag('w = 0 · no boundary yet', sx(0), sy(0) - 26, COL.hl, { size: 11 });
+  else {
+    const u = [m.w[0] / n, m.w[1] / n], TX = sx(m.w[0] * s), TY = sy(m.w[1] * s), X = TX + u[0] * 18, Y = TY - u[1] * 18;
+    text('w', X, Y, COL.hl, `600 15px ${SANS}`, 'center'); placed.push({ x: X, y: Y, r: 10 }, { x: sx(0), y: sy(0), r: 16 });
+    for (const f of [0.25, 0.5, 0.75, 1]) placed.push({ x: sx(0) + (TX - sx(0)) * f, y: sy(0) + (TY - sy(0)) * f, r: 10 });
+  }
+  // 2 · the point under discussion, then the correction vector
+  const f = featurePoint();
+  if (a && S.phase !== 'turn') place(a.p, `✗ y = ${a.p.c > 0 ? '+1' : '−1'}, but w·x+b = ${fs(a.s)}`, COL.g);
+  else if (f && (S.hover || S.hl === 'neuron') && f !== (a && a.p)) {
+    const v = score(m, f), ok = f.c * v > 0; place(f, `w·x+b = ${fs(v)} → ŷ = ${v > 0 ? '+1' : '−1'} ${ok ? '✓' : '✗'}`, v > 0 ? COL.a : COL.b);
+  }
+  if (a && S.phase !== 'flag' && !REDUCED) {
+    const d = a.d.dw, dl = Math.hypot(d[0], d[1]) || 1, T = [(a.from.w[0] + d[0] / 2) * s, (a.from.w[1] + d[1] / 2) * s];
+    text('x', sx(a.p.x / 2) + 8, sy(a.p.y / 2) - 8, COL.n, `italic 13px ${SANS}`);
+    const X = sx(T[0]), Y = sy(T[1]), px = d[1] / dl, py = d[0] / dl, qx = d[0] / dl, qy = -d[1] / dl; // either side of η·y·x, sliding along it
+    const c = [[26, 0], [-26, 0], [26, 24], [-26, 24], [26, -24], [-26, -24], [44, 0], [-44, 0]].map(([o, t]) => keepIn([X + px * o + qx * t, Y + py * o + qy * t], 22)).reduce((u, v) => spread(...v, 24) > spread(...u, 24) + 4 ? v : u);
+    tag(`${a.p.c > 0 ? '+' : '−'}η·x`, c[0], c[1], COL.g, { size: 11 });
+  }
+  if (!S.bias && !S.converged) { // pick the clearest spot near the origin so it never covers w
+    const c = [[0, 26], [0, -26], [-60, 26], [60, 26], [-60, -26], [60, -26], [0, 52], [0, -52]].map(([dx, dy]) => keepIn([sx(0) + dx, sy(0) + dy], 100)).reduce((q, r) => spread(...r, 70) > spread(...q, 70) + 4 ? r : q);
+    tag('b off: line pinned to origin', c[0], c[1], COL.hl, { size: 11 });
+  }
+  if (S.hl === 'w' && n > 1e-9) {
+    ring(sx(m.w[0] * s), sy(m.w[1] * s), 13 + 3 * pulse(), rgba(COL.acc, 0.9), 2);
+    const u = [m.w[0] / n, m.w[1] / n], d = -m.b / n, F = [d * u[0], d * u[1]];
+    const at = k => [clamp(F[0] + u[0] * k - u[1] * 0.45, -0.95, 0.95), clamp(F[1] + u[1] * k + u[0] * 0.45, -0.95, 0.95)], pa = at(0.45), pb = at(-0.45);
+    tag('ŷ = +1  (vote > 0)', sx(pa[0]), sy(pa[1]), COL.a, { size: 11 }); tag('ŷ = −1  (vote < 0)', sx(pb[0]), sy(pb[1]), COL.b, { size: 11 });
+  }
+  // 3 · labels that can slide along their lines to the clearest spot
+  const sg = lineSeg(m);
+  const q = sg && spotOn(sg, [0.15, 0.3, 0.5, 0.7, 0.85]);
+  if (q && (q[2] > 0 || S.hl === 'w')) { // skip the name rather than overprint another label
+    const A = [sx(sg[0][0]), sy(sg[0][1])], B = [sx(sg[1][0]), sy(sg[1][1])];
+    let ang = Math.atan2(B[1] - A[1], B[0] - A[0]); if (ang > Math.PI / 2) ang -= Math.PI; else if (ang < -Math.PI / 2) ang += Math.PI;
+    ctx.save(); ctx.translate(q[0], q[1]); ctx.rotate(ang); ctx.font = `11px ${MONO}`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(10,12,26,.85)'; ctx.strokeText('w·x + b = 0', 0, -6); ctx.fillStyle = COL.hl; ctx.fillText('w·x + b = 0', 0, -6); ctx.restore();
+    placed.push({ x: q[0], y: q[1], r: 40 });
+  }
+  if (S.showMargin && S.bm && S.bm.g > 0) {
+    const s0 = lineSeg({ w: S.bm.n, b: S.bm.b });
+    if (s0) { const q = spotOn(s0, [0.1, 0.25, 0.4, 0.6, 0.75, 0.9]); tag(`best margin γ = ${S.bm.g.toFixed(3)}`, q[0], q[1], COL.n, { size: 11 }); }
+  }
+  if (drag && drag.del) tag('release to delete', drag.X, drag.Y - 22, COL.bad, { size: 11, box: [4, 4, W - 4, H - 4] });
+  if (S.toast) { ctx.globalAlpha = Math.min(1, S.toast.t); tag(S.toast.msg, P.x + P.s / 2, P.y + P.s - 22, COL.ink, { size: 12, sans: true }); ctx.globalAlpha = 1; }
+}
+
+/* ---------- side panel: status, the neuron, mistakes chart, brush ---------- */
+function statusInfo() {
+  const N = S.pts.length, sep = S.bm && S.bm.g > 0;
+  if (!N) return { c: COL.dim, t: 'Click the plot to add points', s: 'shift / right-click adds class B', sh: 'tap to add points' };
+  if (S.overlay) return { c: COL.good, t: '✓ Two layers solve XOR', s: 'a band — no single line can do this', sh: '✓ 2 layers: solved' };
+  if (S.converged) return { c: COL.good, t: `✓ Converged — epoch ${S.epoch} clean`, s: `${S.updates} updates · all ${N} points correct`, sh: `✓ converged · ${S.updates} upd` };
+  if (!sep && S.hist.length >= 3) return { c: COL.g, t: '↻ Cycling — never converges', s: `no line${S.bias ? '' : ' via the origin'} can split this data`, sh: '↻ cycling forever' };
+  const bound = !S.nov ? 'watch the mistake bars' : S.zero ? `theorem: ≤ ${Math.ceil(S.nov.bound).toLocaleString()} updates` : 'w didn\u2019t start at 0 · no bound';
+  return { c: COL.hl, t: `Epoch ${S.epoch} · learning…`, s: bound, sh: `epoch ${S.epoch} · learning` };
+}
+function drawNeuron(x, y, w, h) {
+  const f = featurePoint(), m = dispModel(), v = f ? score(m, f) : 0;
+  text('ONE NEURON', x + 12, y + 16, COL.faint, `600 10px ${MONO}`);
+  if (!f) text('hover a point', x + w - 12, y + 16, COL.faint, `11px ${SANS}`, 'right');
+  const ix = x + 50, cx = x + w * 0.63, ox = x + w - 26, cy = y + 100, ys = [y + 52, y + 100, y + 148];
+  const vals = f ? [f.x, f.y, 1] : [null, null, 1], wts = [m.w[0], m.w[1], m.b], names = ['w₁', 'w₂', 'b'], labs = ['x₁', 'x₂', '1'];
+  for (let i = 0; i < 3; i++) {
+    const off = i === 2 && !S.bias, x1 = ix + 16, x2 = cx - 22, y1 = ys[i], y2 = cy;
+    ctx.strokeStyle = rgba(COL.hl, off ? 0.12 : 0.75); ctx.lineWidth = 1 + Math.min(5, Math.abs(wts[i]) * 2.2); ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2 - 9; ctx.font = `11px ${MONO}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const lt = off ? 'b off' : `${names[i]} ${fs(wts[i])}`; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(19,22,44,.95)'; ctx.strokeText(lt, mx, my); ctx.fillStyle = off ? COL.faint : COL.hl; ctx.fillText(lt, mx, my);
+    ctx.beginPath(); ctx.arc(ix, ys[i], 16, 0, 7); ctx.fillStyle = '#181c38'; ctx.fill(); ctx.strokeStyle = 'rgba(199,203,224,.45)'; ctx.lineWidth = 1; ctx.stroke();
+    text(vals[i] == null ? '·' : i === 2 ? '1' : vals[i].toFixed(2), ix, ys[i] + 0.5, COL.n, `${i === 2 ? 12 : 9.5}px ${MONO}`, 'center');
+    text(labs[i], x + 14, ys[i], COL.dim, `12px ${MONO}`);
+  }
+  ctx.beginPath(); ctx.arc(cx, cy, 22, 0, 7); ctx.fillStyle = '#181c38'; ctx.fill(); ctx.strokeStyle = rgba(COL.hl, 0.8); ctx.lineWidth = 1.5; ctx.stroke();
+  text('Σ', cx, cy + 1, COL.ink, `600 18px ${SANS}`, 'center');
+  text(f ? `= ${fs(v)}` : '', cx, cy + 36, f ? (v > 0 ? COL.a : COL.b) : COL.faint, `600 12px ${MONO}`, 'center');
+  ctx.strokeStyle = 'rgba(199,203,224,.5)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(cx + 22, cy); ctx.lineTo(ox - 15, cy); ctx.stroke();
+  const gx = (cx + 22 + ox - 15) / 2; ctx.fillStyle = '#13162c'; ctx.fillRect(gx - 10, cy - 9, 20, 18); ctx.strokeStyle = COL.ink; ctx.beginPath(); ctx.moveTo(gx - 8, cy + 5); ctx.lineTo(gx, cy + 5); ctx.lineTo(gx, cy - 6); ctx.lineTo(gx + 8, cy - 6); ctx.stroke();
+  const yh = v > 0 ? 1 : -1, oc = f ? (yh > 0 ? COL.a : COL.b) : COL.faint;
+  ctx.beginPath(); ctx.arc(ox, cy, 15, 0, 7); ctx.fillStyle = f ? rgba(oc, 0.25) : '#181c38'; ctx.fill(); ctx.strokeStyle = oc; ctx.lineWidth = 1.5; ctx.stroke();
+  text(f ? (yh > 0 ? '+1' : '−1') : '?', ox, cy + 0.5, f ? oc : COL.faint, `600 11px ${MONO}`, 'center');
+  text('ŷ', ox, cy - 26, COL.dim, `italic 13px ${SANS}`, 'center');
+  if (f) { const ok = f.c * v > 0; text(`y ${f.c > 0 ? '+1' : '−1'} ${ok ? '✓' : '✗'}`, ox, cy + 30, ok ? COL.good : COL.g, `600 11px ${MONO}`, 'center'); }
+}
+function drawNet2(x, y, w, h) { // two hidden neurons + an OR: the smallest net that solves XOR
+  text('TWO LAYERS', x + 12, y + 16, COL.faint, `600 10px ${MONO}`);
+  const c0 = x + 32, c1 = x + w * 0.52, c2 = x + w - 30, r0 = [y + 44, y + 96], r2 = y + 70;
+  ctx.strokeStyle = rgba(COL.hl, 0.6); ctx.lineWidth = 2;
+  for (const a of r0) for (const b of r0) { ctx.beginPath(); ctx.moveTo(c0 + 13, a); ctx.lineTo(c1 - 13, b); ctx.stroke(); }
+  for (const b of r0) { ctx.beginPath(); ctx.moveTo(c1 + 13, b); ctx.lineTo(c2 - 13, r2); ctx.stroke(); }
+  const node = (X, Y, t, col) => { ctx.beginPath(); ctx.arc(X, Y, 13, 0, 7); ctx.fillStyle = '#181c38'; ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.stroke(); text(t, X, Y + 0.5, COL.ink, `12px ${MONO}`, 'center'); };
+  node(c0, r0[0], 'x₁', COL.n); node(c0, r0[1], 'x₂', COL.n); node(c1, r0[0], 'h₁', COL.hl); node(c1, r0[1], 'h₂', COL.hl); node(c2, r2, 'ŷ', COL.a);
+  [['h₁ = [x₁ − x₂ > 0.55]', COL.hl], ['h₂ = [x₂ − x₁ > 0.55]', COL.hl], ['ŷ = +1 if h₁ OR h₂', COL.a]].forEach(([t, c], i) => text(t, x + 14, y + 128 + i * 16, c, `11px ${MONO}`));
+}
+function drawChart(x, y, w, h, compact) {
+  text('MISTAKES PER EPOCH', x, y + 6, COL.faint, `600 10px ${MONO}`);
+  const arr = S.hist.slice(), live = !S.converged && S.pts.length && !S.overlay; if (live) arr.push(S.errs);
+  const n0 = Math.max(0, arr.length - 24), view = arr.slice(n0), ymax = Math.max(4, ...view);
+  const top = y + (compact ? 16 : 32), bot = y + h - (compact ? 2 : 14), bw = Math.min(16, w / Math.max(view.length, 10));
+  ctx.strokeStyle = 'rgba(199,203,224,.25)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x, bot + 0.5); ctx.lineTo(x + w, bot + 0.5); ctx.stroke();
+  if (!view.length) { text('no epochs yet', x + w / 2, (top + bot) / 2, COL.faint, `11px ${SANS}`, 'center'); return; }
+  view.forEach((v, i) => {
+    const bh = v / ymax * (bot - top), X = x + i * bw, cur = live && i === view.length - 1;
+    ctx.fillStyle = rgba(COL.g, cur ? 0.4 : 0.9); ctx.fillRect(X + 1, bot - bh, bw - 2, bh);
+    if (v === 0 && !cur) { ctx.fillStyle = COL.good; ctx.beginPath(); ctx.arc(X + bw / 2, bot - 4, 3, 0, 7); ctx.fill(); }
+    if (!compact && bw >= 12 && v > 0) text(String(v), X + bw / 2, bot - bh - 7, COL.dim, `9px ${MONO}`, 'center');
+  });
+  if (!compact) { text(`epoch ${n0 + 1}`, x, bot + 8, COL.faint, `10px ${MONO}`); if (view.length > 1 && (view.length - 0.5) * bw > 70) text(String(n0 + view.length), x + (view.length - 0.5) * bw, bot + 8, COL.faint, `10px ${MONO}`, 'center'); }
+}
+function drawBrush(x, y, w, h) {
+  S.ui.brush = [];
+  [[1, '● add A (+1)', COL.a], [-1, '◆ add B (−1)', COL.b]].forEach(([v, t, c], i) => {
+    const bx = x + i * (w / 2 + 3), bw = w / 2 - 3, on = S.brush === v;
+    rr(bx, y, bw, h, h / 2); ctx.fillStyle = on ? rgba(c, 0.22) : 'rgba(19,22,44,.78)'; ctx.fill(); ctx.strokeStyle = rgba(c, on ? 0.8 : 0.3); ctx.lineWidth = 1; ctx.stroke();
+    text(t, bx + bw / 2, y + h / 2 + 0.5, on ? COL.ink : COL.dim, `${h < 26 ? 11 : 12}px ${SANS}`, 'center');
+    S.ui.brush.push({ x: bx, y, w: bw, h, v });
+  });
+}
+function drawSide() {
+  const st = statusInfo();
+  if (L.wide) {
+    const p = L.panel, x = p.x, w = p.w; let y = p.y + Math.max(0, (p.h - 446) / 2);
+    card(x, y, w, 52); text(st.t, x + 12, y + 19, st.c, `600 14px ${SANS}`); text(st.s, x + 12, y + 37, COL.dim, `12px ${SANS}`); y += 64;
+    card(x, y, w, 178); (S.overlay ? drawNet2 : drawNeuron)(x, y, w, 178); if (S.hl === 'neuron') hlRing(x, y, w, 178); y += 190;
+    card(x, y, w, 128); drawChart(x + 12, y + 12, w - 24, 104); if (S.hl === 'chart') hlRing(x, y, w, 128); y += 140;
+    drawBrush(x, y, w, 28);
+    text('drag points · drag off to delete', x + w / 2, y + 44, COL.faint, `11px ${SANS}`, 'center');
+    text('drag the amber knob or the line', x + w / 2, y + 60, COL.faint, `11px ${SANS}`, 'center');
+  } else {
+    const s = L.strip, cw = Math.round(s.w * 0.56);
+    card(s.x, s.y, s.w, s.h); drawChart(s.x + 10, s.y + 8, cw - 16, s.h - 14, true); if (S.hl === 'chart') hlRing(s.x, s.y, cw, s.h);
+    drawBrush(s.x + cw, s.y + 7, s.w - cw - 8, 22);
+    text(st.sh, s.x + cw + (s.w - cw - 8) / 2, s.y + 44, st.c, `600 12px ${SANS}`, 'center');
+  }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const P = L.plot, m = dispModel();
+  rr(P.x, P.y, P.s, P.s, 14); ctx.fillStyle = 'rgba(10,12,28,.6)'; ctx.fill();
+  ctx.save(); rr(P.x, P.y, P.s, P.s, 14); ctx.clip();
+  if (S.overlay === 'mlp') drawMlp(); else drawTint(m);
+  drawGrid();
+  if (S.showMargin && S.bm && S.bm.g > 0 && !S.overlay) drawMargin();
+  if (!S.overlay) drawModel(m);
+  drawPoints(m);
   ctx.restore();
-}
-function draw(t){
-  ctx.fillStyle='#04050a';ctx.fillRect(0,0,W,H);
-  // decision-region shading (coarse quads for speed)
-  var step=Math.max(14,Math.round(Math.min(W,H)/44));
-  for(var X=0;X<W;X+=step)for(var Y=0;Y<H;Y+=step){
-    var wx=(X+step/2-cxp)/SC, wy=(cyp-(Y+step/2))/SC;
-    var s=w[0]*wx+w[1]*wy+bias;
-    var m=Math.min(1,Math.abs(s)*0.55);
-    ctx.fillStyle=s>=0?'rgba(60,180,255,'+(0.025+m*0.075)+')':'rgba(255,90,140,'+(0.025+m*0.075)+')';
-    ctx.fillRect(X,Y,step,step);
-  }
-  // axes
-  ctx.strokeStyle='rgba(120,180,200,.16)';ctx.lineWidth=1;
-  ctx.beginPath();ctx.moveTo(0,py(0));ctx.lineTo(W,py(0));ctx.moveTo(px(0),0);ctx.lineTo(px(0),H);ctx.stroke();
-
-  // previous line ghost during update
-  if(phase==='update'){
-    drawLine([prevW[0],prevW[1]],prevW[2],'rgba(255,255,255,'+(0.30*(1-phaseT))+')',1.4,[6,6]);
-  }
-  // decision boundary
-  var gf=goldFlash;
-  drawLine(w,bias,gf>0.02?'rgba(255,215,110,'+(0.55+gf*0.45)+')':'rgba(120,255,220,.9)',2.4+gf*3);
-
-  // weight vector arrow from origin
-  var wn=Math.hypot(w[0],w[1])||1;
-  var scale=Math.min(2.0,1.05+wn*0.06)/wn*1.35;
-  var ax=px(w[0]*scale),ay=py(w[1]*scale);
-  ctx.strokeStyle='rgba(255,209,102,.95)';ctx.lineWidth=3;
-  ctx.beginPath();ctx.moveTo(px(0),py(0));ctx.lineTo(ax,ay);ctx.stroke();
-  var ang=Math.atan2(ay-py(0),ax-px(0));
-  ctx.fillStyle='rgba(255,209,102,.95)';
-  ctx.beginPath();
-  ctx.moveTo(ax,ay);
-  ctx.lineTo(ax-12*Math.cos(ang-0.4),ay-12*Math.sin(ang-0.4));
-  ctx.lineTo(ax-12*Math.cos(ang+0.4),ay-12*Math.sin(ang+0.4));
-  ctx.closePath();ctx.fill();
-  ctx.fillStyle='rgba(255,225,160,.9)';ctx.font='12px ui-monospace,monospace';
-  ctx.textAlign='left';ctx.textBaseline='middle';
-  ctx.fillText('w',ax+10,ay-8);
-
-  // points
-  var pulse=(Math.sin(t*0.006)+1)/2;
-  for(var i=0;i<pts.length;i++){
-    var p=pts[i];
-    var X2=px(p.x),Y2=py(p.y);
-    var wrong=(predict(p)!==p.l);
-    var isCur=(p===cur);
-    var r=6.2+(isCur?(phase==='judge'?4.5*(1-phaseT*0.6):3):0);
-    if(wrong){
-      var rr=r+4+pulse*5;
-      var g=ctx.createRadialGradient(X2,Y2,0,X2,Y2,rr*2.2);
-      g.addColorStop(0,'rgba(255,70,110,'+(0.30+pulse*0.30)+')');
-      g.addColorStop(1,'rgba(255,70,110,0)');
-      ctx.fillStyle=g;ctx.beginPath();ctx.arc(X2,Y2,rr*2.2,0,6.2832);ctx.fill();
-    }
-    if(isCur){
-      var gg=ctx.createRadialGradient(X2,Y2,0,X2,Y2,34);
-      gg.addColorStop(0,'rgba(255,255,255,'+(0.42*(1-phaseT*0.7))+')');
-      gg.addColorStop(1,'rgba(255,255,255,0)');
-      ctx.fillStyle=gg;ctx.beginPath();ctx.arc(X2,Y2,34,0,6.2832);ctx.fill();
-    }
-    ctx.beginPath();
-    if(p.l===1){ctx.arc(X2,Y2,r,0,6.2832);}
-    else{ctx.rect(X2-r*0.88,Y2-r*0.88,r*1.76,r*1.76);}
-    ctx.fillStyle=p.l===1?'rgba(90,190,255,.92)':'rgba(255,120,160,.92)';
-    ctx.fill();
-    ctx.lineWidth=isCur?2.4:1.2;
-    ctx.strokeStyle=isCur?'#ffffff':(wrong?'rgba(255,70,110,.95)':'rgba(255,255,255,.35)');
-    ctx.stroke();
-  }
-
-  // annotation for current sample
-  if(cur&&(phase==='judge'||phase==='update')){
-    var X3=px(cur.x),Y3=py(cur.y);
-    var lines=['sample ('+cur.x.toFixed(2)+', '+cur.y.toFixed(2)+')',
-               'predict '+(cur._pred>0?'+1':'-1')+'   label '+(cur.l>0?'+1':'-1'),
-               wasWrong?('WRONG → w += η·y·x'):'correct → no change'];
-    ctx.font='12px ui-monospace,monospace';ctx.textAlign='left';ctx.textBaseline='top';
-    var bw=0;for(var q=0;q<lines.length;q++)bw=Math.max(bw,ctx.measureText(lines[q]).width);
-    bw+=16;
-    var bx=Math.min(X3+16,W-bw-10),by=Math.min(Y3+14,H-72);
-    ctx.fillStyle='rgba(4,8,16,.9)';ctx.fillRect(bx,by,bw,58);
-    ctx.strokeStyle=wasWrong?'rgba(255,90,130,.8)':'rgba(120,255,220,.6)';ctx.lineWidth=1;
-    ctx.strokeRect(bx,by,bw,58);
-    ctx.fillStyle='#dfeff0';ctx.fillText(lines[0],bx+8,by+6);
-    ctx.fillStyle='#a8c8d8';ctx.fillText(lines[1],bx+8,by+22);
-    ctx.fillStyle=wasWrong?'#ff6b8a':'#5cffc8';ctx.fillText(lines[2],bx+8,by+38);
-  }
-
-  // banners
-  ctx.textAlign='center';ctx.textBaseline='middle';
-  if(goldFlash>0.02){
-    ctx.fillStyle='rgba(255,215,110,'+Math.min(1,goldFlash)+')';
-    ctx.font='bold '+Math.round(Math.min(46,W*0.045))+'px ui-monospace,monospace';
-    ctx.fillText('CONVERGED — zero errors',W/2,H*0.12);
-  }
-  if(!separable){
-    var blink=0.62+0.38*Math.sin(t*0.005);
-    ctx.fillStyle='rgba(255,90,130,'+blink+')';
-    ctx.font='bold '+Math.round(Math.min(38,W*0.036))+'px ui-monospace,monospace';
-    ctx.fillText('not linearly separable!',W/2,H*0.10);
-    ctx.fillStyle='rgba(255,150,175,.75)';
-    ctx.font=Math.round(Math.min(16,W*0.016))+'px ui-monospace,monospace';
-    ctx.fillText('the line can never settle — it oscillates forever',W/2,H*0.10+34);
-  }
-
-  // errors-per-pass sparkline
-  if(oscHist.length>1){
-    var cw=Math.min(300,W*0.24),ch=58,x0=W-cw-24,y0=H-ch-26;
-    ctx.fillStyle='rgba(8,12,20,.62)';ctx.fillRect(x0-8,y0-18,cw+16,ch+34);
-    ctx.strokeStyle='rgba(120,255,220,.2)';ctx.lineWidth=1;ctx.strokeRect(x0-8,y0-18,cw+16,ch+34);
-    var mv=1;for(var h=0;h<oscHist.length;h++)mv=Math.max(mv,oscHist[h]);
-    ctx.beginPath();
-    for(var h2=0;h2<oscHist.length;h2++){
-      var Xp=x0+cw*(h2/Math.max(1,oscHist.length-1)),Yp=y0+ch-(oscHist[h2]/mv)*ch;
-      h2?ctx.lineTo(Xp,Yp):ctx.moveTo(Xp,Yp);
-    }
-    ctx.strokeStyle=separable?'rgba(92,255,200,.9)':'rgba(255,110,150,.9)';ctx.lineWidth=1.8;ctx.stroke();
-    ctx.fillStyle='rgba(150,190,190,.75)';ctx.font='10px ui-monospace,monospace';
-    ctx.textAlign='left';ctx.textBaseline='alphabetic';
-    ctx.fillText('mistakes per pass'+(separable?' → 0':' → never 0'),x0-4,y0-6);
-  }
+  rr(P.x, P.y, P.s, P.s, 14); ctx.strokeStyle = 'rgba(190,200,255,.16)'; ctx.lineWidth = 1; ctx.stroke();
+  drawAnnotations(m);
+  drawSide();
 }
 
-var el={set:document.getElementById('s-set'),w:document.getElementById('s-w'),sample:document.getElementById('s-sample'),
-        pl:document.getElementById('s-pl'),upd:document.getElementById('s-upd'),err:document.getElementById('s-err'),
-        status:document.getElementById('s-status')};
-var uiT=0;
-function frame(t){
-  var dt=Math.min(0.05,(t-tPrev)/1000)||0.016;tPrev=t;
-  tick(dt);draw(t);
-  uiT+=dt;
-  if(uiT>0.07){
-    uiT=0;
-    el.set.textContent=separable?'linearly separable':'NOT separable (xor)';
-    el.w.textContent=w[0].toFixed(2)+', '+w[1].toFixed(2)+', '+bias.toFixed(2);
-    el.sample.textContent=cur?('('+cur.x.toFixed(2)+', '+cur.y.toFixed(2)+')'):'-';
-    el.pl.textContent=cur?((cur._pred>0?'+1':'-1')+' / '+(cur.l>0?'+1':'-1')):'-';
-    el.upd.textContent=updates;
-    el.err.textContent=errThisPass+(lastErrs>=0?'  (prev '+lastErrs+')':'');
-    el.status.innerHTML=paused?'<span class="k">paused</span>'
-      :(converged?'<span class="ok">converged ✓</span>'
-      :(separable?'learning…':'<span class="bad">oscillating forever</span>'));
-  }
-  requestAnimationFrame(frame);
+/* ---------- frame ---------- */
+function frame(dt, realDt) {
+  S.clock += realDt;
+  if (playing && S.overlay) S.overlay = null;          // pressing play returns to the single neuron
+  const d = dt || (S.stepping ? realDt * speed : 0);
+  if (!drag || drag.type === 'pt') advance(d);
+  const w = dispModel().w, a = S.anim, mag = Math.max(Math.hypot(w[0], w[1]), a ? Math.hypot(a.from.w[0] + a.d.dw[0], a.from.w[1] + a.d.dw[1]) : 0);
+  if (!drag || drag.type !== 'knob') S.ws += (Math.min(1, 0.85 / Math.max(mag, 1e-9)) - S.ws) * Math.min(1, realDt * 5);
+  if (S.toast && (S.toast.t -= realDt) <= 0) S.toast = null;
+  updateStats(); draw();
 }
-requestAnimationFrame(frame);
-})();
+function updateStats() {
+  const m = dispModel(), N = S.pts.length, nv = S.nov, l = S.last;
+  setText('sEpoch', String(S.epoch)); setText('sErr', N ? `${S.overlay ? 0 : countMistakes(m, S.pts)} / ${N}` : '–'); setText('sUpd', String(S.updates));
+  setText('mW1', fs(m.w[0])); setText('mW2', fs(m.w[1])); setText('mB', fs(m.b));
+  const n = Math.hypot(m.w[0], m.w[1]); setText('mDist', n > 1e-9 ? (Math.abs(m.b) / n).toFixed(3) : '— (w = 0)');
+  setText('mY', l ? (l.p.c > 0 ? '+1' : '−1') : '–'); setText('mX', l ? `(${l.p.x.toFixed(2)}, ${l.p.y.toFixed(2)})` : '–'); setText('mEta', S.eta.toFixed(2));
+  setText('mDw', l ? `(${fs(l.dw[0])}, ${fs(l.dw[1])})` : '–'); setText('mDb', l ? fs(l.db) : '–');
+  setText('mR', nv ? nv.R.toFixed(2) : '–'); setText('mG', nv ? nv.gam.toFixed(3) : 'none'); setText('mBound', nv ? Math.ceil(nv.bound).toLocaleString() : '∞ (not separable)');
+  setText('mK', String(S.updates)); setText('mScale', S.ws.toFixed(2));
+}
+function toast(msg) { S.toast = { msg, t: 3 }; }
+
+/* ---------- direct manipulation ---------- */
+const inPlot = (X, Y, pad = 0) => X >= L.plot.x - pad && X <= L.plot.x + L.plot.s + pad && Y >= L.plot.y - pad && Y <= L.plot.y + L.plot.s + pad;
+function pick(X, Y) {
+  for (const r of S.ui.brush) if (X >= r.x && X <= r.x + r.w && Y >= r.y && Y <= r.y + r.h) return { type: 'brush', v: r.v };
+  if (!inPlot(X, Y)) return null;
+  if (!S.overlay) { const w = dispModel().w; if (Math.hypot(X - sx(w[0] * S.ws), Y - sy(w[1] * S.ws)) < 14) return { type: 'knob' }; }
+  let best = null, bd = 13;
+  for (const p of S.pts) { const d = Math.hypot(X - sx(p.x), Y - sy(p.y)); if (d < bd) { bd = d; best = p; } }
+  if (best) return { type: 'pt', p: best };
+  const m = dispModel(), n = Math.hypot(m.w[0], m.w[1]);
+  if (!S.overlay && n > 1e-9 && Math.abs(score(m, { x: wx(X), y: wy(Y) })) / n * L.k < 8) return { type: 'line' };
+  return { type: 'add' };
+}
+function manualEdit() { cancelAnim(); unconverge(); S.feature = null; S.zero = false; }
+const evXY = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+cv.addEventListener('contextmenu', e => e.preventDefault());
+cv.addEventListener('pointerdown', e => {
+  const [X, Y] = evXY(e), h = pick(X, Y); if (!h) return;
+  if (h.type === 'brush') { C.brush.set(h.v); return; }
+  if (S.overlay) { S.overlay = null; S.hl = null; }
+  if (h.type === 'line' && !S.bias) { toast('Bias is off: the line is pinned to the origin.'); return; }
+  cv.setPointerCapture(e.pointerId);
+  if (h.type === 'add') {
+    const p = { x: clamp(wx(X), -1.1, 1.1), y: clamp(wy(Y), -1.1, 1.1), c: (e.shiftKey || e.button === 2) ? -S.brush : S.brush };
+    S.pts.push(p); dataChanged(); drag = { type: 'pt', p }; S.hover = p;
+  } else if (h.type === 'pt') { drag = { type: 'pt', p: h.p }; S.hover = h.p; if (S.anim && S.anim.p === h.p) cancelAnim(); }
+  else { drag = { type: h.type }; manualEdit(); }
+  cv.style.cursor = 'grabbing';
+});
+cv.addEventListener('pointermove', e => {
+  const [X, Y] = evXY(e);
+  if (!drag) { const h = pick(X, Y); S.hover = h && h.type === 'pt' ? h.p : null; cv.style.cursor = !h ? 'default' : h.type === 'add' ? 'crosshair' : h.type === 'line' ? 'move' : h.type === 'brush' ? 'pointer' : 'grab'; return; }
+  const x = wx(X), y = wy(Y);
+  if (drag.type === 'pt') { drag.p.x = clamp(x, -1.12, 1.12); drag.p.y = clamp(y, -1.12, 1.12); drag.del = !inPlot(X, Y, -2); drag.X = X; drag.Y = Y; dataChanged(); if (S.anim && S.anim.p === drag.p) cancelAnim(); }
+  else if (drag.type === 'knob') { S.m.w = [x / S.ws, y / S.ws]; manualEdit(); }
+  else if (drag.type === 'line') { S.m.b = -(S.m.w[0] * x + S.m.w[1] * y); manualEdit(); }
+});
+function endDrag() {
+  if (drag && drag.del) { S.pts.splice(S.pts.indexOf(drag.p), 1); S.hover = null; dataChanged(); }
+  drag = null; cv.style.cursor = 'default';
+}
+cv.addEventListener('pointerup', endDrag); cv.addEventListener('pointercancel', endDrag);
+cv.addEventListener('pointerleave', () => { if (!drag) S.hover = null; });
+
+/* ---------- controls ---------- */
+function setSpeed(v) { speed = v; $('#bSpeed').textContent = v + '×'; }
+const C = {}, pp = $('#p-play');
+const h3 = t => { const e = document.createElement('h3'); e.textContent = t; pp.appendChild(e); };
+const para = (t, cls) => { const e = document.createElement('p'); e.innerHTML = t; if (cls) e.className = cls; pp.appendChild(e); };
+h3('Data');
+C.data = seg(pp, [['sep', 'Separable'], ['tight', 'Barely separable'], ['offset', 'Off-centre'], ['xor', 'XOR'], ['blank', 'Blank — draw your own']], 'sep', v => { if (!syncing) { S.overlay = null; S.hl = null; loadData(v, S.seed); } });
+{ const row = document.createElement('div'); row.className = 'row'; row.style.cssText = 'display:flex;gap:8px;margin:4px 0 8px';
+  row.innerHTML = '<button class="btn" id="cNew">New sample</button><button class="btn" id="cClear">Clear all points</button>'; pp.appendChild(row);
+  $('#cNew').onclick = () => { loadData(S.kind, S.seed + 1); setPlaying(true); }; $('#cClear').onclick = () => C.data.set('blank'); }
+C.brush = seg(pp, [[1, 'Click adds class A (+1)'], [-1, 'Click adds class B (−1)']], 1, v => { S.brush = v; });
+para('Click empty space to add a point (shift- or right-click for the other class). Drag points to move them; drag one off the plot to delete it. Drag the amber knob to set <span class="c-hl">w</span>; drag the line to shift <span class="c-hl">b</span>.', 'hint');
+h3('Learning');
+C.eta = slider(pp, 'cEta', 'Learning rate η — how far each correction moves w', 0.05, 2, 0.05, 1, v => v.toFixed(2), v => { S.eta = v; });
+C.bias = seg(pp, [[true, 'Bias on — the line can shift'], [false, 'Bias off — pinned to origin']], true, v => { S.bias = v; if (!syncing) { if (!v) S.m.b = 0; manualEdit(); dataChanged(); } });
+C.init = seg(pp, [['zero', 'Start from w = 0'], ['rand', 'Start from random w']], 'zero', v => { S.init = v; if (!syncing) resetRun(); });
+h3('Display');
+C.tempo = seg(pp, [['detail', 'Animate every correction'], ['quick', 'Quick']], 'detail', v => { S.tempo = v; });
+C.margin = seg(pp, [[false, 'Hide margin'], [true, 'Show best margin γ']], false, v => { S.showMargin = v; });
+
+$('#bStep').onclick = () => {
+  S.overlay = null;
+  if (S.converged) { toast('Converged — drag a point across the line to make a mistake.'); return; }
+  setPlaying(false); S.stepping = true;
+};
+$('#bEpoch').onclick = () => { S.overlay = null; if (S.converged) toast('Already converged: an epoch with zero mistakes.'); else finishEpoch(); };
+$('#bReset').onclick = () => { S.overlay = null; resetRun(); setPlaying(true); };
+
+/* ---------- tour & experiments ---------- */
+function setup(o) {
+  syncing = true;
+  C.eta.set(o.eta || 1); C.bias.set(o.bias !== false); C.tempo.set(o.tempo || 'detail'); C.init.set('zero'); C.data.set(o.kind); C.margin.set(!!o.margin);
+  syncing = false;
+  S.hl = o.hl || null; S.overlay = o.overlay || null; S.hover = null; S.toast = null;
+  loadData(o.kind, o.seed || 1);
+  setSpeed(o.speed || 1); setPlaying(o.play === undefined ? !REDUCED : o.play);
+}
+function rotW(ang, len) { const n = S.bm.n, c = Math.cos(ang), s = Math.sin(ang); S.m.w = [(n[0] * c - n[1] * s) * len, (n[0] * s + n[1] * c) * len]; S.m.b = 0; S.zero = false; }
+const cap = h => { $('#caption').innerHTML = h; };
+const SEP = 1, TIGHT = 4;
+const STEPS = [
+  { t: 'Watch one neuron learn', d: 'Two classes of points, one neuron that starts knowing nothing (w = 0). Each <span class="c-g">violet arrow</span> is a correction: the neuron got a point wrong and nudges its weights. The amber line swings until every point sits on its own colour.',
+    cap: 'Each <span class="c-g">violet arrow</span> is one mistake being corrected. Watch the <span class="c-hl">amber line</span> swing until coral and teal are split.',
+    go() { setup({ kind: 'sep', seed: SEP }); if (REDUCED) finishEpoch(); } },
+  { t: 'A weighted vote and a threshold', d: 'For each point the neuron computes <b>w₁x₁ + w₂x₂ + b</b>: every input gets a vote weighted by w, plus a bias. Sum above 0 → it answers <span class="c-a">+1</span>; below → <span class="c-b">−1</span>. That is the whole neuron.',
+    cap: 'The neuron scores a point with a weighted vote: <b>w₁x₁ + w₂x₂ + b</b>. Above 0 → <span class="c-a">+1</span>, below → <span class="c-b">−1</span>. <b>Hover or tap any point</b> to feed it in.',
+    go() { setup({ kind: 'sep', seed: SEP, hl: 'neuron', play: false }); rotW(0.9, 0.9); S.m.b = 0.12; S.feature = S.pts.find(p => isMistake(S.m, p)) || S.pts[0]; } },
+  { t: 'The boundary is where the vote is zero', d: 'All points with w·x + b = 0 form a line. <b>w</b> is perpendicular to it and points into the +1 side; <b>b</b> slides the line along w. Grab the amber knob to steer w, or drag the line to change b — the tint and the violet mistake rings update instantly.',
+    cap: '<span class="c-hl">w</span> is perpendicular to the line (see the corner mark) and points into the <span class="c-a">+1</span> side. <b>Drag the amber knob</b> to rotate w; <b>drag the line</b> to shift b.',
+    go() { setup({ kind: 'sep', seed: SEP, hl: 'w', play: false }); rotW(-0.7, 0.8); S.m.b = -0.1; } },
+  { t: 'A mistake pulls w toward the point', d: 'On a mistake, add <b>η·y·x</b> to w (and η·y to b). A misclassified coral point (y = +1) tips w <i>toward</i> it; a teal one (y = −1) pushes w <i>away</i>. Either way the point\'s vote moves toward the right sign. Press <b>Step</b> for the next correction.',
+    cap: 'One correction, slowly: the wrong point glows, <span class="c-g">η·y·x</span> is added to the tip of <span class="c-hl">w</span>, and the line turns with it. Press <b>Step</b> for the next one.',
+    go() { setup({ kind: 'sep', seed: SEP, play: false, speed: 0.5, eta: 0.5 }); rotW(1.0, 1.6); S.m.b = S.bm.b * 1.6; S.stepping = true; } },
+  { t: 'Guaranteed to converge — eventually', d: '<b>Novikoff (1962):</b> if some line separates the data with margin γ and the points lie within radius R, the perceptron makes at most (R/γ)² mistakes. This data is barely separable — the dashed corridor is thin — so it needs many more corrections, but the bars do reach zero.',
+    cap: 'Barely separable: the dashed corridor (margin γ) is thin, so it takes many corrections. Updates ≤ (R/γ)² — watch the <span class="c-g">mistake bars</span> fall to zero.',
+    go() { setup({ kind: 'tight', seed: TIGHT, tempo: 'quick', margin: true, hl: 'chart', speed: 2 }); } },
+  { t: 'XOR: no line can do it', d: 'Coral in two opposite corners, teal in the other two. No single line separates them, so every epoch has mistakes: the bars never reach zero and w wanders forever (the ghost lines and the dotted trail of w\'s tip).',
+    cap: 'XOR: coral in opposite corners. <b>No line</b> can split it, so the <span class="c-g">mistake bars never hit zero</span> and the ghost lines show w cycling forever.',
+    go() { setup({ kind: 'xor', seed: 1, tempo: 'quick', hl: 'chart', speed: 2 }); } },
+  { t: 'Why we need hidden layers', d: 'Two neurons can each draw one line (h₁, h₂); a third neuron fires if <b>either</b> does. The coral region becomes two half-planes — a shape no single line makes. Stack layers and you can carve any boundary: that is a multi-layer perceptron, trained by backpropagation (see Neural Playground).',
+    cap: 'Two hidden neurons draw <span class="c-hl">two lines</span>; the output fires if <b>either</b> does. XOR solved — press ▶ to go back to the lone neuron.',
+    go() { setup({ kind: 'xor', seed: 1, overlay: 'mlp', play: false }); } }
+];
+const TRIES = [
+  { q: 'Predict: starting from w = 0, does a bigger learning rate (η = 2 instead of 0.1) converge in <b>fewer</b> corrections?',
+    run() { setup({ kind: 'sep', seed: 5, eta: 2, tempo: 'quick' }); const a = train(S.pts, { eta: 0.1 }), b = train(S.pts, { eta: 2 });
+      cap(`η = 0.1 → <b>${a.updates}</b> updates · η = 2 → <b>${b.updates}</b> updates. This run uses η = 2 — count along in the Updates tile.`); },
+    why: 'The counts are identical. Starting from zero, w is always η × Σ y·x over past mistakes (and b = η × Σ y), so η only stretches w — and sign(w·x + b) ignores stretching. Every decision, every line, every mistake is the same. η matters only if w starts non-zero, and a lot in models with smooth losses (logistic regression, neural nets).' },
+  { q: 'Predict: shrink the margin γ (half the empty gap between the classes) from ≈ 0.23 to ≈ 0.03. Roughly how many more corrections does it need — twice as many? Ten times?',
+    run() { const e = train(makeData('sep', SEP)), eb = novikoff(makeData('sep', SEP), true, bestMargin(makeData('sep', SEP), true));
+      setup({ kind: 'tight', seed: TIGHT, tempo: 'quick', margin: true, speed: 2 });
+      cap(`Wide gap: <b>${e.updates}</b> updates (theorem allowed ${Math.ceil(eb.bound)}). Thin gap: theorem allows <b>${Math.ceil(S.nov.bound).toLocaleString()}</b> — watch the Updates tile.`); },
+    why: 'Many more. The bound (R/γ)² grows like 1/γ², so a margin 7× thinner allows ~50× more mistakes; in practice the count jumps several-fold. The perceptron also stops at the <i>first</i> line that works, which may skim right past a point — maximising the margin is what an SVM adds.' },
+  { q: 'Predict: turn the bias <b>off</b> on data that is clearly separable (a gap near x₁ = 0.4). Will the perceptron still find a line?',
+    run() { setup({ kind: 'offset', seed: 1, bias: false, tempo: 'quick', speed: 2 });
+      cap('Bias off: the line must pass through the origin (the amber ring). Watch the mistake bars — then switch bias on in Controls.'); },
+    why: 'No — it cycles forever. Without b, w·x = 0 always passes through the origin, and the teal points surround the origin, so no line through it can split the classes. The bias is just a weight on a constant input of 1: it lets the threshold move. Switch bias on and it converges within a few epochs.' }
+];
+
+stat('sEpoch', 'Epoch'); stat('sErr', 'Misclassified now'); stat('sUpd', 'Updates');
+renderSteps(); renderTries(); goStep(0); requestAnimationFrame(loop);
+window.__demo = { goStep, setPlaying, state: () => ({ epoch: S.epoch, updates: S.updates, converged: S.converged, phase: S.phase, w: S.m.w, b: S.m.b, n: S.pts.length, mistakes: countMistakes(S.m, S.pts), bm: S.bm && S.bm.g }), S, TRIES };
 </script>
+</body>
+</html>

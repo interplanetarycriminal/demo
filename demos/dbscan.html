@@ -1,341 +1,681 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>DBSCAN — Density Clustering, Animated</title>
+<title>DBSCAN — ML Field Notes</title>
 <style>
-  html,body{margin:0;height:100%;background:#04060a;overflow:hidden}
-  canvas{display:block;position:fixed;inset:0;touch-action:none}
-  #ui{position:fixed;top:14px;left:14px;z-index:10;background:rgba(6,10,16,.64);
-      border:1px solid rgba(120,255,180,.26);border-radius:8px;padding:12px 14px;
-      font:12px/1.55 ui-monospace,Menlo,Consolas,monospace;color:#c8ffe4;
-      max-width:344px;backdrop-filter:blur(6px);max-height:52vh;overflow:auto}
-  #ui h1{margin:0 0 6px;font-size:14px;letter-spacing:.14em;color:#6cffc0;text-transform:uppercase}
-  #ui p{margin:0 0 8px;color:#7fae98}
-  #ui .k{color:#ffe066}
-  #ui .row{color:#e6fff4}
-  #ui a{color:#ff7ad9;text-decoration:none}
-  #ui a:hover{text-decoration:underline}
-@media (max-width:640px){#ui{font-size:11px;max-height:40vh}}
+/* ===== ML Field Notes design system (shared by every ML/AI demo) =====
+   Colour means the same thing in every demo:
+   --a coral = class A / "positive"     --b teal = class B / "negative"
+   --hl amber = the model's current parameters / guess / selection
+   --grad violet = gradients, updates, errors flowing back
+   --accent = this demo's signature colour (set per demo) */
+:root{
+  --bg:#0c0e1a; --bg2:#10132a; --panel:#13162c; --panel2:#181c38; --line:rgba(190,200,255,.10); --line2:rgba(190,200,255,.18);
+  --ink:#e9ecfa; --dim:#a2a9c8; --faint:#6b7396;
+  --a:#ff7a6b; --b:#3fd0c0; --hl:#ffc857; --grad:#a78bfa; --good:#7ee787; --bad:#ff6b8a;
+  --accent:#5ec8ff;
+  --r:12px; --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.5 var(--sans)}
+body{overflow:hidden}
+a{color:var(--accent)}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app{display:grid;grid-template-columns:minmax(0,1fr) 380px;grid-template-rows:48px minmax(0,1fr);height:100vh;height:100dvh}
+.top{grid-column:1/-1;display:flex;align-items:center;gap:12px;padding:0 14px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#11142a,#0d1020)}
+.top a.back{color:var(--dim);text-decoration:none;font-size:13px;white-space:nowrap}
+.top a.back:hover{color:var(--ink)}
+.top .chip{font:600 10px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 45%,transparent);border-radius:99px;padding:5px 8px}
+.top h1{margin:0;font-size:15px;font-weight:650;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top .sp{flex:1}
+.top .keys{font:11px var(--mono);color:var(--faint);white-space:nowrap}
+.stage{position:relative;min-width:0;min-height:0;background:radial-gradient(ellipse at 50% 40%,#151a3a 0%,var(--bg) 70%)}
+.stage::before{content:"";position:absolute;inset:0;background-image:radial-gradient(rgba(190,200,255,.07) 1px,transparent 1.3px);background-size:24px 24px;pointer-events:none}
+.stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.caption{position:absolute;left:16px;right:16px;top:14px;max-width:640px;padding:10px 14px;border-radius:10px;background:rgba(12,14,30,.78);border:1px solid var(--line2);backdrop-filter:blur(6px);font-size:14px;line-height:1.45;pointer-events:none;transition:opacity .3s}
+.caption b{color:var(--accent)}
+.caption:empty{opacity:0}
+.dock{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);display:flex;gap:6px;padding:6px;border-radius:99px;background:rgba(12,14,30,.82);border:1px solid var(--line2);backdrop-filter:blur(6px)}
+.dock button{border:0;background:transparent;border-radius:99px;min-width:36px;height:34px;padding:0 12px;cursor:pointer;color:var(--ink);white-space:nowrap}
+.dock button:hover{background:rgba(255,255,255,.08)}
+.dock button.on{background:color-mix(in srgb,var(--accent) 22%,transparent);color:var(--accent)}
+.lesson{border-left:1px solid var(--line);background:var(--panel);overflow:auto;min-height:0;display:flex;flex-direction:column}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border-bottom:1px solid var(--line)}
+.stat{background:var(--panel);padding:10px 12px}
+.stat .k{font:600 10px/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+.stat .v{font:600 18px/1.3 var(--mono);font-variant-numeric:tabular-nums;margin-top:3px}
+.tabs{display:flex;gap:2px;padding:10px 12px 0;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);z-index:2}
+.tabs button{border:0;background:none;padding:9px 12px;color:var(--dim);cursor:pointer;border-bottom:2px solid transparent;font-weight:600}
+.tabs button[aria-selected=true]{color:var(--ink);border-bottom-color:var(--accent)}
+.pane{padding:14px 16px 22px;display:none}
+.pane.on{display:block}
+.pane h3{margin:14px 0 6px;font-size:13px;letter-spacing:.02em}
+.pane p{margin:0 0 10px;color:var(--dim)}
+.pane p b,.pane li b{color:var(--ink)}
+.lede{font-size:15px;color:var(--ink)!important}
+.steps{list-style:none;margin:10px 0 0;padding:0;counter-reset:s}
+.steps li{counter-increment:s;border:1px solid var(--line);border-radius:10px;margin:0 0 8px;padding:10px 12px 10px 40px;position:relative;cursor:pointer;color:var(--dim);background:var(--panel2)}
+.steps li::before{content:counter(s);position:absolute;left:12px;top:10px;width:18px;height:18px;border-radius:99px;display:grid;place-items:center;font:600 11px var(--mono);background:rgba(255,255,255,.07);color:var(--dim)}
+.steps li.on{border-color:color-mix(in srgb,var(--accent) 60%,transparent);color:var(--ink)}
+.steps li.on::before{background:var(--accent);color:#141414}
+.steps li.done::before{content:"✓";background:rgba(126,231,135,.2);color:var(--good)}
+.steps li .t{font-weight:650;color:var(--ink);display:block}
+.steps li .d{display:none;margin-top:4px}
+.steps li.on .d{display:block}
+.tournav{display:flex;gap:8px;margin-top:6px}
+.btn{border:1px solid var(--line2);background:var(--panel2);border-radius:9px;padding:7px 12px;cursor:pointer;color:var(--ink)}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:#15131a;border-color:transparent;font-weight:650}
+.card{border:1px solid var(--line);border-radius:12px;padding:12px;margin:0 0 10px;background:var(--panel2)}
+.card .q{color:var(--ink);font-weight:600;margin-bottom:8px}
+.card .why{display:none;margin-top:10px;padding-top:10px;border-top:1px dashed var(--line2);color:var(--dim)}
+.card.revealed .why{display:block}
+.card .row{display:flex;gap:8px;flex-wrap:wrap}
+.eq{font:14px/1.7 var(--mono);background:#0e1124;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:6px 0 12px;overflow-x:auto;white-space:nowrap}
+.eq .c-a{color:var(--a)} .eq .c-b{color:var(--b)} .eq .c-hl{color:var(--hl)} .eq .c-g{color:var(--grad)} .eq .c-acc{color:var(--accent)}
+.live{font-variant-numeric:tabular-nums;color:var(--hl)}
+.ctrl{display:grid;grid-template-columns:1fr auto;gap:4px 10px;align-items:center;margin:10px 0}
+.ctrl label{color:var(--dim);font-size:13px}
+.ctrl output{font:12px var(--mono);color:var(--ink);font-variant-numeric:tabular-nums}
+.ctrl input[type=range]{grid-column:1/-1;width:100%;accent-color:var(--accent)}
+.seg{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 10px}
+.seg button{border:1px solid var(--line2);background:transparent;border-radius:99px;padding:5px 11px;cursor:pointer;color:var(--dim);font-size:13px}
+.seg button[aria-pressed=true]{background:color-mix(in srgb,var(--accent) 20%,transparent);color:var(--ink);border-color:color-mix(in srgb,var(--accent) 55%,transparent)}
+.note{border-left:3px solid var(--grad);padding:6px 10px;margin:8px 0 12px;color:var(--dim);background:rgba(167,139,250,.06);border-radius:0 8px 8px 0}
+.wild li{margin-bottom:6px;color:var(--dim)}
+@media (max-width:880px){
+  body{overflow:auto}
+  .app{grid-template-columns:1fr;grid-template-rows:48px 58vh auto;height:auto}
+  .stage{height:58vh}
+  .lesson{border-left:0;border-top:1px solid var(--line)}
+  .top .keys{display:none}
+  .caption{font-size:13px;top:10px;left:10px;right:10px}
+  .stats{grid-template-columns:repeat(3,1fr)}
+  .stat .v{font-size:15px}
+}
+@media (prefers-reduced-motion:reduce){.caption{transition:none}}
 </style>
+</head>
 <body>
-<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
-<canvas id="c"></canvas>
-<div id="ui">
-  <h1>DBSCAN</h1>
-  <p>Points with enough neighbours inside eps ignite as cores and flood their cluster outward; the rest is noise.</p>
-  <div class="row"><span class="k">wheel</span> eps &nbsp; <span class="k">[ ]</span> minPts &nbsp; <span class="k">M</span> moons/blobs &nbsp; <span class="k">R</span> reseed &nbsp; <span class="k">SPACE</span> pause</div>
-  <div class="row" id="s1">eps = 40 px · minPts = 4</div>
-  <div class="row" id="s2">scanned 0 / 0</div>
-  <div class="row" id="s3">clusters 0 · noise 0</div>
-  <div class="row" id="s4">dataset: blobs</div>
-  <div class="row" id="s5">state: seeding</div>
-  <a href="index.html">← gallery</a>
+<script>window.onerror=function(m,s,l){var p=document.createElement('pre');p.style.cssText='position:fixed;bottom:0;left:0;color:#f66;background:#000d;padding:8px;z-index:999;font:12px/1.4 monospace;max-width:100vw;white-space:pre-wrap';p.textContent=m+' @ line '+l;document.body.appendChild(p)}</script>
+<div class="app">
+  <header class="top">
+    <a class="back" href="index.html">← Gallery</a>
+    <span class="chip">ML / AI</span>
+    <h1>DBSCAN clustering</h1>
+    <span class="sp"></span>
+    <span class="keys">Space play · ←/→ tour · R reset</span>
+  </header>
+  <section class="stage" id="stage">
+    <canvas id="c" role="img" aria-label="DBSCAN clustering a 2-D point cloud: an amber ε-circle tests each point, cores (filled dots) flood their cluster outward, borders are rings, noise is grey crosses; optional k-means panel and k-distance plot"></canvas>
+    <div class="caption" id="caption" aria-live="polite"></div>
+    <div class="dock" role="group" aria-label="Simulation controls">
+      <button id="bPlay" class="on" aria-label="Pause">❚❚</button>
+      <button id="bStep" aria-label="Step once">Step</button>
+      <button id="bReset" aria-label="Reset">Reset</button>
+      <button id="bSpeed" aria-label="Speed">1×</button>
+    </div>
+  </section>
+  <aside class="lesson">
+    <div class="stats" id="stats"><!-- 3 stat tiles: .stat > .k + .v#id --></div>
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-tab="learn">Learn</button>
+      <button role="tab" aria-selected="false" data-tab="try">Try this</button>
+      <button role="tab" aria-selected="false" data-tab="math">The math</button>
+      <button role="tab" aria-selected="false" data-tab="play">Controls</button>
+    </div>
+    <div class="pane on" id="p-learn">
+      <p class="lede">A point is <b>core</b> if at least minPts points lie within radius ε of it. Chain together cores that are within ε of each other and you get clusters of <b>any shape</b>, with no k to choose and the sparse leftovers labelled <b>noise</b>.</p>
+      <ol class="steps" id="steps"></ol>
+      <div class="tournav"><button class="btn" id="tPrev">← Back</button><button class="btn primary" id="tNext">Next step →</button></div>
+      <h3>In the wild</h3>
+      <ul class="wild">
+        <li><b>Maps &amp; mobility</b>: grouping GPS pings into stops, pickup hotspots and places (DBSCAN with haversine distance; ST-DBSCAN adds time).</li>
+        <li><b>Anomaly detection</b>: the noise label is the product. Odd transactions, faulty sensors and intrusions sit in sparse regions.</li>
+        <li><b>Embeddings &amp; 3-D</b>: HDBSCAN, DBSCAN’s successor, clusters sentence embeddings in topic models like BERTopic; LiDAR pipelines use density clustering to split point clouds into obstacles.</li>
+      </ul>
+    </div>
+    <div class="pane" id="p-try"><!-- .card experiments: predict → run → why --></div>
+    <div class="pane" id="p-math">
+      <p>Everything DBSCAN does follows from one count: how many points sit inside a circle of radius ε.</p>
+      <h3>1 · The ε-neighbourhood</h3>
+      <div class="eq">N<sub>ε</sub>(p) = { q : ‖p − q‖ ≤ <span class="c-hl">ε</span> }<br><span class="c-hl">ε</span> = <span class="live" id="mEps">–</span></div>
+      <p>It includes p itself (the scikit-learn convention), so minPts = 5 means p plus four others.</p>
+      <h3>2 · Three roles</h3>
+      <div class="eq"><span class="c-a">●</span> core&nbsp;&nbsp;&nbsp; |N<sub>ε</sub>(p)| ≥ minPts (<span class="live" id="mMin">–</span>) → <span class="live" id="mCore">–</span><br><span class="c-a">○</span> border&nbsp; not core, but p ∈ N<sub>ε</sub>(c)<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;for some core c → <span class="live" id="mBorder">–</span><br>× noise&nbsp;&nbsp; neither → <span class="live" id="mNoise">–</span></div>
+      <h3>3 · Clusters are connected cores</h3>
+      <div class="eq">core c ~ core c′ ⇔ a chain of cores<br>c = c<sub>1</sub>, …, c<sub>m</sub> = c′, ‖c<sub>i</sub> − c<sub>i+1</sub>‖ ≤ <span class="c-hl">ε</span><br>→ <span class="live" id="mCl">–</span> clusters</div>
+      <p>Link every pair of cores closer than ε: each connected piece of that graph is one cluster, plus the borders it touches. The animation is a breadth-first search of the graph, and the <span style="color:var(--grad)">violet rings</span> are its queue.</p>
+      <h3>4 · Choosing ε: the k-distance</h3>
+      <div class="eq"><span class="c-acc">d<sub>k</sub>(p)</span> = distance to p’s k-th<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;nearest neighbour<br>k = minPts − 1 = <span class="live" id="mK">–</span><br>p is core ⇔ <span class="c-acc">d<sub>k</sub>(p)</span> ≤ <span class="c-hl">ε</span> (<span class="live" id="mEps2">–</span>) → <span class="live" id="mKd">–</span></div>
+      <p>That count always equals the core count above: the amber line on the k-distance plot <b>is</b> the core / non-core split. Sorted, d<sub>k</sub> is flat inside clusters and shoots up for outliers, so the elbow is where “inside a cluster” ends.</p>
+      <div class="note"><b>Borders depend on visiting order.</b> Cores and noise are fixed by ε and minPts, but a border point within ε of two clusters joins whichever reaches it first.</div>
+      <div class="note"><b>“No k” is not “no assumptions”.</b> ε and minPts together say “a cluster is a region at least this dense”, one global density. Mixed densities break it (tour step 6); HDBSCAN removes ε by trying all of them.</div>
+      <p>Cost: one range query per point, so O(n²) brute force as here, or roughly O(n log n) with a grid or k-d tree when ε is small.</p>
+    </div>
+    <div class="pane" id="p-play"><!-- .ctrl sliders, .seg segmented choices --></div>
+  </aside>
 </div>
 <script>
-(function(){
-"use strict";
-var cv=document.getElementById('c'),ctx=cv.getContext('2d');
-var W=0,H=0,DPR=1;
-function resize(){
-  DPR=Math.min(2,window.devicePixelRatio||1);
-  W=window.innerWidth;H=window.innerHeight;
-  cv.width=Math.floor(W*DPR);cv.height=Math.floor(H*DPR);
-  cv.style.width=W+'px';cv.style.height=H+'px';
-  ctx.setTransform(DPR,0,0,DPR,0,0);
-  build();
+'use strict';
+/* ===== shell helpers (keep) ===== */
+const $ = s => document.querySelector(s);
+const cv = $('#c'), ctx = cv.getContext('2d'), stage = $('#stage');
+let W = 0, H = 0, DPR = 1;
+function resize() {
+  const r = stage.getBoundingClientRect(); DPR = Math.min(2, devicePixelRatio || 1);
+  W = Math.max(1, r.width); H = Math.max(1, r.height);
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR); ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  if (typeof onResize === 'function') onResize();
 }
-window.addEventListener('resize',resize);
-
-// ---- params ----
-var eps=44, minPts=4, moons=false, paused=false;
-var UNVISITED=0, NOISE=-1;
-var pts=[];
-
-function gauss(){var u=0,v=0;while(u===0)u=Math.random();while(v===0)v=Math.random();
-  return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);}
-
-function build(){
-  pts=[];
-  var cxm=W/2, cym=H/2, S=Math.min(W,H)/900;
-  if(moons){
-    var R=Math.min(W,H)*0.30, n=210;
-    for(var i=0;i<n;i++){
-      var t=Math.PI*(i/n);
-      var jr=gauss()*R*0.055;
-      pts.push({x:cxm-R*0.35+Math.cos(t)*(R+jr), y:cym+R*0.30-Math.sin(t)*(R+jr)*0.85});
-      var t2=Math.PI*(i/n);
-      pts.push({x:cxm+R*0.35-Math.cos(t2)*(R+gauss()*R*0.055),
-                y:cym-R*0.30+Math.sin(t2)*(R+gauss()*R*0.055)*0.85});
-    }
-    for(i=0;i<70;i++) pts.push({x:Math.random()*W*0.86+W*0.07, y:Math.random()*H*0.82+H*0.09});
-  } else {
-    var K=4+Math.floor(Math.random()*2);
-    for(var k=0;k<K;k++){
-      var bx=W*(0.18+0.64*Math.random()), by=H*(0.20+0.60*Math.random());
-      var sd=(38+Math.random()*46)*Math.max(0.7,S*1.4), cnt=60+Math.floor(Math.random()*70);
-      for(i=0;i<cnt;i++) pts.push({x:bx+gauss()*sd, y:by+gauss()*sd*(0.55+Math.random()*0.8)});
-    }
-    for(i=0;i<90;i++) pts.push({x:Math.random()*W*0.9+W*0.05, y:Math.random()*H*0.86+H*0.07});
-  }
-  for(i=0;i<pts.length;i++){
-    var p=pts[i];
-    p.x=Math.max(24,Math.min(W-24,p.x));
-    p.y=Math.max(24,Math.min(H-24,p.y));
-    p.i=i;
-  }
-  reset();
+new ResizeObserver(resize).observe(stage); resize();
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+// tabs
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', x === b));
+  document.querySelectorAll('.pane').forEach(p => p.classList.toggle('on', p.id === 'p-' + b.dataset.tab));
+});
+// playback
+let playing = !REDUCED, speed = 1;
+const SPEEDS = [0.25, 0.5, 1, 2, 4];
+function setPlaying(v) { playing = v; $('#bPlay').textContent = v ? '❚❚' : '▶'; $('#bPlay').classList.toggle('on', v); $('#bPlay').setAttribute('aria-label', v ? 'Pause' : 'Play'); }
+$('#bPlay').onclick = () => setPlaying(!playing);
+$('#bSpeed').onclick = () => { speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]; $('#bSpeed').textContent = speed + '×'; };
+// tour: STEPS = [{t:'title', d:'html', cap:'stage caption html', go(){ /* set demo state */ }}]
+let tour = 0;
+function renderSteps() {
+  const ol = $('#steps'); ol.innerHTML = '';
+  STEPS.forEach((s, i) => { const li = document.createElement('li'); li.className = (i === tour ? 'on' : '') + (i < tour ? ' done' : ''); li.innerHTML = `<span class="t">${s.t}</span><span class="d">${s.d}</span>`; li.onclick = () => goStep(i); ol.appendChild(li); });
+  $('#tPrev').disabled = tour === 0; $('#tNext').textContent = tour === STEPS.length - 1 ? 'Start over ↺' : 'Next step →';
+}
+function goStep(i) { tour = (i + STEPS.length) % STEPS.length; const s = STEPS[tour]; if (s.go) s.go(); $('#caption').innerHTML = s.cap || ''; renderSteps(); }
+$('#tPrev').onclick = () => goStep(Math.max(0, tour - 1));
+$('#tNext').onclick = () => goStep(tour + 1);
+// experiments: TRIES = [{q:'Predict…', run(){…}, why:'html'}]
+function renderTries() {
+  const p = $('#p-try'); p.innerHTML = '<p>Make a prediction first, then run it. Each experiment sets the demo up for you.</p>';
+  TRIES.forEach(x => { const c = document.createElement('div'); c.className = 'card'; c.innerHTML = `<div class="q">${x.q}</div><div class="row"><button class="btn primary">Run it</button><button class="btn">Show why</button></div><div class="why">${x.why}</div>`; const [run, why] = c.querySelectorAll('button'); run.onclick = () => { x.run(); setPlaying(true); }; why.onclick = () => c.classList.toggle('revealed'); p.appendChild(c); });
+}
+// controls helpers
+function slider(parent, id, label, min, max, step, value, fmt, onInput) {
+  const d = document.createElement('div'); d.className = 'ctrl';
+  d.innerHTML = `<label for="${id}">${label}</label><output id="${id}o"></output><input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${value}">`;
+  parent.appendChild(d); const inp = d.querySelector('input'), out = d.querySelector('output');
+  const upd = () => { out.textContent = fmt(+inp.value); onInput(+inp.value); }; inp.oninput = upd; upd();
+  return { set(v) { inp.value = v; upd(); }, get: () => +inp.value };
+}
+function seg(parent, options, value, onPick) {
+  const d = document.createElement('div'); d.className = 'seg'; parent.appendChild(d);
+  const bs = options.map(([v, label]) => { const b = document.createElement('button'); b.textContent = label; b.setAttribute('aria-pressed', v === value); b.onclick = () => set(v); d.appendChild(b); return [v, b]; });
+  function set(v) { bs.forEach(([k, b]) => b.setAttribute('aria-pressed', k === v)); onPick(v); }
+  return { set };
+}
+function stat(id, label) { const d = document.createElement('div'); d.className = 'stat'; d.innerHTML = `<div class="k">${label}</div><div class="v" id="${id}">–</div>`; $('#stats').appendChild(d); }
+const setText = (id, v) => { const e = document.getElementById(id); if (e && e.textContent !== v) e.textContent = v; };
+// keyboard
+addEventListener('keydown', e => {
+  if (e.target.matches('input,select,textarea')) return;
+  if (e.code === 'Space') { setPlaying(!playing); e.preventDefault(); }
+  else if (e.key === 'ArrowRight') goStep(tour + 1);
+  else if (e.key === 'ArrowLeft') goStep(Math.max(0, tour - 1));
+  else if (e.key === 'r' || e.key === 'R') $('#bReset').click();
+});
+// wall-clock-locked loop (dt clamped to [0, 0.1] — rAF timestamps can precede performance.now())
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.1, Math.max(0, (now - last) / 1000)); last = now;
+  try { frame(playing ? dt * speed : 0, dt); } catch (err) { window.onerror(err.message, '', 0); return; }
+  requestAnimationFrame(loop);
 }
 
-// ---- spatial grid for neighbour queries ----
-var grid=null, cell=0, gw=0, gh=0;
-function buildGrid(){
-  cell=Math.max(12,eps);
-  gw=Math.ceil(W/cell)+1; gh=Math.ceil(H/cell)+1;
-  grid=new Array(gw*gh);
-  for(var i=0;i<grid.length;i++)grid[i]=[];
-  for(i=0;i<pts.length;i++){
-    var gx=Math.floor(pts[i].x/cell), gy=Math.floor(pts[i].y/cell);
-    grid[gy*gw+gx].push(i);
-  }
+// ===== DEMO CODE: DBSCAN =====
+/*CORE-START*/
+const UNSEEN = -2, NOISE = -1;
+function mulberry32(a) {
+  return function () { a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
 }
-function neighbours(i){
-  var p=pts[i], out=[], e2=eps*eps;
-  var gx=Math.floor(p.x/cell), gy=Math.floor(p.y/cell);
-  for(var dy=-1;dy<=1;dy++)for(var dx=-1;dx<=1;dx++){
-    var X=gx+dx, Y=gy+dy;
-    if(X<0||Y<0||X>=gw||Y>=gh)continue;
-    var b=grid[Y*gw+X];
-    for(var k=0;k<b.length;k++){
-      var j=b[k], q=pts[j];
-      var ddx=q.x-p.x, ddy=q.y-p.y;
-      if(ddx*ddx+ddy*ddy<=e2) out.push(j);
+function gauss(r) { let u = 0; while (u === 0) u = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * r()); }
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+// Datasets live in the unit square. k = the true group count (what k-means is told); notes = on-canvas labels.
+function makeData(kind, seed) {
+  const r = mulberry32(seed), P = [], notes = [];
+  const add = (x, y) => P.push([clamp(x, .02, .98), clamp(y, .02, .98)]);
+  const noise = m => { for (let i = 0; i < m; i++) add(.04 + .92 * r(), .04 + .92 * r()); };
+  const blob = (cx, cy, sd, m) => { for (let i = 0; i < m; i++) add(cx + gauss(r) * sd, cy + gauss(r) * sd); };
+  let k = 2;
+  if (kind === 'moons') {
+    const SC = .3, j = () => gauss(r) * .018;
+    for (let i = 0; i < 165; i++) {
+      const a = Math.PI * r(), b = Math.PI * r();
+      add(.5 + (Math.cos(a) - .5) * SC + j(), .5 - (Math.sin(a) - .25) * SC + j());
+      add(.5 + (.5 - Math.cos(b)) * SC + j(), .5 - (.25 - Math.sin(b)) * SC + j());
     }
+    noise(14);
+  } else if (kind === 'rings') {
+    const ring = (R0, m, sd) => { for (let i = 0; i < m; i++) { const a = 2 * Math.PI * r(), R = R0 + gauss(r) * sd; add(.5 + R * Math.cos(a), .5 + R * Math.sin(a)); } };
+    ring(.13, 100, .012); ring(.36, 290, .012); noise(14);
+  } else if (kind === 'blobs') {
+    k = 4;
+    for (const [cx, cy] of [[.27, .3], [.73, .28], [.3, .73], [.72, .7]]) blob(cx + (r() - .5) * .06, cy + (r() - .5) * .06, .038 + .02 * r(), 55 + (r() * 25 | 0));
+    noise(45);
+  } else if (kind === 'density') {
+    k = 3; blob(.26, .3, .028, 80); blob(.45, .3, .028, 80); blob(.62, .7, .1, 75); noise(16);
+    notes.push([.21, .18, 'dense'], [.5, .18, 'dense'], [.62, .44, 'sparse']);
+  }
+  for (let i = P.length - 1; i > 0; i--) { const j = r() * (i + 1) | 0; [P[i], P[j]] = [P[j], P[i]]; } // random visiting order
+  return { P, k, notes };
+}
+
+// ε-neighbourhood of point i. It includes i itself (the scikit-learn convention).
+function regionQuery(P, i, eps) {
+  const [x, y] = P[i], e2 = eps * eps, out = [];
+  for (let j = 0; j < P.length; j++) { const dx = P[j][0] - x, dy = P[j][1] - y; if (dx * dx + dy * dy <= e2) out.push(j); }
+  return out;
+}
+function countNear(P, x, y, eps) { const e2 = eps * eps; let c = 0; for (const q of P) { const dx = q[0] - x, dy = q[1] - y; if (dx * dx + dy * dy <= e2) c++; } return c; }
+
+// DBSCAN as a resumable state machine: every step() makes one visible decision and returns it as an event.
+function makeRunner(P, eps, minPts) {
+  const n = P.length;
+  const R = { labels: new Int32Array(n).fill(UNSEEN), core: new Uint8Array(n), parent: new Int32Array(n).fill(-1), queued: new Uint8Array(n), queue: [], qh: 0, scan: 0, cur: -1, clusters: 0, done: n === 0 };
+  const enqueue = (nb, from) => { for (const q of nb) if ((R.labels[q] === UNSEEN || R.labels[q] === NOISE) && !R.queued[q]) { R.queued[q] = 1; R.parent[q] = from; R.queue.push(q); } };
+  R.step = () => {
+    if (R.qh < R.queue.length) {                       // 1) grow the current cluster, breadth-first
+      const j = R.queue[R.qh++], from = R.parent[j];
+      if (R.labels[j] === NOISE) { R.labels[j] = R.cur; return { type: 'border', i: j, from, c: R.cur, reclaimed: true }; }
+      R.labels[j] = R.cur;
+      const nb = regionQuery(P, j, eps);
+      if (nb.length >= minPts) { R.core[j] = 1; enqueue(nb, j); return { type: 'core', i: j, nb, from, c: R.cur }; }
+      return { type: 'border', i: j, nb, from, c: R.cur };
+    }
+    while (R.scan < n && R.labels[R.scan] !== UNSEEN) R.scan++;   // 2) pick the next unvisited point
+    if (R.scan >= n) { R.done = true; return { type: 'done' }; }
+    const i = R.scan++, nb = regionQuery(P, i, eps);
+    if (nb.length < minPts) { R.labels[i] = NOISE; return { type: 'noise', i, nb }; }
+    R.cur = R.clusters++; R.labels[i] = R.cur; R.core[i] = 1; enqueue(nb, i);
+    return { type: 'seed', i, nb, c: R.cur, from: -1 };
+  };
+  return R;
+}
+function dbscan(P, eps, minPts) { const R = makeRunner(P, eps, minPts); while (!R.done) R.step(); return R; }
+
+// k-distance: distance from each point to its k-th nearest OTHER point. With k = minPts − 1, core ⇔ kDist ≤ ε.
+function kDist(P, k) {
+  const n = P.length, out = new Float64Array(n), best = new Float64Array(Math.max(1, k));
+  for (let i = 0; i < n && k >= 1; i++) {
+    best.fill(Infinity);
+    for (let j = 0; j < n; j++) {
+      if (j === i) continue;
+      const dx = P[j][0] - P[i][0], dy = P[j][1] - P[i][1], d = dx * dx + dy * dy;
+      if (d < best[k - 1]) { let m = k - 1; while (m > 0 && best[m - 1] > d) { best[m] = best[m - 1]; m--; } best[m] = d; }
+    }
+    out[i] = Math.sqrt(best[k - 1]);
   }
   return out;
 }
-
-// ---- DBSCAN incremental state machine ----
-var label, isCore, seen, ign, order=[], oi=0, queue=[], cid=0, cur=-1, probe=-1;
-var phase='scan';
-var COLS=['#00e5ff','#ff7ad9','#7dffb0','#ffd166','#b28dff','#ff8a5c','#5cffe0','#ff5c8a','#9dff5c','#5c9dff'];
-
-function reset(){
-  buildGrid();
-  var n=pts.length;
-  label=new Int32Array(n);   // 0 unvisited, -1 noise, >0 cluster id
-  isCore=new Uint8Array(n);
-  seen=new Uint8Array(n);    // already queued for expansion (each point expands once)
-  ign=new Float32Array(n);   // ignition animation 0..1
-  order=[];
-  for(var i=0;i<n;i++){order.push(i);pts[i].r0=0;}
-  // scan in a sweeping left-to-right order so the eps circle reads as a sweep
-  order.sort(function(a,b){return (pts[a].x+pts[a].y*0.25)-(pts[b].x+pts[b].y*0.25);});
-  oi=0;queue=[];cid=0;cur=-1;probe=-1;phase='scan';
-  stats.clusters=0;stats.noise=0;
+// Elbow of an ascending curve: the point farthest below its chord (top 2% ignored so lone outliers don't dominate).
+function elbow(ys) {
+  const n = Math.floor(ys.length * .98); if (n < 3 || !(ys[n - 1] > ys[0])) return -1;
+  let bi = -1, bv = -Infinity;
+  for (let i = 0; i < n; i++) { const v = i / (n - 1) - (ys[i] - ys[0]) / (ys[n - 1] - ys[0]); if (v > bv) { bv = v; bi = i; } }
+  return bi;
 }
-var stats={clusters:0,noise:0};
+// Lloyd's k-means with k-means++ seeding; inertia is recorded after every assignment step.
+function kmeans(P, k, seed, iters = 60) {
+  const r = mulberry32(seed), n = P.length, C = [P[r() * n | 0].slice()], D = new Float64Array(n), labels = new Int32Array(n).fill(-1), inertia = [];
+  const d2 = (p, c) => (p[0] - c[0]) ** 2 + (p[1] - c[1]) ** 2;
+  while (C.length < k) {
+    let tot = 0; for (let i = 0; i < n; i++) { D[i] = Math.min(...C.map(c => d2(P[i], c))); tot += D[i]; }
+    let t = r() * tot, i = 0; while (i < n - 1 && (t -= D[i]) > 0) i++; C.push(P[i].slice());
+  }
+  for (let it = 0; it < iters; it++) {
+    let changed = false, J = 0;
+    for (let i = 0; i < n; i++) { let b = 0; for (let c = 1; c < k; c++) if (d2(P[i], C[c]) < d2(P[i], C[b])) b = c; if (labels[i] !== b) { labels[i] = b; changed = true; } J += d2(P[i], C[b]); }
+    inertia.push(J);
+    if (!changed) break;
+    const S = C.map(() => [0, 0, 0]); for (let i = 0; i < n; i++) { const s = S[labels[i]]; s[0] += P[i][0]; s[1] += P[i][1]; s[2]++; }
+    S.forEach((s, c) => { if (s[2]) C[c] = [s[0] / s[2], s[1] / s[2]]; });
+  }
+  return { labels, C, inertia };
+}
+/*CORE-END*/
 
-function step(){
-  if(phase==='done')return;
-  if(queue.length){
-    // expanding current cluster (each point is dequeued exactly once)
-    var j=queue.shift();
-    probe=j;
-    if(label[j]===NOISE){label[j]=cur;ign[j]=0.001;stats.noise--;}   // border point joins
-    else if(label[j]===UNVISITED){label[j]=cur;ign[j]=0.001;}
-    else if(label[j]!==cur) return;                                  // owned by another cluster
-    var nb=neighbours(j);
-    if(nb.length>=minPts){                                           // core → keep flooding
-      isCore[j]=1;
-      for(var k=0;k<nb.length;k++){
-        var q=nb[k];
-        if(!seen[q] && (label[q]===UNVISITED || label[q]===NOISE)){seen[q]=1;queue.push(q);}
-      }
+/* ===== state ===== */
+const PAL = ['#ff7a6b', '#3fd0c0', '#7aa2ff', '#7ee787', '#f08bd6', '#ffa94d', '#c9f07a', '#ff9ec2'];
+const AMBER = '#ffc857', VIOLET = '#a78bfa', ACC = '#5ec8ff', GREY = '#8a90ad', NEUTRAL = '#c7cbe0', INK = '#e9ecfa', DIM = '#a2a9c8', FAINT = '#6b7396', BG = '#0e1124', LINE = 'rgba(190,200,255,.16)';
+const SANS = 'ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif', MONO = 'ui-monospace,SFMono-Regular,Menlo,Consolas,monospace';
+const SEEDS = { moons: 1, rings: 5, blobs: 11, density: 7, blank: 1 };
+const hex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+var ready = false; // var, not let: the shell calls onResize() before this block runs
+let dataKind = 'moons', P = [], trueK = 2, notes = [], dataVer = 0, eps = .05, minPts = 5;
+let run = null, cnt = [], truth = {}, born = new Float64Array(0), T = 0, acc = 0, rate = 40, lastEv = null;
+let loopRun = false, holdT = 0, sweep = null, script = null, pins = null, view = 'run', compare = false, hl = null, quiet = true;
+let showK = W - 32 >= (H - 160) * 1.25;
+let kd = new Float64Array(0), kdOrder = [], kdKey = '', elbowIdx = -1, kYMax = .1;
+let km = null, kmMap = [], kmK = 2, kmKey = '';
+const vor = document.createElement('canvas'); vor.width = vor.height = 320; const vctx = vor.getContext('2d');
+let L = {}, capB = 76, hover = null, painting = null, dragK = false;
+const capEl = $('#caption');
+
+/* ===== data + model plumbing ===== */
+function setData(kind, s) { const d = makeData(kind, s); dataKind = kind; P = d.P; trueK = d.k; notes = d.notes; dataVer++; born = new Float64Array(P.length).fill(-9); }
+function grow() { const b = new Float64Array(P.length).fill(-9); b.set(born.subarray(0, Math.min(born.length, P.length))); born = b; dataVer++; notes = []; }
+function addPoint(x, y) { if (P.length >= 600) return; P.push([x, y]); grow(); born[P.length - 1] = T; rebuild(false); }
+function bridge() { for (let y = .585; y < .72; y += .016) P.push([.65, y]); grow(); rebuild(!REDUCED); }
+function rebuild(animate) {
+  run = makeRunner(P, eps, minPts); lastEv = null; acc = 0; holdT = 0;
+  cnt = P.map(p => countNear(P, p[0], p[1], eps));
+  const fin = animate ? dbscan(P, eps, minPts) : run;
+  while (!fin.done) fin.step();
+  truth = { fin, clusters: fin.clusters, core: 0, border: 0, noise: 0 };
+  fin.labels.forEach((l, i) => l === NOISE ? truth.noise++ : fin.core[i] ? truth.core++ : truth.border++);
+  const key = dataVer + ':' + minPts;
+  if (key !== kdKey) { kdKey = key; kd = kDist(P, minPts - 1); kdOrder = [...kd.keys()].sort((a, b) => kd[a] - kd[b]); elbowIdx = elbow(kdOrder.map(i => kd[i]).filter(Number.isFinite)); }
+  if (compare) updateKmeans();
+}
+function updateKmeans() {
+  kmK = dataKind === 'blank' ? Math.max(2, truth.clusters) : trueK;
+  const key = dataVer + ':' + kmK;
+  if (key !== kmKey) { kmKey = key; km = P.length >= kmK ? kmeans(P, kmK, 7) : null; }
+  if (!km) return;
+  // colour each k-means cluster like the DBSCAN cluster it overlaps most, so agreement reads at a glance
+  const ov = new Map(); km.labels.forEach((c, i) => { const d = truth.fin.labels[i]; if (d >= 0) ov.set(c + ',' + d, (ov.get(c + ',' + d) || 0) + 1); });
+  const pairs = [...ov].map(([cd, v]) => [...cd.split(',').map(Number), v]).sort((a, b) => b[2] - a[2]), used = new Set();
+  kmMap = new Array(kmK).fill(-1);
+  for (const [c, d] of pairs) if (kmMap[c] < 0 && !used.has(d)) { kmMap[c] = d; used.add(d); }
+  let nx = truth.clusters; kmMap = kmMap.map(v => v >= 0 ? v : nx++);
+  const N = vor.width, lab = new Int32Array(N * N), img = vctx.createImageData(N, N);  // Voronoi cells, low-res
+  for (let q = 0; q < N * N; q++) { const x = (q % N + .5) / N, y = ((q / N | 0) + .5) / N; let b = 0, bd = Infinity; km.C.forEach((c, j) => { const d = (c[0] - x) ** 2 + (c[1] - y) ** 2; if (d < bd) { bd = d; b = j; } }); lab[q] = b; }
+  for (let q = 0; q < N * N; q++) { const b = lab[q], edge = (q % N < N - 1 && lab[q + 1] !== b) || (q < N * N - N && lab[q + N] !== b); img.data.set([...hex(PAL[kmMap[b] % 8]), edge ? 200 : 30], q * 4); }
+  vctx.putImageData(img, 0, 0);
+}
+function onEv(ev, silent) { lastEv = ev.type === 'done' || silent ? null : ev; if (lastEv) born[ev.i] = T; }
+function stepRun(n, silent) { for (let i = 0; i < n && !run.done; i++) onEv(run.step(), silent); }
+function syncUI() { quiet = true; epsS.set(eps); minS.set(minPts); dataSeg.set(dataKind); viewSeg.set(view); cmpSeg.set(compare); kSeg.set(showK); quiet = false; }
+function setEps(v) { eps = v; sweep = null; syncUI(); rebuild(false); }
+const cap = h => { capEl.innerHTML = h; };
+// one call configures a whole scene (used by tour steps and experiments)
+function setup(o) {
+  setData(o.data, SEEDS[o.data]);
+  eps = o.eps || .05; minPts = o.minPts || 5; compare = !!o.compare; sweep = o.sweep || null; script = null; pins = null;
+  view = o.view || 'run'; hl = o.hl || null; loopRun = !!o.loop; rate = o.rate || 40;
+  showK = o.showK ?? W - 32 >= (H - 160) * 1.25;
+  layout(); rebuild(false);
+  if (o.elbowEps && elbowIdx >= 0) eps = +kd[kdOrder[elbowIdx]].toFixed(3);
+  syncUI(); rebuild(o.animate !== false && !REDUCED);
+  if (o.pre) stepRun(o.pre, true);
+}
+
+/* ===== layout (everything inside the safe rect: below the caption, above the dock) ===== */
+function mkPanel(x, y, w, h, foot = 0) { const s = Math.max(40, Math.min(w, h - 22 - foot)); return { x, y, w, h, s, ox: x + (w - s) / 2, oy: y + 22 + Math.max(0, (h - 22 - foot - s) / 2) }; }
+function layout() {
+  const SX = 16, SY = Math.max(84, capB + 8), SW = Math.max(120, W - 32), SH = Math.max(120, H - SY - 76), wide = SW >= SH * 1.25;
+  L = { SX, SY, SW, SH, P2: null, K: null, side: null };
+  if (compare) { const w = (SW - 14) / 2; L.P1 = mkPanel(SX, SY, w, SH, 22); L.P2 = mkPanel(SX + w + 14, SY, w, SH, 22); }
+  else if (wide) {
+    const cw = clamp(SW - SH - 24, 200, 300), x = SX + SW - cw + 8;
+    L.P1 = mkPanel(SX, SY, SW - cw - 24, SH);
+    if (showK) L.K = { x, y: SY + 28, w: cw - 16, h: Math.min(250, SH * .45) };
+    L.side = { x, y: L.K ? L.K.y + L.K.h + 40 : SY + 28, w: cw - 16 };
+  } else if (showK) { const h1 = SH * .6; L.P1 = mkPanel(SX, SY, SW, h1); L.K = { x: SX + 8, y: SY + h1 + 30, w: SW - 16, h: SH - h1 - 30 }; }
+  else L.P1 = mkPanel(SX, SY, SW, SH, 22);
+}
+function onResize() { if (ready) layout(); }
+
+/* ===== drawing primitives ===== */
+const dot = (x, y, r) => { ctx.beginPath(); ctx.arc(x, y, r, 0, 6.2832); ctx.fill(); };
+const ring = (x, y, r) => { ctx.beginPath(); ctx.arc(x, y, r, 0, 6.2832); ctx.stroke(); };
+const rr = (x, y, w, h, r) => { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); };
+function cross(x, y, r) { ctx.beginPath(); ctx.moveTo(x - r, y - r); ctx.lineTo(x + r, y + r); ctx.moveTo(x + r, y - r); ctx.lineTo(x - r, y + r); ctx.stroke(); }
+function glow(x, y, r, col) { ctx.strokeStyle = col; ctx.globalAlpha = .16; ctx.lineWidth = 7; ring(x, y, r); ctx.globalAlpha = 1; ctx.lineWidth = 1.7; ring(x, y, r); }
+function pill(t, x, y, col, altX, align, maxX = W - 10) {
+  ctx.font = '600 12px ' + SANS; const w = ctx.measureText(t).width + 16, h = 22;
+  if (align === 'c') x -= w / 2; else if (align === 'r') x -= w; else if (x + w > maxX && altX != null) x = altX - w;
+  x = clamp(x, 10, W - 10 - w); y = clamp(y, L.SY + 12, H - 88);
+  ctx.fillStyle = 'rgba(12,14,30,.88)'; rr(x, y - h / 2, w, h, 11); ctx.fill(); ctx.strokeStyle = LINE; ctx.lineWidth = 1; ctx.stroke();
+  ctx.fillStyle = col; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(t, x + 8, y + .5);
+}
+function glyph(g, x, y) {
+  ctx.globalAlpha = 1;
+  if (g === 'core') { ctx.fillStyle = PAL[0]; dot(x, y, 4.2); }
+  else if (g === 'border') { ctx.fillStyle = BG; dot(x, y, 3.4); ctx.strokeStyle = PAL[0]; ctx.lineWidth = 1.6; ring(x, y, 3.4); }
+  else if (g === 'noise') { ctx.strokeStyle = GREY; ctx.lineWidth = 1.4; cross(x, y, 3.2); }
+  else if (g === 'queued') { ctx.fillStyle = PAL[1]; dot(x, y, 2.4); ctx.strokeStyle = VIOLET; ctx.lineWidth = 1.3; ring(x, y, 6); }
+  else if (g === 'unseen') { ctx.globalAlpha = .6; ctx.fillStyle = NEUTRAL; dot(x, y, 2); ctx.globalAlpha = 1; }
+  else if (g === 'dens') { ctx.fillStyle = '#4b5275'; dot(x - 4, y, 1.6); ctx.fillStyle = '#f4f1ff'; dot(x + 3, y, 4.4); }
+  else { ctx.strokeStyle = AMBER; ctx.lineWidth = 1.5; ring(x, y, 7); }
+}
+function panelFrame(p, title, sub) {
+  ctx.fillStyle = 'rgba(10,12,28,.55)'; rr(p.ox - 6, p.oy - 6, p.s + 12, p.s + 12, 10); ctx.fill(); ctx.strokeStyle = LINE; ctx.lineWidth = 1; ctx.stroke();
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.font = '650 13px ' + SANS; ctx.fillStyle = INK; ctx.fillText(title, p.ox - 4, p.oy - 13);
+  if (sub) { const w = ctx.measureText(title).width; ctx.font = '12px ' + MONO; ctx.fillStyle = DIM; ctx.fillText(sub, p.ox + w + 6, p.oy - 13); }
+}
+function inlineLegend(p) {
+  ctx.font = '12px ' + SANS; ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; let x = p.ox + p.s + 4; const y = p.oy + p.s + 20;
+  for (const g of ['noise', 'border', 'core']) { x -= ctx.measureText(g).width; ctx.fillStyle = DIM; ctx.fillText(g, x, y); x -= 11; glyph(g, x, y); x -= 16; }
+}
+
+/* ===== scene ===== */
+function verdict(ev) {
+  const n = ev.nb ? ev.nb.length : 0;
+  if (ev.type === 'seed') return `${n} ≥ ${minPts} → core · starts cluster ${ev.c + 1}`;
+  if (ev.type === 'core') return `${n} ≥ ${minPts} → core · keeps spreading`;
+  if (ev.type === 'noise') return `${n} < ${minPts} → noise (for now)`;
+  return ev.reclaimed ? 'was noise → border: a core reached it' : `${n} < ${minPts} → border · joins, can't spread`;
+}
+function roleOf(i) { const f = truth.fin; return f.labels[i] === NOISE ? 'noise ×' : f.core[i] ? 'core ●' : 'border ○'; }
+function neighbourhood(p, S, cx, cy, text, solid, pills) {
+  const R = eps * p.s, X = p.ox + cx * p.s, Y = p.oy + cy * p.s, e2 = eps * eps;
+  ctx.strokeStyle = AMBER; ctx.lineWidth = 1; ctx.globalAlpha = .45; ctx.beginPath();
+  for (let j = 0; j < P.length; j++) { const dx = P[j][0] - cx, dy = P[j][1] - cy; if (dx * dx + dy * dy <= e2) { const [a, b] = S(j); ctx.moveTo(X, Y); ctx.lineTo(a, b); } }
+  ctx.stroke(); ctx.globalAlpha = .06; ctx.fillStyle = AMBER; dot(X, Y, R);
+  if (!solid) ctx.setLineDash([5, 4]); glow(X, Y, R, AMBER); ctx.setLineDash([]);
+  sidePill(pills, text, X, Y, R, p, AMBER);
+}
+// label beside an ε-circle: right if it fits inside the panel, else left, else above (below near the top)
+function sidePill(pills, t, X, Y, R, p, col) {
+  ctx.font = '600 12px ' + SANS; const w = ctx.measureText(t).width + 16;
+  if (X + R + 8 + w <= p.ox + p.s + 6) pills.push([t, X + R + 8, Y, col]);
+  else if (X - R - 8 - w >= p.ox - 6) pills.push([t, X - R - 8, Y, col, null, 'r']);
+  else pills.push([t, X, Y - R - 16 < p.oy + 6 ? Y + R + 16 : Y - R - 16, col, null, 'c']);
+}
+function probe(p, S, pills) {
+  const ev = lastEv, [x, y] = S(ev.i), R = eps * p.s, slow = rate * speed <= 14 || !playing;
+  if (slow && ev.nb) { ctx.strokeStyle = AMBER; ctx.globalAlpha = .4; ctx.lineWidth = 1; ctx.beginPath(); for (const j of ev.nb) { const [a, b] = S(j); ctx.moveTo(x, y); ctx.lineTo(a, b); } ctx.stroke(); }
+  if (slow && ev.from >= 0) { const [a, b] = S(ev.from); ctx.globalAlpha = 1; ctx.strokeStyle = PAL[ev.c % 8]; ctx.lineWidth = 2.6; ctx.beginPath(); ctx.moveTo(a, b); ctx.lineTo(x, y); ctx.stroke(); }
+  ctx.globalAlpha = .07; ctx.fillStyle = AMBER; dot(x, y, R); glow(x, y, R, AMBER);
+  if (slow) sidePill(pills, verdict(ev), x, y, R, p, ev.type === 'noise' ? '#c9cde4' : PAL[ev.c % 8]);
+}
+function drawDb(p, pills) {
+  const s = p.s, S = i => [p.ox + P[i][0] * s, p.oy + P[i][1] * s], k = clamp(s / 560, .7, 1), n = P.length, lab = run.labels, core = run.core;
+  panelFrame(p, 'DBSCAN', compare && p.w < 300 ? '' : `ε ${eps.toFixed(3)} · minPts ${minPts}`);
+  if (!L.side && !L.K && p.s >= 150) inlineLegend(p);
+  ctx.save(); rr(p.ox - 6, p.oy - 6, s + 12, s + 12, 10); ctx.clip();
+  if (view === 'density') {
+    const top = minPts * 2.5;
+    for (let i = 0; i < n; i++) { const f = Math.min(1, cnt[i] / top), [x, y] = S(i); ctx.fillStyle = `rgb(${75 + 169 * f | 0},${82 + 159 * f | 0},${117 + 138 * f | 0})`; dot(x, y, (1.5 + 3.3 * f) * k); }
+  } else {
+    ctx.lineWidth = 1.1;   // reachability links: the core that reached each point → that point
+    for (let i = 0; i < n; i++) { const pa = run.parent[i]; if (lab[i] < 0 || pa < 0) continue; const [x1, y1] = S(pa), [x2, y2] = S(i); ctx.globalAlpha = core[i] ? .55 : .25; ctx.strokeStyle = PAL[lab[i] % 8]; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); }
+    ctx.globalAlpha = .9; ctx.strokeStyle = VIOLET; ctx.lineWidth = 1.3;
+    for (let q = run.qh; q < run.queue.length; q++) { const [x, y] = S(run.queue[q]); ring(x, y, 6 * k); }
+    for (let i = 0; i < n; i++) {
+      const [x, y] = S(i), l = lab[i], a = T - born[i];
+      ctx.globalAlpha = 1;
+      if (l === UNSEEN) { ctx.globalAlpha = .5; ctx.fillStyle = NEUTRAL; dot(x, y, 2 * k); }
+      else if (l === NOISE) { ctx.strokeStyle = GREY; ctx.lineWidth = 1.4; cross(x, y, 3.2 * k); }
+      else if (core[i]) { ctx.fillStyle = PAL[l % 8]; dot(x, y, 4.2 * k); }
+      else { ctx.fillStyle = BG; dot(x, y, 3.4 * k); ctx.strokeStyle = PAL[l % 8]; ctx.lineWidth = 1.6; ring(x, y, 3.4 * k); }
+      if (a >= 0 && a < .6) { ctx.globalAlpha = (1 - a / .6) * .7; ctx.strokeStyle = l === NOISE ? GREY : PAL[Math.max(0, l) % 8]; ctx.lineWidth = 1.5; ring(x, y, 4 + a / .6 * 16 * k); }
     }
-    return;
+    ctx.globalAlpha = 1;
+    if (lastEv) probe(p, S, pills);
+    notes.forEach(([x, y, t]) => pills.push([t, p.ox + x * s, p.oy + y * s, DIM, null, 'c']));
   }
-  // find next unvisited seed
-  while(oi<order.length && label[order[oi]]!==UNVISITED) oi++;
-  if(oi>=order.length){phase='done';probe=-1;return;}
-  var i=order[oi];probe=i;
-  var nbs=neighbours(i);
-  if(nbs.length<minPts){
-    label[i]=NOISE;stats.noise++;
-    oi++;
-    return;
+  if (pins && !hover) pins.forEach(i => neighbourhood(p, S, P[i][0], P[i][1], `${cnt[i]} within ε (itself included)`, true, pills));
+  if (hover && !painting) {
+    let bi = -1, bd = (12 / s) ** 2;
+    P.forEach((q, i) => { const d = (q[0] - hover.x) ** 2 + (q[1] - hover.y) ** 2; if (d < bd) { bd = d; bi = i; } });
+    const cx = bi >= 0 ? P[bi][0] : hover.x, cy = bi >= 0 ? P[bi][1] : hover.y, c = bi >= 0 ? cnt[bi] : countNear(P, cx, cy, eps);
+    const t = bi < 0 ? `${c} within ε · a point here would ${c + 1 >= minPts ? 'be core' : 'not be core'}` : view === 'density' ? `${c} within ε (itself included)` : `${c} within ε → ${roleOf(bi)}`;
+    neighbourhood(p, S, cx, cy, t, bi >= 0, pills);
   }
-  cid++;stats.clusters=cid;cur=cid;
-  isCore[i]=1;label[i]=cur;ign[i]=0.001;seen[i]=1;
-  for(var m=0;m<nbs.length;m++){
-    var q2=nbs[m];
-    if(!seen[q2] && (label[q2]===UNVISITED||label[q2]===NOISE)){seen[q2]=1;queue.push(q2);}
-  }
-  oi++;
+  ctx.restore();
+}
+function drawKm(p) {
+  panelFrame(p, 'k-means', p.w < 300 ? `k = ${kmK}` : `k = ${kmK} (told the answer)`);
+  if (!km || km.labels.length !== P.length) return;
+  const s = p.s, k = clamp(s / 560, .7, 1);
+  ctx.save(); rr(p.ox - 6, p.oy - 6, s + 12, s + 12, 10); ctx.clip();
+  ctx.imageSmoothingEnabled = true; ctx.drawImage(vor, p.ox, p.oy, s, s);
+  P.forEach((q, i) => { ctx.fillStyle = PAL[kmMap[km.labels[i]] % 8]; dot(p.ox + q[0] * s, p.oy + q[1] * s, 3.2 * k); });
+  km.C.forEach(c => { const x = p.ox + c[0] * s, y = p.oy + c[1] * s; glow(x, y, 9, AMBER); ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x - 5, y); ctx.lineTo(x + 5, y); ctx.moveTo(x, y - 5); ctx.lineTo(x, y + 5); ctx.stroke(); });
+  ctx.restore();
+}
+function kGeom() { const K = L.K; return { x: K.x, y: K.y, w: K.w, h: K.h - 20 }; }
+function kScale() { const f = kdOrder.map(i => kd[i]).filter(Number.isFinite); return Math.max(f.length ? f[(f.length - 1) * .97 | 0] * 1.5 : .1, eps * 1.25, .02); }
+function drawK(pills) {
+  const g = kGeom(), n = kdOrder.length; if (!dragK) kYMax = kScale();
+  const X = r => g.x + (n > 1 ? r / (n - 1) : .5) * g.w, Y = v => g.y + g.h - Math.min(1, v / kYMax) * g.h, ye = Y(eps);
+  ctx.fillStyle = 'rgba(10,12,28,.55)'; rr(g.x - 8, g.y - 8, g.w + 16, g.h + 16, 10); ctx.fill(); ctx.strokeStyle = LINE; ctx.lineWidth = 1; ctx.stroke();
+  if (hl === 'k') { ctx.strokeStyle = AMBER; ctx.globalAlpha = .45 + .35 * Math.sin(T * 4); ctx.lineWidth = 2; rr(g.x - 12, g.y - 12, g.w + 24, g.h + 24, 13); ctx.stroke(); ctx.globalAlpha = 1; }
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.font = '650 13px ' + SANS; ctx.fillStyle = INK; ctx.fillText('k-distance', g.x - 6, g.y - 17); const tw = ctx.measureText('k-distance').width;
+  ctx.font = '12px ' + MONO; ctx.fillStyle = DIM; ctx.fillText(`k = minPts − 1 = ${minPts - 1}`, g.x + tw + 2, g.y - 17);
+  ctx.fillStyle = 'rgba(255,200,87,.07)'; ctx.fillRect(g.x, ye, g.w, g.y + g.h - ye);
+  ctx.beginPath(); kdOrder.forEach((i, r) => { const x = X(r), y = Y(kd[i]); r ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.strokeStyle = ACC; ctx.lineWidth = 1.6; ctx.stroke();
+  const f = truth.fin; let below = 0;
+  kdOrder.forEach((i, r) => { const l = f.labels[i]; if (kd[i] <= eps) below++; ctx.fillStyle = l === NOISE ? GREY : PAL[l % 8]; dot(X(r), Y(kd[i]), 1.8); });
+  if (elbowIdx >= 0) { const v = kd[kdOrder[elbowIdx]], x = X(elbowIdx), y = Y(v); ctx.setLineDash([3, 3]); glow(x, y, 6, ACC); ctx.setLineDash([]); if (g.h < 120) { ctx.font = '600 11px ' + MONO; ctx.fillStyle = ACC; ctx.textAlign = 'right'; ctx.fillText(`elbow ≈ ${v.toFixed(3)}`, g.x + g.w + 6, g.y + g.h + 24); ctx.textAlign = 'left'; }
+    else { const ly = ye < g.y + 56 ? ye + 26 : g.y + 16; ctx.strokeStyle = ACC; ctx.globalAlpha = .6; ctx.lineWidth = 1; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(g.x + 100, ly); ctx.lineTo(x - 5, y - 4); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1; pills.push([`elbow ≈ ${v.toFixed(3)}`, g.x + 4, ly, ACC]); } }
+  ctx.strokeStyle = AMBER; ctx.globalAlpha = .18; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(g.x, ye); ctx.lineTo(g.x + g.w, ye); ctx.stroke();
+  ctx.globalAlpha = 1; ctx.lineWidth = 1.8; ctx.stroke(); ctx.fillStyle = AMBER; dot(g.x + g.w, ye, 5.5);
+  ctx.font = '600 12px ' + MONO; ctx.fillStyle = AMBER; ctx.fillText(`ε ${eps.toFixed(3)} · ${below} cores ↓`, g.x + 4, Math.max(g.y + 12, ye - 8));
+  ctx.font = '11px ' + SANS; ctx.fillStyle = FAINT; ctx.fillText('every point, sorted by k-distance →', g.x - 6, g.y + g.h + 24);
+}
+function drawLegend(sd) {
+  let y = sd.y; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  const items = view === 'density' ? [['dens', 'size = neighbours within ε'], ['eps', 'ε-circle (hover to probe)']]
+    : [['core', 'core: ≥ minPts within ε'], ['border', 'border: inside a core’s ε'], ['noise', 'noise: neither'], ['queued', 'queued: waiting to expand'], ['unseen', 'not visited yet'], ['eps', 'ε-circle being tested']];
+  ctx.font = '600 11px ' + MONO; ctx.fillStyle = FAINT; ctx.fillText('LEGEND', sd.x - 6, y); y += 24;
+  for (const [g, t] of items) { glyph(g, sd.x + 2, y); ctx.font = '13px ' + SANS; ctx.fillStyle = DIM; ctx.fillText(t, sd.x + 18, y); y += 23; }
+  y += 12; ctx.font = '12px ' + SANS; ctx.fillStyle = FAINT;
+  for (const t of ['Click the plot to add a point', 'Drag to paint a trail of points', L.K ? 'Drag the amber line to set ε' : 'Hover to count neighbours']) { ctx.fillText(t, sd.x - 6, y); y += 19; }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const pills = [];
+  drawDb(L.P1, pills);
+  if (L.P2) drawKm(L.P2);
+  if (L.K) drawK(pills);
+  if (L.side) drawLegend(L.side);
+  pills.forEach(q => pill(...q));
 }
 
-// ---- input ----
-window.addEventListener('wheel',function(e){
-  e.preventDefault();
-  eps=Math.max(12,Math.min(160, eps*(e.deltaY>0?0.94:1.064)));
-  reset();
-},{passive:false});
-window.addEventListener('keydown',function(e){
-  if(e.key===']'){minPts=Math.min(24,minPts+1);reset();}
-  else if(e.key==='['){minPts=Math.max(1,minPts-1);reset();}
-  else if(e.key==='m'||e.key==='M'){moons=!moons;build();}
-  else if(e.key==='r'||e.key==='R'){build();}
-  else if(e.code==='Space'){e.preventDefault();paused=!paused;}
+/* ===== loop ===== */
+function frame(dt) {
+  T += dt;
+  const cb = capEl.offsetTop + capEl.offsetHeight; if (cb !== capB) { capB = cb; layout(); }
+  if (sweep && dt > 0) {
+    sweep.t += dt; const v = sweep.a + (sweep.b - sweep.a) * (.5 - .5 * Math.cos(2 * Math.PI * sweep.t / sweep.period));
+    if (Math.abs(v - eps) > .0006) { eps = v; syncUI(); rebuild(false); }
+  }
+  if (dt > 0 && !run.done) { acc = Math.min(acc + dt * rate, 40); while (acc >= 1 && !run.done) { acc--; onEv(run.step()); } }
+  else if (dt > 0 && run.done) {
+    holdT += dt;
+    if (script && holdT > script.wait) { const f = script.fn; script = null; f(); }
+    else if (loopRun && holdT > 2.4) { const o = ['moons', 'rings', 'blobs'], nx = o[(o.indexOf(dataKind) + 1) % 3]; setData(nx, SEEDS[nx]); syncUI(); rebuild(true); }
+  }
+  let c = 0, b = 0, z = 0; run.labels.forEach((l, i) => { if (l === NOISE) z++; else if (l >= 0) run.core[i] ? c++ : b++; });
+  setText('sC', String(run.clusters)); setText('sN', String(z)); setText('sCB', c + ' / ' + b);
+  const e = eps.toFixed(3); let kb = 0; for (const v of kd) if (v <= eps) kb++;
+  [['mEps', e], ['mEps2', e], ['mMin', String(minPts)], ['mK', String(minPts - 1)], ['mCore', String(truth.core)], ['mBorder', String(truth.border)], ['mNoise', String(truth.noise)], ['mCl', String(truth.clusters)], ['mKd', String(kb)]].forEach(([id, v]) => setText(id, v));
+  draw();
+}
+
+/* ===== direct manipulation: hover = probe, click/drag = add points, drag the k-distance line = set ε ===== */
+function hit(p, mx, my) { if (!p) return null; const x = (mx - p.ox) / p.s, y = (my - p.oy) / p.s; return x >= 0 && x <= 1 && y >= 0 && y <= 1 ? [x, y] : null; }
+function inK(mx, my) { const K = L.K; return !!K && mx >= K.x - 10 && mx <= K.x + K.w + 10 && my >= K.y - 10 && my <= K.y + K.h - 12; }
+function kEps(my) { const g = kGeom(); return clamp((g.y + g.h - my) / g.h * kYMax, .015, .15); }
+const pos = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+cv.addEventListener('pointerdown', e => {
+  const [mx, my] = pos(e);
+  if (inK(mx, my)) { dragK = true; kYMax = kScale(); setEps(kEps(my)); }
+  else { const d = hit(L.P1, mx, my) || hit(L.P2, mx, my); if (!d) return; painting = d; addPoint(d[0], d[1]); }
+  try { cv.setPointerCapture(e.pointerId); } catch (_) { /* synthetic events */ } e.preventDefault();
 });
+cv.addEventListener('pointermove', e => {
+  const [mx, my] = pos(e);
+  if (dragK) { setEps(kEps(my)); return; }
+  const d1 = hit(L.P1, mx, my), d = d1 || hit(L.P2, mx, my);
+  if (painting && d && Math.hypot(d[0] - painting[0], d[1] - painting[1]) > .022) { painting = d; addPoint(d[0], d[1]); }
+  hover = d1 && e.pointerType !== 'touch' ? { x: d1[0], y: d1[1] } : null;
+  cv.style.cursor = inK(mx, my) ? 'ns-resize' : d ? 'crosshair' : 'default';
+});
+const endPtr = () => { painting = null; dragK = false; };
+cv.addEventListener('pointerup', endPtr); cv.addEventListener('pointercancel', endPtr);
+cv.addEventListener('pointerleave', () => { hover = null; });
+$('#bPlay').onclick = () => { if (!playing && run.done && !sweep) rebuild(true); setPlaying(!playing); };
+$('#bStep').onclick = () => { setPlaying(false); sweep = null; if (run.done) rebuild(true); stepRun(1); };
+$('#bReset').onclick = () => { script = null; rebuild(!REDUCED); };
 
-var els={s1:document.getElementById('s1'),s2:document.getElementById('s2'),
-  s3:document.getElementById('s3'),s4:document.getElementById('s4'),s5:document.getElementById('s5')};
+/* ===== controls ===== */
+const pc = $('#p-play');
+const h3 = t => { const h = document.createElement('h3'); h.textContent = t; pc.appendChild(h); };
+h3('Dataset');
+const dataSeg = seg(pc, [['moons', 'Moons'], ['rings', 'Rings'], ['blobs', 'Blobs + noise'], ['density', 'Varying density'], ['blank', 'Blank — draw your own']], 'moons', v => { if (quiet) return; setData(v, SEEDS[v]); sweep = script = null; loopRun = false; rebuild(!REDUCED && v !== 'blank'); });
+const btnRow = document.createElement('div'); btnRow.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap'; btnRow.innerHTML = '<button class="btn" id="bNew">New random sample</button><button class="btn" id="bClr">Clear points</button>'; pc.appendChild(btnRow);
+h3('Algorithm');
+const epsS = slider(pc, 'eps', 'ε: neighbourhood radius (fraction of plot width)', .015, .15, .001, eps, v => v.toFixed(3), v => { if (!quiet) setEps(v); });
+const minS = slider(pc, 'mp', 'minPts: points needed inside ε (itself included) to be a core', 2, 15, 1, minPts, v => String(v), v => { if (quiet) return; minPts = v; rebuild(false); });
+h3('View');
+const viewSeg = seg(pc, [['run', 'Colour by DBSCAN role'], ['density', 'Colour by neighbour count']], 'run', v => { if (!quiet) view = v; });
+const cmpSeg = seg(pc, [[false, 'DBSCAN only'], [true, 'Side by side with k-means']], false, v => { if (quiet) return; compare = v; layout(); if (v) updateKmeans(); });
+const kSeg = seg(pc, [[true, 'Show k-distance plot'], [false, 'Hide it']], showK, v => { if (quiet) return; showK = v; layout(); });
+const tip = document.createElement('p'); tip.innerHTML = '<b>Click</b> the plot to add a point, <b>drag</b> to paint a trail, <b>hover</b> to count neighbours. In the k-distance plot, drag the amber line to set ε. <b>Step</b> (dock) makes one DBSCAN decision at a time.'; pc.appendChild(tip);
+$('#bNew').onclick = () => { setData(dataKind, Math.random() * 1e6 | 0); sweep = script = null; rebuild(!REDUCED); };
+$('#bClr').onclick = () => dataSeg.set('blank');
+quiet = false;
 
-resize();
+/* ===== lesson ===== */
+function pickPins() { const o = [...cnt.keys()].sort((a, b) => cnt[a] - cnt[b]); pins = [o[o.length * .8 | 0], o[0]]; }
+const STEPS = [
+  { t: 'Watch clusters flood out', d: 'Every point starts unvisited (grey). DBSCAN picks one; if it sits somewhere dense, a cluster floods outward from it. It finds curved moons and nested rings without being told how many clusters exist.',
+    cap: '<b>DBSCAN</b> floods outward from dense points. Nobody told it how many clusters there are, or that they curve.', go() { setup({ data: 'moons', rate: 70, loop: true }); } },
+  { t: 'Density = neighbours within ε', d: 'Size and brightness show how many points lie within ε of each point, itself included. Hover anywhere to probe; move the ε slider in Controls and every count changes.',
+    cap: '<b>Density = neighbours within ε.</b> Each amber circle counts the points inside it. Hover to probe anywhere.', go() { setup({ data: 'moons', view: 'density', animate: false }); pickPins(); } },
+  { t: 'Core, border, noise', d: 'Each visit asks one question. At least minPts in its ε-circle → <b>core</b> ●. Fewer, but inside some core’s circle → <b>border</b> ○. Neither → <b>noise</b> ×. “For now”: a noise point can later be claimed as a border.',
+    cap: 'One question per point: <b>≥ minPts inside ε?</b> Yes → core ●. No, but near a core → border ○. Neither → noise ×.', go() { setup({ data: 'blobs', rate: 2.5, pre: 90 }); } },
+  { t: 'Clusters are chains of cores', d: 'A core queues all its neighbours (violet rings). Each queued core queues its own neighbours: a breadth-first flood fill. Borders join the cluster but never spread it. A cluster is one connected web of cores.',
+    cap: '<b>A cluster = cores chained within ε</b>, plus the borders they touch. Violet rings are the queue waiting to expand.', go() { setup({ data: 'moons', rate: 20 }); } },
+  { t: 'No k needed, and noise is labelled', d: 'k-means needs k and gives every point to its nearest centre, so its boundaries are straight lines and outliers are forced into a cluster. DBSCAN discovers the count and leaves outliers as ×.',
+    cap: 'Same rings, <b>k-means told k = 2</b>: it can only cut with straight lines. DBSCAN needed no k and flags the strays ×.', go() { setup({ data: 'rings', compare: true, rate: 60 }); } },
+  { t: 'Varying density breaks one ε', d: 'ε sweeps back and forth. At small ε the sparse cloud is noise; by the time ε is big enough for it, the two dense blobs have already merged. A single global density threshold cannot fit both.',
+    cap: '<b>One ε, two densities:</b> small ε dissolves the sparse cloud into noise; large ε glues the two dense blobs together.', go() { setup({ data: 'density', animate: false, sweep: { a: .022, b: .085, t: 0, period: 9 } }); } },
+  { t: 'Choose ε at the k-distance elbow', d: 'For every point take the distance to its (minPts−1)-th nearest neighbour, then sort. Points inside clusters make a flat floor; outliers shoot up. Set ε at the bend. The line is exact: points below it are precisely the cores.',
+    cap: '<b>Pick ε at the elbow:</b> sort each point’s distance to its (minPts−1)-th neighbour. Drag the amber line to try others.', go() { setup({ data: 'blobs', showK: true, hl: 'k', rate: 60, elbowEps: true }); } },
+];
+const TRIES = [
+  { q: 'Moons. k-means is <i>told</i> the right answer, k = 2. Will it separate the two moons?',
+    run() { setup({ data: 'moons', compare: true, rate: 60 }); cap('Left: DBSCAN. Right: k-means with k = 2. Compare the colours.'); },
+    why: 'No. k-means gives each point to its nearest centroid, so the border between two clusters is a straight line (the bright edge between the tinted cells). No straight line separates interlocking moons, so each k-means cluster takes half of both, and every outlier is forced into a cluster. DBSCAN never measures distance to a centre. It only asks whether a point’s neighbourhood is dense, so it follows any shape and leaves strays as ×.' },
+  { q: 'A thin bridge of points joins the moons. One cluster or two? And what if minPts rises to 9?',
+    run() { setup({ data: 'moons', rate: 45 }); bridge(); cap('minPts = 5: watch whether the flood crosses the bridge…'); script = { wait: 2.2, fn() { minPts = 9; syncUI(); rebuild(!REDUCED); cap('minPts = 9: a one-point-wide line can’t hold 9 neighbours, so the bridge stops spreading.'); } }; },
+    why: 'At minPts 5 each bridge point has about 7 neighbours along the line (itself included), so they are cores, and one chain of cores is enough to merge two clusters. This is the <b>chaining</b> (single-link) effect. At minPts 9 a one-point-wide line can’t be that dense: bridge points become border or noise, borders never spread a cluster, and the moons split again. Raising minPts is the standard defence against chaining.' },
+  { q: 'Varying density. Is there <i>any</i> single ε that finds all three blobs? Predict, then watch ε sweep.',
+    run() { setup({ data: 'density', animate: false, sweep: { a: .02, b: .09, t: 0, period: 10 } }); cap('ε sweeps from 0.020 to 0.090. Watch for a moment when all three blobs are clusters.'); },
+    why: 'There isn’t one. Density is judged against one global threshold: minPts points within ε. The ε that makes the sparse cloud dense enough is wider than the gap between the two dense blobs, so they merge before the sparse one forms. Careful: the Clusters tile <i>does</i> read 3 at some ε, but look at the picture. Either the third cluster is a handful of sparse points with the rest ×, or the dense pair has merged and the sparse cloud has split in two. The k-distance plot shows why: no single elbow, but a step for each density. OPTICS and HDBSCAN fix this by effectively trying every ε and keeping the most stable clusters.' },
+];
 
-var last=0, uiAcc=0, doneHold=0;
-function frame(ts){
-  var dt=Math.min(0.05,(ts-last)/1000||0.016);last=ts;
-
-  if(!paused){
-    var budget = phase==='done'?0 : Math.max(2, Math.round(pts.length/220)+2);
-    for(var s=0;s<budget;s++) step();
-  }
-  if(phase==='done'){
-    doneHold+=dt;
-    if(doneHold>4.2){doneHold=0;reset();}
-  } else doneHold=0;
-
-  ctx.fillStyle='#04060a';ctx.fillRect(0,0,W,H);
-  // faint grid
-  ctx.save();ctx.strokeStyle='rgba(60,110,90,.07)';ctx.lineWidth=1;
-  for(var x=0;x<W;x+=56){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
-  for(var y=0;y<H;y+=56){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
-  ctx.restore();
-
-  // cluster link web (cores within eps of each other) — cheap: draw from ignition wave
-  ctx.save();
-  ctx.lineWidth=1;
-  for(var i=0;i<pts.length;i++){
-    if(!isCore[i]||label[i]<=0)continue;
-    if(i%2)continue;
-    var p=pts[i], col=COLS[(label[i]-1)%COLS.length];
-    var nb=neighbours(i);
-    ctx.globalAlpha=0.10;
-    ctx.beginPath();
-    for(var k=0;k<nb.length;k+=3){
-      var q=pts[nb[k]];
-      if(label[nb[k]]!==label[i])continue;
-      ctx.moveTo(p.x,p.y);ctx.lineTo(q.x,q.y);
-    }
-    ctx.strokeStyle=col;ctx.stroke();
-  }
-  ctx.restore();
-  ctx.globalAlpha=1;
-
-  // points
-  for(i=0;i<pts.length;i++){
-    var pt=pts[i], L=label[i];
-    if(ign[i]>0&&ign[i]<1) ign[i]=Math.min(1,ign[i]+dt*2.2);
-    var r=2.6, col2, glow=0, alpha=1;
-    if(L===UNVISITED){ col2='rgba(110,130,150,.42)'; r=2.2; }
-    else if(L===NOISE){ col2='rgba(150,160,170,.55)'; r=2.4; }
-    else {
-      var base=COLS[(L-1)%COLS.length];
-      if(isCore[i]){ col2=base; r=3.6+1.6*(1-ign[i]); glow=12; }
-      else { col2=base; alpha=0.5; r=2.6; glow=4; }
-    }
-    ctx.globalAlpha=alpha;
-    ctx.fillStyle=col2;
-    if(glow){ctx.shadowColor=col2;ctx.shadowBlur=glow;}
-    ctx.beginPath();ctx.arc(pt.x,pt.y,r,0,6.2832);ctx.fill();
-    ctx.shadowBlur=0;
-    // ignition ring
-    if(L>0&&ign[i]>0&&ign[i]<1){
-      ctx.strokeStyle=col2;ctx.globalAlpha=(1-ign[i])*0.7;ctx.lineWidth=1.6;
-      ctx.beginPath();ctx.arc(pt.x,pt.y,4+ign[i]*eps*0.55,0,6.2832);ctx.stroke();
-    }
-    // noise flag
-    if(L===NOISE){
-      ctx.globalAlpha=0.35;ctx.strokeStyle='#98a2ad';ctx.lineWidth=1;
-      ctx.beginPath();ctx.moveTo(pt.x-3,pt.y-3);ctx.lineTo(pt.x+3,pt.y+3);
-      ctx.moveTo(pt.x+3,pt.y-3);ctx.lineTo(pt.x-3,pt.y+3);ctx.stroke();
-    }
-    ctx.globalAlpha=1;
-  }
-
-  // eps neighbourhood circle on the probe point
-  if(probe>=0 && probe<pts.length && phase!=='done'){
-    var pp=pts[probe];
-    var lc = label[probe]>0?COLS[(label[probe]-1)%COLS.length]:'#ffe066';
-    ctx.save();
-    ctx.strokeStyle=lc;ctx.lineWidth=1.8;ctx.shadowColor=lc;ctx.shadowBlur=16;
-    ctx.globalAlpha=0.9;
-    ctx.beginPath();ctx.arc(pp.x,pp.y,eps,0,6.2832);ctx.stroke();
-    ctx.globalAlpha=0.08;ctx.fillStyle=lc;ctx.fill();
-    ctx.globalAlpha=0.55;ctx.setLineDash([3,5]);ctx.lineWidth=1;
-    ctx.beginPath();ctx.arc(pp.x,pp.y,eps*(0.5+0.5*Math.abs(Math.sin(ts/400))),0,6.2832);ctx.stroke();
-    ctx.restore();
-    // count badge
-    var nn=neighbours(probe).length;
-    ctx.save();
-    ctx.font='bold 12px ui-monospace,monospace';
-    ctx.fillStyle=nn>=minPts?'#7dffb0':'#98a2ad';
-    ctx.shadowColor=ctx.fillStyle;ctx.shadowBlur=8;
-    ctx.fillText(nn+' / '+minPts+(nn>=minPts?'  CORE':'  not core'), pp.x+eps+8, pp.y-4);
-    ctx.restore();
-  }
-
-  // eps ruler legend bottom-left of canvas
-  ctx.save();
-  var rx=28, ry=H-40;
-  ctx.strokeStyle='rgba(200,255,228,.5)';ctx.lineWidth=1.4;
-  ctx.beginPath();ctx.moveTo(rx,ry);ctx.lineTo(rx+eps,ry);
-  ctx.moveTo(rx,ry-5);ctx.lineTo(rx,ry+5);
-  ctx.moveTo(rx+eps,ry-5);ctx.lineTo(rx+eps,ry+5);ctx.stroke();
-  ctx.font='11px ui-monospace,monospace';ctx.fillStyle='rgba(200,255,228,.7)';
-  ctx.fillText('eps = '+eps.toFixed(0)+'px',rx,ry-12);
-  ctx.restore();
-
-  // cluster tally chips (top-right)
-  ctx.save();
-  ctx.font='12px ui-monospace,monospace';
-  var counts={};
-  for(i=0;i<pts.length;i++) if(label[i]>0) counts[label[i]]=(counts[label[i]]||0)+1;
-  var keys=Object.keys(counts), yy=34;
-  ctx.textAlign='right';
-  ctx.fillStyle='rgba(220,240,255,.7)';
-  ctx.fillText('clusters',W-24,yy);yy+=18;
-  for(k=0;k<keys.length && k<10;k++){
-    var cc=COLS[(keys[k]-1)%COLS.length];
-    ctx.fillStyle=cc;ctx.shadowColor=cc;ctx.shadowBlur=8;
-    ctx.fillText('■ C'+keys[k]+'  n='+counts[keys[k]],W-24,yy);yy+=17;
-  }
-  ctx.shadowBlur=0;
-  ctx.fillStyle='rgba(160,170,180,.8)';
-  ctx.fillText('✕ noise  n='+stats.noise,W-24,yy);
-  ctx.restore();
-
-  if(phase==='done'){
-    ctx.save();
-    ctx.font='bold 15px ui-monospace,monospace';
-    ctx.textAlign='center';
-    ctx.fillStyle='rgba(108,255,192,'+(0.55+0.35*Math.sin(ts/300))+')';
-    ctx.shadowColor='#6cffc0';ctx.shadowBlur=14;
-    ctx.fillText('scan complete — '+stats.clusters+' clusters, '+stats.noise+' noise points'+
-      (moons?'  ·  k-means could not do this':''), W/2, H-26);
-    ctx.restore();
-  }
-
-  uiAcc+=dt;
-  if(uiAcc>0.12){
-    uiAcc=0;
-    els.s1.textContent='eps = '+eps.toFixed(0)+' px · minPts = '+minPts;
-    els.s2.textContent='scanned '+Math.min(oi,order.length)+' / '+order.length+' · frontier '+queue.length;
-    els.s3.textContent='clusters '+stats.clusters+' · noise '+Math.max(0,stats.noise);
-    els.s4.textContent='dataset: '+(moons?'two moons (non-convex)':'gaussian blobs')+' · n='+pts.length;
-    els.s5.textContent='state: '+(paused?'PAUSED':(phase==='done'?'done (restarting…)':(queue.length?'flood-filling C'+cur:'seeking seed')));
-  }
-  requestAnimationFrame(frame);
-}
-requestAnimationFrame(frame);
-})();
+stat('sC', 'Clusters'); stat('sN', 'Noise ×'); stat('sCB', 'Core / border');
+layout(); ready = true;
+renderSteps(); renderTries(); goStep(0); requestAnimationFrame(loop);
+window.__demo = { goStep, setPlaying, state: () => ({ tour, data: dataKind, n: P.length, eps, minPts, clusters: run.clusters, done: run.done, core: truth.core, border: truth.border, noise: truth.noise, compare, showK }) };
 </script>
+</body>
+</html>
